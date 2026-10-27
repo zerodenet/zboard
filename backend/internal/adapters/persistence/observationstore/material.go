@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -71,61 +72,108 @@ func (w *partWriter) Write(b []byte) (n int, err error) {
 	return
 }
 
-// Enqueue belongs to the authority transaction. Any header/part failure must
-// propagate, rolling back settlement so the spool can replay its exact source.
-func Enqueue(tx *gorm.DB, source network.ObservationSource) (string, error) {
-	h := sha256.New()
-	counter := materialCounter{Writer: h}
-	if err := network.WriteObservationSource(&counter, source); err != nil {
-		return "", err
+// EnqueueBatch belongs to the existing authority transaction. Prepare and
+// current-read every header in stable source-hash order BEFORE acquiring budget.
+// No old-header/node/state lock is requested after the shared budget row lock.
+// Sorting optional source persistence never changes ApplyFlowBatch accounting.
+func EnqueueBatch(tx *gorm.DB, sources []network.ObservationSource) ([]string, error) {
+	type prepared struct {
+		h      model.NodeObservationIntent
+		source network.ObservationSource
+		fresh  bool
 	}
-	id := hex.EncodeToString(h.Sum(nil))
+	items := make([]prepared, 0, len(sources))
+	ids := make([]string, 0, len(sources))
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	tag := source.Observation.Latest.AssetTag
-	if _, err := hex.DecodeString(tag); len(tag) != 64 || err != nil {
-		tag = ""
-	} // raw, including malformed labels, remains in parts.
-	header := model.NodeObservationIntent{ID: id, NodeID: source.Observation.NodeID, AssetTag: tag, Status: "pending", AvailableAt: now, LeaseUntil: epoch, MaterialBytes: counter.size, PartCount: (counter.size + PartBytes - 1) / PartBytes, CreatedAt: now, UpdatedAt: now}
-	if source.LegacyFloor {
-		header.Status = "held"
-		header.Reason = "unattributed_legacy_floor"
-	}
-	result := tx.Omit("MaterialRetiredAt", "MaterialReviewAt").Clauses(clause.OnConflict{DoNothing: true}).Create(&header)
-	if result.Error != nil {
-		return "", result.Error
-	}
-	if result.RowsAffected == 0 {
-		var old model.NodeObservationIntent
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&old, "id = ?", id).Error; err != nil {
-			return "", err
+	for _, source := range sources {
+		digest := sha256.New()
+		counter := materialCounter{Writer: digest}
+		if e := network.WriteObservationSource(&counter, source); e != nil {
+			return nil, e
 		}
-		if old.MaterialBytes != header.MaterialBytes || old.PartCount != header.PartCount || old.NodeID != header.NodeID || old.AssetTag != header.AssetTag {
-			return "", errors.New("observation source header conflict")
+		id := hex.EncodeToString(digest.Sum(nil))
+		ids = append(ids, id)
+		tag := source.Observation.Latest.AssetTag
+		if _, e := hex.DecodeString(tag); len(tag) != 64 || e != nil {
+			tag = ""
+		}
+		h := model.NodeObservationIntent{ID: id, NodeID: source.Observation.NodeID, AssetTag: tag, Status: "pending", AvailableAt: now, LeaseUntil: epoch, MaterialReviewAt: now.Add(MaterialMinimumAge), MaterialBytes: counter.size, PartCount: (counter.size + PartBytes - 1) / PartBytes, CreatedAt: now, UpdatedAt: now}
+		if source.LegacyFloor {
+			h.Status = "held"
+			h.Reason = "unattributed_legacy_floor"
+		}
+		items = append(items, prepared{h: h, source: source})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].h.ID < items[j].h.ID })
+	previous := ""
+	for i := range items {
+		item := &items[i]
+		if item.h.ID == previous {
+			continue
+		}
+		previous = item.h.ID
+		insert := tx.Omit("MaterialRetiredAt")
+		if item.source.LegacyFloor && !tx.Migrator().HasColumn(&model.NodeObservationIntent{}, "material_review_at") {
+			insert = tx.Omit("MaterialRetiredAt", "MaterialReviewAt")
+		}
+		result := insert.Clauses(clause.OnConflict{DoNothing: true}).Create(&item.h)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected != 0 {
+			item.fresh = true
+			continue
+		}
+		var old model.NodeObservationIntent
+		if e := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&old, "id = ?", item.h.ID).Error; e != nil {
+			return nil, e
+		}
+		if old.MaterialBytes != item.h.MaterialBytes || old.PartCount != item.h.PartCount || old.NodeID != item.h.NodeID || old.AssetTag != item.h.AssetTag {
+			return nil, errors.New("observation source header conflict")
 		}
 		if old.MaterialRetiredAt != nil {
-			if err := validateRetiredReceipt(tx, old); err != nil {
-				return "", err
+			if e := validateRetiredReceipt(tx, old); e != nil {
+				return nil, e
 			}
-			return id, nil
+		} else if e := walkParts(tx, old, func([]byte) error { return nil }); e != nil {
+			return nil, e
 		}
-		// Replayed immutable content may already be applied/held. Validate retained
-		// parts without resetting disposition, lease, counters or retry state.
-		if err := walkParts(tx, old, func(b []byte) error { return nil }); err != nil {
-			return "", err
+	}
+	for _, item := range items {
+		if !item.fresh {
+			continue
 		}
-		return id, nil
+		keep, e := reserveMaterialBudget(tx, item.h.MaterialBytes, item.source.LegacyFloor)
+		if e != nil {
+			return nil, e
+		}
+		if !item.source.LegacyFloor || tx.Migrator().HasTable(&model.NodeObservationRetirement{}) {
+			if e := registerMaterialSource(tx, item.h, item.source, keep, now); e != nil {
+				return nil, e
+			}
+		}
+		if !keep {
+			continue
+		}
+		writer := partWriter{tx: tx, id: item.h.ID, buf: make([]byte, 0, PartBytes)}
+		if e := network.WriteObservationSource(&writer, item.source); e != nil {
+			return nil, e
+		}
+		if e := writer.flush(); e != nil {
+			return nil, e
+		}
+		if writer.ordinal != item.h.PartCount {
+			return nil, errors.New("observation part count mismatch")
+		}
 	}
-	w := partWriter{tx: tx, id: id, buf: make([]byte, 0, PartBytes)}
-	if err := network.WriteObservationSource(&w, source); err != nil {
-		return "", err
+	return ids, nil
+}
+func Enqueue(tx *gorm.DB, source network.ObservationSource) (string, error) {
+	ids, e := EnqueueBatch(tx, []network.ObservationSource{source})
+	if e != nil {
+		return "", e
 	}
-	if err := w.flush(); err != nil {
-		return "", err
-	}
-	if w.ordinal != header.PartCount {
-		return "", errors.New("observation part count mismatch")
-	}
-	return id, nil
+	return ids[0], nil
 }
 
 // Each size is checked BEFORE fetching a blob; a forged cached total/ordinal
@@ -183,6 +231,12 @@ func walkParts(tx *gorm.DB, h model.NodeObservationIntent, accept func([]byte) e
 	return nil
 }
 func readSource(tx *gorm.DB, h model.NodeObservationIntent) (network.ObservationSource, error) {
+	if h.Status == "retired" && h.MaterialRetiredAt != nil {
+		if e := validateExpiredReceipt(tx, h); e != nil {
+			return network.ObservationSource{}, e
+		}
+		return network.ObservationSource{}, ErrMaterialExpired
+	}
 	if h.MaterialBytes > uint64(MaxApplyBytes) {
 		return network.ObservationSource{}, invalid("observation source exceeds apply byte budget")
 	}
@@ -212,6 +266,9 @@ func readReference(tx *gorm.DB, id string) (network.ObservationSource, error) {
 // auxiliary parts retire. Caller has locked the header and matched the incoming
 // complete canonical hash/node/asset/size/count; no freshness or cursor changes.
 func validateRetiredReceipt(tx *gorm.DB, h model.NodeObservationIntent) error {
+	if h.Status == "retired" {
+		return validateExpiredReceipt(tx, h)
+	}
 	if h.MaterialRetiredAt == nil || h.Status != "applied" || h.Token != "" || !h.LeaseUntil.Equal(epoch) || h.MaterialBytes == 0 || h.MaterialBytes > uint64(MaxApplyBytes) || h.PartCount != (h.MaterialBytes+PartBytes-1)/PartBytes || h.MaterialRetiredAt.Before(h.CreatedAt) || h.MaterialRetiredAt.Before(h.UpdatedAt) {
 		return invalid("invalid compact observation receipt")
 	}

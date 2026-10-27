@@ -53,15 +53,13 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 			if err != nil {
 				return err
 			}
-			for _, source := range input.Sources {
-				if _, err := observationstore.Enqueue(tx, source); err != nil {
-					return err
-				}
-			}
+			sources := make([]network.ObservationSource, 0, len(input.Sources)+len(input.Nodes))
+			sources = append(sources, input.Sources...)
 			for _, observation := range input.Nodes {
-				if _, err := observationstore.Enqueue(tx, network.ObservationSource{Observation: observation, Kind: "legacy_projection"}); err != nil {
-					return err
-				}
+				sources = append(sources, network.ObservationSource{Observation: observation, Kind: "legacy_projection"})
+			}
+			if _, err := observationstore.EnqueueBatch(tx, sources); err != nil {
+				return err
 			}
 			return nil
 		})

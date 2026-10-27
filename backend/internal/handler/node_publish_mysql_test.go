@@ -20,6 +20,7 @@ import (
 // schema created here is ever migrated or dropped; a supplied DBName is ignored.
 func newMySQLPublishHandlers(t *testing.T) (*handlers, string) {
 	t.Helper()
+	reportMySQLFixtureTimingOnCleanup(t)
 	dsn := os.Getenv("ZBOARD_TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("set ZBOARD_TEST_MYSQL_DSN to run isolated real MySQL integration tests")
@@ -36,16 +37,24 @@ func newMySQLPublishHandlers(t *testing.T) (*handlers, string) {
 	}
 	t.Cleanup(func() { _ = admin.Close() })
 	schema := "zboard_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := admin.Exec("CREATE DATABASE `" + schema + "` CHARACTER SET utf8mb4"); err != nil {
+	finishCreate := beginMySQLFixtureTiming("publish", "create_schema")
+	_, createErr := admin.Exec("CREATE DATABASE `" + schema + "` CHARACTER SET utf8mb4")
+	finishCreate(createErr)
+	if err := createErr; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, err := admin.Exec("DROP DATABASE `" + schema + "`"); err != nil {
+		finishDrop := beginMySQLFixtureTiming("publish", "drop_schema")
+		_, dropErr := admin.Exec("DROP DATABASE `" + schema + "`")
+		finishDrop(dropErr)
+		if err := dropErr; err != nil {
 			t.Errorf("clean test schema: %v", err)
 		}
 	})
 	config.DBName = schema
+	finishOpen := beginMySQLFixtureTiming("publish", "open_pool")
 	db, err := datastore.Open(config.FormatDSN())
+	finishOpen(err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,17 +62,22 @@ func newMySQLPublishHandlers(t *testing.T) (*handlers, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = pool.Close() })
-	for _, migrate := range []func(*gorm.DB) error{
+	t.Cleanup(func() { finish := beginMySQLFixtureTiming("publish", "close_pool"); err := pool.Close(); finish(err) })
+	for i, migrate := range []func(*gorm.DB) error{
 		datastore.RunMigrations, datastore.ReconcileCommerceSchema, datastore.ReconcileSubscriptionAccessSchema,
 		datastore.ReconcileZeroEventSchema, datastore.ReconcileTrafficReadSchema,
 		datastore.ReconcileOperationsSchema, datastore.ReconcileFairUseTelemetrySchema,
 	} {
-		if err := migrate(db); err != nil {
+		finish := beginMySQLFixtureTiming("publish", mysqlFixturePreparationPhases[i])
+		err := migrate(db)
+		finish(err)
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
+	finishServices := beginMySQLFixtureTiming("publish", "services")
 	h, err := newTestHandlers(db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	finishServices(err)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -51,6 +51,21 @@ func ownershipFixture(t *testing.T) (*gorm.DB, *gorm.DB, model.Node) {
 			}
 		}
 	}
+	// Explicit owned0067DDL, not AutoMigrate ownership of new authority.
+	raw67, err := migrations.Files.ReadFile("sqlite/0067_node_observation_retirement_budget.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range strings.Split(string(raw67), ";") {
+		if strings.TrimSpace(statement) != "" {
+			if err := a.Exec(statement).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := a.Create(&model.NodeObservationMaterialBudget{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
 	node := model.Node{ID: 8, AssetTag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", IsEnabled: true}
 	if err := a.Table("nodes").Create(map[string]any{"id": node.ID, "asset_tag": node.AssetTag, "is_enabled": true}).Error; err != nil {
 		t.Fatal(err)

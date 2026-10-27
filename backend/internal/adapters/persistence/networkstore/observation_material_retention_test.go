@@ -52,7 +52,7 @@ func assertObservationMaterialRetirement(t *testing.T) {
 	claimed := saveObservation(t, a, observationSource(node, "claimed-seven", "runtime", 7, false))
 	// A durable in-flight ownership image is excluded even if its lease is old;
 	// actual claim/reclaim races are covered by the store ownership contracts.
-	if err := a.Model(&model.NodeObservationIntent{}).Where("id = ?", claimed).Updates(map[string]any{"status": "claimed", "token": strings.Repeat("b", 64), "lease_until": time.Now().UTC().Add(time.Minute)}).Error; err != nil {
+	if err := a.Model(&model.NodeObservationIntent{}).Where("id = ?", claimed).Updates(map[string]any{"status": "claimed", "token": strings.Repeat("b", 64), "lease_until": time.Now().UTC().Add(9 * 24 * time.Hour)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	var before model.NodeObservationState
@@ -66,8 +66,23 @@ func assertObservationMaterialRetirement(t *testing.T) {
 	now := time.Now().UTC().Add(8 * 24 * time.Hour).Truncate(time.Millisecond)
 	retainer := observationstore.MaterialRetention{DB: a, Now: func() time.Time { return now }}
 	out, err := retainer.Retire(t.Context(), 32, observationstore.MaxDrainBytes)
-	if err != nil || out.Retired != 2 {
+	if err != nil || out.Retired != 4 {
 		t.Fatal("unreferenced retirement", out, err)
+	}
+	// Verification fences expired pending/held first; physical deletion is a
+	// separately bounded durable step, while a genuinely active claim is retained.
+	for rounds := 0; rounds < 4; rounds++ {
+		now = now.Add(2 * time.Second)
+		more, e := retainer.Retire(t.Context(), 32, observationstore.MaxDrainBytes)
+		if e != nil {
+			t.Fatal(e)
+		}
+		out.Bytes += more.Bytes
+		out.Retired += more.Retired
+		out.Inspected += more.Inspected
+		if more.Inspected == 0 {
+			break
+		}
 	}
 	var expectedBytes uint64
 	for i, id := range ids {
@@ -88,15 +103,26 @@ func assertObservationMaterialRetirement(t *testing.T) {
 			t.Fatal("pinned evidence retired or starves later scans", h, count)
 		}
 	}
-	if out.Bytes != expectedBytes {
-		t.Fatal("retirement byte accounting", out.Bytes, expectedBytes)
-	}
-	for _, id := range []string{pending, held, claimed} {
+	for _, id := range []string{pending, held} {
 		var h model.NodeObservationIntent
-		if err := a.First(&h, "id = ?", id).Error; err != nil || h.MaterialRetiredAt != nil {
-			t.Fatal("nonterminal evidence retired", id, h, err)
+		if err := a.First(&h, "id = ?", id).Error; err != nil || h.MaterialRetiredAt == nil || h.Status != "retired" {
+			t.Fatal("expired auxiliary material lacks explicit gap", h, err)
+		}
+		expectedBytes += h.MaterialBytes
+		var n int64
+		a.Model(&model.NodeObservationPart{}).Where("intent_id = ?", id).Count(&n)
+		if n != 0 {
+			t.Fatal("expired source still holds parts", id, n)
 		}
 	}
+	var active model.NodeObservationIntent
+	if err := a.First(&active, "id = ?", claimed).Error; err != nil || active.Status != "claimed" || active.MaterialRetiredAt != nil {
+		t.Fatal("active claimed evidence retired", active, err)
+	}
+	if out.Bytes != expectedBytes {
+		t.Fatal("total retired bytes mismatch", out.Bytes, expectedBytes)
+	}
+
 	for _, source := range sources[:2] {
 		if got := saveObservation(t, a, source); got != ids[0] && got != ids[1] {
 			t.Fatal("replay identity changed", got)

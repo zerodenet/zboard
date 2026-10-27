@@ -37,7 +37,7 @@ paths:
         retained material. No repair, active-lease reset or deletion operation is offered.
         Eligible inactive-node material has a separate inspected-candidate retry endpoint.
       parameters:
-        - {in: query, name: status, schema: {type: string, enum: [held, pending, claimed, applied], default: held}}
+        - {in: query, name: status, schema: {type: string, enum: [held, pending, claimed, applied, retired], default: held}}
         - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
         - in: query
           name: cursor
@@ -6007,7 +6007,7 @@ components:
       required: [items, status, has_more]
       properties:
         items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/ObservationIntentItem'}}
-        status: {type: string, enum: [held, pending, claimed, applied]}
+        status: {type: string, enum: [held, pending, claimed, applied, retired]}
         has_more: {type: boolean}
         next_cursor: {type: string, maxLength: 512, description: 'Present only when another page exists; pages reflect live queue metadata, not a historical snapshot'}
     ObservationIntentItem:
@@ -6017,12 +6017,16 @@ components:
       properties:
         id: {type: string, pattern: '^[0-9a-f]{64}$', description: Opaque complete-material reference; displaying it is not revalidation}
         node_id: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Historical numeric node identifier; not a link or attribution to a current asset with a reused id}
-        status: {type: string, enum: [held, pending, claimed, applied]}
+        status: {type: string, enum: [held, pending, claimed, applied, retired]}
         reason: {type: string, maxLength: 64, description: Disposition code; clients must use a safe fixed fallback for unknown codes}
         asset_relation: {type: string, enum: [unknown, same_asset, different_asset, node_missing, asset_deleted], description: Current metadata relationship only; not credential or runtime attestation}
         attempts: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
         retained_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Declared retained logical material bytes from lifecycle metadata; not a physical disk or blob integrity measurement}
-        material_retired_at: {type: string, format: date-time, description: Present only after unreferenced auxiliary parts retire atomically; original digest and size remain as the replay receipt}
+        material_cleanup_state: {type: string, enum: [retained, verifying, deleting, complete, quarantined], description: Auxiliary verification or physical cleanup progress; not financial settlement}
+        coverage_gap: {type: boolean, description: Optional observation source was omitted or expired; never a zero-load assertion}
+        material_gap_reason: {type: string, description: Separate from the original observation disposition reason}
+        replay_unavailable: {type: boolean, description: Full optional source is no longer available; original hash identity remains}
+        material_retired_at: {type: string, format: date-time, description: Optional source was fenced from projection/replay; bounded physical cleanup may continue and retained_bytes reports registered remaining material}
         material_bytes: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Original immutable material byte count encoded as decimal text}
         part_count: {type: string, pattern: '^[0-9]+$', maxLength: 20, description: Exact unsigned diagnostic count encoded as decimal text}
         enqueued_at: {type: string, format: date-time, description: 'Queue insertion time, not event/sample time'}

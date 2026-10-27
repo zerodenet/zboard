@@ -187,6 +187,12 @@ type TrafficMetaArchive struct{}
 type TrafficMetaArchiveOther struct{}
 type OrderDiscountRedemption struct{}
 type OrderDiscountRedemptionOther struct{}
+type NodeObservationMaterialBudget struct{}
+type NodeObservationMaterialBudgetOther struct{}
+type NodeObservationRetirementPart struct{}
+type NodeObservationRetirementPartOther struct{}
+type NodeObservationRetirement struct{}
+type NodeObservationRetirementFuture struct{}
 type InventedFutureModel struct{}
 `
 	if err := os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0600); err != nil {
@@ -200,6 +206,16 @@ type InventedFutureModel struct{}
 	for _, row := range rows {
 		if row.Kind == "model" {
 			owners[row.Symbol] = row.Owner
+		}
+	}
+	for _, name := range []string{"NodeObservationMaterialBudget", "NodeObservationRetirement", "NodeObservationRetirementPart"} {
+		if owners[name] != "resources" {
+			t.Fatal("observation material owner must be exact", owners)
+		}
+	}
+	for _, name := range []string{"NodeObservationMaterialBudgetOther", "NodeObservationRetirementFuture", "NodeObservationRetirementPartOther"} {
+		if owners[name] != "unassigned" {
+			t.Fatal("unreviewed future model inherited authority", owners)
 		}
 	}
 	if owners["User"] != "identity" || owners["PaymentEvent"] != "commerce" {
@@ -310,7 +326,7 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "metering.diagnostic_material_retirement" && row.Owner == "metering" && row.File == "internal/adapters/persistence/meteringstore/diagnostic_material_retention.go" {
 			diagnosticRetirement = true
 		}
-		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.observation_material_retirement" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/retention.go" {
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.observation_material_retirement" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/expired_material.go" {
 			materialRetirement = true
 		}
 		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_retry" && row.Owner == "resources" && row.File == "internal/adapters/persistence/networkstore/node_observation_retry.go" {

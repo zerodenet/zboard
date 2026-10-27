@@ -12,6 +12,9 @@ import (
 // and foreign-key ordering. Missing legacy source tables may be absent; an
 // existing source table must never be silently dropped from the destination.
 func CopyApplicationData(source, target *gorm.DB) error {
+	if err := preflightObservationRetirementSchema(source); err != nil {
+		return err
+	}
 	if err := preflightAutomaticPendingOrders(source); err != nil {
 		return err
 	}
@@ -61,6 +64,9 @@ func CopyApplicationData(source, target *gorm.DB) error {
 		if err := copyTableRows(source, target, table); err != nil {
 			return err
 		}
+	}
+	if err := initializeCopiedObservationBudget(target, sourceTables["node_observation_material_budget"]); err != nil {
+		return err
 	}
 	// A prepared target has already recorded0060 before source data arrives.
 	// Only a genuinely legacy source imports its copied old cursor, in this same

@@ -28,7 +28,7 @@ func (s ObservationIntentOperations) RetryObservationIntent(ctx context.Context,
 			return err
 		}
 		var h model.NodeObservationIntent
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&h, "id = ?", id).Error; err != nil {
+		if err := tx.First(&h, "id = ?", id).Error; err != nil {
 			return nodeAdministrationError(err)
 		}
 		// The inspected attempt can be admitted once. A response loss or concurrent
@@ -58,8 +58,18 @@ func (s ObservationIntentOperations) RetryObservationIntent(ctx context.Context,
 		if state.Deleted {
 			return network.ErrObservationIntentRetryConflict
 		}
+		// Retention now also handles held material. Follow node -> state ->
+		// header, then revalidate every retry predicate using a current read.
+		var current model.NodeObservationIntent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if current.NodeID != h.NodeID || current.AssetTag != h.AssetTag || current.Status != "held" || current.Reason != "node_inactive" || current.Attempts != attempts || current.Token != "" || current.MaterialRetiredAt != nil || !current.LeaseUntil.Equal(time.Unix(0, 0).UTC()) {
+			return network.ErrObservationIntentRetryConflict
+		}
+		h = current
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		result := tx.Model(&model.NodeObservationIntent{}).Where("id = ? AND status = ? AND reason = ? AND attempts = ? AND token = ?", id, "held", "node_inactive", attempts, "").Updates(map[string]any{"status": "pending", "reason": "administrator_retry", "available_at": now, "lease_until": time.Unix(0, 0).UTC(), "updated_at": now})
+		result := tx.Model(&model.NodeObservationIntent{}).Where("id = ? AND status = ? AND reason = ? AND attempts = ? AND token = ? AND material_retired_at IS NULL", id, "held", "node_inactive", attempts, "").Updates(map[string]any{"status": "pending", "reason": "administrator_retry", "available_at": now, "lease_until": time.Unix(0, 0).UTC(), "updated_at": now})
 		if result.Error != nil {
 			return result.Error
 		}

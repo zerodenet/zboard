@@ -289,15 +289,15 @@ func observationUnknownAndByteBudget(t *testing.T) {
 	unknown.Observation.Latest.AssetTag = ""
 	unknown.Observation.StatsEvent.AssetTag = ""
 	unknownID := saveObservation(t, a, unknown)
-	// The material exceeds the apply bound, not a billing/admission bound. Its
-	// long wire-allowed identity and full source payload remain in bounded parts.
+	// Optional material beyond2MiB is admitted as a durable compact gap.
+	// This never rejects a financial sample or truncates accepted financial proof.
 	large := observationSource(node, "large", strings.Repeat("c", 1024*1024), 2, true)
 	large.Payload = bytes.Repeat([]byte("x"), int(observationstore.MaxApplyBytes))
 	largeID := saveObservation(t, a, large)
 	good := observationSource(node, "good", "runtime", 3, true)
 	goodID := saveObservation(t, a, good)
 	drainObservations(t, b)
-	for id, reason := range map[string]string{unknownID: "unknown_source", largeID: "apply_byte_budget"} {
+	for id, reason := range map[string]string{unknownID: "unknown_source"} {
 		var h model.NodeObservationIntent
 		if err := b.First(&h, "id = ?", id).Error; err != nil || h.Status != "held" || h.Reason != reason {
 			t.Fatal("bad source blocked or vanished", h, err)
@@ -306,21 +306,22 @@ func observationUnknownAndByteBudget(t *testing.T) {
 	if observationState(t, b, node).StatsReference != goodID {
 		t.Fatal("held source blocked another source")
 	}
-	var parts []model.NodeObservationPart
-	if err := b.Where("intent_id = ?", largeID).Order("ordinal").Find(&parts).Error; err != nil {
-		t.Fatal(err)
+	var header model.NodeObservationIntent
+	var receipt model.NodeObservationRetirement
+	if e := b.First(&header, "id = ?", largeID).Error; e != nil {
+		t.Fatal(e)
 	}
-	var material bytes.Buffer
-	for _, p := range parts {
-		if len(p.Data) > observationstore.PartBytes {
-			t.Fatal("unbounded material part")
-		}
-		material.Write(p.Data)
+	if e := b.First(&receipt, "intent_id = ?", largeID).Error; e != nil {
+		t.Fatal(e)
 	}
-	decoded, err := network.ReadObservationSource(&material, uint64(material.Len()))
-	if err != nil || decoded.Observation.Latest.CoreInstanceID != large.Observation.Latest.CoreInstanceID || !bytes.Equal(decoded.Payload, large.Payload) {
-		t.Fatal("held source truncated", err)
+	var retained int64
+	if e := b.Model(&model.NodeObservationPart{}).Where("intent_id = ?", largeID).Count(&retained).Error; e != nil || retained != 0 || header.Status != "retired" || header.MaterialRetiredAt == nil || receipt.State != "complete" || receipt.Cause != "source_size_limit" || receipt.ContentVerified {
+		t.Fatal("oversize auxiliary source lost its explicit gap", header, receipt, retained, e)
 	}
+	if got := saveObservation(t, a, large); got != largeID {
+		t.Fatal("oversize replay changed source identity", got)
+	}
+
 	pending, err := (observationstore.Worker{DB: b}).HasPending(context.Background())
 	if err != nil || pending {
 		t.Fatal("held evidence remained runnable", err)

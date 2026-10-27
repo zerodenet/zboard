@@ -352,20 +352,20 @@
       ],
       "atomicity": "single_database_transaction",
       "compensation": "Roll back original financial facts and immutable observation header/parts together when durable handoff fails; leave original spool checkpoint replayable. Later auxiliary node projection failures never roll back settled accounting.",
-      "outbox": "NodeObservationIntent and immutable parts carry exact receiver-side source; no nodes or observation-state lock is acquired by the authority producer."
+      "outbox": "NodeObservationIntent and optional parts or an explicit capacity/size gap receipt carry immutable receiver-side source identity. EnqueueBatch prepares all headers before shared retained-byte budget; no node or observation-state lock is acquired by the authority producer."
     },
     {
       "id": "resources.observation_material_retirement",
       "owner": "resources",
-      "source": "internal/adapters/persistence/observationstore/retention.go",
+      "source": "internal/adapters/persistence/observationstore/expired_material.go",
       "symbol": "MaterialRetention.Retire",
       "participants": [
         "resources",
         "observability"
       ],
       "atomicity": "single_database_transaction_per_source",
-      "compensation": "Node then exact asset state then immutable header locks; recheck applied ownership, minimum age, all pinned references and canonical parts. Delete only unreferenced auxiliary parts and commit the explicit retired marker atomically. Rollback leaves all original material replayable. Review scheduling is auxiliary; no billing, authorization, spool checkpoint or source identity is removed.",
-      "outbox": "No external side effect or financial write. The durable original header remains the exact replay receipt; worker and in-process executor use the same repository."
+      "compensation": "Node then exact asset state then immutable header/retirement then budget locks. Keep active claims, every current/floor/stat pin, legacy floor and corrupt material. Applied unreferenced bodies retire in one transaction; expired unapplied sources verify full SHA256 in bounded resumable steps, fence to explicit retired/gap, then recheck per-part hashes before bounded part+checksum deletion/budget decrement. Each failed transaction rolls back its deletion/checkpoint/accounting. Review time never replaces CreatedAt TTL. No billing, authorization, spool checkpoint or financial source identity is removed.",
+      "outbox": "No external side effect or financial write. Durable original header plus0067 retirement/checkpoint/gap receipt recognizes exact late duplicates without recreating optional material; full expired observation replay is explicitly unavailable. Core and scheduled retention use the same repository."
     },
     {
       "id": "resources.node_observation_projection",

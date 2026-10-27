@@ -1,6 +1,6 @@
 import { api } from './client'
 
-export type ObservationIntentStatus = 'held' | 'pending' | 'claimed' | 'applied'
+export type ObservationIntentStatus = 'held' | 'pending' | 'claimed' | 'applied' | 'retired'
 export interface ObservationIntentItem {
   id: string
   node_id: string
@@ -10,6 +10,10 @@ export interface ObservationIntentItem {
   attempts: string
   retained_bytes?: string
   material_retired_at?: string
+  coverage_gap?: boolean
+  replay_unavailable?: boolean
+  material_gap_reason?: string
+  material_cleanup_state?: string
   material_bytes: string
   part_count: string
   enqueued_at: string

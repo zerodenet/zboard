@@ -110,8 +110,8 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 			archiveCursor = out.NextAfterID
 		}
 	}
-	// An unknown asset source is deliberately retained held, even though it has
-	// no billing work and could make a headline material-size number smaller.
+	// Unknown auxiliary source retains its original identity/reason, but its
+	// unreferenced body exits the explicit seven-day replay window with a gap.
 	held := stats
 	held.ID, held.Type, held.AssetTag = "finite-retention-unknown-asset", "engine.warning", ""
 	held.Sequence = stats.Sequence + windows*samples + 1
@@ -136,12 +136,12 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 	}
 	retention := observationstore.MaterialRetention{DB: h.db, Now: func() time.Time { return now }}
 	retired := drainProofMaterialRetention(t, retention)
-	if retired != windows*samples-1 {
-		t.Fatal("only unreferenced applied flow parts may retire", retired)
+	if retired != windows*samples {
+		t.Fatal("unreferenced applied parts and expired unknown auxiliary source may retire", retired)
 	}
 	capture("after_seven_day_retention")
 	last := checkpoints[len(checkpoints)-1]
-	if last.Rows["node_observation_intents"] != windows*samples+2 || last.Rows["node_observation_parts"] != 3 || last.ObservationStatuses["held"] != 1 || last.RetiredHeaders != windows*samples-1 {
+	if last.Rows["node_observation_intents"] != windows*samples+2 || last.Rows["node_observation_parts"] != 2 || last.ObservationStatuses["held"] != 0 || last.ObservationStatuses["retired"] != 1 || last.RetiredHeaders != windows*samples {
 		t.Fatal("necessary pins/held/header growth", last)
 	}
 	assertProofRetainedPins(t, h.db, state)
@@ -204,14 +204,14 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 		}
 	}
 	final := checkpoints[len(checkpoints)-1]
-	if final.Rows["traffic_records"] != windows || final.Rows["metering_report_receipts"] != windows || final.Rows["traffic_record_meta_archives"] != windows || final.Rows["metering_usage_projection_pending"] != 0 || final.Rows["node_observation_intents"] != windows*samples+3 || final.Rows["node_observation_parts"] != 3 {
+	if final.Rows["traffic_records"] != windows || final.Rows["metering_report_receipts"] != windows || final.Rows["traffic_record_meta_archives"] != windows || final.Rows["metering_usage_projection_pending"] != 0 || final.Rows["node_observation_intents"] != windows*samples+3 || final.Rows["node_observation_parts"] != 2 {
 		t.Fatal("final independent authority growth", final)
 	}
 	encoded, err := json.Marshal(struct {
 		Driver      string                     `json:"driver"`
 		Scope       string                     `json:"scope"`
 		Checkpoints []proofRetentionCheckpoint `json:"checkpoints"`
-	}{h.db.Dialector.Name(), "Finite synthetic windows; actual asset admission, projection, archive and retention. Necessary financial receipts and observation headers grow per accepted identity. Two current references and unknown held material remain; no capacity/constant-total-size/physical-shrink claim. Body bytes are named variable material only; MySQL physical table values are estimates.", checkpoints})
+	}{h.db.Dialector.Name(), "Finite synthetic windows; actual asset admission, projection, archive and retention. Necessary financial receipts and observation headers grow per accepted identity. Two current references remain; unknown auxiliary material has an explicit expired/gap receipt; no capacity/constant-total-size/physical-shrink claim. Body bytes are named variable material only; MySQL physical table values are estimates.", checkpoints})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,12 +240,21 @@ func drainProofObservations(t *testing.T, worker observationstore.Worker, want i
 func drainProofMaterialRetention(t *testing.T, retention observationstore.MaterialRetention) int {
 	t.Helper()
 	retired := 0
+	originalNow := retention.Now
+	elapsed := time.Duration(0)
+	retention.Now = func() time.Time {
+		if originalNow != nil {
+			return originalNow().Add(elapsed)
+		}
+		return time.Now().UTC().Add(elapsed)
+	}
 	for calls := 0; calls < 40; calls++ {
 		out, err := retention.Retire(t.Context(), 32, observationstore.MaxDrainBytes)
 		if err != nil {
 			t.Fatal("bounded observation retention", out, err)
 		}
 		retired += out.Retired
+		elapsed += 2 * time.Second
 		if out.Inspected == 0 {
 			return retired
 		}
@@ -289,12 +298,12 @@ func assertProofRetainedPins(t *testing.T, db *gorm.DB, state model.NodeObservat
 		}
 	}
 	var held []model.NodeObservationIntent
-	if err := db.Where("status = ?", "held").Find(&held).Error; err != nil || len(held) != 1 {
-		t.Fatal("unknown source not held", len(held), err)
+	if err := db.Where("status = ? AND reason = ?", "retired", "unknown_source").Find(&held).Error; err != nil || len(held) != 1 {
+		t.Fatal("unknown source lost compact retired gap", len(held), err)
 	}
 	var parts int64
-	if err := db.Model(&model.NodeObservationPart{}).Where("intent_id = ?", held[0].ID).Count(&parts).Error; err != nil || parts != int64(held[0].PartCount) || held[0].MaterialRetiredAt != nil || held[0].Reason != "unknown_source" {
-		t.Fatal("held unknown evidence retired", parts, err)
+	if err := db.Model(&model.NodeObservationPart{}).Where("intent_id = ?", held[0].ID).Count(&parts).Error; err != nil || parts != 0 || held[0].MaterialRetiredAt == nil || held[0].Reason != "unknown_source" {
+		t.Fatal("expired unknown source lost identity or rebuilt body", parts, err)
 	}
 }
 
@@ -307,6 +316,9 @@ func assertProofHeaderIdentity(t *testing.T, db *gorm.DB, originals []model.Node
 	for i := range after {
 		original := originals[i]
 		original.MaterialReviewAt, original.MaterialRetiredAt = after[i].MaterialReviewAt, after[i].MaterialRetiredAt
+		if original.Status == "held" && original.Reason == "unknown_source" && after[i].Status == "retired" {
+			original.Status = "retired"
+		}
 		if !reflect.DeepEqual(original, after[i]) {
 			t.Fatal("retention altered source/disposition identity", original.ID)
 		}

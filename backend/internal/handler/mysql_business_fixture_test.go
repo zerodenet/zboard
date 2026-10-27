@@ -53,7 +53,10 @@ func openMySQLBusinessDatabase(cfg *mysqlconfig.Config) (out mysqlBusinessDataba
 		return out, err
 	}
 	name := "zboard_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err = admin.Exec("CREATE DATABASE " + businessQuote(name) + " CHARACTER SET utf8mb4"); err != nil {
+	finishCreate := beginMySQLFixtureTiming("business", "create_schema")
+	_, err = admin.Exec("CREATE DATABASE " + businessQuote(name) + " CHARACTER SET utf8mb4")
+	finishCreate(err)
+	if err != nil {
 		_ = admin.Close()
 		return out, err
 	}
@@ -61,14 +64,20 @@ func openMySQLBusinessDatabase(cfg *mysqlconfig.Config) (out mysqlBusinessDataba
 	cleanup := func() error {
 		var err error
 		if pool != nil {
+			finish := beginMySQLFixtureTiming("business", "close_pool")
 			err = pool.Close()
+			finish(err)
 		}
+		finishDrop := beginMySQLFixtureTiming("business", "drop_schema")
 		_, dropErr := admin.Exec("DROP DATABASE " + businessQuote(name))
+		finishDrop(dropErr)
 		return errors.Join(err, dropErr, admin.Close())
 	}
 	targetCfg := cfg.Clone()
 	targetCfg.DBName = name
+	finishOpen := beginMySQLFixtureTiming("business", "open_pool")
 	db, err := datastore.Open(targetCfg.FormatDSN())
+	finishOpen(err)
 	if err != nil {
 		return out, errors.Join(err, cleanup())
 	}
@@ -122,15 +131,22 @@ func buildMySQLBusinessTemplate(cfg *mysqlconfig.Config) (snapshot *mysqlBusines
 		}
 	}()
 	// Exactly the existing handler fixture's seven schema-only preparation steps.
-	for _, prepare := range []func(*gorm.DB) error{datastore.RunMigrations, datastore.ReconcileCommerceSchema, datastore.ReconcileSubscriptionAccessSchema, datastore.ReconcileZeroEventSchema, datastore.ReconcileTrafficReadSchema, datastore.ReconcileOperationsSchema, datastore.ReconcileFairUseTelemetrySchema} {
-		if err := prepare(source.DB); err != nil {
+	for i, prepare := range []func(*gorm.DB) error{datastore.RunMigrations, datastore.ReconcileCommerceSchema, datastore.ReconcileSubscriptionAccessSchema, datastore.ReconcileZeroEventSchema, datastore.ReconcileTrafficReadSchema, datastore.ReconcileOperationsSchema, datastore.ReconcileFairUseTelemetrySchema} {
+		finish := beginMySQLFixtureTiming("business_template", mysqlFixturePreparationPhases[i])
+		err := prepare(source.DB)
+		finish(err)
+		if err != nil {
 			return nil, err
 		}
 	}
-	return captureMySQLBusinessSnapshot(source.DB)
+	finishCapture := beginMySQLFixtureTiming("business_template", "capture")
+	snapshot, err = captureMySQLBusinessSnapshot(source.DB)
+	finishCapture(err)
+	return snapshot, err
 }
 func newMySQLBusinessHandlers(t *testing.T) (*handlers, string) {
 	t.Helper()
+	reportMySQLFixtureTimingOnCleanup(t)
 	cfg := mysqlBusinessConfig(t)
 	snapshot, err := mysqlBusinessTemplate(cfg)
 	if err != nil {
@@ -145,10 +161,15 @@ func newMySQLBusinessHandlers(t *testing.T) (*handlers, string) {
 			t.Error("clean isolated business schema", err)
 		}
 	})
-	if err := snapshot.install(target.DB); err != nil {
+	finishInstall := beginMySQLFixtureTiming("business", "install_total")
+	installErr := snapshot.install(target.DB)
+	finishInstall(installErr)
+	if err := installErr; err != nil {
 		t.Fatal("install business schema (not migrations)", err)
 	}
+	finishServices := beginMySQLFixtureTiming("business", "services")
 	h, err := newTestHandlers(target.DB, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	finishServices(err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,11 +531,15 @@ func (s *mysqlBusinessSnapshot) install(db *gorm.DB) error {
 		return errors.New("business template requires a newly empty schema")
 	}
 	for _, table := range s.Tables {
-		if err := db.Exec(table.DDL).Error; err != nil {
+		finish := beginMySQLFixtureTiming("business", "install_create_table")
+		err := db.Exec(table.DDL).Error
+		finish(err)
+		if err != nil {
 			return fmt.Errorf("create business fixture table %s: %w", table.Name, err)
 		}
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
+	finishSeeds := beginMySQLFixtureTiming("business", "install_seed_tx")
+	seedErr := db.Transaction(func(tx *gorm.DB) error {
 		for _, table := range s.Tables {
 			if len(table.Rows) == 0 {
 				continue
@@ -534,11 +559,14 @@ func (s *mysqlBusinessSnapshot) install(db *gorm.DB) error {
 		}
 		return nil
 	})
+	finishSeeds(seedErr)
+	return seedErr
 }
 
 // Uncached helpers below are used only by the equivalence/cleanup contracts.
 func businessDatabaseForTest(t *testing.T, cfg *mysqlconfig.Config) mysqlBusinessDatabase {
 	t.Helper()
+	reportMySQLFixtureTimingOnCleanup(t)
 	db, err := openMySQLBusinessDatabase(cfg)
 	if err != nil {
 		t.Fatal(err)

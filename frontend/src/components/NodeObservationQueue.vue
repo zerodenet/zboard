@@ -3,6 +3,7 @@
     <div class="stack">
       <p>这是辅助观察投影记录，不代表当前节点异常或计量失败；来源状态不用于判断在线、采样新鲜度或配置确认。</p>
       <p>待处理记录将自动领取或重试；已保留记录等待核对，不会自动重试。此处展示入队元数据，未重新验证保留材料。</p>
+      <p>可选观察材料默认保留7天，单条最多2MiB，新保留材料总预算64MiB；超过期限或容量会明确记录覆盖缺口。当前引用、活跃领取和异常材料保留待核对，计量事实与配额不受此材料窗口影响。</p>
       <div class="queue-controls">
         <label>处置状态 <UiSelect :model-value="status" :options="statusOptions" :disabled="retryBusy" aria-label="观察队列状态" @update:model-value="changeStatus" /></label>
         <UiButton variant="secondary" :loading="loading" :disabled="retryBusy" @click="read(status)">刷新当前状态</UiButton>
@@ -27,7 +28,7 @@
               <td><code>{{ item.id }}</code><div>节点编号 {{ item.node_id }} · {{ statusLabel(item.status) }}</div></td>
               <td>{{ reasonLabel(item.reason, item.status) }}<div v-if="canRetry(item)"><UiButton variant="secondary" :disabled="retryBusy || submitted.has(candidateKey(item))" @click="selectRetry(item)">核对重试</UiButton></div></td>
               <td>{{ assetLabel(item.asset_relation) }}</td>
-              <td>原始 {{ item.material_bytes }} 字节 / {{ item.part_count }} 段<div>登记保留 {{ item.retained_bytes ?? (item.material_retired_at ? '未知' : item.material_bytes) }} 字节</div><div v-if="item.material_retired_at">原材料已到期回收，回执身份保留</div><div>领取尝试 {{ item.attempts }}</div></td>
+              <td>原始 {{ item.material_bytes }} 字节 / {{ item.part_count }} 段<div>登记保留 {{ item.retained_bytes ?? (item.material_retired_at ? '未知' : item.material_bytes) }} 字节</div><div v-if="item.coverage_gap">观察覆盖有缺口：{{ gapLabel(item.material_gap_reason) }}；不能据此判断当前负载为零。</div><div v-if="item.replay_unavailable">可选原材料已退出重放窗口，回执身份保留；剩余清理量以上述登记字节为准。</div><div v-else-if="item.material_retired_at">原材料已到期回收，回执身份保留</div><div v-if="item.material_cleanup_state === 'quarantined'">材料校验或回收状态异常，剩余材料保留待核对。</div><div>领取尝试 {{ item.attempts }}</div></td>
               <td><div>入队 <TimeBadge :value="item.enqueued_at" /></div><div>调度可用 <TimeBadge :value="item.available_at" /></div><div>处置更新 <TimeBadge :value="item.disposition_updated_at" /></div><div v-if="item.status === 'claimed' && item.lease_until">租约截至 <TimeBadge :value="item.lease_until" /></div></td>
             </tr></tbody>
           </table>
@@ -64,7 +65,7 @@ const error = ref('')
 let request = 0
 const statusOptions = [
   { value: 'held', label: '已保留待核对' }, { value: 'pending', label: '待处理 / 自动重试' },
-  { value: 'claimed', label: '已领取' }, { value: 'applied', label: '已处置' },
+  { value: 'claimed', label: '已领取' }, { value: 'applied', label: '已处置' }, { value: 'retired', label: '已退出观察重放窗口' },
 ]
 function statusLabel(value: string) { return statusOptions.find(item => item.value === value)?.label || '未知状态' }
 const assetLabels: Record<string, string> = { same_asset: '与当前资产标签相同（非来源验证）', different_asset: '与当前资产不同', node_missing: '当前节点已不存在', asset_deleted: '原资产已标记删除', unknown: '资产关系未知' }
@@ -79,11 +80,14 @@ const reasons: Record<string, string> = {
   unknown_source: '原来源位置或资产材料不完整，保持未知。', unknown_stats_source: '统计事件来源不完整，保持未知。', unattributed_legacy_floor: '升级导入的无归属历史位置，仅作为边界保留。', unattributed_floor: '材料未越过无归属历史边界，保留待核对。',
   stats_position_conflict: '相同统计位置存在不同数值，保留冲突证据。', invalid_material: '保留材料未通过校验，不自动替换。', invalid_reference_material: '引用材料未通过校验，不自动替换。', invalid_stats_payload: '原统计材料不完整，保留待核对。', apply_byte_budget: '材料超过本次应用算法的字节上限，全部保留。',
 }
+const gapLabels: Record<string, string> = { retention_expired: '超过7天保留期', capacity_exceeded: '辅助材料保留容量不足', source_size_limit: '辅助来源超过单条保留上限' }
+function gapLabel(value?: string) { return value && Object.prototype.hasOwnProperty.call(gapLabels, value) ? gapLabels[value] : '来源材料不可用，需核对' }
 function reasonLabel(reason: string, state: string) {
   if (Object.prototype.hasOwnProperty.call(reasons, reason)) return reasons[reason]
   if (reason) return '未识别的处置原因，保留原记录供核对。'
   if (state === 'pending') return '等待自动领取。'
   if (state === 'claimed') return '等待拥有有效租约的执行器处置。'
+  if (state === 'retired') return '来源不再参与运行观察投影；此状态不表示已应用，不影响已入账计量。'
   if (state === 'applied') return '投影流程已处置，不表示重新验证来源或当前新鲜度。'
   return '未记录具体原因，保留待核对。'
 }
@@ -106,7 +110,7 @@ async function read(selectedStatus: ObservationIntentStatus, cursor?: string) {
 }
 function candidateKey(item: ObservationIntentItem) { return `${item.id}:${item.attempts}` }
 function canRetry(item: ObservationIntentItem) {
-  return !!actor.value && !!app.user?.isAdmin && item.status === 'held' && item.reason === 'node_inactive' && item.asset_relation === 'same_asset' && typeof item.attempts === 'string' && /^[1-9][0-9]{0,19}$/.test(item.attempts) && BigInt(item.attempts) < 18446744073709551615n && page.value?.status === status.value
+  return !!actor.value && !!app.user?.isAdmin && !item.material_retired_at && !item.replay_unavailable && item.status === 'held' && item.reason === 'node_inactive' && item.asset_relation === 'same_asset' && typeof item.attempts === 'string' && /^[1-9][0-9]{0,19}$/.test(item.attempts) && BigInt(item.attempts) < 18446744073709551615n && page.value?.status === status.value
 }
 function selectRetry(item: ObservationIntentItem) {
   if (!canRetry(item) || retryBusy.value || submitted.value.has(candidateKey(item))) return

@@ -22,7 +22,7 @@ type MaterialRetention struct {
 }
 type MaterialRetentionResult = network.ObservationMaterialRetentionResult
 
-func (s MaterialRetention) Retire(ctx context.Context, limit int, budget int64) (out MaterialRetentionResult, err error) {
+func (s MaterialRetention) retireApplied(ctx context.Context, limit int, budget int64) (out MaterialRetentionResult, err error) {
 	if s.DB == nil || limit < 1 || limit > MaterialRetentionLimit || budget < MaxApplyBytes || budget > MaxDrainBytes {
 		return out, errors.New("invalid observation material retention budget")
 	}
@@ -140,10 +140,28 @@ func (s MaterialRetention) Retire(ctx context.Context, limit int, budget int64) 
 			if r.RowsAffected != 1 {
 				return ErrOwnership
 			}
+			if e := releaseAppliedMaterialBudget(tx, h, now); e != nil {
+				return e
+			}
 			retired, size = true, h.MaterialBytes
 			return nil
 		})
+
 		if e != nil {
+			if errors.Is(e, ErrMaterial) && found && candidateID != "" {
+				// The source/part/budget transaction has rolled back. Defer only this
+				// malformed checkpoint by bounded metadata UPDATEs; healthy neighbors
+				// continue without loading either oversized value.
+				if q := s.DB.WithContext(ctx).Model(&model.NodeObservationIntent{}).Where("id = ? AND status = ? AND material_retired_at IS NULL", candidateID, "applied").UpdateColumns(map[string]any{"material_review_at": now.Add(MaterialReviewDelay)}); q.Error != nil {
+					return out, errors.Join(err, e, q.Error)
+				}
+				if q := s.DB.WithContext(ctx).Model(&model.NodeObservationRetirement{}).Where("intent_id = ?", candidateID).UpdateColumns(map[string]any{"state": "quarantined", "review_at": now.Add(MaterialReviewDelay), "updated_at": now}); q.Error != nil {
+					return out, errors.Join(err, e, q.Error)
+				}
+				out.Inspected++
+				err = errors.Join(err, e)
+				continue
+			}
 			return out, errors.Join(err, e)
 		}
 		if !found || exhausted {
@@ -170,7 +188,7 @@ func deferMaterialReview(tx *gorm.DB, id string, now, next time.Time) error {
 	return tx.Model(&model.NodeObservationIntent{}).Where("id = ? AND status = ? AND material_retired_at IS NULL AND material_review_at <= ?", id, "applied", now).UpdateColumns(map[string]any{"material_review_at": next}).Error
 }
 
-func (s MaterialRetention) HasPending(ctx context.Context) (bool, error) {
+func (s MaterialRetention) hasAppliedPending(ctx context.Context) (bool, error) {
 	if s.DB == nil {
 		return false, errors.New("observation material retention unavailable")
 	}

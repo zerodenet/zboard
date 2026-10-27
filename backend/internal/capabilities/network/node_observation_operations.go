@@ -32,7 +32,7 @@ type observationIntentCursor struct {
 
 func ObservationIntentStatus(status string) bool {
 	switch status {
-	case "held", "pending", "claimed", "applied":
+	case "held", "pending", "claimed", "applied", "retired":
 		return true
 	}
 	return false
@@ -96,6 +96,10 @@ func ObservationIntentNextCursor(status string, at time.Time, id string) (string
 // These are queue metadata times, not event/sample time or a freshness claim.
 // A header/source reference is not verification of retained material integrity.
 type ObservationIntentItem struct {
+	MaterialCleanupState string     `json:"material_cleanup_state,omitempty"`
+	CoverageGap          bool       `json:"coverage_gap"`
+	MaterialGapReason    string     `json:"material_gap_reason,omitempty"`
+	ReplayUnavailable    bool       `json:"replay_unavailable"`
 	RetainedBytes        string     `json:"retained_bytes"`
 	MaterialRetiredAt    *time.Time `json:"material_retired_at,omitempty"`
 	ID                   string     `json:"id"`
