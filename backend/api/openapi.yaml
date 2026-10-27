@@ -3464,7 +3464,7 @@ paths:
       tags:
         - plans
       summary: Update plan fields and toggle active state
-      description: Requires a current active administrator and expected_revision. Field changes, revision and audit commit atomically. Publishing or changing the group of a published product validates enabled explicit protocol membership; published products retain a purchasable SKU. Changing node_group_id also updates all eligible unended subscriptions independently of sync_traffic_quota; access revocations and publication intents share that transaction. Shared confirmed endpoints remain available and new endpoints require delivery verification. Updates affecting more than 1000 subscriptions are refused atomically.
+      description: Requires a current active administrator and expected_revision. Field changes, revision and audit commit atomically. Publishing or changing the group of a published product validates enabled explicit protocol membership; published products retain a purchasable SKU. Changing node_group_id also updates all eligible unended subscriptions independently of sync_traffic_quota; access revocations and publication intents share that transaction. Shared confirmed endpoints remain available and new endpoints require delivery verification. Eligible subscriptions are prelocked and processed in 128-row primary-key pages within the same transaction; total lock/work duration remains proportional to the affected cohort.
       parameters:
         - name: id
           in: path
@@ -9569,7 +9569,7 @@ components:
           type: boolean
         node_group_id: { type: integer, format: int64, description: "Replaces current plan access scope for existing eligible subscriptions as well as future purchases. This automatic access update is independent of optional quota synchronization. Shared confirmed endpoints are retained; new endpoints await verified delivery. More than 1000 affected subscriptions reject the whole change." }
         traffic_bytes: { type: integer, format: int64, minimum: 1 }
-        sync_traffic_quota: { type: boolean, default: false, description: "Explicitly synchronize base quota to at most 1000 eligible unended subscriptions. Requires traffic_bytes. Preserves used traffic, end date, reset date, purchased prices and orders. Mixed add-on quota or unknown baselines reject the whole update for review." }
+        sync_traffic_quota: { type: boolean, default: false, description: "Explicitly synchronize base quota to eligible unended subscriptions in atomic 128-row pages. Requires traffic_bytes. Preserves used traffic, end date, reset date, purchased prices and orders. Proven mixed perpetual histories resize only the original base lot and retain purchased add-ons and their consumption; unknown or inconsistent evidence rejects the whole update. Timed mixed histories remain unsupported." }
         speed_limit_mbps: { type: integer, minimum: 0 }
         max_active_subscriptions: { type: integer, minimum: 0 }
         is_renewable: { type: boolean }

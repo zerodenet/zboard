@@ -308,30 +308,11 @@ func TestPlanQuotaSyncSkipsTerminalAndElapsedButRestoresLegacyCycleMarker(t *tes
 	}
 }
 
-func TestPlanQuotaSyncBoundRejectsWholeTransaction(t *testing.T) {
-	f := newOrderFixture(t)
-	now := time.Now().UTC()
-	rows := make([]model.Subscription, 1001)
-	for i := range rows {
-		rows[i] = model.Subscription{UserID: 1, PlanID: f.planRecord.ID, NodeGroupID: f.group.ID, Status: "active", StartAt: now, EndAt: now.AddDate(0, 1, 0), FlowTotal: 100, FlowUsed: 60, ResetQuotaBytes: 100}
-	}
-	if err := f.h.db.CreateInBatches(rows, 100).Error; err != nil {
-		t.Fatal(err)
-	}
-	quota := int64(200)
-	_, err := f.h.services.PlanUpdate.Update(t.Context(), 1, f.planRecord.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &f.planRecord.Revision, SyncTrafficQuota: true})
-	var invalid *commerce.ValidationError
-	if !errors.As(err, &invalid) || invalid.Fields["sync_traffic_quota"] == "" {
-		t.Fatalf("unbounded sync accepted %v", err)
-	}
-	var changed int64
-	if err := f.h.db.Model(&model.Subscription{}).Where("plan_id = ? AND flow_total <> ?", f.planRecord.ID, 100).Count(&changed).Error; err != nil || changed != 0 {
-		t.Fatal("bounded rejection partially synced", err)
-	}
-	var after model.Plan
-	if err := f.h.db.First(&after, f.planRecord.ID).Error; err != nil || after.Revision != f.planRecord.Revision || after.TrafficBytes != f.planRecord.TrafficBytes {
-		t.Fatal("bounded rejection modified plan", err)
-	}
+func TestPlanQuotaSyncSupportsMoreThanOneThousand(t *testing.T) {
+	assertPlanSyncPagedSuccess(t, newOrderFixture(t), false)
+}
+func TestMySQLPlanQuotaSyncSupportsMoreThanOneThousand(t *testing.T) {
+	assertPlanSyncPagedSuccess(t, newMySQLBusinessOrderFixture(t), false)
 }
 
 func TestPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync(t *testing.T) {

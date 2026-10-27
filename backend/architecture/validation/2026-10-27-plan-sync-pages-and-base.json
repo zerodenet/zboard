@@ -1,0 +1,76 @@
+{
+  "stage": "P2/P3 plan synchronization scale and approved base-only perpetual quota",
+  "status": "integrated; complete pure commerce tests passed; database/runtime and exact-head CI unverified",
+  "base_commit": "8fbcb1ddbe4e0f825419a7938a3e632b11674dcc",
+  "predecessor": "stage1 paging patch integrated by parent; normalize seven stage1 Go files with gofmt before applying stage2",
+  "decision": "Only original base lot quota changes; paid add-ons retain quota, consumed and actual paid values.",
+  "paging": {
+    "page_rows": 128,
+    "prelock": "Plan authority, then full affected group/quota union in ascending PK ID-only pages, then endpoint/credential/publication effects",
+    "page_commit": false,
+    "memory_bound_claim": "Bounded result pages; database row locks and transaction duration remain proportional to affected cohort",
+    "prepared_population": 1200
+  },
+  "mixed_evidence": {
+    "storage": "existing QuotaEvent.Detail v1 non-payment evidence",
+    "ordering": "actual QuotaEvent.ID plus real epoch/revision/state; timestamp only weak precision check",
+    "source_identity": "verified immutable purchase/value snapshot root, never latest order or RQB guess",
+    "per_source_paid_caps_unchanged": true,
+    "order_facts_rewritten": false,
+    "wallet_movement_during_sync": false,
+    "nowait": "MySQL current SHARE NOWAIT order/event reads; collision rejects and rolls back, no inverse wait",
+    "sqlite": "existing owned write transaction, no pretend FOR SHARE support",
+    "body_page_rows": 200,
+    "row_bytes_limit": 1048576,
+    "history_bytes_limit": 33554432,
+    "native_json_stored_width_checked_before_commit": true
+  },
+  "schema_change": false,
+  "migration_0067_added": false,
+  "new_runtime_dependency": false,
+  "checks": [
+    {
+      "kind": "gofmt parsing/formatting private files",
+      "result": "pass; not compilation or behavior proof"
+    },
+    {
+      "kind": "stage1 git apply --check against root checkout",
+      "result": "pass; read-only"
+    },
+    {
+      "kind": "complete pure commerce package",
+      "result": "passed;231 passing test events, zero skips/failures,4.591s;GOPROXY=off;source unchanged",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-p",
+        "1",
+        "./internal/capabilities/commerce",
+        "-count=1",
+        "-timeout",
+        "15m"
+      ]
+    },
+    {
+      "kind": "SQLite behavior tests",
+      "result": "not run"
+    },
+    {
+      "kind": "MySQL real-database tests",
+      "result": "not run"
+    },
+    {
+      "kind": "vet/full backend/CI",
+      "result": "pending parent integration"
+    }
+  ],
+  "limitations": [
+    "Pure business projection validated; store/real database runtime still unverified because three dependency downloads returned HTTP403.",
+    "Old overrun histories with inconsistent service/lot counters fail closed for new sync.",
+    "Timed mixed-lot quota resizing remains rejected, not completed.",
+    "No performance, lock-memory or constant-duration claim.",
+    "Rollback must preserve strict quota event provenance and a compatible mixed-value reader.",
+    "No production, external payout or deployment action."
+  ]
+}

@@ -2,7 +2,6 @@ package commercestore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
@@ -44,34 +43,15 @@ func readSubscriptionValue(tx *gorm.DB, sub model.Subscription, at time.Time) (c
 	if sub.NextResetAt != nil && !sub.NextResetAt.After(at) && sub.EndAt.After(at) {
 		return commerce.ValueProjection{}, "", commerce.ErrSubscriptionValueCyclePending
 	}
-	orders, err := readOrderEvidence(tx.Model(&model.Order{}).Where("subscription_id = ? AND status = ? AND (subscription_ended_at IS NULL OR subscription_ended_at > ?)", sub.ID, "paid", sub.StartAt), "id", "paid_amount", "refund_amount", "currency", "entitlement_value_snapshot", "subscription_ended_at")
+	records, sources, currency, err := subscriptionValueRecords(subscriptionValueOrderQuery(tx, sub), sub)
 	if err != nil {
 		return commerce.ValueProjection{}, "", err
 	}
-	if len(orders) == 0 {
-		return commerce.ValueProjection{}, "", commerce.ErrSubscriptionValueUnavailable
+	events, _, err := readPlanBaseQuotaSyncEvents(tx, sub, records, false)
+	if err != nil {
+		return commerce.ValueProjection{}, currency, err
 	}
-	records := make([]commerce.EntitlementValueSnapshot, 0, len(orders))
-	currency := ""
-	sources := map[uint]model.Order{}
-	for _, order := range orders {
-		if err := tx.Statement.Context.Err(); err != nil {
-			return commerce.ValueProjection{}, "", err
-		}
-		var fact commerce.EntitlementValueSnapshot
-		if json.Unmarshal([]byte(order.EntitlementValueSnapshot), &fact) != nil || fact.OrderID != order.ID || fact.SubscriptionID != sub.ID || fact.ActualPaidMinor != order.PaidAmount || fact.Currency != order.Currency || order.RefundAmount != 0 {
-			return commerce.ValueProjection{}, "", commerce.ErrSubscriptionValueUnavailable
-		}
-		if currency == "" {
-			currency = order.Currency
-		}
-		if currency != order.Currency {
-			return commerce.ValueProjection{}, "", commerce.ErrSubscriptionValueUnavailable
-		}
-		records = append(records, fact)
-		sources[order.ID] = order
-	}
-	projection, err := commerce.ProjectEntitlementValueContext(tx.Statement.Context, records, entitlementValueState(sub), currency, at)
+	projection, err := commerce.ProjectEntitlementValueWithBaseSyncContext(tx.Statement.Context, records, events, entitlementValueState(sub), currency, at, sub.EntitlementEpoch)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return commerce.ValueProjection{}, currency, err

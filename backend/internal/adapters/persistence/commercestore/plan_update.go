@@ -55,10 +55,14 @@ func (s PlanUpdate) Update(ctx context.Context, actor, id uint, request commerce
 		if result.RowsAffected != 1 {
 			return &commerce.PlanRevisionError{Current: current.Revision}
 		}
+		syncScope, err := preparePlanSubscriptionSync(tx, current, candidate, request.SyncTrafficQuota)
+		if err != nil {
+			return err
+		}
 		groupSynced := 0
 		if candidate.NodeGroupID != current.NodeGroupID {
 			var err error
-			groupSynced, err = synchronizePlanGroup(tx, candidate, actor)
+			groupSynced, err = synchronizePlanGroup(tx, candidate, actor, syncScope)
 			if err != nil {
 				return err
 			}
@@ -66,7 +70,7 @@ func (s PlanUpdate) Update(ctx context.Context, actor, id uint, request commerce
 		synced := 0
 		if request.SyncTrafficQuota {
 			var err error
-			synced, err = synchronizePlanTrafficQuota(tx, candidate, actor)
+			synced, err = synchronizePlanTrafficQuota(tx, candidate, actor, syncScope)
 			if err != nil {
 				return err
 			}

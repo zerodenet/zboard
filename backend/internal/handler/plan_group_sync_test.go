@@ -28,43 +28,11 @@ type planGroupFixture struct {
 	old, shared, added model.ProtocolEndpoint
 }
 
-func TestPlanGroupSyncBoundRejectsWholeChange(t *testing.T) {
-	assertPlanGroupSyncBound(t, newOrderFixture(t))
+func TestPlanGroupSyncSupportsMoreThanOneThousand(t *testing.T) {
+	assertPlanSyncPagedSuccess(t, newOrderFixture(t), true)
 }
-func TestMySQLPlanGroupSyncBoundRejectsWholeChange(t *testing.T) {
-	assertPlanGroupSyncBound(t, newMySQLBusinessOrderFixture(t))
-}
-func assertPlanGroupSyncBound(t *testing.T, base orderFixture) {
-	t.Helper()
-	endpoint := planGroupEndpoint(t, base.h.db, "group-bound-new")
-	group := model.NodeGroup{Name: "bounded-group", Code: "bounded-group", IsEnabled: true}
-	if err := base.h.db.Create(&group).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := base.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: endpoint.ID}).Error; err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
-	rows := make([]model.Subscription, 1001)
-	for i := range rows {
-		rows[i] = model.Subscription{UserID: 1, PlanID: base.planRecord.ID, PlanSKUID: base.skuRecord.ID, NodeGroupID: base.group.ID, Status: "active", StartAt: now, EndAt: now.AddDate(0, 1, 0), FlowTotal: 100, FlowUsed: 60, Config: "{}"}
-	}
-	if err := base.h.db.CreateInBatches(rows, 100).Error; err != nil {
-		t.Fatal(err)
-	}
-	_, err := base.h.services.PlanUpdate.Update(t.Context(), 1, base.planRecord.ID, commerce.PlanUpdateRequest{NodeGroupID: &group.ID, ExpectedRevision: &base.planRecord.Revision})
-	var invalid *commerce.ValidationError
-	if !errors.As(err, &invalid) || invalid.Fields["node_group_id"] == "" {
-		t.Fatalf("unbounded group update accepted: %v", err)
-	}
-	var plan model.Plan
-	var changed int64
-	if err := base.h.db.First(&plan, base.planRecord.ID).Error; err != nil || plan.NodeGroupID != base.group.ID || plan.Revision != base.planRecord.Revision {
-		t.Fatal("bounded group rejection changed plan", err)
-	}
-	if err := base.h.db.Model(&model.Subscription{}).Where("plan_id = ? AND node_group_id <> ?", plan.ID, base.group.ID).Count(&changed).Error; err != nil || changed != 0 {
-		t.Fatal("bounded rejection partially reauthorized subscriptions", err)
-	}
+func TestMySQLPlanGroupSyncSupportsMoreThanOneThousand(t *testing.T) {
+	assertPlanSyncPagedSuccess(t, newMySQLBusinessOrderFixture(t), true)
 }
 
 func TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait(t *testing.T) {
