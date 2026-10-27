@@ -11,7 +11,7 @@ import (
 
 func ResetNodeProjection(tx *gorm.DB, nodeID uint, coreInstanceID, eventID string, observedAt time.Time, source string) error {
 	var currents []PrincipalFlowCurrent
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).Find(&currents).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("node_id,principal_key,user_id,subscription_id").Where("node_id = ?", nodeID).Find(&currents).Error; err != nil {
 		return err
 	}
 	if len(currents) == 0 {

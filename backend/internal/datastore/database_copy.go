@@ -12,6 +12,12 @@ import (
 // and foreign-key ordering. Missing legacy source tables may be absent; an
 // existing source table must never be silently dropped from the destination.
 func CopyApplicationData(source, target *gorm.DB) error {
+	if err := preflightPrincipalRuntimeCopy(source); err != nil {
+		return err
+	}
+	if err := requirePrincipalRuntimeDestination(target); err != nil {
+		return err
+	}
 	if err := preflightCoverageRuntimeCopy(source); err != nil {
 		return err
 	}
@@ -173,6 +179,11 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 		if err != nil {
 			return err
 		}
+		principalBytes, err := principalRuntimeCopyRecord(table, record)
+		if err != nil {
+			return err
+		}
+		runtimeBytes += principalBytes
 		if runtimeBatchBytes+runtimeBytes > auxiliaryRuntimeCopyBatchBytes && len(batch) > 0 {
 			if err := target.Table(table).Create(&batch).Error; err != nil {
 				return fmt.Errorf("write bounded runtime target table %s: %w", table, err)
