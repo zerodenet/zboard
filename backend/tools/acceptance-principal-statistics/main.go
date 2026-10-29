@@ -63,6 +63,18 @@ type snapshot struct {
 	TrendsSHA       string           `json:"trends_sha256"`
 	StatisticsState string           `json:"statistics_state"`
 }
+
+// Bounded by the accepted fixture size (at most100000); one intentionally
+// corrupted original is held and never disguised as a valid replay input.
+type replayCoverage struct {
+	Kind                     string `json:"kind"`
+	AcceptedSources          int    `json:"accepted_sources"`
+	ReplayedSources          int    `json:"replayed_sources"`
+	ExcludedCorruptSources   int    `json:"excluded_corrupt_sources"`
+	SelectionStep            int    `json:"selection_step"`
+	CoversAllValidSources    bool   `json:"covers_all_valid_sources"`
+	CoversAllAcceptedSources bool   `json:"covers_all_accepted_sources"`
+}
 type summary struct {
 	Version         int               `json:"version"`
 	Status          string            `json:"status"`
@@ -84,7 +96,7 @@ type summary struct {
 	Preflight       map[string]any    `json:"preflight"`
 	Snapshots       []snapshot        `json:"snapshots,omitempty"`
 	Batches         []batch           `json:"batches,omitempty"`
-	ReplayCoverage  map[string]any    `json:"replay_coverage"`
+	ReplayCoverage  replayCoverage    `json:"replay_coverage"`
 	Checks          map[string]bool   `json:"checks"`
 	Clock           map[string]any    `json:"clock"`
 	Limits          []string          `json:"limitations"`
@@ -551,18 +563,22 @@ func experiment(ctx context.Context, db *gorm.DB, trace *traceCounter, loc *time
 	start := time.Now()
 	before := trace.n.Load()
 	replayed := 0
-	step := o.sources / 64
-	if step < 1 {
-		step = 1
-	}
-	for i := o.sources - 1; i > 0; i -= step {
+	r.ReplayCoverage = replayCoverage{Kind: "all_valid_sources", AcceptedSources: o.sources,
+		ExcludedCorruptSources: 1, SelectionStep: 1}
+	// event(0) is the sole deliberately corrupted retained source. Replay every
+	// other original event, including every window and the real retained anchor.
+	for i := o.sources - 1; i > 0; i-- {
 		if err := refresh(event(i), observed(i)); err != nil {
 			return fmt.Errorf("late/reverse replay source%d: %w", i, err)
 		}
 		replayed++
+		r.ReplayCoverage.ReplayedSources = replayed
 	}
 	r.Batches = append(r.Batches, batch{Phase: "reverse_replay", Rows: replayed, SQL: trace.n.Load() - before, ElapsedMS: ms(start)})
-	r.ReplayCoverage = map[string]any{"kind": "bounded_reverse_sample", "accepted_sources": o.sources, "replayed_sources": replayed, "covers_all_accepted_sources": false, "excluded_corrupt_sources": 1, "selection_step": step}
+	if replayed != o.sources-1 {
+		return errors.New("reverse replay did not cover every valid original source")
+	}
+	r.ReplayCoverage.CoversAllValidSources = true
 	replay, err := snap("replayed")
 	if err != nil {
 		return err

@@ -39,6 +39,16 @@ class UpgradeOwnershipHandoffTest(unittest.TestCase):
             path.write_text("".join(f"probe_test.go:{n}: private payload\n" for n in range(1, 100)))
             self.assertEqual(len(upgrade.failure_diagnostics(path)), 20)
 
+    def test_assertion_error_classes_are_fixed_without_raw_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "failed.log"
+            path.write_text("    probe_test.go:97: create topup: 401 private credential payload\n"
+                            "    probe_test.go:98: Error 3140 secret SQL params\n"
+                            "    probe_test.go:99: trusted recurring purchase order funding conflict private-token\n"
+                            "expected passing SQL UNIQUE constraint failed: irrelevant\n")
+            self.assertEqual(upgrade.failure_error_classes(path), ["funding_conflict", "mysql_3140",
+                                                                  "recurring_payment_phase", "topup_http_401"])
+
     def release(self, outcome):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

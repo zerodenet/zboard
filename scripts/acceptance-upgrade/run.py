@@ -41,6 +41,46 @@ def failure_diagnostics(path):
                 locations.add((match[1], int(match[2])))
     return [{"file": name, "line": number} for name, number in sorted(locations)[:20]]
 
+def failure_error_classes(path):
+    """Only fixed public error classes from assertions, never their payloads."""
+    known = {
+        "UNIQUE constraint failed": "sqlite_unique_constraint",
+        "FOREIGN KEY constraint failed": "sqlite_foreign_key",
+        "CHECK constraint failed": "sqlite_check_constraint",
+        "no such table": "sqlite_missing_table",
+        "no such column": "sqlite_missing_column",
+        "database is locked": "sqlite_locked",
+        "order funding conflict": "funding_conflict",
+        "wallet facts unavailable": "wallet_unavailable",
+        "wallet amount exceeds supported integer range": "wallet_range",
+        "payment fact conflict": "payment_fact_conflict",
+        "order requires current active buyer": "buyer_unavailable",
+        "commerce requires current administrator": "administrator_required",
+        "order transition rejected": "order_transition",
+        "discount quote unavailable": "discount_quote_unavailable",
+        "invalid discount quote": "discount_quote_invalid",
+        "discount reservation is not yet confirmed": "discount_reservation_pending",
+        "discount reservation evidence conflicts": "discount_reservation_conflict",
+        "subscription value evidence is incomplete or inconsistent": "value_evidence_inconsistent",
+        "subscription value requires purchase/payment reconciliation": "value_reconciliation",
+        "subscription value quote changed": "value_quote_changed",
+        "subscription quota cycle reset is pending": "quota_reset_pending",
+        "trusted recurring purchase": "recurring_payment_phase",
+        "checkout admission:": "checkout_admission_phase",
+    }
+    classes = set()
+    with path.open(errors="replace") as stream:
+        for line in stream:
+            if not re.search(r"\b[A-Za-z0-9_]+_test\.go:\d+:", line):
+                continue
+            classes.update(label for fragment, label in known.items() if fragment in line)
+            for match in re.finditer(r"\bError (1045|1049|1054|1062|1146|1205|1213|1406|1451|1452|3140|3819)\b", line):
+                classes.add("mysql_" + match[1])
+            match = re.search(r"\bcreate topup: (400|401|403|409|500|503)\b", line)
+            if match:
+                classes.add("topup_http_" + match[1])
+    return sorted(classes)
+
 def existing_parent(path):
     value = path.resolve()
     while not value.exists():
@@ -180,6 +220,8 @@ def main():
         if result.returncode:
             for location in failure_diagnostics(out / (label + ".log")):
                 print(json.dumps({"failed_probe": label, "source": location}), flush=True)
+            for category in failure_error_classes(out / (label + ".log")):
+                print(json.dumps({"failed_probe": label, "observed_error_class": category}), flush=True)
             raise RuntimeError(label + " failed; preserve original log")
     processes = []
     try:

@@ -287,7 +287,11 @@ def main(argv=None):
         selected_profiles = ['core', 'extended'] if args.profile == 'full' else [args.profile]
         for chosen in selected_profiles:
             for label, packages, expression, expected in groups(partitions[chosen], inventory):
-                command = ['go', 'test', '-json', '-p', '2', *packages, '-run', expression, '-count=1', '-timeout', '15m']
+                # All these packages share one isolated MySQL server. Serialize
+                # package execution so migration/copy DDL cannot compete with
+                # financial suites for its locks, redo and disk budget. Test
+                # bodies, within-test races and the original15m limit stay intact.
+                command = ['go', 'test', '-json', '-p', '1', *packages, '-run', expression, '-count=1', '-timeout', '15m']
                 plan.append({'profile': chosen, 'group': label, 'command': command, 'expected': sorted(expected)})
         write_json(output / 'plan.json', plan)
         receipt['counts'] = {k: len(v) for k, v in partitions.items()}

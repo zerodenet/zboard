@@ -48,9 +48,10 @@ class PrincipalStatisticsPublicSummaryTest(unittest.TestCase):
                     physical={"page_count": 8, "server_datadir": "/PRIVATE/DATABASE", "meaning": "PRIVATE RAW TEXT"},
                     process_memory={"rss_bytes": 4096}, immutable_points_sha256="d" * 64,
                     hourly_sha256="e" * 64, trends_sha256="f" * 64) for phase in summary.PHASES],
-                batches=[dict(phase="source", rows=64, gorm_sql_statements=10, elapsed_ms=2.5, error="PRIVATE raw payload")],
-                replay_coverage=dict(kind="bounded_reverse_sample", accepted_sources=1024, replayed_sources=64,
-                    selection_step=16, excluded_corrupt_sources=1, covers_all_accepted_sources=False),
+                batches=[dict(phase="source", rows=64, gorm_sql_statements=10, elapsed_ms=2.5, error="PRIVATE raw payload"),
+                         dict(phase="reverse_replay", rows=1023, gorm_sql_statements=10230, elapsed_ms=1000)],
+                replay_coverage=dict(kind="all_valid_sources", accepted_sources=1024, replayed_sources=1023,
+                    selection_step=1, excluded_corrupt_sources=1, covers_all_valid_sources=True, covers_all_accepted_sources=False),
                 error="", arbitrary_secret="MUST_NOT_BE_PUBLIC")
             self.raw[driver] = value
             self.save(driver)
@@ -75,6 +76,48 @@ class PrincipalStatisticsPublicSummaryTest(unittest.TestCase):
         self.assertEqual(result["external_kernel_payment_production"], "not_executed")
         self.assertFalse(result["raw_evidence_uploaded"])
         self.assertFalse(result["databases"][0]["replay_coverage"]["covers_all_accepted_sources"])
+        self.assertTrue(result["databases"][0]["replay_coverage"]["covers_all_valid_sources"])
+        self.assertTrue(result["databases"][0]["replay_coverage"]["complete_valid_source_coverage_verified"])
+
+    def test_historical_sample_cannot_be_certified_as_all_valid_sources(self):
+        self.raw["sqlite"]["replay_coverage"] = dict(kind="bounded_reverse_sample", accepted_sources=1024,
+            replayed_sources=64, excluded_corrupt_sources=1, selection_step=16, covers_all_accepted_sources=False)
+        self.save("sqlite")
+        result = self.collect()
+        self.assertNotEqual(result["status"], "passed")
+        row = result["databases"][0]
+        self.assertEqual(row["diagnostic"], "replay_coverage_incomplete")
+        self.assertEqual(row["replay_coverage"]["kind"], "bounded_reverse_sample")
+        self.assertFalse(row["replay_coverage"]["complete_valid_source_coverage_verified"])
+
+    def test_all_valid_sources_requires_exact_counts_types_and_explicit_exclusion(self):
+        original = copy.deepcopy(self.raw["sqlite"])
+        for key, value in (("kind", "unknown"), ("accepted_sources", 1023), ("accepted_sources", True),
+                ("replayed_sources", 1022), ("replayed_sources", 1024), ("excluded_corrupt_sources", 0),
+                ("excluded_corrupt_sources", 2), ("selection_step", 16), ("selection_step", True),
+                ("covers_all_valid_sources", False), ("covers_all_accepted_sources", True)):
+            with self.subTest(key=key, value=value):
+                self.raw["sqlite"] = copy.deepcopy(original)
+                self.raw["sqlite"]["replay_coverage"][key] = value
+                self.save("sqlite")
+                self.assertNotEqual(self.collect()["status"], "passed")
+        self.raw["sqlite"] = copy.deepcopy(original)
+        del self.raw["sqlite"]["replay_coverage"]["covers_all_valid_sources"]
+        self.save("sqlite")
+        self.assertNotEqual(self.collect()["status"], "passed")
+
+    def test_replay_batch_must_agree_without_missing_duplicate_or_changed_count(self):
+        original = copy.deepcopy(self.raw["sqlite"])
+        for mode in ("missing", "duplicate", "count", "bool"):
+            with self.subTest(mode=mode):
+                self.raw["sqlite"] = copy.deepcopy(original)
+                batch = self.raw["sqlite"]["batches"][-1]
+                if mode == "missing": self.raw["sqlite"]["batches"].pop()
+                if mode == "duplicate": self.raw["sqlite"]["batches"].append(copy.deepcopy(batch))
+                if mode == "count": batch["rows"] = 64
+                if mode == "bool": batch["rows"] = True
+                self.save("sqlite")
+                self.assertNotEqual(self.collect()["status"], "passed")
 
     def test_cli_logs_only_the_same_reviewed_summary_as_its_retained_output(self):
         output = self.root / "public.json"

@@ -88,6 +88,24 @@ def verify_mysql_binding(private):
                 inspection_sha256=sha(private / "mysql-inspect.json"))
 
 
+def full_replay_coverage(raw):
+    replay = raw.get("replay_coverage", {})
+    if not isinstance(replay, dict):
+        return False
+    accepted = raw.get("sources")
+    if type(accepted) is not int or not 1000 <= accepted <= 100000:
+        return False
+    expected = {"accepted_sources": accepted, "replayed_sources": accepted - 1,
+                "excluded_corrupt_sources": 1, "selection_step": 1}
+    reverse = [row for row in raw.get("batches", []) if row.get("phase") == "reverse_replay"]
+    return (replay.get("kind") == "all_valid_sources"
+            and all(type(replay.get(key)) is int and replay[key] == value for key, value in expected.items())
+            and replay.get("covers_all_valid_sources") is True
+            and replay.get("covers_all_accepted_sources") is False
+            and len(reverse) == 1 and type(reverse[0].get("rows")) is int
+            and reverse[0]["rows"] == replay["replayed_sources"])
+
+
 def database_summary(private, artifact_parent, driver, head, helper_hash):
     result = dict(driver=driver, status="not_executed", executed=False, diagnostic="not_executed")
     path = private / (driver + ".json")
@@ -118,9 +136,12 @@ def database_summary(private, artifact_parent, driver, head, helper_hash):
              and before is not None and before == after and raw.get("sources") == 1024 and type(raw.get("sources")) is int
              and raw.get("windows") == 32 and type(raw.get("windows")) is int and raw.get("timezone") == "Asia/Kathmandu"
              and all(checks.get(key) is True for key in CHECKS) and all(v is True for v in checks.values())
-             and [row.get("phase") for row in raw.get("snapshots", [])] == list(PHASES))
+             and [row.get("phase") for row in raw.get("snapshots", [])] == list(PHASES)
+             and full_replay_coverage(raw))
     if driver == "mysql":
         result["mysql_mapping"] = verify_mysql_binding(private)
+    if raw.get("status") == "passed" and not full_replay_coverage(raw):
+        result["diagnostic"] = "replay_coverage_incomplete"
     result.update(status="passed" if valid else "failed", retained_summary_sha256=sha(summary),
                   helper_sha256=hashed(raw.get("helper_sha256")), source_sha256_before=before,
                   source_sha256_after=after, source_unchanged=raw.get("source_unchanged") is True,
@@ -140,9 +161,11 @@ def database_summary(private, artifact_parent, driver, head, helper_hash):
                                expected_held=row.get("expected_held") is True, diagnostic=diagnostic(row.get("error")))
                          for row in raw.get("batches", []) if row.get("phase") in BATCHES]
     replay = raw.get("replay_coverage", {})
-    result["replay_coverage"] = dict(kind="bounded_reverse_sample" if replay.get("kind") == "bounded_reverse_sample" else "unknown",
+    result["replay_coverage"] = dict(kind=replay["kind"] if replay.get("kind") in ("all_valid_sources", "bounded_reverse_sample") else "unknown",
         **numbers(replay, ("accepted_sources", "replayed_sources", "excluded_corrupt_sources", "selection_step")),
-        covers_all_accepted_sources=replay.get("covers_all_accepted_sources") is True)
+        covers_all_valid_sources=replay.get("covers_all_valid_sources") is True,
+        covers_all_accepted_sources=replay.get("covers_all_accepted_sources") is True,
+        complete_valid_source_coverage_verified=full_replay_coverage(raw))
     return result
 
 
