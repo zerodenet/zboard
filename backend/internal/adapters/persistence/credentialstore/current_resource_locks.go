@@ -60,5 +60,14 @@ func LockCurrentEndpointParents(tx *gorm.DB, sourceNodeID, endpointID uint) erro
 			return CurrentResourceReadError(err)
 		}
 	}
-	return LockCurrentResourceNodes(tx, []uint{sourceNodeID})
+	var node model.Node
+	if err := tx.Clauses(CurrentResourceReadLock(tx)).Select("id", "lifecycle_status").Where("id = ?", sourceNodeID).Find(&node).Error; err != nil {
+		return CurrentResourceReadError(err)
+	}
+	// Retirement is irreversible and may already have retired cumulative
+	// cursors. Disabled, otherwise live nodes still accept historical traffic.
+	if node.LifecycleStatus == "deleting" {
+		return network.ErrNodeAdministrationDeleting
+	}
+	return nil
 }

@@ -232,6 +232,9 @@ func (s NodeRetirement) Advance(ctx context.Context, id uint, runID string, inde
 	})
 }
 func (s NodeRetirement) Finalize(ctx context.Context, id uint, runID string) error {
+	if err := s.prepareRemoval(ctx, id, runID); err != nil {
+		return err
+	}
 	return jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
 		row, err := retirementLease(tx, id, runID)
 		if err != nil {
