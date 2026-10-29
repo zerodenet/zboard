@@ -18,6 +18,53 @@ spec.loader.exec_module(runner)
 
 
 class BrowserSerialPolicyTest(unittest.TestCase):
+    def test_failed_refund_diagnostic_exposes_only_source_owned_labels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            private = Path(directory)
+            (private/'refund').mkdir()
+            (private/'refund-private.log').write_text(
+                '--- FAIL: TestConsumptionRefundChromiumAcceptance (0.1s)\n'
+                '    consumption_refund_browser_test.go:148: PRIVATE_TOKEN_AND_SQL\n'
+                '    outside_secret.go:9: PRIVATE_ACCOUNT\n'
+                '    consumption_refund_browser_test.go:999999: UNKNOWN_LOCATION\n')
+            (private/'refund/browser-private.log').write_text('AssertionError: PRIVATE_PASSWORD')
+            (private/'refund/browser-checks.json').write_text(json.dumps({
+                'stage': 'owner_ticket', 'checks': {'real_login_owner': True,
+                'PRIVATE_CUSTOM_CHECK': False, 'ticket_owned_references': 'PRIVATE_VALUE'},
+                'private_error': 'PRIVATE_ERROR', 'api_failures': [{'token': 'PRIVATE_TOKEN'}]}))
+            result = runner.failure_diagnostic(ROOT, private, 'refund')
+            self.assertEqual(result['go_outcome'], 'failed')
+            self.assertEqual(result['source_locations'], ['consumption_refund_browser_test.go:148'])
+            self.assertEqual(result['browser_error'], 'browser_assertion_failed')
+            self.assertEqual(result['stage'], 'owner_ticket')
+            self.assertEqual(result['checks'], {'real_login_owner': True})
+            self.assertNotIn('PRIVATE_', json.dumps(result))
+            self.assertNotIn('outside_secret', json.dumps(result))
+
+    def test_missing_and_unknown_browser_summary_never_become_false_check_counts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            private = Path(directory); (private/'refund').mkdir()
+            missing = runner.failure_diagnostic(ROOT, private, 'refund')
+            self.assertIsNone(missing['checks'])
+            self.assertEqual(missing['browser_error'], 'browser_not_started_or_no_evidence')
+            (private/'refund/browser-checks.json').write_text(json.dumps({'stage': 'PRIVATE_STAGE', 'checks': []}))
+            result = runner.failure_diagnostic(ROOT, private, 'refund')
+            self.assertEqual(result['stage'], 'not_observed')
+            self.assertIsNone(result['checks'])
+            self.assertNotIn('PRIVATE_STAGE', json.dumps(result))
+
+    def test_diagnostic_rejects_symlink_evidence_and_hides_io_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            private = Path(directory); (private/'refund').mkdir()
+            secret = private/'not-owned.log'; secret.write_text('AssertionError PRIVATE_TOKEN')
+            (private/'refund/browser-private.log').symlink_to(secret)
+            result = runner.failure_diagnostic(ROOT, private, 'refund')
+            self.assertEqual(result['browser_error'], 'browser_not_started_or_no_evidence')
+            with mock.patch.object(Path, 'open', side_effect=OSError('PRIVATE_PATH')):
+                result = runner.failure_diagnostic(ROOT, private, 'refund')
+            self.assertEqual(result['browser_error'], 'diagnostic_incomplete')
+            self.assertNotIn('PRIVATE_PATH', json.dumps(result))
+
     def test_rejected_checkout_summary_is_never_written(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)/'checkout'; root.mkdir()

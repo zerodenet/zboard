@@ -204,7 +204,10 @@ func TestRemoteLifetimeStopsOnlyOwnedChildrenAndReleasesLock(t *testing.T) {
 			}
 			for {
 				state, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-				if errors.Is(err, os.ErrNotExist) {
+				// Linux may remove the task after /proc lookup but before read;
+				// that read returns ESRCH rather than ENOENT. Both prove this
+				// task disappeared; permission and other read errors still fail.
+				if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
 					break
 				}
 				if err != nil {

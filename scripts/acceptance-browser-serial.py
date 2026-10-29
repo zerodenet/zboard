@@ -102,6 +102,188 @@ def private_failure(directory):
         return False
 
 
+# Positive source-owned labels only. No private error/payload/path is copied.
+DIAGNOSTIC_LABELS = {
+    "checks": {
+        "session": [
+            "account_switch_discards_old_draft",
+            "account_switch_does_not_replay_old_checkout",
+            "account_switch_isolation",
+            "account_switch_keeps_route_with_fresh_context",
+            "background_inert",
+            "current_fixture_token_present",
+            "current_permissions_refreshed",
+            "dialog_initial_focus",
+            "dialog_outside_inert_boundary",
+            "dialog_tab_focus_trapped",
+            "escape_does_not_dismiss_reauthentication",
+            "expired_write_did_not_mutate_setting",
+            "financial_write_not_replayed",
+            "fixture_only_accounts",
+            "fresh_isolated_fixture",
+            "inert_prevents_background_focus",
+            "no_topup_or_wallet_entry_created",
+            "one_reauthentication_dialog",
+            "revoked_admin_draft_not_exposed",
+            "revoked_admin_editor_removed",
+            "revoked_admin_get_is_forbidden",
+            "revoked_admin_session_still_valid",
+            "same_account_admin_revocation",
+            "same_account_settings",
+            "settings_background_focus_restored",
+            "settings_original_dom_preserved",
+            "settings_original_url_preserved",
+            "settings_same_account_dom_preserved",
+            "settings_same_account_draft_preserved",
+            "settings_same_account_url_preserved",
+            "settings_write_not_replayed",
+            "stable_frontend_snapshot",
+            "two_real_http_401_responses",
+            "wallet_original_url_preserved",
+            "wallet_same_account_draft_preserved"
+        ],
+        "refund": [
+            "actual_auth_available_admin",
+            "actual_auth_available_owner",
+            "actual_refund_identity",
+            "admin_reads_original_owned_ticket_without_reply_write",
+            "all_replayed_payloads_identical",
+            "confirmation_before_post_0",
+            "confirmation_before_post_1",
+            "corrected_intent_requires_new_explicit_key",
+            "exact_refund_post_roles_and_count",
+            "explicit_approval_status_1",
+            "explicit_approval_status_2",
+            "explicit_same_key_replay_1",
+            "explicit_same_key_replay_2",
+            "external_release_requests_blocked_before_network",
+            "foreign_owner_ticket_rejected",
+            "isolated_login_tokens",
+            "known_result_reload_and_get_never_post",
+            "no_automatic_financial_writes_during_reads",
+            "only_approval_references_and_amount",
+            "only_expected_permission_and_owner_refusals",
+            "owner_cannot_approve_admin_refund",
+            "owner_wallet_once",
+            "real_login_admin",
+            "real_login_owner",
+            "real_owner_ticket_created",
+            "real_role_admin",
+            "real_role_owner",
+            "separate_browser_contexts",
+            "terminal_access_not_recreated",
+            "terminal_subscription_not_active",
+            "ticket_context_never_auto_submits",
+            "ticket_owned_references"
+        ],
+        "recurring": [
+            "120_base_20_discount_100_debit_visible",
+            "defaults_disabled_without_automatic_put",
+            "explicit_put_1",
+            "explicit_put_2",
+            "explicit_put_3",
+            "explicit_put_4",
+            "four_explicit_mutations_no_automatic_replay",
+            "no_api_failures_or_mock_fallbacks",
+            "no_external_requests",
+            "one_explicit_enable_no_replay",
+            "only_consent_references_1",
+            "only_consent_references_2",
+            "only_consent_references_3",
+            "only_consent_references_4",
+            "real_http_login",
+            "real_put_success_1",
+            "real_put_success_2",
+            "real_put_success_3",
+            "real_put_success_4",
+            "unavailable_keeps_withdrawable_consent",
+            "worker_order_visible_without_consent_write"
+        ]
+    },
+    "stages": {
+        "session": [
+            "account_switch_isolation",
+            "complete",
+            "financial_write_not_replayed",
+            "frontend_snapshot",
+            "same_account_admin_revocation",
+            "same_account_settings",
+            "seed"
+        ],
+        "refund": [
+            "actual_admin_approval",
+            "actual_audit_and_support_readback",
+            "admin_same_owner_ticket_boundary",
+            "complete",
+            "launch",
+            "owner_historical_order",
+            "owner_ticket",
+            "owner_wallet_and_terminal_rights",
+            "reload_and_explicit_same_key_replays"
+        ],
+        "recurring": [
+            "complete",
+            "enable",
+            "launch",
+            "offer",
+            "provider_unavailable",
+            "real_login",
+            "real_worker_debit"
+        ]
+    }
+}
+CASE_GO = {'refund': ('TestConsumptionRefundChromiumAcceptance', 'consumption_refund_browser_test.go'),
+           'recurring': ('TestAutomaticRecurringChromiumAcceptance', 'automatic_recurring_browser_test.go')}
+
+
+def failure_diagnostic(root, private, case):
+    result = {'go_outcome': 'not_observed', 'source_locations': [],
+              'browser_error': 'not_observed', 'stage': 'not_observed', 'checks': None}
+    def bounded(path):
+        if path.is_symlink() or not path.is_file(): return ''
+        with path.open('rb') as stream: return stream.read(512 * 1024).decode('utf-8', errors='replace')
+    try:
+        output = bounded(private/(case+'-private.log'))
+        if case in CASE_GO:
+            test, filename = CASE_GO[case]
+            if 'panic: test timed out' in output: result['go_outcome'] = 'timeout'
+            elif '--- SKIP: '+test in output: result['go_outcome'] = 'skipped'
+            elif '--- FAIL: '+test in output: result['go_outcome'] = 'failed'
+            elif '--- PASS: '+test in output: result['go_outcome'] = 'passed'
+            limit = len((root/'backend/internal/handler'/filename).read_text().splitlines())
+            locations = set()
+            for match in re.finditer(r'(?m)^\s+'+re.escape(filename)+r':([0-9]+):', output):
+                line = int(match[1])
+                if 0 < line <= limit: locations.add(filename+':'+str(line))
+            result['source_locations'] = sorted(locations)[:12]
+        browser_text = bounded(private/case/'browser-private.log')
+        fragments = (
+            ("No module named 'playwright'", 'browser_dependency_missing'),
+            ('No usable sandbox', 'browser_sandbox_unavailable'),
+            ('BrowserType.launch', 'browser_launch_failed'),
+            ('Go evidence check:', 'coordination_timeout'),
+            ('AssertionError', 'browser_assertion_failed'),
+            ('TimeoutError', 'browser_timeout'),
+        )
+        for fragment, kind in fragments:
+            if fragment in browser_text:
+                result['browser_error'] = kind; break
+        summary = bounded(private/case/'browser-checks.json')
+        if summary:
+            data = json.loads(summary)
+            stage = data.get('stage')
+            if stage in DIAGNOSTIC_LABELS['stages'][case]: result['stage'] = stage
+            checks = data.get('checks')
+            if isinstance(checks, dict):
+                result['checks'] = {name: value for name, value in checks.items()
+                    if name in DIAGNOSTIC_LABELS['checks'][case] and type(value) is bool}
+        elif case != 'session' and not browser_text:
+            result['browser_error'] = 'browser_not_started_or_no_evidence'
+    except (OSError, ValueError, TypeError, KeyError):
+        result['browser_error'] = 'diagnostic_incomplete'
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--checkout', type=Path, required=True)
@@ -116,6 +298,7 @@ def main():
     before = None
     created = False
     summary_permitted = False
+    active_case = None
     try:
         if os.geteuid() == 0 or sys.platform != 'linux': raise AcceptanceFailure('preflight_failed')
         if not re.fullmatch('[a-f0-9]{40}', args.revision): raise AcceptanceFailure('preflight_failed')
@@ -156,6 +339,7 @@ def main():
         result['frontend_dist_sha256'] = dist_hash
         case_root = private/'session'
         case_root.mkdir(mode=0o700)
+        active_case = 'session'
         result['cases']['session']['executed'] = True
         run_owned([sys.executable, str(root/'scripts/acceptance-session-browser.py'), '--server-binary', str(binaries['server']), '--seed-binary', str(binaries['seed']), '--backend-source', str(root), '--web-dir', str(web), '--chromium', str(args.chromium), '--evidence-root', str(case_root)], root, env, private/'session-private.log', 300, 'case_failed')
         children = list(case_root.glob('session-browser-*'))
@@ -172,6 +356,7 @@ def main():
             case_env = env.copy()
             case_env.update({prefix: '1', prefix+'_EVIDENCE_DIR': str(case_root), prefix+'_WEB_DIR': str(web),
                              prefix+'_SCRIPT': str(root/'scripts'/script), 'ZBOARD_BROWSER_CHROMIUM': str(args.chromium)})
+            active_case = case
             result['cases'][case]['executed'] = True
             run_owned([str(binaries['handler']), '-test.run', '^'+test+'$', '-test.timeout', timeout, '-test.v'], backend/'internal'/'handler', case_env, private/(case+'-private.log'), 300 if case == 'refund' else 240, 'case_failed')
             browser_path, financial_path = case_root/'browser-checks.json', case_root/'financial-checks.json'
@@ -181,6 +366,8 @@ def main():
         if any(sha(path) != result['binary_sha256'][name] for name, path in binaries.items()) or tree_hash(web) != dist_hash or tree_hash(dist) != dist_hash: raise AcceptanceFailure('source_changed')
     except AcceptanceFailure as error:
         result['error_class'] = error.kind
+        if created and active_case in CASES:
+            result['failure_diagnostic'] = failure_diagnostic(root, private, active_case)
         if created and not private_failure(private): result['error_class'] = 'incomplete_evidence'
     except Exception:
         result['error_class'] = 'internal_error'
