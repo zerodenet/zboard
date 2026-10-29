@@ -55,10 +55,11 @@ def main():
     parser.add_argument('--backend-source', type=Path, required=True, help='checkout used to build both executables')
     parser.add_argument('--web-dir', type=Path, required=True)
     parser.add_argument('--chromium', default='/usr/bin/chromium')
+    parser.add_argument('--evidence-root', type=Path, help='new private run children under this explicit evidence parent')
     args = parser.parse_args()
     os.umask(0o077)
     root = Path(__file__).resolve().parent.parent
-    evidence_root = root / '.codex-local-artifacts' / 'acceptance'
+    evidence_root = (args.evidence_root or root / '.codex-local-artifacts' / 'acceptance').resolve()
     evidence_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     evidence = Path(tempfile.mkdtemp(prefix='session-browser-', dir=evidence_root))
     data = evidence / 'data'
@@ -117,7 +118,7 @@ def main():
         original_site_name = sql('SELECT site_name FROM installations WHERE id=1')[0][0]
 
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(executable_path=args.chromium, headless=True, args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-background-networking', '--no-first-run', '--disable-component-update'])
+            browser = playwright.chromium.launch(executable_path=args.chromium, headless=True, chromium_sandbox=True, args=['--disable-dev-shm-usage', '--disable-background-networking', '--no-first-run', '--disable-component-update'])
             result['chromium_version'] = browser.version
             requests = []
             external_blocked = []

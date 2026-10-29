@@ -314,7 +314,11 @@ func TestConsumptionRefundChromiumAcceptance(t *testing.T) {
 	privateJSON("fixture-private.json", map[string]any{"origin": server.URL, "owner_email": "reader@example.test", "admin_email": admin.Email, "password": password, "owner_id": 1, "admin_id": admin.ID, "order_id": order.ID, "subscription_id": order.SubscriptionID, "foreign_ticket_id": foreignTicket, "evidence_dir": evidence})
 	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "python3", script, "--fixture", filepath.Join(evidence, "fixture-private.json"))
+	browserArgs := []string{script, "--fixture", filepath.Join(evidence, "fixture-private.json")}
+	if chromium := os.Getenv("ZBOARD_BROWSER_CHROMIUM"); chromium != "" {
+		browserArgs = append(browserArgs, "--chromium", chromium)
+	}
+	cmd := exec.CommandContext(ctx, "python3", browserArgs...)
 	browserLog, err := os.OpenFile(filepath.Join(evidence, "browser-private.log"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		t.Fatal(err)

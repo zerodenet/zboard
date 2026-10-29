@@ -135,7 +135,11 @@ func TestAutomaticRecurringChromiumAcceptance(t *testing.T) {
 	privateJSON("backend-binding.json", map[string]any{"test_binary_sha256": hex.EncodeToString(binaryHash[:]), "root_order_id": root.ID, "subscription_id": root.SubscriptionID, "provider_signer_sha256": signer, "limits": []string{"isolated SQLite and loopback HTTP only", "selected real handlers, not full server router acceptance", "only end_at and next_attempt_at compressed; no natural-term passage claim", "no direct approval/payment/wallet mutation"}})
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "python3", script, "--fixture", filepath.Join(evidence, "fixture-private.json"))
+	browserArgs := []string{script, "--fixture", filepath.Join(evidence, "fixture-private.json")}
+	if chromium := os.Getenv("ZBOARD_BROWSER_CHROMIUM"); chromium != "" {
+		browserArgs = append(browserArgs, "--chromium", chromium)
+	}
+	cmd := exec.CommandContext(ctx, "python3", browserArgs...)
 	browserLog, err := os.OpenFile(filepath.Join(evidence, "browser-private.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		t.Fatal(err)

@@ -20,6 +20,7 @@ from playwright.sync_api import sync_playwright, expect
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fixture', type=Path, required=True)
+    parser.add_argument('--chromium', default='/usr/bin/chromium', help='existing browser executable; sandbox remains enabled')
     args = parser.parse_args()
     os.umask(0o077)
     fixture = json.loads(args.fixture.read_text())
@@ -59,8 +60,8 @@ def main():
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(executable_path='/usr/bin/chromium', headless=True,
-                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-background-networking',
+            browser = p.chromium.launch(executable_path=args.chromium, headless=True,
+                chromium_sandbox=True, args=['--disable-dev-shm-usage', '--disable-background-networking',
                       '--disable-component-update', '--no-first-run'])
             result['chromium_version'] = browser.version
             context = browser.new_context(viewport={'width': 1440, 'height': 1000}, service_workers='block')

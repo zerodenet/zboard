@@ -1,0 +1,69 @@
+name: isolated-browser-acceptance
+run-name: isolated-browser-acceptance ${{ github.event.pull_request.head.sha || github.sha }}
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  browser:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'validation:browser-full')
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      BROWSER_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.0"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Require existing non-root sandboxed browser environment
+        shell: bash
+        run: |
+          test "$(id -u)" -ne 0
+          python3 -c 'import sys; assert sys.version_info >= (3, 12)'
+          chrome="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          test -n "$chrome"
+          test -x "$chrome"
+          echo "BROWSER_CHROMIUM=$chrome" >> "$GITHUB_ENV"
+      - name: Prepare pinned Python client only, using the default package source once
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/zboard-browser-venv"
+          "$RUNNER_TEMP/zboard-browser-venv/bin/python3" -m pip --disable-pip-version-check --retries 0 --timeout 30 install -r scripts/browser-acceptance-requirements.txt
+          echo "$RUNNER_TEMP/zboard-browser-venv/bin" >> "$GITHUB_PATH"
+      - name: Install exact project frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile --package-import-method=copy
+      - name: Verify safe orchestration policy
+        run: python3 -m unittest discover -s scripts -p 'test_acceptance_browser_serial.py'
+      - name: Build exact source and run all three browser cases once, serially
+        shell: bash
+        run: |
+          python3 scripts/acceptance-browser-serial.py --checkout "$GITHUB_WORKSPACE" --revision "$BROWSER_REVISION" --chromium "$BROWSER_CHROMIUM" --private-dir "$RUNNER_TEMP/zboard-browser-private" --summary "$RUNNER_TEMP/zboard-browser-summary.json"
+      - name: Preserve only the fixed safe summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-summary-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/zboard-browser-summary.json
+          if-no-files-found: error
+          retention-days: 14
