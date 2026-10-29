@@ -1,0 +1,152 @@
+name: isolated-upgrade-acceptance
+run-name: isolated-upgrade-acceptance ${{ github.event.pull_request.head.sha || github.sha }}
+
+on:
+  workflow_dispatch:
+  # A retained label does not rerun this costly rehearsal on every push.
+  pull_request:
+    types: [labeled]
+
+jobs:
+  upgrade:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'validation:upgrade-full')
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: zboard-ci-root
+        ports:
+          - "127.0.0.1:3306:3306"
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pzboard-ci-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      ZBOARD_TEST_MYSQL_DSN: root:zboard-ci-root@tcp(127.0.0.1:3306)/?parseTime=true&loc=UTC
+      UPGRADE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Verify isolated controller contract
+        run: |
+          python3 -c 'import sys; assert sys.version_info >= (3, 12)'
+          python3 -m unittest discover -s scripts -p 'test_acceptance_upgrade.py'
+      - name: Preflight exact revision, old history, container and disk budgets
+        shell: bash
+        env:
+          UPGRADE_CONTAINER: ${{ job.services.mysql.id }}
+          UPGRADE_ARTIFACTS: ${{ runner.temp }}/zboard-upgrade-acceptance
+        run: |
+          set -o pipefail
+          mkdir -p "$UPGRADE_ARTIFACTS"
+          python3 scripts/acceptance-upgrade/run.py --checkout "$GITHUB_WORKSPACE" --revision "$UPGRADE_REVISION" --driver both --mysql-container "$UPGRADE_CONTAINER" --artifact-root "$UPGRADE_ARTIFACTS" 2>&1 | tee "$UPGRADE_ARTIFACTS/preflight.log"
+      - name: Rehearse both databases and restore immutable backups once
+        shell: bash
+        env:
+          UPGRADE_CONTAINER: ${{ job.services.mysql.id }}
+          UPGRADE_ARTIFACTS: ${{ runner.temp }}/zboard-upgrade-acceptance
+        run: |
+          set -o pipefail
+          python3 scripts/acceptance-upgrade/run.py --checkout "$GITHUB_WORKSPACE" --revision "$UPGRADE_REVISION" --driver both --mysql-container "$UPGRADE_CONTAINER" --artifact-root "$UPGRADE_ARTIFACTS" --execute 2>&1 | tee "$UPGRADE_ARTIFACTS/controller.log"
+      - name: Preserve exact receipts, original failures and isolated backups
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          # Explicit known controller/fixture outputs only. No recursive root,
+          # cloud evidence, environment dump, source export or binary upload.
+          path: |
+            ${{ runner.temp }}/zboard-upgrade-acceptance/preflight.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/controller.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/started.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/final.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/old-build.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/old-build-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/current-build.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/current-build-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-old-seed.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-old-seed-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-upgrade.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-upgrade-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-recovery.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-recovery-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-authority-seed.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-authority-seed-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-authority-reopen.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-authority-reopen-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-authority-backup-restore.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-current-authority-backup-restore-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-old-backup-restore.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite-old-backup-restore-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-old-seed.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-upgrade.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-upgrade-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-recovery.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-recovery-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-authority-seed.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-authority-seed-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-authority-reopen.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-authority-reopen-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-authority-backup-restore.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-authority-backup-restore-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-old-backup-restore.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-old-backup-restore-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-copy-prepare.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql-current-copy-prepare-command.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/driver-started.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/driver-final.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/old-ready.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/current-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/current-recovery.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/current-authority.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/authority-reopen-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/authority-restore-destination.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/authority-restore-observed.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/authority-restore-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/restore-destination.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/restore-observed.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/restore-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/driver-started.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/driver-final.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/old-ready.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-recovery.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-authority.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/authority-reopen-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/authority-restore-destination.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/authority-restore-observed.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/authority-restore-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/restore-destination.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/restore-observed.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/restore-result.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/old-source.db
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/current.db
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/current-source.db
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/restored-current.db
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/sqlite/restored-old.db
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/old-source.sql
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-source.sql
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/old-dump.stderr
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-dump.stderr
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-copy-import.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/restore-import.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/authority-restore-import.log
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/old-seed-started.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/old-owner-released.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-destination-planned.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-create-confirmed.json
+            ${{ runner.temp }}/zboard-upgrade-acceptance/upgrade-both-*/mysql/current-copy-ready.json
+          if-no-files-found: error
+          retention-days: 14

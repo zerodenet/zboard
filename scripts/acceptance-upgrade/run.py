@@ -78,6 +78,32 @@ def disk_budget(repo, artifacts, args, git):
     return {"backend_blob_bytes":source, "filesystems":list(groups.values()), "mysql_data_filesystem":mysql,
             "scope":"Planning estimates for two new source exports/binaries, new fixture backups, compiler temporary/cache growth and test data. Not a hard write quota, throughput/capacity gate, physical shrink or production guarantee. No existing data/cache/backup is moved or cleaned."}
 
+def release_old_mysql_fixture(process, log, fixture, metadata):
+    """Release only this run's old fixture after its immutable backup exists.
+
+    No downstream probe may use the old schema. Failure is never retried or
+    converted into successful handoff; the fixture's original2m owner deadline
+    and the old test's original5m timeout remain unchanged.
+    """
+    release = fixture / "snapshot-complete"
+    if not release.exists(): release.touch(exist_ok=False)
+    try:
+        result = process.wait(timeout=150)
+    except subprocess.TimeoutExpired as error:
+        metadata["old_seed_outcome"] = "uncertain; inspect the original owned process before another run"
+        metadata["old_seed_pid"] = process.pid
+        raise RuntimeError("old fixture release not confirmed; no downstream clone started") from error
+    finally:
+        log.close()
+        metadata["old_seed_log_sha256"] = digest(Path(log.name))
+    metadata["old_seed_exit_code"] = result
+    if result != 0:
+        raise RuntimeError("old fixture failed; no downstream clone started")
+    metadata["old_seed_released_before_current_clone"] = True
+    write(fixture / "old-owner-released.json", {"exit_code": result, "pid": process.pid,
+          "log_sha256": metadata["old_seed_log_sha256"], "finished_utc": now()})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkout", type=Path, required=True)
@@ -105,7 +131,7 @@ def main():
     if git("rev-parse", "HEAD") != args.revision or git("status", "--porcelain"):
         parser.error("exact clean revision required; no existing source is reset")
     subprocess.run(["git", "merge-base", "--is-ancestor", BASELINE, args.revision], cwd=repo, check=True)
-    names = ("old_seed_probe.go.txt", "current_upgrade_probe.go.txt", "snapshot_probe.go.txt", "restore_probe.go.txt", "current_authority_probe.go.txt")
+    names = ("old_seed_probe.go.txt", "current_upgrade_probe.go.txt", "snapshot_probe.go.txt", "restore_probe.go.txt", "current_authority_probe.go.txt", "current_mysql_copy_probe.go.txt")
     metadata = {"baseline": BASELINE, "current": args.revision, "driver": args.driver,
                 "templates": {name: digest(templates / name) for name in names},
                 "controller_sha256": digest(Path(__file__).resolve()), "execute": args.execute}
@@ -162,8 +188,10 @@ def main():
                 path = base / "internal" / "handler" / target
                 with path.open("xb") as stream: stream.write((templates/name).read_bytes())
             if label == "current":
-                path = base/"internal"/"handler"/"convergence_current_authority_probe_test.go"
-                with path.open("xb") as stream: stream.write((templates/names[4]).read_bytes())
+                for probe, name in ((names[4], "convergence_current_authority_probe_test.go"),
+                                    (names[5], "convergence_current_mysql_copy_probe_test.go")):
+                    path = base/"internal"/"handler"/name
+                    with path.open("xb") as stream: stream.write((templates/probe).read_bytes())
             if label == "old":
                 path = base / "internal" / "handler" / "convergence_restore_probe_test.go"
                 with path.open("xb") as stream:
@@ -196,6 +224,7 @@ def main():
                 old_log = (out/(prefix+"old-seed.log")).open("x")
                 process = subprocess.Popen(old_command, cwd=fixture, env=env, stdout=old_log, stderr=subprocess.STDOUT)
                 processes.append((process, old_log, fixture))
+                write(fixture / "old-seed-started.json", {"command": old_command, "pid": process.pid, "started_utc": now()})
                 deadline = time.monotonic()+120
                 while not (fixture/"old-ready.json").exists():
                     if process.poll() is not None: raise RuntimeError("old MySQL fixture stopped before snapshot; preserve log")
@@ -205,6 +234,18 @@ def main():
             result["old_backup_sha256"] = digest(backup)
             if args.driver != "both":
                 metadata["old_backup_sha256"] = result["old_backup_sha256"]
+            if driver == "mysql":
+                # old-ready follows old pool closure and the completed dump.
+                # Reap that owner now; downstream5m probes must never depend
+                # on its separate2m snapshot wait or its schema cleanup.
+                processes.remove((process, old_log, fixture))
+                # A failed/uncertain release must not be attempted again by
+                # finally. Its original PID and terminal status remain in the
+                # receipt; no downstream probe starts unless release succeeds.
+                release_old_mysql_fixture(process, old_log, fixture, metadata)
+                run(prefix+"current-copy-prepare", [str(out/"current.test"), "-test.run", "^TestConvergencePrepareMySQLUpgradeCopy$", "-test.v", "-test.timeout", "5m"], fixture)
+                result["current_mysql_destination"] = json.loads((fixture/"current-copy-ready.json").read_text())
+                result["current_mysql_destination_retained"] = True
             run(prefix+"current-upgrade", [str(out/"current.test"), "-test.run", "^TestConvergenceUpgradeFromOldVersion$", "-test.v", "-test.timeout", "5m"], fixture)
             env["ZBOARD_UPGRADE_RECOVERY"] = "1"
             run(prefix+"current-recovery", [str(out/"current.test"), "-test.run", "^TestConvergenceUpgradeFromOldVersion$", "-test.v", "-test.timeout", "5m"], fixture)
@@ -242,18 +283,11 @@ def main():
         for process, log, fixture in processes:
             # Only this test's random schema is eligible for its normal fixture
             # cleanup. The old SQL backup and all logs remain preserved.
-            (fixture/"snapshot-complete").touch(exist_ok=False)
             try:
-                result = process.wait(timeout=150)
-            except subprocess.TimeoutExpired:
-                result = process.poll()
+                release_old_mysql_fixture(process, log, fixture, metadata)
+            except Exception as error:
                 metadata["status"] = "failed"
-                metadata["old_seed_outcome"] = "uncertain; inspect the original owned process before another run"
-                metadata["old_seed_pid"] = process.pid
-            log.close()
-            metadata["old_seed_exit_code"] = result
-            metadata["old_seed_log_sha256"] = digest(Path(log.name))
-            if result != 0: metadata["status"] = "failed"
+                metadata["old_seed_release_error"] = type(error).__name__ + ": " + str(error)
         try:
             metadata["final_disk_budget_observation"] = disk_budget(repo,root,args,git)
         except Exception as error:

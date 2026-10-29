@@ -1,0 +1,144 @@
+package handler
+
+import (
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
+)
+
+type currentUpgradeDestination struct {
+	Source         string `json:"source"`
+	SourceSchema   string `json:"source_schema"`
+	Schema         string `json:"schema"`
+	OwnerNonce     string `json:"owner_nonce"`
+	BackupSHA256   string `json:"backup_sha256"`
+	OldReadySHA256 string `json:"old_ready_sha256"`
+}
+
+func upgradeFileSHA256(t *testing.T, path string) string {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		t.Fatal(err)
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// The old fixture owns only the source schema. After its immutable backup is
+// complete, the controller releases/reaps it before starting this probe. The
+// new target is exclusively CREATEd (never adopted with IF NOT EXISTS), then
+// frozen old columns are verified before any new migration runs.
+func TestConvergencePrepareMySQLUpgradeCopy(t *testing.T) {
+	dir, driver := currentAuthorityEnvironment(t)
+	if driver != "mysql" {
+		t.Skip("explicit isolated MySQL copy only")
+	}
+	cfg := currentAuthorityMySQLBase(t)
+	var old struct {
+		Source string               `json:"source"`
+		Schema string               `json:"schema"`
+		Frozen []upgradeFrozenTable `json:"frozen_rows"`
+	}
+	readCurrentAuthorityJSON(t, filepath.Join(dir, "old-ready.json"), &old)
+	if old.Source != "7c7283fb34840883fccaba1de6e0a98edb24dfb1" || !regexp.MustCompile(`^zboard_test_[a-f0-9]{32}$`).MatchString(old.Schema) || len(old.Frozen) != 6 {
+		t.Fatal("exact old fixture proof required")
+	}
+	if info, err := os.Stat(filepath.Join(dir, "snapshot-complete")); err != nil || !info.Mode().IsRegular() {
+		t.Fatal("old source owner must be released before preparing the copy", err)
+	}
+	var released struct {
+		ExitCode    int    `json:"exit_code"`
+		LogSHA256   string `json:"log_sha256"`
+		FinishedUTC string `json:"finished_utc"`
+	}
+	readCurrentAuthorityJSON(t, filepath.Join(dir, "old-owner-released.json"), &released)
+	if released.ExitCode != 0 || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(released.LogSHA256) || released.FinishedUTC == "" {
+		t.Fatal("successful old-owner terminal receipt required")
+	}
+
+	destination := currentUpgradeDestination{Source: old.Source, SourceSchema: old.Schema, Schema: "zboard_upgrade_current_" + strings.ReplaceAll(uuid.NewString(), "-", ""), OwnerNonce: uuid.NewString(), BackupSHA256: upgradeFileSHA256(t, filepath.Join(dir, "old-source.sql")), OldReadySHA256: upgradeFileSHA256(t, filepath.Join(dir, "old-ready.json"))}
+	writeCurrentAuthorityJSON(t, filepath.Join(dir, "current-destination-planned.json"), destination)
+	administrative, err := sql.Open("mysql", cfg.FormatDSN())
+	if err != nil {
+		t.Fatal("isolated copy admin connection failed")
+	}
+	defer administrative.Close()
+	if _, err := administrative.ExecContext(t.Context(), "CREATE DATABASE `"+destination.Schema+"` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"); err != nil {
+		t.Fatal("copy CREATE not confirmed; planned destination retained, never adopted or retried", err)
+	}
+	writeCurrentAuthorityJSON(t, filepath.Join(dir, "current-create-confirmed.json"), destination)
+	// No DROP path: successful and failed copies remain explicit evidence. In
+	// GitHub only the normal disposable service lifecycle eventually removes them.
+	source, err := os.Open(filepath.Join(dir, "old-source.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	log, err := os.OpenFile(filepath.Join(dir, "current-copy-import.log"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	cmd := exec.CommandContext(t.Context(), "docker", "exec", "-i", "-e", "MYSQL_PWD", os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER"), "mysql", "--user="+cfg.User, destination.Schema)
+	cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.Passwd)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = source, log, log
+	if err := cmd.Run(); err != nil {
+		t.Fatal("copy import failed; new destination and original backup retained", err)
+	}
+	cfg.DBName = destination.Schema
+	db, err := datastore.OpenWithDriver("mysql", cfg.FormatDSN())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	columns := make([]upgradeFrozenTable, len(old.Frozen))
+	for n, table := range old.Frozen {
+		columns[n] = upgradeFrozenTable{Name: table.Name, Columns: table.Columns}
+	}
+	if actual := freezeUpgradeRows(t, db, columns); !reflect.DeepEqual(actual, old.Frozen) {
+		t.Fatal("independent copy changed original old columns before migration")
+	}
+	if upgradeFileSHA256(t, filepath.Join(dir, "old-source.sql")) != destination.BackupSHA256 {
+		t.Fatal("immutable old backup changed")
+	}
+	writeCurrentAuthorityJSON(t, filepath.Join(dir, "current-copy-ready.json"), destination)
+}
+
+// All current probes read this verified new target; old-ready is provenance,
+// never authority to reconnect to the released old fixture's schema.
+func readCurrentUpgradeDestination(t *testing.T, dir string) currentUpgradeDestination {
+	t.Helper()
+	var ready, created currentUpgradeDestination
+	readCurrentAuthorityJSON(t, filepath.Join(dir, "current-copy-ready.json"), &ready)
+	readCurrentAuthorityJSON(t, filepath.Join(dir, "current-create-confirmed.json"), &created)
+	if ready != created || ready.Source != "7c7283fb34840883fccaba1de6e0a98edb24dfb1" || !regexp.MustCompile(`^zboard_test_[a-f0-9]{32}$`).MatchString(ready.SourceSchema) || !regexp.MustCompile(`^zboard_upgrade_current_[a-f0-9]{32}$`).MatchString(ready.Schema) {
+		t.Fatal("verified independent current copy required")
+	}
+	if _, err := uuid.Parse(ready.OwnerNonce); err != nil {
+		t.Fatal("copy ownership nonce missing")
+	}
+	if upgradeFileSHA256(t, filepath.Join(dir, "old-source.sql")) != ready.BackupSHA256 || upgradeFileSHA256(t, filepath.Join(dir, "old-ready.json")) != ready.OldReadySHA256 {
+		t.Fatal("copy provenance changed")
+	}
+	return ready
+}

@@ -3,11 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	mysqlconfig "github.com/go-sql-driver/mysql"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"testing"
 	"time"
 
@@ -50,20 +48,7 @@ func TestConvergenceUpgradeFromOldVersion(t *testing.T) {
 		t.Fatal("not the required old fixture")
 	}
 	if driver == "mysql" {
-		cfg, err := mysqlconfig.ParseDSN(os.Getenv("ZBOARD_TEST_MYSQL_DSN"))
-		if err != nil {
-			t.Fatal("invalid isolated test DSN")
-		}
-		var identity struct {
-			Schema string `json:"schema"`
-		}
-		if err := json.Unmarshal(data, &identity); err != nil {
-			t.Fatal(err)
-		}
-		if cfg.Net != "tcp" || !regexp.MustCompile(`^127\.0\.0\.1:[0-9]+$`).MatchString(cfg.Addr) || !regexp.MustCompile(`^zboard_test_[a-f0-9]{32}$`).MatchString(identity.Schema) {
-			t.Fatal("only the old fixture's random loopback test schema is permitted")
-		}
-		cfg.DBName, cfg.ParseTime, cfg.Loc = identity.Schema, true, time.UTC
+		cfg := currentAuthorityMySQL(t, dir)
 		source = cfg.FormatDSN()
 	} else {
 		if info, err := os.Stat(source); err != nil || !info.Mode().IsRegular() {

@@ -446,7 +446,7 @@ func openCurrentAuthoritySource(t *testing.T) (string, string, *gorm.DB) {
 	t.Cleanup(func() { _ = pool.Close() })
 	return dir, driver, db
 }
-func currentAuthorityMySQL(t *testing.T, dir string) *mysqlconfig.Config {
+func currentAuthorityMySQLBase(t *testing.T) *mysqlconfig.Config {
 	t.Helper()
 	cfg, err := mysqlconfig.ParseDSN(os.Getenv("ZBOARD_TEST_MYSQL_DSN"))
 	if err != nil {
@@ -469,17 +469,17 @@ func currentAuthorityMySQL(t *testing.T, dir string) *mysqlconfig.Config {
 	if !matched {
 		t.Fatal("DSN differs from explicit test container")
 	}
-	var old struct {
-		Source string `json:"source"`
-		Schema string `json:"schema"`
-	}
-	readCurrentAuthorityJSON(t, filepath.Join(dir, "old-ready.json"), &old)
-	if old.Source != "7c7283fb34840883fccaba1de6e0a98edb24dfb1" || !regexp.MustCompile(`^zboard_test_[a-f0-9]{32}$`).MatchString(old.Schema) {
-		t.Fatal("only original owned old-version schema permitted")
-	}
-	cfg.DBName, cfg.ParseTime, cfg.Loc = old.Schema, true, time.UTC
+	cfg.DBName, cfg.ParseTime, cfg.Loc = "", true, time.UTC
 	return cfg
 }
+func currentAuthorityMySQL(t *testing.T, dir string) *mysqlconfig.Config {
+	t.Helper()
+	cfg := currentAuthorityMySQLBase(t)
+	target := readCurrentUpgradeDestination(t, dir)
+	cfg.DBName = target.Schema
+	return cfg
+}
+
 func currentAuthorityCLI(t *testing.T, cfg *mysqlconfig.Config, name string, restore bool, dir string) {
 	t.Helper()
 	args := []string{"exec", "-e", "MYSQL_PWD", os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER"), "mysqldump", "--user=" + cfg.User, "--single-transaction", "--hex-blob", "--set-gtid-purged=OFF", "--no-tablespaces", cfg.DBName}
