@@ -90,6 +90,7 @@ func TestConsumptionRefundChromiumAcceptance(t *testing.T) {
 	}
 
 	f := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	if !datastore.IsSQLite(f.h.db) {
 		t.Fatal("refund browser acceptance requires isolated SQLite")
 	}

@@ -52,6 +52,7 @@ func TestAutomaticRecurringChromiumAcceptance(t *testing.T) {
 		}
 	}
 	f := newOrderFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	manager, provider, generation, signer := recurringNativeSetup(t, f)
 	const password = "recurring-browser-fixture-only"
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
