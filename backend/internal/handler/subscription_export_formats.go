@@ -51,8 +51,6 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 	outbounds := []map[string]interface{}{
 		{"tag": "direct", "protocol": map[string]interface{}{"type": "direct"}},
 		{"tag": "block", "protocol": map[string]interface{}{"type": "block"}},
-		{"tag": "DIRECT", "protocol": map[string]interface{}{"type": "direct"}},
-		{"tag": "REJECT", "protocol": map[string]interface{}{"type": "block"}},
 	}
 	proxyTags := make([]string, 0, len(data.ProtocolEndpoints))
 	availableTags := make(map[string]struct{}, len(data.ProtocolEndpoints))
@@ -130,6 +128,9 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 		},
 	}
 	if err := applySubscriptionAdvancedOverlay(subscriptionRendererZnetSink, document, customization.AdvancedSource, proxyTags); err != nil {
+		return "", err
+	}
+	if err := normalizeSubscriptionBuiltinTargets(subscriptionRendererZnetSink, document); err != nil {
 		return "", err
 	}
 	if err := validateGeneratedSubscriptionDocument(subscriptionRendererZnetSink, document); err != nil {
@@ -335,7 +336,6 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 	}
 	outbounds = append(outbounds,
 		map[string]interface{}{"type": "direct", "tag": "direct"},
-		map[string]interface{}{"type": "direct", "tag": "DIRECT"},
 	)
 	groupNames := subscriptionPolicyGroupNames(customization.PolicyGroups)
 	for _, group := range customization.PolicyGroups {
@@ -389,6 +389,9 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 		document["dns"] = singBoxSubscriptionDNS(customization.DNS)
 	}
 	if err := applySubscriptionAdvancedOverlay(subscriptionRendererSingBox, document, customization.AdvancedSource, proxyTags); err != nil {
+		return "", err
+	}
+	if err := normalizeSubscriptionBuiltinTargets(subscriptionRendererSingBox, document); err != nil {
 		return "", err
 	}
 	if err := validateGeneratedSubscriptionDocument(subscriptionRendererSingBox, document); err != nil {
@@ -478,10 +481,12 @@ func appendPermanentSelectionTargets(renderer string, group subscriptionPolicyGr
 		return members
 	}
 	if subscriptionPolicyGroupIncludesDirect(group) {
-		members = append(members, "DIRECT")
+		direct, _ := subscriptionSelectionTargets(renderer)
+		members = append(members, direct)
 	}
 	if renderer != subscriptionRendererSingBox && subscriptionPolicyGroupIncludesReject(group) {
-		members = append(members, "REJECT")
+		_, reject := subscriptionSelectionTargets(renderer)
+		members = append(members, reject)
 	}
 	return uniqueSubscriptionTargets(members)
 }

@@ -465,7 +465,7 @@ func applySelectionTargetOverrides(renderer, rendered string, customization subs
 		groups, _ := document["proxy-groups"].([]interface{})
 		for _, item := range groups {
 			group, _ := item.(map[string]interface{})
-			applySelectionMembers(group, "name", "proxies", preferences)
+			applySelectionMembers(renderer, group, "name", "proxies", preferences)
 		}
 		if err := validateGeneratedSubscriptionDocument(renderer, document); err != nil {
 			return "", err
@@ -480,14 +480,14 @@ func applySelectionTargetOverrides(renderer, rendered string, customization subs
 			groups, _ := document["outbound_groups"].([]interface{})
 			for _, item := range groups {
 				group, _ := item.(map[string]interface{})
-				applySelectionMembers(group, "tag", "outbounds", preferences)
+				applySelectionMembers(renderer, group, "tag", "outbounds", preferences)
 			}
 		} else {
 			outbounds, _ := document["outbounds"].([]interface{})
 			for _, item := range outbounds {
 				group, _ := item.(map[string]interface{})
 				if subscriptionOptionalString(group, "type") == "selector" {
-					applySelectionMembers(group, "tag", "outbounds", preferences)
+					applySelectionMembers(renderer, group, "tag", "outbounds", preferences)
 				}
 			}
 		}
@@ -504,7 +504,7 @@ func applySelectionTargetOverrides(renderer, rendered string, customization subs
 	}
 }
 
-func applySelectionMembers(group map[string]interface{}, nameField, membersField string, preferences map[string]subscriptionPolicyGroup) {
+func applySelectionMembers(renderer string, group map[string]interface{}, nameField, membersField string, preferences map[string]subscriptionPolicyGroup) {
 	name := strings.TrimSpace(subscriptionOptionalString(group, nameField))
 	preference, ok := preferences[name]
 	if !ok || preference.Type != "select" {
@@ -515,13 +515,14 @@ func applySelectionMembers(group map[string]interface{}, nameField, membersField
 		return
 	}
 	filtered := make([]string, 0, len(members))
+	direct, reject := subscriptionSelectionTargets(renderer)
 	for _, member := range members {
 		switch member {
-		case "DIRECT":
+		case direct:
 			if !subscriptionPolicyGroupIncludesDirect(preference) {
 				continue
 			}
-		case "REJECT":
+		case reject:
 			if !subscriptionPolicyGroupIncludesReject(preference) {
 				continue
 			}
