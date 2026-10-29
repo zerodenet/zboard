@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zeromicro/go-zero/core/conf"
@@ -24,18 +28,101 @@ import (
 
 var configFile = flag.String("f", "etc/zboard.yaml", "the config file")
 var migrateOnly = flag.Bool("migrate-only", false, "prepare the complete database schema and exit")
+var checkProjectionDatabaseOnly = flag.Bool("check-projection-database", false, "read-only validation of prepared projection database dependencies and exit; does not start a worker")
+var projectionWorker = flag.Bool("projection-worker", false, "run prepared usage and node observation projections without HTTP, plugins or a file spool")
+var projectionWorkerDrainTimeout = flag.Duration("projection-worker-drain-timeout", 30*time.Second, "projection worker graceful drain budget (1s–5m)")
+
+var prepareHourlyRollback = flag.Bool("prepare-hourly-rollback", false, "after stopping all writers and draining usage projections, prepare hourly statistics for a pre-0054 binary and exit")
 
 func main() {
 	flag.Parse()
+	if err := validateMeteringProofFlags(flag.CommandLine, *migrateOnly || *prepareHourlyRollback || *checkProjectionDatabaseOnly || *projectionWorker || *backfillReportReceipts || *projectionWorkersMax != 0); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateProjectionSupervisorFlags(flag.CommandLine, *migrateOnly || *prepareHourlyRollback || *checkProjectionDatabaseOnly || *projectionWorker || *backfillReportReceipts || *archiveMeteringProof || *restoreMeteringProof != 0); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateReportBackfillFlags(*backfillReportReceipts, flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateReportBackfillMode(*backfillReportReceipts, *migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly, *projectionWorker, *backfillReportAfter, *backfillReportThrough, *backfillReportBatch); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateProjectionWorkerMode(*projectionWorker, *migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly, *projectionWorkerDrainTimeout); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateDatabaseModes(*migrateOnly, *prepareHourlyRollback, *checkProjectionDatabaseOnly); err != nil {
+		log.Fatal(err)
+	}
 
 	var c cfgpkg.Config
-	conf.MustLoad(*configFile, &c)
+	if *checkProjectionDatabaseOnly {
+		if err := conf.Load(*configFile, &c); err != nil {
+			log.Fatal("projection database check failed: configuration load")
+		}
+	} else {
+		conf.MustLoad(*configFile, &c)
+	}
 	c.ApplyEnvironment(os.Getenv)
 	if err := c.Validate(); err != nil {
+		if *checkProjectionDatabaseOnly {
+			log.Fatal("projection database check failed: configuration validation")
+		}
 		log.Fatalf("config validation failed: %v", err)
 	}
 	if err := datastore.ValidateDataSource(c.DatabaseDriver, c.DataSource, c.Environment == cfgpkg.EnvironmentProduction); err != nil {
+		if *checkProjectionDatabaseOnly {
+			log.Fatal("projection database check failed: datasource validation")
+		}
 		log.Fatalf("config validation failed: %v", err)
+	}
+	if err := applyManagedProjectionWorkerLimits(&c); err != nil {
+		log.Fatal(err)
+	}
+	if *archiveMeteringProof || *restoreMeteringProof != 0 {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		result, err := runMeteringProofMaintenance(ctx, c)
+		if err != nil {
+			log.Fatalf("metering proof maintenance was not confirmed: %v", err)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			log.Fatal("metering proof maintenance may have committed but output failed; inspect the bounded operation before continuing")
+		}
+		return
+	}
+	if *checkProjectionDatabaseOnly {
+		if err := checkProjectionDatabase(context.Background(), c); err != nil {
+			log.Fatalf("projection database check failed: %v", err)
+		}
+		log.Printf("projection database dependencies verified (read-only); no worker started")
+		return
+	}
+	if *backfillReportReceipts {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		result, err := runReportReceiptBackfill(ctx, c, *backfillReportAfter, *backfillReportThrough, *backfillReportBatch)
+		if err != nil {
+			log.Fatalf("report receipt backfill failed: %v", err)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			log.Fatal("backfill committed but command receipt output failed; the same range can be safely inspected/replayed")
+		}
+		return
+	}
+	if *projectionWorker {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		log.Printf("starting projection worker (prepared database; no HTTP, plugins or spool)")
+		if err := runProjectionWorker(ctx, c, *projectionWorkerDrainTimeout); err != nil {
+			log.Fatalf("projection worker stopped: %v", err)
+		}
+		log.Printf("projection worker drained")
+		return
+	}
+	projectionSupervisor, err := configuredProjectionSupervisor(c)
+	if err != nil {
+		log.Fatalf("local projection supervisor configuration failed: %v", err)
 	}
 	credentialCipher, err := security.NewCredentialCipher(c.CredentialEncryptionKey)
 	if err != nil {
@@ -52,6 +139,13 @@ func main() {
 	}
 	if err := datastore.Ping(db); err != nil {
 		log.Fatalf("database ping failed: %v", err)
+	}
+	if *prepareHourlyRollback {
+		if err := datastore.PrepareHourlyProjectionRollback(db); err != nil {
+			log.Fatalf("hourly projection rollback preparation failed: %v", err)
+		}
+		log.Printf("hourly projection rollback prepared; keep writers stopped until the pre-0054 binary is installed")
+		return
 	}
 	if err := application.PrepareDatabaseSchema(db); err != nil {
 		log.Fatalf("database migrate failed: %v", err)
@@ -96,7 +190,7 @@ func main() {
 	log.Printf("config database driver: %s", c.DatabaseDriver)
 	log.Printf("config datasource: %s", datastore.QuoteDataSource(c.DatabaseDriver, c.DataSource))
 
-	closeZeroEventSpool, err := server.RegisterRoutes(
+	closeZeroEventSpool, err := server.RegisterRoutesWithProjectionSupervisor(
 		srv,
 		db,
 		c.JwtSecret,
@@ -106,6 +200,7 @@ func main() {
 		c.ZeroLocalVersion,
 		c.ZeroEventSpoolConfig(),
 		c.Plugins,
+		projectionSupervisor,
 		c.FileStorageDir,
 	)
 	if err != nil {

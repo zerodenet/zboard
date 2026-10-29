@@ -1,0 +1,194 @@
+package handler
+
+import (
+	"encoding/json"
+	mysqlconfig "github.com/go-sql-driver/mysql"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/model"
+)
+
+// Isolated old-version probe. Compile against the exact baseline archive;
+// current code must never be used to manufacture a purported old database.
+func TestConvergenceOldVersionFixture(t *testing.T) {
+	dir := os.Getenv("ZBOARD_UPGRADE_FIXTURE_DIR")
+	driver := os.Getenv("ZBOARD_UPGRADE_FIXTURE_DRIVER")
+	if dir == "" || (driver != "sqlite" && driver != "mysql") {
+		t.Skip("explicit isolated upgrade controller required")
+	}
+	var f orderFixture
+	if driver == "mysql" {
+		validateOldUpgradeMySQLTarget(t)
+		f = newMySQLOrderFixture(t)
+	} else {
+		f = newOrderFixture(t)
+	}
+	endpoint := attachOrderPublishEndpoint(t, f)
+	// Name this newly-created old fixture before any payment or freeze. The
+	// current-version recurring fixture later creates its own order-publish node;
+	// existing upgraded assets and the shared helper must remain untouched.
+	if err := f.h.db.Model(&model.Node{}).Where("id = ?", endpoint.NodeID).Update("name", "old-upgrade-order-publish").Error; err != nil {
+		t.Fatal(err)
+	}
+	// The shared helper's empty runtime key is unique too. Give this newly
+	// created old endpoint a real identity before freezing its original data.
+	if err := f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Update("runtime_key", uuid.NewString()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&f.planRecord).Update("traffic_bytes", 1000000).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&f.skuRecord).Update("price_cents", 12000).Error; err != nil {
+		t.Fatal(err)
+	}
+	first := f.paid(t, f.create(t, 0).ID)
+	if err := f.h.db.Model(&model.Node{}).Where("id = ?", endpoint.NodeID).Update("traffic_secret", "old-upgrade-fixture-report-key").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&endpoint).Update("multiplier_milli", 1500).Error; err != nil {
+		t.Fatal(err)
+	}
+	report := metering.AuthenticatedNodeReport{NodeID: endpoint.NodeID, UserID: 1, ProtocolEndpointID: endpoint.ID, ExpectedCredential: "old-upgrade-fixture-report-key", Timestamp: time.Now().UTC(), Nonce: "old-upgrade-source-nonce", ReportID: "old-upgrade-source-report", DownloadBytes: 3, Meta: "old-source-unclassified-optional-meta"}
+	result, err := f.h.services.NodeReports().Record(t.Context(), report)
+	if err != nil || result.Record.UsedBytes != 5 {
+		t.Fatal("old actual billing fixture", err)
+	}
+	second := f.paid(t, f.create(t, 0).ID)
+	if first.SubscriptionID == second.SubscriptionID {
+		t.Fatal("old purchase did not preserve independent subscriptions")
+	}
+	pending := f.create(t, first.SubscriptionID)
+	// A later mutable catalog price must not rewrite the old persisted lock.
+	if err := f.h.db.Model(&f.skuRecord).Update("price_cents", 15000).Error; err != nil {
+		t.Fatal(err)
+	}
+	var subscriptions []model.Subscription
+	if err := f.h.db.Where("id IN ?", []uint{first.SubscriptionID, second.SubscriptionID}).Order("id").Find(&subscriptions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(subscriptions) != 2 || subscriptions[0].FlowUsed != 5 || subscriptions[0].RenewalPriceMinor != 12000 {
+		t.Fatal("old paid lock/usage fixture differs")
+	}
+	// Explicit synthetic unresolved intent, not a claim of remote application.
+	if err := f.h.db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", endpoint.NodeID).UpdateColumns(map[string]any{"reconciling": true, "lease_token": uuid.NewString(), "lease_until": time.Now().UTC().Add(time.Minute), "last_error": "synthetic unknown remote outcome for upgrade fixture"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.h.CloseBackgroundJobs()
+	var schema string
+	if driver == "mysql" {
+		if err := f.h.db.Raw("SELECT DATABASE()").Scan(&schema).Error; err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		path := filepath.Join(dir, "old-source.db")
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("preserve existing old-source backup")
+		}
+		if err := f.h.db.Exec("VACUUM INTO ?", path).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var orders []model.Order
+	if err := f.h.db.Order("id").Find(&orders).Error; err != nil {
+		t.Fatal(err)
+	}
+	var publication model.NodeConfigPublish
+	if err := f.h.db.First(&publication, "node_id = ?", endpoint.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	frozen := freezeUpgradeRows(t, f.h.db, []upgradeFrozenTable{{Name: "orders"}, {Name: "subscriptions"}, {Name: "protocol_credentials"}, {Name: "traffic_records"}, {Name: "quota_events"}, {Name: "node_config_publishes"}})
+	receipt := map[string]any{"frozen_rows": frozen, "source": "7c7283fb34840883fccaba1de6e0a98edb24dfb1", "driver": driver, "schema": schema, "orders": orders, "subscriptions": subscriptions, "paid_order_ids": []uint{first.ID, second.ID}, "pending_order_id": pending.ID, "traffic_record_id": result.Record.ID, "report_id": report.ReportID, "report_nonce": report.Nonce, "report_meta": report.Meta, "node_id": endpoint.NodeID, "endpoint_id": endpoint.ID, "publication": publication, "remote_application_verified": false, "production_data": false}
+	if driver == "mysql" {
+		cfg, err := mysqlconfig.ParseDSN(os.Getenv("ZBOARD_TEST_MYSQL_DSN"))
+		if err != nil {
+			t.Fatal("invalid isolated test DSN")
+		}
+		container := os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER")
+		if cfg.Net != "tcp" || !regexp.MustCompile(`^127\.0\.0\.1:[0-9]+$`).MatchString(cfg.Addr) || !regexp.MustCompile(`^zboard_test_[a-f0-9]{32}$`).MatchString(schema) || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`).MatchString(container) {
+			t.Fatal("explicit original loopback MySQL test container required")
+		}
+		pool, err := f.h.db.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.Close(); err != nil {
+			t.Fatal(err)
+		}
+		dump, err := os.OpenFile(filepath.Join(dir, "old-source.sql"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stderr, err := os.OpenFile(filepath.Join(dir, "old-dump.stderr"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("docker", "exec", "-e", "MYSQL_PWD", container, "mysqldump", "--user="+cfg.User, "--single-transaction", "--set-gtid-purged=OFF", "--no-tablespaces", schema)
+		cmd.Env = append(os.Environ(), "MYSQL_PWD="+cfg.Passwd)
+		cmd.Stdout, cmd.Stderr = dump, stderr
+		runErr := cmd.Run()
+		closeErr := dump.Close()
+		_ = stderr.Close()
+		if runErr != nil || closeErr != nil {
+			t.Fatal("isolated old snapshot failed", runErr, closeErr)
+		}
+	}
+	data, err := json.MarshalIndent(receipt, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "old-ready.json"), append(data, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if driver == "mysql" {
+		// Stop this fixture's readers before the controller takes its independent
+		// logical snapshot. Cleanup will drop only the random schema it owns.
+		// The owned fixture pool was closed before the immutable logical dump.
+		deadline := time.NewTimer(2 * time.Minute)
+		defer deadline.Stop()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-deadline.C:
+				t.Fatal("old-source snapshot controller did not acknowledge; preserve evidence")
+			case <-tick.C:
+				if _, err := os.Stat(filepath.Join(dir, "snapshot-complete")); err == nil {
+					return
+				}
+			}
+		}
+	}
+}
+
+func validateOldUpgradeMySQLTarget(t *testing.T) {
+	t.Helper()
+	cfg, err := mysqlconfig.ParseDSN(os.Getenv("ZBOARD_TEST_MYSQL_DSN"))
+	if err != nil {
+		t.Fatal("invalid isolated test DSN")
+	}
+	container := os.Getenv("ZBOARD_UPGRADE_MYSQL_CONTAINER")
+	if cfg.Net != "tcp" || !regexp.MustCompile(`^127\.0\.0\.1:[0-9]+$`).MatchString(cfg.Addr) || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`).MatchString(container) {
+		t.Fatal("explicit loopback test container required before database creation")
+	}
+	mapping, err := exec.Command("docker", "port", container, "3306/tcp").Output()
+	if err != nil {
+		t.Fatal("cannot verify isolated MySQL test container port")
+	}
+	match := false
+	for _, line := range strings.Split(string(mapping), "\n") {
+		if strings.TrimSpace(line) == cfg.Addr {
+			match = true
+		}
+	}
+	if !match {
+		t.Fatal("test DSN does not match the explicit container loopback mapping")
+	}
+}

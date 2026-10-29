@@ -68,10 +68,22 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: Test actual MySQL migrations and transactions
-        # MySQL 8.4 enables binary logging and defaults function trust to OFF.
-        # Recovery tests assert those settings and use schema-only accounts.
-        run: go test ./internal/datastore ./internal/handler -run MySQL -count=1 -timeout 15m
+      - name: Verify MySQL profile policy
+        working-directory: .
+        run: python3 -m unittest discover -s scripts -p 'test_mysql_profiles.py'
+      - name: Test actual MySQL core migrations and transactions
+        # Extended scale/copy matrices remain mandatory full acceptance.
+        # Dynamic discovery defaults every unlisted new MySQL test to core.
+        # Server-wide source-lock copy tests run after financial race tests.
+        working-directory: .
+        run: python3 scripts/mysql_profiles.py --profile core --output-dir artifacts/mysql-core
+      - name: Preserve MySQL core inventory, exact commands and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-core-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/mysql-core
+          if-no-files-found: error
 
   zrs-compiler:
     runs-on: ubuntu-latest
@@ -140,6 +152,10 @@ jobs:
       ZBOARD_MYSQL_PASSWORD: validation-db-password
     steps:
       - uses: actions/checkout@v4
+      - name: Verify acceptance evidence gates
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s scripts -p 'test_acceptance*.py'
       - name: Prepare host directories
         run: |
           sh scripts/tests/prepare-host-dirs-test.sh

@@ -15,12 +15,12 @@ import (
 func configurationPublicationFixture(t *testing.T) (*ConfigurationPublicationState, model.Node, model.ProtocolEndpoint) {
 	t.Helper()
 	db, _ := administrationFixture(t)
-	node := model.Node{ID: 1, Name: "publish-node", LifecycleStatus: "active", NodeCredential: "old", NodeCredentialPrefix: "old-prefix"}
+	node := model.Node{ID: 1, Name: "publish-node", Config: "{}", LifecycleStatus: "active", NodeCredential: "old", NodeCredentialPrefix: "old-prefix"}
 	endpoint := model.ProtocolEndpoint{
 		ID: 1, NodeID: node.ID, Name: "mieru", Protocol: "mieru", Address: "node.example.test", Port: 443, PublicPort: 443,
 		MultiplierMilli: 1000, ServerConfig: "{}", ClientConfig: "{}", OptionalConfig: "{}", Tags: "[]", IsActive: true,
 	}
-	for _, row := range []interface{}{&node, &endpoint} {
+	for _, row := range []interface{}{&model.User{ID: 7, Email: "publication-admin@example.test", Password: "hash", Status: "active", IsAdmin: true}, &node, &endpoint} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -213,4 +213,60 @@ func TestConfigurationPublicationCompletionRollsBackAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	removed = true
+}
+
+func TestConfigurationCompletionRequiresItsPersistedImmutableTarget(t *testing.T) {
+	store, node, endpoint := configurationPublicationFixture(t)
+	assertImmutableConfigurationTarget(t, store, node, endpoint)
+}
+func assertImmutableConfigurationTarget(t *testing.T, store *ConfigurationPublicationState, node model.Node, endpoint model.ProtocolEndpoint) {
+	t.Helper()
+	ctx, now := t.Context(), time.Now().UTC()
+	oldSHA, newSHA := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	started, err := store.BeginConfigurationPublication(ctx, network.ConfigurationPublicationRequest{NodeID: node.ID, TriggerEndpointID: endpoint.ID}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion := network.ConfigurationPublicationCompletion{ConfigSHA: oldSHA, Output: "healthy with old result", LastHealthyAt: now, ManagedPrincipalAccess: true, MieruAccess: true, MieruFallbackCount: 1, SuppressMieruFallback: true}
+	if _, err := store.CompleteConfigurationPublication(ctx, started.Deployment, completion, now); !errors.Is(err, network.ErrConfigurationDeploymentLost) {
+		t.Fatalf("health without persisted target accepted: %v", err)
+	}
+	desired, err := store.SetConfigurationPublicationDesired(ctx, started.Deployment, oldSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetConfigurationPublicationDesired(ctx, desired, oldSHA); err != nil {
+		t.Fatalf("exact target replay rejected: %v", err)
+	}
+	if _, err := store.SetConfigurationPublicationDesired(ctx, desired, newSHA); !errors.Is(err, network.ErrConfigurationDeploymentLost) {
+		t.Fatalf("remote target replaced under same identity: %v", err)
+	}
+	completion.ConfigSHA = newSHA
+	if _, err := store.CompleteConfigurationPublication(ctx, desired, completion, now); !errors.Is(err, network.ErrConfigurationDeploymentLost) {
+		t.Fatalf("mismatched result accepted: %v", err)
+	}
+	completion.ConfigSHA = oldSHA
+	wrong := desired
+	wrong.DesiredConfigSHA256 = newSHA
+	if _, err := store.CompleteConfigurationPublication(ctx, wrong, completion, now); !errors.Is(err, network.ErrConfigurationDeploymentLost) {
+		t.Fatalf("stale caller target accepted: %v", err)
+	}
+	var current model.ProtocolDeployment
+	var state model.NodeKernelState
+	var storedEndpoint model.ProtocolEndpoint
+	var currentNode model.Node
+	for _, read := range []struct {
+		row any
+		id  any
+	}{{&current, desired.ID}, {&state, node.ID}, {&storedEndpoint, endpoint.ID}, {&currentNode, node.ID}} {
+		if err := store.DB.First(read.row, read.id).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if current.Status != "running" || current.DesiredConfigSHA256 != oldSHA || current.AppliedConfigSHA256 != "" || state.AppliedConfigSHA256 != "" || storedEndpoint.MieruPrincipalReady || currentNode.LastSyncAt != nil {
+		t.Fatalf("invalid completion committed side effects: deployment=%+v state=%+v endpoint=%+v node=%+v", current, state, storedEndpoint, currentNode)
+	}
+	if _, err := store.CompleteConfigurationPublication(ctx, desired, completion, now); err != nil {
+		t.Fatalf("confirmed exact result rejected: %v", err)
+	}
 }

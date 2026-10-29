@@ -9,8 +9,10 @@ import (
 
 type TrafficScope struct{ UserID, SubscriptionID, NodeID, ProtocolEndpointID uint }
 
-// Complete UTC hours use the transactionally maintained projection. At most
-// two partial hours read ledger rows, preserving exact arbitrary/DST windows.
+// Complete UTC hours use the independently maintained projection. Public reads
+// check EnsureHourlyUsageReady in the same snapshot before using this source.
+// At most two partial hours read ledger rows, preserving exact arbitrary/DST
+// windows after the complete-hour projection is known to be current.
 func TrafficAggregateSource(db *gorm.DB, from, to time.Time, scope TrafficScope) *gorm.DB {
 	start := from.UTC().Truncate(time.Hour)
 	if start.Before(from) {

@@ -149,6 +149,7 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 		}
 
 		row := networkEntryMutationModel(change.Entry, change.PathCiphertext)
+		row.DeliveryRequired = row.DeploymentMode != "external"
 		if before == nil {
 			row.Revision = 1
 			create := tx

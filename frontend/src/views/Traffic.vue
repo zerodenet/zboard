@@ -30,12 +30,16 @@
     </template>
 
     <PageAlert v-if="trendError" tone="danger" title="流量趋势加载失败">{{ trendError }} <UiButton variant="secondary" @click="trendResource.load()">重试趋势</UiButton></PageAlert>
-    <TrafficObservabilityChart v-else
+    <TrafficObservabilityChart v-if="!trendError || trendSnapshotAvailable"
       :points="trafficTrend.points"
       :loading="trendLoading || !trendLoaded"
       :truncated="trafficTrend.truncated"
       :record-count="trafficTrend.record_count"
       :peak-connections="trafficTrend.peak_connections"
+      :projection-pending="trendProjectionPending"
+      :snapshot-available="trendSnapshotAvailable"
+      :as-of="trafficTrend.as_of"
+      @refresh="trendResource.load()"
     />
 
     <PageAlert v-if="nodeSeriesError" tone="danger" title="节点流量排行加载失败">{{ nodeSeriesError }} <UiButton variant="secondary" @click="nodeSeriesResource.load()">重试节点流量</UiButton></PageAlert>
@@ -138,7 +142,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTrafficReconciliationPage, type TrafficReconciliationAggregates, type TrafficReconciliationItem } from '../api/client'
 import { fetchTrafficNodeSeries, type TrafficDimension, type TrafficNodeSeries, type TrafficUsageBucket } from '../api/trafficUsage'
-import { emptyEntityReferenceResponse, fetchAdminEntityReferences, fetchTrafficTrends, type EntityReferenceResponse, type TrafficTrendResult } from '../api/readModels'
+import { emptyEntityReferenceResponse, fetchAdminEntityReferences, fetchTrafficTrends, type EntityReferenceResponse, type TrafficTrendSnapshot } from '../api/readModels'
 import CursorPager from '../components/CursorPager.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
@@ -154,6 +158,9 @@ import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import PageAlert from '../components/PageAlert.vue'
 import { useRemoteResource } from '../composables/useRemoteResource'
+import { useTrafficTrendResource } from '../composables/useTrafficTrendResource'
+import { useAppStore } from '../stores/app'
+import { getDisplayTimeZone } from '../utils/timeZone'
 import { trafficNodeBucket } from '../utils/trafficNodeBucket'
 import { keyedLoad } from '../composables/keyedLoad'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
@@ -174,6 +181,7 @@ import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 
 const route = useRoute()
 const router = useRouter()
+const app = useAppStore()
 const filters = reactive({ userId: String(route.query.user_id || ''), nodeId: String(route.query.node_id || ''), subscriptionId: String(route.query.subscription_id || ''), protocolEndpointId: String(route.query.protocol_endpoint_id || '') })
 const section = ref(route.query.section === 'details' || route.query.cursor ? 'details' : 'summary')
 const refreshToken = ref(0)
@@ -207,8 +215,9 @@ const referenceResource = useRemoteResource<EntityReferenceResponse>({
   }),
   errorMessage: '关联对象名称加载失败。',
 })
-const trendResource = useRemoteResource<TrafficTrendResult>({
+const trendResource = useTrafficTrendResource({
   initial: emptyTrafficTrend,
+  scope: () => trendKey(),
   fetch: ({ signal }) => fetchTrafficTrends({ admin: true, ...queryParams(), from: from.value, to: to.value, signal }),
   errorMessage: '管理端流量趋势加载失败。',
 })
@@ -218,7 +227,8 @@ const nodeSeriesResource = useRemoteResource<TrafficNodeSeries | null>({
   errorMessage: '管理端节点流量排行加载失败。',
 })
 const { data: references, loading: referenceLoading, error: referenceError } = referenceResource
-const { data: trafficTrend, loading: trendLoading, error: trendError, loaded: trendLoaded } = trendResource
+const { data: trafficTrend, loading: trendLoading, error: trendError, loaded: trendLoaded,
+  snapshotAvailable: trendSnapshotAvailable, projectionPending: trendProjectionPending } = trendResource
 const { data: nodeSeries, loading: nodeSeriesLoading, error: nodeSeriesError, loaded: nodeSeriesLoaded } = nodeSeriesResource
 const hasFilters = computed(() => Boolean(filters.userId || filters.nodeId || filters.subscriptionId || filters.protocolEndpointId || bucket.value !== 'hour'))
 const reconciliationOptions = [{ label: '仅异常', value: 'issues' }, { label: '全部结果', value: 'all' }]
@@ -264,7 +274,7 @@ function subscriptionStatusName(status: string) { return ({ active: '有效', ex
 function queryParams() { return { userId: filters.userId || undefined, nodeId: filters.nodeId || undefined, subscriptionId: filters.subscriptionId || undefined, protocolEndpointId: filters.protocolEndpointId || undefined } }
 function normalizeBucket(value: unknown): TrafficUsageBucket { return value === 'minute' || value === 'day' ? value : 'hour' }
 function normalizeDimension(value: unknown): TrafficDimension { return value === 'node' || value === 'subscription' || value === 'protocol_endpoint' ? value : 'user' }
-function emptyTrafficTrend(): TrafficTrendResult { return { from: '', to: '', points: [], record_count: 0, connection_sample_count: 0, peak_connections: null, truncated: false, subscriptions: [], as_of: '' } }
+function emptyTrafficTrend(): TrafficTrendSnapshot { return { from: '', to: '', points: [], record_count: 0, connection_sample_count: 0, peak_connections: null, truncated: false, subscriptions: [], as_of: '' } }
 function chartBucket(): TrafficUsageBucket {
   return trafficNodeBucket(bucket.value, from.value, to.value, Boolean(filters.nodeId))
 }
@@ -274,7 +284,7 @@ function subscriptionReference(id?: number) { return id ? references.value.subsc
 function nodeReference(id: number) { return references.value.nodes[String(id)] || null }
 function planReference(id: number) { return references.value.plans[String(id)] || null }
 
-const trendKey = () => JSON.stringify([queryParams(), from.value, to.value])
+function trendKey() { return JSON.stringify([app.user.id, app.user.isAdmin, getDisplayTimeZone(), queryParams(), from.value, to.value]) }
 const loadRecordQuery = keyedLoad(() => JSON.stringify([trendKey(), bucket.value, recordCursor.value, recordLimit.value]), recordTable)
 const loadReconciliationQuery = keyedLoad(() => JSON.stringify([filters.userId, filters.subscriptionId,
   reconciliationMode.value, reconciliationOffset.value, reconciliationLimit.value]), reconciliationTable)
@@ -355,6 +365,14 @@ watch(() => route.fullPath, async () => {
     if (nextSection === 'summary') { recordTable.reset(); recordStatistics.reset(); reconciliationTable.reset(); referenceResource.reset() }
     Object.assign(filters, nextFilters); bucket.value = nextBucket; recordLimit.value = nextRecordLimit; recordCursor.value = nextRecordCursor; from.value = nextRange.from; to.value = nextRange.to; reconciliationLimit.value = nextReconciliationLimit; reconciliationOffset.value = nextReconciliationOffset; reconciliationMode.value = nextMode; await loadChanged(enteringDetails)
   }
+})
+watch(() => JSON.stringify([app.user.id, app.user.isAdmin, getDisplayTimeZone()]), () => {
+  recordTable.reset()
+  recordStatistics.reset()
+  reconciliationTable.reset()
+  referenceResource.reset()
+  nodeSeriesResource.reset()
+  void loadChanged(true)
 })
 onMounted(async () => { if (!route.query.from || !route.query.to || route.query.page) await syncURL(true); await loadChanged(true) })
 </script>

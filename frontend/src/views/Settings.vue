@@ -6,6 +6,9 @@
 
     <TransientFeedback :success="message" :error="error" success-title="系统设置已保存" error-title="设置操作失败" />
 
+    <PageAlert v-if="settingsDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ settingsDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="settingsDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
+    <PageAlert v-if="siteRecoveryConflict" tone="warning" title="站点身份已变化">原草稿仍可查看，保存已暂停。请刷新页面当前值后重新编辑。</PageAlert>
+    <PageAlert v-for="key in missingRecoveryKeys" :key="key" tone="warning" title="公开配置已不可编辑">{{ key }} 的原草稿已保留，不能提交。<pre>{{ drafts[key] }}</pre></PageAlert>
     <SettingsPageLayout>
         <UiSection class="settings-shell">
         <div v-if="activeSection === 'site'" class="settings-panel stack-lg">
@@ -17,7 +20,7 @@
                 <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接、canonical 地址和外部页面跳转。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
               </div>
               <PageAlert v-if="siteErrors.formError.value" tone="danger" title="站点设置未保存">{{ siteErrors.formError.value }}</PageAlert>
-              <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="!siteState.dirty.value">保存站点身份</UiButton></div>
+              <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="siteRecoveryConflict || !siteState.dirty.value">保存站点身份</UiButton></div>
             </form>
           </UiSection>
 
@@ -43,7 +46,7 @@
             </div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteVisualKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteVisualKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'visual'" :disabled="!groupDirty(siteVisualKeys)" @click="saveConfigGroup('visual', '视觉品牌', siteVisualKeys)">保存视觉品牌</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'visual'" :disabled="groupHasConflict(siteVisualKeys) || !groupDirty(siteVisualKeys)" @click="saveConfigGroup('visual', '视觉品牌', siteVisualKeys)">保存视觉品牌</UiButton>
             </div>
           </UiSection>
 
@@ -59,7 +62,7 @@
             </div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteContentKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContentKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'content'" :disabled="!groupDirty(siteContentKeys)" @click="saveConfigGroup('content', '公开文案', siteContentKeys)">保存公开文案</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'content'" :disabled="groupHasConflict(siteContentKeys) || !groupDirty(siteContentKeys)" @click="saveConfigGroup('content', '公开文案', siteContentKeys)">保存公开文案</UiButton>
             </div>
           </UiSection>
 
@@ -71,7 +74,7 @@
             <div class="footer-preview"><strong>{{ previewProfile.name }}</strong><span>{{ previewProfile.copyright }}</span><span v-if="previewProfile.supportEmail">{{ previewProfile.supportEmail }}</span><span v-if="previewProfile.supportUrl">客服入口</span><span v-if="previewProfile.telegramUrl">Telegram</span></div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteContactKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContactKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'contact'" :disabled="!groupDirty(siteContactKeys)" @click="saveConfigGroup('contact', '页脚与联系方式', siteContactKeys)">保存页脚与联系方式</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'contact'" :disabled="groupHasConflict(siteContactKeys) || !groupDirty(siteContactKeys)" @click="saveConfigGroup('contact', '页脚与联系方式', siteContactKeys)">保存页脚与联系方式</UiButton>
             </div>
           </UiSection>
 
@@ -90,7 +93,7 @@
             </div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteSeoKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteSeoKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'seo'" :disabled="!groupDirty(siteSeoKeys)" @click="saveConfigGroup('seo', '搜索与分享', siteSeoKeys)">保存搜索与分享</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'seo'" :disabled="groupHasConflict(siteSeoKeys) || !groupDirty(siteSeoKeys)" @click="saveConfigGroup('seo', '搜索与分享', siteSeoKeys)">保存搜索与分享</UiButton>
             </div>
           </UiSection>
         </div>
@@ -162,6 +165,10 @@
             </div>
           </UiSection>
 
+          <UiSection v-if="recoveryConfigs.length" title="订阅续费恢复" description="到期后按既有停服流程处理，节点执行结果以交付状态为准；此窗口仅保留续费资格。缩短窗口会结束超过新期限的订阅并清理凭据；已结束或主动退订的订阅不会因延长窗口恢复。此设置不自动扣款。">
+            <div class="config-list"><ConfigRow v-for="config in recoveryConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+          </UiSection>
+
           <UiSection title="运行参数" description="系统时区、数据保留策略和其他服务端运行行为。">
             <template #meta><span class="config-count">{{ otherConfigs.length }} 项</span></template>
             <div v-if="otherConfigs.length" class="config-list"><ConfigRow v-for="config in otherConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
@@ -190,6 +197,8 @@ import StatusBadge from '../components/StatusBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { recoverableLegalKeys, recoverableSiteKeys, settingsRecoveryDraft, settingsRecoveryValueType, type SiteBaseline } from '../utils/settingsReauthenticationDraftSchemas'
 import { useAppStore } from '../stores/app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 import { confirmAction } from '../utils/feedback'
@@ -225,6 +234,50 @@ const form = reactive({ site_name: '', site_url: '', allow_registration: true })
 const siteFormElement = ref<HTMLElement | null>(null)
 const siteErrors = useFormErrors()
 const siteState = useDirtyForm(() => form)
+const recoveryReady = ref(false)
+const siteRecoveryConflict = ref(false)
+const siteDraftBaseline = ref<SiteBaseline>({ ...form })
+const missingRecoveryKeys = ref<string[]>([])
+const configRecoveryOrigins = new Map<string, { baseline: string; revision: number }>()
+const settingsDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.settings.public', permission: 'admin', ready: () => recoveryReady.value,
+  read: () => {
+    const keys = activeSection.value === 'site' ? recoverableSiteKeys : activeSection.value === 'legal' ? recoverableLegalKeys : null
+    if (!keys) return null
+    const entries: Array<{ key: string; value: unknown; baseline: unknown; revision: number }> = []
+    for (const key of keys) {
+      const config = configForKey(key)
+      const origin = configRecoveryOrigins.get(key)
+      if (origin) entries.push({ key, value: drafts[key], ...origin })
+      else if (config && config.is_public && !config.is_secret && config.value_type === settingsRecoveryValueType(key) && configDirty(config)) {
+        entries.push({ key, value: drafts[key], baseline: configValue(config), revision: config.revision })
+      }
+    }
+    const siteDirty = activeSection.value === 'site' && siteState.dirty.value
+    return siteDirty || entries.length ? { site: siteDirty ? { site_name: form.site_name, site_url: form.site_url, baseline: siteDraftBaseline.value } : null, configs: entries } : null
+  },
+  sanitize: settingsRecoveryDraft,
+  restore: value => {
+    const keys: readonly string[] = activeSection.value === 'site' ? recoverableSiteKeys : activeSection.value === 'legal' ? recoverableLegalKeys : []
+    if (value.site && activeSection.value !== 'site' || value.configs.some(item => !keys.includes(item.key))) return false
+    if (value.site) {
+      siteRecoveryConflict.value = !sameValue(value.site.baseline, siteDraftBaseline.value)
+      form.site_name = value.site.site_name; form.site_url = value.site.site_url
+      siteDraftBaseline.value = value.site.baseline
+    }
+    for (const item of value.configs) {
+      const config = configForKey(item.key)
+      const conflict = !config || !config.is_public || config.is_secret || config.value_type !== settingsRecoveryValueType(item.key) || config.revision !== item.revision || configValue(config) !== item.baseline
+      configRecoveryOrigins.set(item.key, { baseline: item.baseline, revision: item.revision })
+      drafts[item.key] = item.value
+      if (conflict) {
+        configConflicts[item.key] = true
+        configErrors[item.key] = '草稿基于旧版本，已保留内容。请重新载入当前值后再编辑。'
+        if (!config || !config.is_public || config.is_secret || config.value_type !== settingsRecoveryValueType(item.key)) missingRecoveryKeys.value.push(item.key)
+      }
+    }
+  },
+})
 
 const hiddenSiteKeys = new Set(['site_name', 'site_url', 'register_switch'])
 const deprecatedSiteKeys = new Set(['site_terms_url', 'site_privacy_url', 'site_refund_url', 'site_home_primary_cta'])
@@ -247,7 +300,8 @@ const legalMetadataConfig = computed(() => operationalConfigs.value.find(item =>
 const alertConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')))
 const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
-const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && !/smtp|email/i.test(item.config_key)))
+const recoveryConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key === 'subscription_renewal_grace_days'))
+const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && item.config_key !== 'subscription_renewal_grace_days' && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))
 const contactConfigs = computed(() => configsForKeys(siteContactKeys))
@@ -323,6 +377,7 @@ function updateDraft(key: string, value: unknown) {
 async function loadConfigs() {
   const next = await fetchSystemConfigs()
   configs.value = next
+  configRecoveryOrigins.clear()
   for (const key of Object.keys(drafts)) delete drafts[key]
   for (const key of Object.keys(configErrors)) delete configErrors[key]
   for (const key of Object.keys(configConflicts)) delete configConflicts[key]
@@ -330,6 +385,7 @@ async function loadConfigs() {
 }
 
 async function loadAllData() {
+  recoveryReady.value = false
   loading.value = true; error.value = ''
   try {
     const [settings] = await Promise.all([app.loadSetupStatus(true), loadConfigs()])
@@ -338,6 +394,8 @@ async function loadAllData() {
     form.allow_registration = settings?.allow_registration ?? true
     siteErrors.clear()
     siteState.markClean()
+    siteDraftBaseline.value = { ...form }; siteRecoveryConflict.value = false; missingRecoveryKeys.value = []
+    recoveryReady.value = Boolean(settings)
   }
   catch (e: any) { error.value = e?.response?.data?.message || '系统设置加载失败。' }
   finally { loading.value = false }
@@ -354,6 +412,7 @@ async function reloadSettings() {
 }
 
 async function saveSiteSettings() {
+  if (siteRecoveryConflict.value) return
   form.site_name = form.site_name.trim()
   form.site_url = form.site_url.trim().replace(/\/+$/, '')
   const valid = await siteErrors.applyValidation(collectFieldErrors({
@@ -367,6 +426,7 @@ async function saveSiteSettings() {
     await app.loadSetupStatus(true)
     await app.loadPublicConfigs()
     siteState.markClean()
+    siteDraftBaseline.value = { ...form }
     message.value = '站点身份已保存。'
   } catch (e: any) {
     await siteErrors.applyApiError(e, '站点设置保存失败。', siteFormElement, { site_name: 'site_name', site_url: 'site_url' })
@@ -377,12 +437,15 @@ function applyUpdatedConfig(updated: SystemConfig) {
   const index = configs.value.findIndex(item => item.config_key === updated.config_key)
   if (index >= 0) configs.value[index] = updated
   drafts[updated.config_key] = configValue(updated)
+  configRecoveryOrigins.delete(updated.config_key)
+  missingRecoveryKeys.value = missingRecoveryKeys.value.filter(key => key !== updated.config_key)
   delete configConflicts[updated.config_key]
   delete configErrors[updated.config_key]
 }
 
 async function saveConfig(config: SystemConfig) {
   const key = config.config_key
+  if (configConflicts[key]) return
   if (!configDirty(config)) return
   message.value = ''; delete configErrors[key]
   const normalized = normalizeSystemConfigDraft(config, drafts[key])
@@ -409,6 +472,7 @@ async function saveConfig(config: SystemConfig) {
 }
 
 async function saveConfigGroup(group: string, label: string, keys: readonly string[]) {
+  if (groupHasConflict(keys)) return
   const candidates = configsForKeys(keys).filter(configDirty)
   if (!candidates.length) return
   message.value = ''; error.value = ''

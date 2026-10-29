@@ -1,0 +1,84 @@
+{
+  "recorded_at_utc": "2026-10-19T19:51:27.446775+00:00",
+  "repository": "zerodenet/zboard",
+  "branch": "codex/core-convergence",
+  "base_develop": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "previous_commit": "a01a6110fb0ad5c080df9e406c2331c3e779864e",
+  "source_manifest_sha256": "f3baecc07654625f3070a34ab9aca065875896377053d9e3a9bdb79e93f74e0c",
+  "source_file_count": 2050,
+  "source_manifest_definition": "Same sorted Go/module/Vue/TypeScript/SQL/YAML and selected ownership/package JSON definition as the unsubscribe evidence; excludes validation JSON.",
+  "local_result": "all required local checks passed",
+  "backend_handler_seconds": 181.26,
+  "mysql_seconds": {
+    "datastore": 71.065,
+    "handler": 359.151
+  },
+  "frontend": {
+    "passed": 895,
+    "existing_skipped": 8,
+    "new_exclusions": 0,
+    "build_seconds": 22
+  },
+  "sqlite_pure_go_seconds": 14.313,
+  "openapi": {
+    "valid": true,
+    "existing_warnings": 282
+  },
+  "evidence": {
+    "backend_full": {
+      "path": "/tmp/zboard-retirement-backend-full.log",
+      "sha256": "19bbacb958915e7ac659877e931713c359212d702e482b6f71e60ff0dcc0298d"
+    },
+    "mysql_full": {
+      "path": "/tmp/zboard-retirement-mysql-full.log",
+      "sha256": "843e23977da61b688bc31a08a122e7b4ed5f0ad333ca7604b930f4c3a6fc7495"
+    },
+    "vet": {
+      "path": "/tmp/zboard-retirement-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "sqlite_pure_go": {
+      "path": "/tmp/zboard-retirement-sqlite-pure.log",
+      "sha256": "9ade86116071b45e08648f0fce562cd65de3f38478dacf9ebaea5965802a7b81"
+    },
+    "frontend_ci": {
+      "path": "/tmp/zboard-retirement-frontend-full.log",
+      "sha256": "f5f2344cf6a2bdaff3df2dafd2d8c1bc9a01c7e540fe685c8a6b95657fd7f942"
+    },
+    "frontend_build": {
+      "path": "/tmp/zboard-retirement-build-frontend.log",
+      "sha256": "96e2df4365adff38c68c002a8c87650686d09450ac7e51c4deef4507f0d8cc9f"
+    },
+    "openapi": {
+      "path": "/tmp/zboard-retirement-openapi.log",
+      "sha256": "1527d77d6c77c2bddcd8d03792f0b340e3c86c8c91dc695f2fa22d890da51d90"
+    },
+    "focused_db": {
+      "path": "/tmp/zboard-retirement-verified-focused.log",
+      "sha256": "57d0ba5aef392b7a90662139de7102a1ecd31681a721d772736f508d6db082e9"
+    },
+    "schema": {
+      "path": "/tmp/zboard-retirement-schema-focused.log",
+      "sha256": "45003bfafe09113ee60678e788a77b6ef0bc6e5127178306fae6b8b7abbf501e"
+    }
+  },
+  "scope": "isolated SQLite/MySQL and application simulation; no production or live channel payment",
+  "retirement_replay_example": {
+    "raw_bytes": 60,
+    "charged_bytes": 30,
+    "quota_bytes": 30,
+    "cursor_identity_preserved": true,
+    "terminal_order_used_snapshot": 30,
+    "subscription_revived": false
+  },
+  "rollback_limit": "After canonical secrets are destroyed, the old binary cannot consume secret-principal events using the new digest. Stop consumption, preserve buffers, prefer forward repair; never clear cursors or reauthorize old identities.",
+  "not_completed": [
+    "diagnostic retention/archival and raw-event privacy normalization",
+    "epoch isolation for recovered or replaced entitlements",
+    "configurable recovery window",
+    "fresh-term plan change, generic refunds and balance auto-renewal",
+    "safe native per-subscription active-flow termination",
+    "P3-P7 complete acceptance"
+  ],
+  "exact_head_ci": "pending after push; previous a01a611 all six passed run39311655936"
+}

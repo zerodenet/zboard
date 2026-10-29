@@ -30,13 +30,23 @@ func (s Breakdown) Read(ctx context.Context, actor uint, q metering.BreakdownQue
 	if !ok {
 		return metering.BreakdownSnapshot{}, fmt.Errorf("invalid statistics dimension")
 	}
+	read := s.ReadDB
+	if read == nil {
+		read = s.DB
+	}
+	scope := TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}
+	// A cached historical snapshot must not disguise pending current facts.
+	if s.Cache != nil {
+		if err := EnsureHourlyUsageReady(read.WithContext(ctx), scope, q.From, q.To); err != nil {
+			return metering.BreakdownSnapshot{}, err
+		}
+	}
 	load := func() (metering.BreakdownSnapshot, error) {
 		out := metering.BreakdownSnapshot{Dimension: q.Dimension, From: q.From, To: q.To, AsOf: time.Now().UTC(), Items: []metering.BreakdownRow{}, Offset: q.Offset, Limit: q.Limit}
-		read := s.ReadDB
-		if read == nil {
-			read = s.DB
-		}
 		err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := EnsureHourlyUsageReady(tx, scope, q.From, q.To); err != nil {
+				return err
+			}
 			source := func() *gorm.DB {
 				return TrafficAggregateSource(tx, q.From, q.To, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID})
 			}

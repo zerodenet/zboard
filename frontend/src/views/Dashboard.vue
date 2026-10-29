@@ -26,22 +26,22 @@
     <UiMetricStrip v-if="current" class="dashboard-section service-metrics">
       <MetricCard label="有效订阅" :value="formatNumber(current.active_subscriptions)" icon="plans" status="当前" :meta="`${formatNumber(current.subscriptions.expiring_within_3d)} 个将在 3 天内到期`" />
       <MetricCard
-        label="当前活跃订阅"
-        :value="observedValue(current.service.active_subscriptions)"
+        label="已观测活跃订阅"
+        :value="observedValue(observedSubscriptions)"
         icon="plans"
-        :status="current.coverage.principal_flows ? '实时' : '未采集'"
+        :status="observedSubscriptions === null ? '未采集' : '覆盖未知'"
         tone="neutral"
         icon-tone="neutral"
-        :meta="current.coverage.principal_flows ? '当前正在使用服务的订阅' : '尚未收到实时连接数据'"
+        :meta="observedSubscriptions === null ? '尚未取得主体连接快照' : '主体快照中有连接的订阅，覆盖范围及新鲜度未确认'"
       />
       <MetricCard
-        label="当前连接"
-        :value="observedValue(current.service.active_flows)"
+        label="已观测连接"
+        :value="observedValue(observedFlows)"
         icon="nodes"
-        :status="current.coverage.principal_flows ? '实时' : '未采集'"
+        :status="observedFlows === null ? '未采集' : '覆盖未知'"
         tone="neutral"
         icon-tone="neutral"
-        meta="各节点当前连接数汇总"
+        :meta="observedFlows === null ? '尚未取得主体连接快照' : '已有主体快照的汇总，覆盖范围及新鲜度未确认'"
       />
 
       <MetricCard
@@ -446,6 +446,18 @@ function comparisonText(current: number, previous: number, money = false) {
   const percent = ((current - previous) / Math.abs(previous)) * 100
   return `较上期 ${percent > 0 ? '+' : ''}${percent.toFixed(1)}%`
 }
+
+// Old servers expose these snapshots in active_* fields. Treat them as
+// observations too; an old boolean alone never proves full runtime coverage.
+function snapshotCount(field: 'active_subscriptions' | 'active_flows'): number | null {
+  const service = current.value?.service
+  if (!service) return null
+  const observed = field === 'active_flows' ? 'observed_active_flows' : 'observed_active_subscriptions'
+  const value = Object.prototype.hasOwnProperty.call(service, observed) ? service[observed] : service[field]
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+const observedSubscriptions = computed(() => snapshotCount('active_subscriptions'))
+const observedFlows = computed(() => snapshotCount('active_flows'))
 
 function observedValue(value: number | null) {
   return value === null ? '未采集' : formatNumber(value)

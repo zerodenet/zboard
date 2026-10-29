@@ -1,0 +1,155 @@
+{
+  "source": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "checkout": "ordinary clean /workspace/zboard-current-verify",
+  "backend": {
+    "source": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+    "checkout": "/workspace/zboard-current-verify",
+    "phase": "backend",
+    "started_utc": "2026-10-20T21:43:13.126503+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "2"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 301.326,
+        "log": "full-go-31e72db-final.log"
+      },
+      {
+        "name": "vet",
+        "command": "go vet -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 3.997,
+        "log": "vet-31e72db-final.log"
+      },
+      {
+        "name": "build",
+        "command": "go build ./cmd/zboard",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 2.088,
+        "log": "build-31e72db-final.log"
+      },
+      {
+        "name": "pure-go-sqlite",
+        "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+        "environment_additions": {
+          "CGO_ENABLED": "0"
+        },
+        "exit_code": 0,
+        "wall_seconds": 22.416,
+        "log": "pure-go-sqlite-31e72db-final.log"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-20T21:48:42.955797+00:00"
+  },
+  "mysql": {
+    "source": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+    "checkout": "/workspace/zboard-current-verify",
+    "phase": "mysql",
+    "started_utc": "2026-10-20T21:48:49.209027+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "2"
+    },
+    "checks": [
+      {
+        "name": "mysql-core",
+        "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 1,
+        "wall_seconds": 901.911,
+        "log": "mysql-core-31e72db-final.log"
+      },
+      {
+        "name": "mysql-jobstore",
+        "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 137.079,
+        "log": "mysql-jobstore-31e72db-final.log"
+      },
+      {
+        "name": "mysql-copy",
+        "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 118.404,
+        "log": "mysql-copy-31e72db-final.log"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-20T22:08:06.604500+00:00"
+  },
+  "mysql_package_results": {
+    "datastore": {
+      "result": "PASS",
+      "seconds": 157.274
+    },
+    "handler": {
+      "result": "FAIL: original15m timeout",
+      "seconds": 900.029,
+      "last_test": "TestMySQLWalletReservationCompetitionCannotOverspend",
+      "last_test_running_seconds": 2
+    },
+    "networkstore": {
+      "result": "PASS",
+      "seconds": 104.134
+    },
+    "jobstore": {
+      "result": "PASS",
+      "seconds": 136.58
+    },
+    "platformstore_copy": {
+      "result": "PASS",
+      "seconds": 117.918
+    }
+  },
+  "ci": {
+    "run": 39502621208,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39502621208",
+    "result": "FAIL",
+    "successful_jobs": [
+      "backend",
+      "frontend",
+      "contract",
+      "compose",
+      "zrs-compiler"
+    ],
+    "mysql": "handler900s timeout; lastZeroEventWindowPreservesRoundedAccountingAndReplay only1s; later jobstore/copy commands unexecuted in CI"
+  },
+  "prior_source_ci": {
+    "source": "c72254bf2bef9a410432876894c8922766eba8ae",
+    "run": 39501639697,
+    "result": "all six SUCCESS",
+    "mysql_handler_seconds": 875.129,
+    "caution": "No stable headroom or metadata speedup causality established; does not accept31e72db."
+  },
+  "remaining": [
+    "Original MySQL15m core gate remains failed locally and in new CI; no timeout/filter/threshold change.",
+    "Current31e72db original fixed capacity profile PASS; see2026-10-20-records-original-capacity.json. This does not replace the failedMySQL gate.",
+    "NodeStats observation update remains coupled to accounting; independent stats cursor and host-owner/rollback boundary must be resolved before asynchronous handoff.",
+    "TrafficRecord/Meta remain accounting/replay authority; no complete raw authority archival or P4/P6/P7 completion."
+  ],
+  "private_evidence_sha256": {
+    "full-go-31e72db-final.log": "37b470a8137c7ab2c014128ad96611b0b62cea60ed48ccd9e70b2bc018b2fe68",
+    "vet-31e72db-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build-31e72db-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pure-go-sqlite-31e72db-final.log": "b6a9e268445f26c0f98efbffada6ef40612001e982ad9cd9ae5104ecbe221d4a",
+    "mysql-core-31e72db-final.log": "aa3333b71429f4d1864316fa5beb04c5b9de90ac4b915c5528743d8e0db8bd54",
+    "mysql-jobstore-31e72db-final.log": "c44160302823fed918f6a2d7848c1190e4b0109256620cba712b534111aa2512",
+    "mysql-copy-31e72db-final.log": "bf31fac497152c559fc62089f354851baf825697feaabde3df18fc5045ab272f",
+    "31e72db-mysql-ci-failure.log": "83690c401fc62ed2afb1d416af076fdab473093ac4dab34ea0b5da582f4f9c5d",
+    "c72254b-mysql-ci-success.log": "d041029a4ae5370eb18af0d7ba183a93748eb724d2a1e7c80668a14642617173",
+    "00f85fb-mysql-ci-failure.log": "902a8d47fcbba79cc4718a4344ddd595ac6477809269744d1bcfecc60a63621c",
+    "98c597d-mysql-ci-failure.log": "0dc2f111789cb9f5bbb5eb73e642be0ed3af2971cdfeb1f6539e8aea488c9d11"
+  }
+}

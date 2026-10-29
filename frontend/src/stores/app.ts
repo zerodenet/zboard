@@ -1,11 +1,20 @@
 import { defineStore } from 'pinia'
-import { clearAuthToken, fetchPublicSystemConfigs, fetchSystemStatus, getAuthToken, getSetupStatus, markAnnouncementRead as markAnnouncementReadRequest, setAuthToken, me as fetchMe, type Announcement, type MaintenanceState, type SetupStatus, type SystemConfig } from '../api/client'
+import { clearAuthToken, fetchPublicSystemConfigs, fetchSystemStatus, getAuthToken, getSetupStatus, login, markAnnouncementRead as markAnnouncementReadRequest, setAuthToken, me as fetchMe, type Announcement, type MaintenanceState, type SetupStatus, type SystemConfig } from '../api/client'
+import { AUTH_SESSION_RESTORED_EVENT, resetAuthSessionExpired } from '../utils/authSession'
+import { clearTrackedTasks } from '../utils/taskTracker'
+import { fetchIdentityPasswordStatus } from '../api/identities'
+import { clearAuthReturnPath } from '../utils/authReturnPath'
+import { approveReauthenticationDraftPage, clearReauthenticationDrafts, confirmReauthenticationDraftIdentity, invalidateReauthenticationDraftIdentity, pendingReauthenticationDraftPage } from '../utils/reauthenticationDrafts'
+import { fetchNavigation } from '../api/menus'
 import { applySiteMetadata, buildSiteProfile } from '../utils/siteProfile'
 import { DEFAULT_SYSTEM_TIME_ZONE, setDisplayTimeZone } from '../utils/timeZone'
 
 export const useAppStore = defineStore('app', {
   state: () => ({
     token: getAuthToken(),
+    reauthRequired: false,
+    sessionEpoch: 0,
+    passwordLoginAvailable: null as boolean | null,
     installation: null as SetupStatus | null,
     setupChecked: false,
 	publicConfigs: [] as SystemConfig[],
@@ -32,7 +41,10 @@ export const useAppStore = defineStore('app', {
 		if (!force && Date.now() - this.systemStatusLoadedAt < 5000) {
 			return { maintenance: this.maintenance, announcements: this.announcements, announcement_unread_count: this.announcementUnreadCount, as_of: new Date(this.systemStatusLoadedAt).toISOString() }
 		}
+		const token = this.token
+		const epoch = this.sessionEpoch
 		const status = await fetchSystemStatus()
+		if (token !== this.token || epoch !== this.sessionEpoch) return status
 		this.maintenance = status.maintenance
 		this.announcements = status.announcements || []
 		this.announcementUnreadCount = Number(status.announcement_unread_count || 0)
@@ -41,7 +53,9 @@ export const useAppStore = defineStore('app', {
 	},
 	async markAnnouncementRead(item: Announcement) {
 		if (!this.token) return
+		const token = this.token
 		await markAnnouncementReadRequest(item.id, item.revision)
+		if (token !== this.token) return
 		this.announcements = this.announcements.map(candidate => candidate.id === item.id ? { ...candidate, read: true, read_at: new Date().toISOString() } : candidate)
 		this.announcementUnreadCount = Math.max(0, this.announcementUnreadCount - 1)
 	},
@@ -99,15 +113,83 @@ export const useAppStore = defineStore('app', {
       }
     },
     setToken(token: string) {
+      if (token !== this.token) invalidateReauthenticationDraftIdentity()
       this.token = token
       setAuthToken(token)
+      void this.loadIdentityPasswordStatus()
+    },
+    async loadIdentityPasswordStatus() {
+      const token = this.token
+      if (!token || this.reauthRequired) return
+      try {
+        const status = await fetchIdentityPasswordStatus()
+        if (token === this.token && typeof status.password_set === 'boolean') this.passwordLoginAvailable = status.password_set
+      } catch { /* Unknown availability does not imply that password login exists. */ }
     },
     setUser(user: any) {
+      const isAdmin = Boolean(user.is_admin ?? user.isAdmin)
+      if (this.user.id && (this.user.id !== user.id || this.user.isAdmin !== isAdmin)) {
+        clearReauthenticationDrafts()
+        this.sessionEpoch++
+        clearTrackedTasks()
+        this.announcements = []
+        this.announcementUnreadCount = 0
+        this.systemStatusLoadedAt = 0
+        this.passwordLoginAvailable = null
+      }
       this.user = {
         id: user.id,
         email: user.email,
-        isAdmin: Boolean(user.is_admin ?? user.isAdmin)
+        isAdmin
       }
+    },
+    suspendSession() {
+      invalidateReauthenticationDraftIdentity()
+      this.reauthRequired = true
+      this.token = ''
+      clearAuthToken()
+    },
+    async reauthenticate(email: string, password: string) {
+      const result = await login(email, password)
+      await this.acceptAuthenticatedSession(result.auth.token)
+      this.reauthRequired = false
+      void this.loadIdentityPasswordStatus()
+      clearAuthReturnPath()
+      void this.loadSystemStatus(true).catch(() => undefined)
+      window.dispatchEvent(new Event(AUTH_SESSION_RESTORED_EVENT))
+    },
+    async acceptAuthenticatedSession(token: string) {
+      invalidateReauthenticationDraftIdentity()
+      if (typeof token !== 'string' || !token) throw new Error('无法确认登录会话，请重新登录。')
+      // The main identity endpoint, rather than the form or login response,
+      // determines which account and permissions can resume this page.
+      setAuthToken(token, false)
+      let user
+      try {
+        user = await fetchMe()
+        if (!Number.isSafeInteger(user?.id) || user.id <= 0) throw new Error('无法确认登录身份，请重新登录。')
+        if (getAuthToken() !== token) throw new Error('登录状态已变化，请重新认证。')
+      } catch (cause) {
+        if (getAuthToken() === token) clearAuthToken()
+        throw cause
+      }
+      this.setUser(user)
+      this.setToken(token)
+      this.reauthRequired = false
+      confirmReauthenticationDraftIdentity(this.user.id, this.isAdmin)
+      const recoveryPage = pendingReauthenticationDraftPage(this.user.id)
+      if (recoveryPage) {
+        try {
+          const access = await fetchNavigation(recoveryPage.startsWith('/admin') ? 'admin' : 'account', undefined, recoveryPage)
+          if (getAuthToken() === token) approveReauthenticationDraftPage(this.user.id, recoveryPage, access.page_available === true)
+        } catch (cause: any) {
+          if (getAuthToken() === token && cause?.response?.status === 403) clearReauthenticationDrafts()
+          // A failed permission read is not failed authentication. No draft
+          // payload has been read; the mounted module can retry its read later.
+        }
+      }
+      if (getAuthToken() !== token) throw new Error('登录状态已变化，请重新认证。')
+      return user
     },
     async loadMe() {
       if (!this.token) {
@@ -118,14 +200,27 @@ export const useAppStore = defineStore('app', {
       // A temporary network failure must not log out the user.
       const user = await fetchMe()
       if (this.token !== token) return
-      if (user) this.setUser(user)
+      if (user) {
+        this.setUser(user)
+        confirmReauthenticationDraftIdentity(this.user.id, this.isAdmin)
+        void this.loadIdentityPasswordStatus()
+      }
       else this.clear()
     },
-    clear() {
+    clear(options: { preserveReauthenticationDrafts?: boolean } = {}) {
+      if (options.preserveReauthenticationDrafts) invalidateReauthenticationDraftIdentity()
+      else clearReauthenticationDrafts()
+      clearAuthReturnPath()
+      this.reauthRequired = false
+      this.passwordLoginAvailable = null
+      this.sessionEpoch++
+      resetAuthSessionExpired()
+      clearTrackedTasks()
       this.token = ''
       this.user = { id: 0, email: '', isAdmin: false }
 	  this.announcements = []
 	  this.announcementUnreadCount = 0
+      this.systemStatusLoadedAt = 0
       clearAuthToken()
     }
   }

@@ -60,3 +60,14 @@ it('filters plugins by actual state and purpose and clears filters while preserv
  await router.push('/admin/plugins?business=第三方登录与注册&return_to=/admin');await flushPromises();expect(view.text()).toContain('Login');expect(view.text()).not.toContain('Service')
  view.findComponent({name:'WorkbenchFilterBar'}).vm.$emit('clear');await flushPromises();expect(router.currentRoute.value.query).toEqual({return_to:'/admin'});expect(view.text()).toContain('2 / 2 个插件')
 })
+
+it('shows ended subscription history without recovery or quota writes',async()=>{
+ const sub={id:3,user_id:2,plan_name:'Historical',status:'ended',flow_used:100,flow_total:100,ended_at:'2026-09-20',end_reason:'expired',can_renew:false,active_credential_count:0}
+ vi.mocked(fetchSubscriptionsPage).mockResolvedValue({items:[sub],total:1} as any)
+ vi.mocked(fetchAdminSubscriptionDetail).mockResolvedValue(sub as any)
+ const {view}=await open(Subscriptions,'/admin/subscriptions?subscription=3&status=ended')
+ expect(fetchSubscriptionsPage).toHaveBeenCalledWith(expect.objectContaining({status:'ended'}),expect.anything())
+ expect(view.text()).toContain('已结束');expect(view.text()).toContain('历史权益与用量可在订单中追溯')
+ expect(view.findComponent({name:'SubscriptionQuotaEditor'}).exists()).toBe(false)
+ expect(view.text()).not.toContain('服务已停止，可在')
+})

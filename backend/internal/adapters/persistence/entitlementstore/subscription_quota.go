@@ -60,6 +60,9 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		if sub.Status == "ended" {
+			return entitlements.ErrSubscriptionQuotaInvalid
+		}
 		now := time.Now().UTC()
 		if sub.EndedAt == nil && (sub.Status == "active" || sub.Status == "expired") && sub.EndAt.After(now) {
 			if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {

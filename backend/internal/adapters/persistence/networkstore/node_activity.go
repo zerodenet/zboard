@@ -2,6 +2,9 @@ package networkstore
 
 import (
 	"context"
+	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
+	"gorm.io/gorm/clause"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -35,13 +38,54 @@ func (s NodeActivity) RecordNodeActivity(ctx context.Context, nodeID uint, crede
 	if update.BytesDown != nil {
 		values["bytes_down"] = *update.BytesDown
 	}
-	result := s.DB.WithContext(ctx).Model(&model.Node{}).
-		Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", nodeID, true, credential).
-		Updates(values)
-	if result.Error != nil {
-		return result.Error
+
+	rejected := false
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var node model.Node
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL", nodeID, true, credential).First(&node).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return network.ErrNodeActivityCredential
+		}
+		if err != nil {
+			return err
+		}
+		// Retain the final conditional write fence after authentication/locking.
+		// In particular a credential change must not become an id-only UPDATE.
+		predicate := "id = ? AND asset_tag = ? AND is_enabled = ? AND node_credential = ? AND node_credential_revoked_at IS NULL"
+		args := []any{nodeID, node.AssetTag, true, credential}
+		result := tx.Model(&model.Node{}).Where(predicate, args...).Updates(values)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			// MySQL can report no changed rows for an identical valid heartbeat.
+			// Distinguish that from a lost credential before touching provenance.
+			var current model.Node
+			err := tx.Where(predicate, args...).First(&current).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				rejected = true
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
+		if update.ActiveFlows != nil || update.BytesUp != nil || update.BytesDown != nil {
+			source := "unknown"
+			switch update.CounterWriter {
+			case network.CounterWriterHeartbeat, network.CounterWriterLegacyConnector:
+				source = string(update.CounterWriter)
+			}
+			if err := observationstore.CounterOverride(tx, node.ID, node.AssetTag, source, update.At); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	if result.RowsAffected == 0 {
+	if rejected {
 		return network.ErrNodeActivityCredential
 	}
 	return nil

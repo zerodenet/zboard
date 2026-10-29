@@ -1,0 +1,62 @@
+name: isolated-concurrency-race
+run-name: isolated-concurrency-race ${{ github.event.pull_request.head.sha || github.sha }}
+
+on:
+  workflow_dispatch:
+  # A retained label does not trigger repeated costly validation on push.
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  selected-races:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'validation:concurrency-race')
+    # Separate VM and service from ordinary/full MySQL jobs. Both drivers and
+    # both packages execute serially here, once per selected exact revision.
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: zboard-ci-root
+        ports:
+          - "127.0.0.1:3306:3306"
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pzboard-ci-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      ZBOARD_TEST_MYSQL_DSN: root:zboard-ci-root@tcp(127.0.0.1:3306)/?parseTime=true&loc=UTC
+      CONCURRENCY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Check strict three-run result parser and private output policy
+        run: |
+          python3 -c 'import sys; assert sys.version_info >= (3, 12)'
+          python3 -m unittest discover -s scripts -p 'test_acceptance_concurrency_race.py'
+      - name: Discover complete packages then run selected real races on both databases
+        shell: bash
+        run: |
+          python3 scripts/acceptance-concurrency-race.py --checkout "$GITHUB_WORKSPACE" --revision "$CONCURRENCY_REVISION" --private-dir "$RUNNER_TEMP/zboard-concurrency-private" --summary "$RUNNER_TEMP/zboard-concurrency-summary.json" --isolated-mysql
+      - name: Preserve fixed safe summary only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: concurrency-summary-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/zboard-concurrency-summary.json
+          if-no-files-found: error
+          retention-days: 14

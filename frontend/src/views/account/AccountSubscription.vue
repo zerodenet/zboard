@@ -44,7 +44,14 @@
         <tbody>
           <tr v-for="sub in subscriptions" :key="sub.id" :class="{ 'selected-subscription-row': sub.id === selectedSubscriptionID }">
             <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
-            <td><StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge></td>
+            <td>
+              <StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge>
+              <div v-if="automaticNeedsAttention(sub.automatic_renewal_state)">
+                <StatusBadge tone="warning">{{ sub.automatic_renewal_state === 'insufficient_balance' ? '上次自动续费余额不足' : '自动续费需要核对' }}</StatusBadge>
+                <small>上次结果：{{ sub.automatic_renewal_message || '请核对该订阅的余额自动续费状态。' }}</small>
+                <small v-if="sub.automatic_renewal_checked_at">最近检查 <TimeBadge :value="sub.automatic_renewal_checked_at" /></small>
+              </div>
+            </td>
             <td data-column-priority="2">
               <div class="cell-title cell-related">
                 <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
@@ -72,7 +79,10 @@
                   {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
                 </UiButton>
                 <RouterLink v-if="canReset(sub)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink>
+                <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="secondary" size="sm" type="button" @click="terminationTarget = sub.id">核对退订</UiButton>
+                <UiButton variant="secondary" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">余额自动续费</UiButton>
                 <RouterLink v-if="sub.can_renew" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink>
+                <RouterLink v-if="Number.isSafeInteger(sub.id) && sub.id > 0" class="button button-secondary button-sm" :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">就此订阅提交工单</RouterLink>
               </div>
             </td>
           </tr>
@@ -90,6 +100,9 @@
         />
       </template>
     </DataWorkbench>
+
+    <SubscriptionTermination v-if="terminationTarget" :subscription-id="terminationTarget" @settled="loadAll" />
+    <SubscriptionAutomaticRenewal v-if="automaticTarget" :subscription-id="automaticTarget.id" :plan-id="automaticTarget.planId" @changed="refreshAutomaticRenewal" />
 
     <UiSection title="协议实时负载" description="显示当前有效套餐授权的协议，上报延迟不会移除协议。人数和连接数仅展示最近两分钟的负载数据。">
       <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
@@ -126,6 +139,9 @@
       </template>
       <div v-if="selectedSubscription" class="panel-body access-panel">
         <span class="access-icon"><UiIcon name="key" /></span>
+        <PageAlert v-if="selectedSubscriptionResource.stale.value" tone="warning" title="订阅详情尚未更新">
+          暂时无法核对当前额度和期限，显示上次读取的信息。请刷新后再生成、轮换或吊销链接。
+        </PageAlert>
         <PageAlert v-if="accessResource.error.value" tone="danger" title="订阅链接读取失败">
           {{ accessResource.error.value }}
           <UiButton variant="secondary" size="sm" type="button" @click="loadAccess">重试链接</UiButton>
@@ -187,10 +203,10 @@
           <UiButton v-if="subscriptionUrl" variant="secondary" size="sm" type="button" @click="copy">
             <UiIcon name="copy" />{{ copyLabel }}
           </UiButton>
-          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask(access.configured ? 'rotate' : 'generate')">
+          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask(access.configured ? 'rotate' : 'generate')">
             {{ access.configured ? '轮换此链接' : '生成此链接' }}
           </UiButton>
-          <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working" @click="ask('revoke')">吊销此链接</UiButton>
+          <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working || !selectedContextReady" @click="ask('revoke')">吊销此链接</UiButton>
         </div>
       </div>
       <EmptyState v-else icon="key" title="请选择有效订阅" description="每条订阅分别生成和管理自己的客户端链接。" />
@@ -218,14 +234,19 @@
 </template>
 
 <script setup lang="ts">
+import SubscriptionTermination from '../../components/SubscriptionTermination.vue'
+import SubscriptionAutomaticRenewal from '../../components/SubscriptionAutomaticRenewal.vue'
 import PluginSlot from '../../plugins/PluginSlot.vue'
 import TableText from '../../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAppStore } from '../../stores/app'
+import { isAuthSessionExpired } from '../../utils/authSession'
 import {
   fetchActiveSubscriptionTemplatesPage,
   fetchAccountProtocolLoads,
   fetchAccountSubscriptionsPage,
+  getAuthToken,
   type AccountProtocolLoadSnapshot,
   type AdminSubscriptionListItem,
   type SubscriptionTemplate,
@@ -265,6 +286,17 @@ import {
   subscriptionDeliveryNative,
 } from '../../utils/subscriptionDelivery'
 
+const terminationTarget = ref(0)
+const automaticTarget = ref<{ id: number; planId: number } | null>(null)
+function automaticNeedsAttention(state?: string) {
+  return Boolean(state && !['waiting', 'renewed', 'disabled', 'window_closed'].includes(state))
+}
+const app = useAppStore()
+const identityScope = () => `${app.user?.id || 0}:${app.sessionEpoch}:${getAuthToken()}`
+const selectedNotice = ref('')
+const selectedUnavailable = ref(false)
+const automaticRowError = ref('')
+let automaticRowController: AbortController | null = null
 const route = useRoute()
 const router = useRouter()
 const allowedPageSizes = [25, 50, 100]
@@ -300,6 +332,7 @@ const {
   refreshing,
   error: listError,
   load,
+  reset: resetSubscriptions,
 } = useRemoteTable<AdminSubscriptionListItem>({
   offset,
   limit,
@@ -313,8 +346,14 @@ const {
 })
 
 const selectedSubscription = computed(() => {
-  return selectedSubscriptionResource.data.value
-    || activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
+  if (selectedUnavailable.value) return null
+  if (selectedSubscriptionResource.loaded.value) {
+    const selected = selectedSubscriptionResource.data.value
+    return selected?.id === selectedSubscriptionID.value && selected.status === 'active' ? selected : null
+  }
+  if (selectedSubscriptionResource.errorKind.value === 'forbidden'
+    || selectedSubscriptionResource.errorKind.value === 'unauthorized' && !isAuthSessionExpired()) return null
+  return activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
     || subscriptions.value.find(item => item.id === selectedSubscriptionID.value && item.status === 'active')
     || null
 })
@@ -322,14 +361,29 @@ const selectedSubscription = computed(() => {
 const selectedSubscriptionResource = useRemoteResource<AdminSubscriptionListItem | null>({
   initial: () => null,
   fetch: async ({ signal }) => {
-    const id = selectedSubscriptionID.value
-    const page = await fetchAccountSubscriptionsPage({ subscriptionId: id, status: 'active', offset: 0, limit: 1 }, { signal })
-    const selected = page.items.find(item => item.id === id && item.status === 'active')
-    if (!selected) throw new Error('unavailable subscription')
-    return selected
+    const id = selectedSubscriptionID.value, selection = selectionGeneration, identity = identityScope()
+    const isCurrent = () => !signal.aborted && !disposed && id === selectedSubscriptionID.value
+      && selection === selectionGeneration && identity === identityScope()
+    try {
+      const page = await fetchAccountSubscriptionsPage({ subscriptionId: id, status: 'active', offset: 0, limit: 1 }, { signal })
+      if (!isCurrent()) throw Object.assign(new Error('subscription identity changed'), { code: 'AUTH_SESSION_CHANGED' })
+      const selected = page.items.find(item => item.id === id && item.status === 'active') || null
+      selectedUnavailable.value = !selected
+      return selected
+    } catch (cause: any) {
+      if (!isCurrent()) throw Object.assign(new Error('subscription identity changed'), { code: 'AUTH_SESSION_CHANGED' })
+      // A confirmed missing target is authoritative; a network error is unknown.
+      // Do not let the cached list turn a 404 into another available credential.
+      if (cause?.response?.status === 404) { selectedUnavailable.value = true; return null }
+      if (cause?.response?.status === 403) selectedUnavailable.value = true
+      throw cause
+    }
   },
-  errorMessage: '所选订阅不存在或已失效，请从列表重新选择。',
+  errorMessage: '暂时无法刷新所选订阅，请核对网络后重试；已读取的信息可能已过期。',
 })
+const selectedContextReady = computed(() => selectedSubscriptionResource.loaded.value
+  && !selectedSubscriptionResource.loading.value && !selectedSubscriptionResource.error.value
+  && Boolean(selectedSubscription.value))
 
 const activeSubscriptionResource = useRemoteResource({
   initial: () => ({ items: [] as AdminSubscriptionListItem[], total: 0 }),
@@ -355,8 +409,11 @@ const protocolLoadResource = useRemoteResource<AccountProtocolLoadSnapshot>({
 const accessResource = useRemoteResource<SubscriptionAccess>({
   initial: () => ({ configured: false, subscription_id: selectedSubscriptionID.value }),
   fetch: async ({ signal }) => {
-    const subscriptionID = selectedSubscriptionID.value
+    const subscriptionID = selectedSubscriptionID.value, selection = selectionGeneration, identity = identityScope()
     const result = await fetchSubscriptionAccess(subscriptionID, { signal })
+    if (signal.aborted || disposed || selection !== selectionGeneration || identity !== identityScope()) {
+      throw Object.assign(new Error('subscription identity changed'), { code: 'AUTH_SESSION_CHANGED' })
+    }
     if (result.subscription_id !== subscriptionID) throw new Error('subscription access response mismatch')
     return result
   },
@@ -372,12 +429,12 @@ const metadataLoading = computed(() => activeSubscriptionResource.loading.value 
 const protocolLoads = protocolLoadResource.data
 const access = accessResource.data
 const accessLoading = accessResource.loading
-const accessReady = computed(() => accessResource.loaded.value
+const accessReady = computed(() => Boolean(selectedSubscription.value) && accessResource.loaded.value
   && !accessLoading.value
   && !accessResource.error.value
   && access.value.subscription_id === selectedSubscriptionID.value)
 const loading = computed(() => listLoading.value || metadataLoading.value || accessLoading.value || templateLoading.value || protocolLoadResource.loading.value)
-const error = computed(() => listError.value || selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value || templateResource.error.value)
+const error = computed(() => listError.value || automaticRowError.value || selectedNotice.value || selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value || templateResource.error.value)
 const subscriptionUrl = computed(() => accessReady.value
   ? buildSubscriptionURL(access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : '', selectedTemplate.value)
   : '')
@@ -442,17 +499,63 @@ function selectDefaultSubscription() {
 async function loadAccess() {
   if (working.value && mutationSubscriptionID === selectedSubscriptionID.value) return
   if (!selectedSubscriptionID.value) return
-  const selection = selectionGeneration
-  if (selectedSubscription.value) selectedSubscriptionResource.replace(selectedSubscription.value)
-  else if (!await selectedSubscriptionResource.load() || disposed || selection !== selectionGeneration) return
+  const selection = selectionGeneration, identity = identityScope()
+  const isCurrent = () => !disposed && selection === selectionGeneration && identity === identityScope()
+  // The selected target can be outside both the list page and the one-row active
+  // summary. Its authoritative quota/term GET must run for every explicit read.
+  const ready = await selectedSubscriptionResource.load()
+  if (!isCurrent()) return
+  if (!ready) {
+    if (selectedSubscriptionResource.errorKind.value === 'forbidden'
+      || selectedSubscriptionResource.errorKind.value === 'unauthorized' && !isAuthSessionExpired()) accessResource.reset()
+    return
+  }
+  if (!selectedSubscriptionResource.data.value) {
+    accessResource.reset()
+    selectedNotice.value = '所选订阅不存在或已失效，请从列表重新选择。'
+    return
+  }
+  selectedNotice.value = ''
   await accessResource.load()
 }
 
 async function loadMetadata() {
-  if (await activeSubscriptionResource.load()) {
+  const selection = selectionGeneration, identity = identityScope()
+  // A slow/failed active-count summary cannot hold an explicit selected target.
+  if (selectedSubscriptionID.value) {
+    await Promise.all([activeSubscriptionResource.load(), loadAccess()])
+  } else if (await activeSubscriptionResource.load()) {
+    if (disposed || selection !== selectionGeneration || identity !== identityScope()) return
     selectDefaultSubscription()
     await loadAccess()
-    if (!disposed) await syncURL(true)
+  }
+  if (!disposed && identity === identityScope()) await syncURL(true)
+}
+
+async function refreshAutomaticRenewal(subscriptionID: number) {
+  if (disposed || automaticTarget.value?.id !== subscriptionID) return
+  automaticRowController?.abort()
+  const controller = new AbortController()
+  automaticRowController = controller
+  const identity = identityScope(), pageOffset = offset.value, pageLimit = limit.value, filter = status.value
+  automaticRowError.value = ''
+  // Refresh only the affected row and, when it is still managed, its exact
+  // access context. Optional statistics/counts and other subscriptions stay independent.
+  const detail = selectedSubscriptionID.value === subscriptionID ? loadAccess() : Promise.resolve()
+  try {
+    const page = await fetchAccountSubscriptionsPage({ subscriptionId: subscriptionID, offset: 0, limit: 1 }, { signal: controller.signal })
+    if (disposed || controller.signal.aborted || identity !== identityScope()
+      || pageOffset !== offset.value || pageLimit !== limit.value || filter !== status.value) return
+    const row = page.items.find(item => item.id === subscriptionID)
+    if (row) subscriptions.value = subscriptions.value.map(item => item.id === subscriptionID ? row : item)
+    else automaticRowError.value = '自动续费设置已保存，但该订阅的列表状态暂无法核对，请刷新列表。'
+  } catch {
+    if (!disposed && !controller.signal.aborted && identity === identityScope()) {
+      automaticRowError.value = '自动续费设置已保存，列表仍显示上次读取的状态，请刷新后核对。'
+    }
+  } finally {
+    if (automaticRowController === controller) automaticRowController = null
+    await detail
   }
 }
 
@@ -510,17 +613,17 @@ async function changePage(value: { offset: number; limit: number }) {
 }
 
 function ask(next: typeof kind.value) {
-  if (!selectedSubscription.value || !accessReady.value || working.value) return
+  if (!selectedSubscription.value || !selectedContextReady.value || !accessReady.value || working.value) return
   kind.value = next
   confirmOpen.value = true
 }
 
 async function execute() {
-  if (!selectedSubscription.value || !accessReady.value || working.value || !confirmOpen.value) return
+  if (!selectedSubscription.value || !selectedContextReady.value || !accessReady.value || working.value || !confirmOpen.value) return
   const subscriptionID = selectedSubscription.value.id
   const selection = selectionGeneration
-  const action = kind.value
-  const isCurrent = () => !disposed && selection === selectionGeneration && subscriptionID === selectedSubscriptionID.value
+  const action = kind.value, identity = identityScope()
+  const isCurrent = () => !disposed && identity === identityScope() && selection === selectionGeneration && subscriptionID === selectedSubscriptionID.value
   mutationSubscriptionID = subscriptionID
   working.value = true
   accessResource.reset()
@@ -572,10 +675,39 @@ async function copy() {
 watch(selectedSubscriptionID, () => {
   selectionGeneration += 1
   selectedSubscriptionResource.reset()
+  selectedNotice.value = ''
+  selectedUnavailable.value = false
   accessResource.reset()
   copyLabel.value = '复制链接'
   message.value = ''
   confirmOpen.value = false
+}, { flush: 'sync' })
+
+// Changing account/permission epoch invalidates every cached personal read and
+// in-flight continuation, even if this route remains mounted. Read recovery is
+// separate from mutations: no credential or commerce write is ever replayed.
+watch([() => app.user?.id || 0, () => app.sessionEpoch], () => {
+  selectionGeneration += 1
+  const selection = selectionGeneration
+  automaticRowController?.abort()
+  automaticRowController = null
+  automaticRowError.value = ''
+  resetSubscriptions()
+  activeSubscriptionResource.reset()
+  selectedSubscriptionResource.reset()
+  accessResource.reset()
+  templateResource.reset()
+  protocolLoadResource.reset()
+  selectedNotice.value = ''
+  selectedUnavailable.value = false
+  terminationTarget.value = 0
+  automaticTarget.value = null
+  confirmOpen.value = false
+  message.value = ''
+  copyLabel.value = '复制链接'
+  void Promise.resolve().then(() => {
+    if (!disposed && selection === selectionGeneration && app.user?.id && !app.reauthRequired) void loadAll()
+  })
 }, { flush: 'sync' })
 
 watch(() => route.fullPath, async () => {
@@ -602,6 +734,7 @@ onMounted(() => {
   }, protocolLoadRefreshIntervalMS)
 })
 onBeforeUnmount(() => {
+  automaticRowController?.abort()
   disposed = true
   selectionGeneration += 1
   if (protocolLoadRefreshTimer !== undefined) window.clearInterval(protocolLoadRefreshTimer)

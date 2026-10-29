@@ -1,7 +1,8 @@
 import {
   fetchTrafficTrends,
-  type EntityReference,
   type TrafficTrendPoint,
+  type TrafficTrendResult,
+  type TrafficTrendSnapshot,
 } from '../../api/readModels'
 import type { QueryID } from '../../api/queryID'
 
@@ -11,15 +12,7 @@ export const TRAFFIC_OBSERVABILITY_RECORD_LIMIT = Number.MAX_SAFE_INTEGER
 
 export type TrafficObservabilityPoint = TrafficTrendPoint
 
-export interface TrafficObservabilityResult {
-  points: TrafficObservabilityPoint[]
-  record_count: number
-  connection_sample_count: number
-  peak_connections: number | null
-  truncated: boolean
-  subscriptions: EntityReference[]
-  as_of?: string
-}
+export type TrafficObservabilityResult = TrafficTrendResult
 
 export interface TrafficObservabilityQuery {
   subscriptionId?: QueryID
@@ -28,14 +21,17 @@ export interface TrafficObservabilityQuery {
   signal?: AbortSignal
 }
 
-export function emptyTrafficObservabilityResult(): TrafficObservabilityResult {
+export function emptyTrafficObservabilityResult(): TrafficTrendSnapshot {
   return {
+    from: '',
+    to: '',
     points: [],
     record_count: 0,
     connection_sample_count: 0,
     peak_connections: null,
     truncated: false,
     subscriptions: [],
+    as_of: '',
   }
 }
 
@@ -46,13 +42,5 @@ export async function fetchTrafficObservability(query: TrafficObservabilityQuery
     to: query.to,
     signal: query.signal,
   })
-  return {
-    points: result.points,
-    record_count: result.record_count,
-    connection_sample_count: result.connection_sample_count,
-    peak_connections: result.peak_connections,
-    truncated: result.truncated,
-    subscriptions: result.subscriptions,
-    as_of: result.as_of,
-  }
+  return result
 }

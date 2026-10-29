@@ -5,17 +5,21 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
-	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-func subscriptionLifecycleDue(query *gorm.DB, now time.Time) *gorm.DB {
-	return query.Where(`status IN ('active', 'expired') AND (
+func subscriptionLifecycleDue(query *gorm.DB, now time.Time, configuredGrace ...time.Duration) *gorm.DB {
+	grace := entitlements.RenewalGracePeriod
+	if len(configuredGrace) > 0 {
+		grace = configuredGrace[0]
+	}
+	return query.Where("(retirement_retry_at IS NULL OR retirement_retry_at <= ?)", now).Where(`status IN ('active', 'expired') AND (
   (ended_at IS NULL AND (end_at <= ? OR (ends_on_quota_exhaustion = ? AND flow_used >= flow_total)))
   OR (ended_at IS NOT NULL AND (lifecycle <> 'renewable' OR ended_at <= ?
     OR EXISTS (SELECT 1 FROM orders WHERE (orders.subscription_id = subscriptions.id OR orders.target_subscription_id = subscriptions.id) AND orders.subscription_ended_at IS NULL)
-    OR EXISTS (SELECT 1 FROM protocol_credentials WHERE protocol_credentials.subscription_id = subscriptions.id AND protocol_credentials.status IN ('active', 'prepared')))))`, now, true, now.Add(-entitlements.RenewalGracePeriod))
+    OR EXISTS (SELECT 1 FROM protocol_credentials WHERE protocol_credentials.subscription_id = subscriptions.id AND protocol_credentials.status IN ('active', 'prepared')))))`, now, true, now.Add(-grace))
 }
 
 func endSubscription(tx *gorm.DB, sub *model.Subscription, now time.Time) error {
@@ -31,32 +35,69 @@ func endSubscription(tx *gorm.DB, sub *model.Subscription, now time.Time) error 
 		return err
 	}
 	total, used := entitlements.CycleQuota(entitlements.Subscription(*sub))
-	return tx.Model(&model.Order{}).Where("subscription_id = ? OR target_subscription_id = ?", sub.ID, sub.ID).
-		Updates(map[string]any{"subscription_ended_at": ended, "subscription_end_reason": reason, "subscription_final_flow_total": total, "subscription_final_flow_used": used}).Error
+	// Settlement owns the affected orders before it owns the subscription. Read
+	// their identities, then update by primary key: an OR-based UPDATE can scan
+	// and lock unrelated orders in MySQL, reversing that established lock order.
+	var after uint
+	count := 0
+	for {
+		var orderIDs []uint
+		if err := tx.Model(&model.Order{}).Where("(subscription_id = ? OR target_subscription_id = ?) AND subscription_ended_at IS NULL AND id > ?", sub.ID, sub.ID, after).
+			Order("id ASC").Limit(entitlements.LifecycleOrderPageSize).Pluck("id", &orderIDs).Error; err != nil {
+			return err
+		}
+		if len(orderIDs) == 0 {
+			return nil
+		}
+		for _, id := range orderIDs {
+			if id <= after {
+				return fmt.Errorf("expiry order identity cursor did not advance")
+			}
+			if count >= entitlements.LifecycleOrderIdentityByteLimit/8 {
+				return entitlements.ErrCredentialExpiryScopeBudget
+			}
+			after = id
+			count++
+		}
+		if err := tx.Model(&model.Order{}).Where("id IN ?", orderIDs).
+			Updates(map[string]any{"subscription_ended_at": ended, "subscription_end_reason": reason, "subscription_final_flow_total": total, "subscription_final_flow_used": used}).Error; err != nil {
+			return err
+		}
+	}
 }
 
-// Snapshot and pending-order cancellation precede deletion. A cleared target FK
-// must never turn a late paid renewal into an unrelated new subscription.
-func retireSubscription(tx *gorm.DB, sub model.Subscription, now time.Time) error {
-	if err := tx.Model(&model.Order{}).Where("target_subscription_id = ? AND status = 'pending'", sub.ID).
-		Updates(map[string]any{"status": "canceled", "canceled_at": now, "updated_at": now, "failure_reason": "目标订阅已结束并清理，请新购套餐。"}).Error; err != nil {
+// Retire a business instance without deleting identities needed for late
+// metering/replay or financial reconciliation. Credentials are unusable, while
+// their stable attribution keys and cumulative cursors remain available.
+func retireSubscription(tx *gorm.DB, sub model.Subscription, cipher entitlements.AccessCipher, now time.Time) error {
+	if cipher == nil {
+		return entitlements.ErrCredentialExpiryUnavailable
+	}
+	var credentials []model.ProtocolCredential
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("subscription_id = ?", sub.ID).Find(&credentials).Error; err != nil {
 		return err
 	}
-	if err := tx.Model(&model.Order{}).Where("target_subscription_id = ?", sub.ID).Update("target_subscription_id", nil).Error; err != nil {
-		return err
-	}
-	for _, record := range []any{&model.FlowUsage{}, &model.TrafficRecord{}, &model.QuotaEvent{}, &model.SubscriptionMutation{}, &model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.ProtocolCredential{}} {
-		if err := tx.Where("subscription_id = ?", sub.ID).Delete(record).Error; err != nil {
+	for _, credential := range credentials {
+		hash := credential.RetiredPrincipalHash
+		if credential.Secret != "" {
+			plain, err := cipher.Decrypt(credential.Secret)
+			if err != nil {
+				return fmt.Errorf("retire credential %d: %w", credential.ID, err)
+			}
+			hash = entitlements.RetiredPrincipalHash(credential.NodeID, plain)
+		}
+		if err := tx.Model(&model.ProtocolCredential{}).Where("id = ?", credential.ID).Updates(map[string]any{"retired_principal_hash": hash}).Error; err != nil {
 			return err
 		}
 	}
-	if !datastore.IsSQLite(tx) {
-		if err := tx.Exec("DELETE FROM traffic_usage_hourly WHERE subscription_id = ?", sub.ID).Error; err != nil {
-			return err
-		}
-	}
-	if err := tx.Create(&model.AuditLog{Actor: "system", Action: "subscription.cleanup", Target: fmt.Sprintf("subscription:%d", sub.ID), Detail: sub.EndReason}).Error; err != nil {
+	if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", sub.ID).Updates(map[string]any{"status": "revoked", "revoked_at": now, "secret": "", "updated_at": now}).Error; err != nil {
 		return err
 	}
-	return tx.Delete(&sub).Error
+	if err := tx.Model(&model.SubscriptionToken{}).Where("subscription_id = ?", sub.ID).Updates(map[string]any{"revoked_at": now, "token_ciphertext": "", "updated_at": now}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.Subscription{}).Where("id = ?", sub.ID).Updates(map[string]any{"status": "ended", "next_reset_at": nil, "updated_at": now}).Error; err != nil {
+		return err
+	}
+	return tx.Create(&model.AuditLog{UserID: &sub.UserID, Actor: "system", Action: "subscription.cleanup", Target: fmt.Sprintf("subscription:%d", sub.ID), Detail: sub.EndReason + "; historical identities, cursors and accounting retained"}).Error
 }

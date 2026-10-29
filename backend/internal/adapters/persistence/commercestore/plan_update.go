@@ -55,7 +55,27 @@ func (s PlanUpdate) Update(ctx context.Context, actor, id uint, request commerce
 		if result.RowsAffected != 1 {
 			return &commerce.PlanRevisionError{Current: current.Revision}
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "plan.update", Target: fmt.Sprintf("plan:%d", id), Detail: fmt.Sprintf("fields=%d node_group=%d revision=%d", len(fields)-1, candidate.NodeGroupID, candidate.Revision)}).Error; err != nil {
+		syncScope, err := preparePlanSubscriptionSync(tx, current, candidate, request.SyncTrafficQuota)
+		if err != nil {
+			return err
+		}
+		groupSynced := 0
+		if candidate.NodeGroupID != current.NodeGroupID {
+			var err error
+			groupSynced, err = synchronizePlanGroup(tx, candidate, actor, syncScope)
+			if err != nil {
+				return err
+			}
+		}
+		synced := 0
+		if request.SyncTrafficQuota {
+			var err error
+			synced, err = synchronizePlanTrafficQuota(tx, candidate, actor, syncScope)
+			if err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "plan.update", Target: fmt.Sprintf("plan:%d", id), Detail: fmt.Sprintf("fields=%d node_group=%d previous_node_group=%d group_subscriptions=%d revision=%d sync_traffic_quota=%t subscriptions=%d", len(fields)-1, candidate.NodeGroupID, current.NodeGroupID, groupSynced, candidate.Revision, request.SyncTrafficQuota, synced)}).Error; err != nil {
 			return err
 		}
 		if err := tx.Preload("SKUs", "archived_at IS NULL").First(&updated, id).Error; err != nil {

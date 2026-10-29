@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "phase": "P7 isolated baseline upgrade and old backup restoration",
+  "baseline": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "current": "edfd36e7a5159a37fa2694628507366c20eb93a6",
+  "driver": "both",
+  "templates": {
+    "old_seed_probe.go.txt": "c8fc80f698bc0357b072d4fe11d8c2e1423c37f1c68a41e1ea576d32d96408f1",
+    "current_upgrade_probe.go.txt": "18fb330c3a12b6420de25b154cdceb20bb79316ac77e049c4602f4279e499b0d",
+    "snapshot_probe.go.txt": "1d173174d7262e93408a2b0d8fb9c44943cc5a07ceab3b6ea7ab92180c59795a",
+    "restore_probe.go.txt": "1e36a8a3474fa7c47a97d68e8b71dc74578bae78a4b155bc9e6bc87906c0fdbc"
+  },
+  "controller_sha256": "45b3e26e862dd2040abdc217c997c4bfd289570fec4398aff11fa089010a28b2",
+  "started_utc": "2026-10-26T13:17:10.247137+00:00",
+  "finished_utc": "2026-10-26T13:19:28.186779+00:00",
+  "status": "passed",
+  "old_binary_sha256": "1701ac9dc516cff0c7cf0c184ffc3572c97063e0f133831e0d763f8bcd9f57c9",
+  "current_binary_sha256": "a091ea32ae0294df79f9be752c691c8c0917e80646ada191582aa0810b2c9e88",
+  "backup_unchanged": true,
+  "old_seed_exit_code": 0,
+  "old_seed_log_sha256": "ba2bc1c380a95f8f0b752ae42a91aaca1ac607c3756e223f330512d2142490e9",
+  "primary_worktree_clean": true,
+  "commands": [
+    {
+      "label": "old-build",
+      "started_utc": "2026-10-26T13:17:10.643318+00:00",
+      "finished_utc": "2026-10-26T13:18:51.731302+00:00",
+      "exit_code": 0,
+      "wall_seconds": 101.088,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "current-build",
+      "started_utc": "2026-10-26T13:18:52.232747+00:00",
+      "finished_utc": "2026-10-26T13:19:17.939999+00:00",
+      "exit_code": 0,
+      "wall_seconds": 25.707,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "sqlite-old-seed",
+      "started_utc": "2026-10-26T13:19:18.008187+00:00",
+      "finished_utc": "2026-10-26T13:19:18.155889+00:00",
+      "exit_code": 0,
+      "wall_seconds": 0.148,
+      "log_sha256": "f74c98f981c5a940b855ab2322acb6865e1774a2da15e4a32325e020b6d9a036"
+    },
+    {
+      "label": "sqlite-current-upgrade",
+      "started_utc": "2026-10-26T13:19:18.158044+00:00",
+      "finished_utc": "2026-10-26T13:19:19.401376+00:00",
+      "exit_code": 0,
+      "wall_seconds": 1.243,
+      "log_sha256": "90c2c92a23b4b51a1b15ca1e79608d7a69b6db3e057a31c3a27daac85393c789"
+    },
+    {
+      "label": "sqlite-current-recovery",
+      "started_utc": "2026-10-26T13:19:19.401658+00:00",
+      "finished_utc": "2026-10-26T13:19:20.159183+00:00",
+      "exit_code": 0,
+      "wall_seconds": 0.757,
+      "log_sha256": "08fe8dd2e8494c730dc47339d57c744f4d937ea3a18a3bed02dd8a92194fb056"
+    },
+    {
+      "label": "sqlite-old-backup-restore",
+      "started_utc": "2026-10-26T13:19:20.159471+00:00",
+      "finished_utc": "2026-10-26T13:19:20.178914+00:00",
+      "exit_code": 0,
+      "wall_seconds": 0.019,
+      "log_sha256": "2bbbef5e73b700ffb3adfb35dfccd6549348567b4602179b1e181086e2836b79"
+    },
+    {
+      "label": "mysql-current-upgrade",
+      "started_utc": "2026-10-26T13:19:22.785577+00:00",
+      "finished_utc": "2026-10-26T13:19:25.443414+00:00",
+      "exit_code": 0,
+      "wall_seconds": 2.658,
+      "log_sha256": "7967a73facae3313b89a97dd54110802b8e632521e9e2bf3c9ca01289b2b1f6e"
+    },
+    {
+      "label": "mysql-current-recovery",
+      "started_utc": "2026-10-26T13:19:25.443693+00:00",
+      "finished_utc": "2026-10-26T13:19:26.052611+00:00",
+      "exit_code": 0,
+      "wall_seconds": 0.609,
+      "log_sha256": "28541f6b06eb5ab38560b99ddea5ae7ee4cccd0e9212cc0756bc0a6d4855a393"
+    },
+    {
+      "label": "mysql-old-backup-restore",
+      "started_utc": "2026-10-26T13:19:26.052823+00:00",
+      "finished_utc": "2026-10-26T13:19:27.642321+00:00",
+      "exit_code": 0,
+      "wall_seconds": 1.589,
+      "log_sha256": "f54abcd632462db7d106b4970a595fbf61abaeea79d3513426d70795a00a355b"
+    }
+  ],
+  "driver_results": {
+    "sqlite": {
+      "status": "passed",
+      "old_backup_sha256": "82a42ebf26694e3c06e6547182902ddbacff9aba890eb8c553a9e8068778a769",
+      "old_backup_restore": {
+        "downgraded_current_database": false,
+        "driver": "sqlite",
+        "old_binary_reads_restored_backup": true,
+        "old_columns_match": true,
+        "passed": true
+      },
+      "backup_unchanged": true
+    },
+    "mysql": {
+      "status": "passed",
+      "old_backup_sha256": "50ddf4036be4c11a9cd7133db2fe2e959250594db5b78d1b07944ac4f6f139c2",
+      "old_backup_restore": {
+        "downgraded_current_database": false,
+        "driver": "mysql",
+        "old_binary_reads_restored_backup": true,
+        "old_columns_match": true,
+        "passed": true
+      },
+      "backup_unchanged": true
+    }
+  },
+  "ci": {
+    "run_id": 40325636377,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/40325636377",
+    "conclusion": "success",
+    "jobs": [
+      "backend",
+      "frontend",
+      "mysql",
+      "contract",
+      "compose",
+      "zrs-compiler"
+    ]
+  },
+  "scope": [
+    "Actual old baseline creates separate SQLite and MySQL fixtures",
+    "Current binary migrates twice and verifies every original column in six authority tables",
+    "Shared application backfills one historical report receipt; fresh process verifies persistence",
+    "Replay does not duplicate financial or metering effects; explicit administrator zero-value termination does not revive",
+    "Old binary reads a restored old backup in a separate file or newly created isolated schema",
+    "Current upgraded database is never downgraded or overwritten"
+  ],
+  "not_executed": [
+    "Restore on a second MySQL server",
+    "Downgrade after new-version business writes",
+    "Real gateway, browser or native-node execution",
+    "Complete fault matrix or latest-head capacity acceptance",
+    "Production upgrade, migration or rollback"
+  ]
+}

@@ -19,17 +19,18 @@ type hourlyUsageKey struct {
 }
 
 // RecordUsageProjections runs only after successful ledger insertion, in the
-// same accounting transaction. Duplicate reports never reach this boundary.
+// same authority transaction. Durable report identity and projection recovery
+// intents commit with quota; chart deltas are applied in a later transaction.
+// A caller must propagate any failure to its enclosing authority transaction.
 func RecordUsageProjections(tx *gorm.DB, records []model.TrafficRecord) error {
-	if err := addMySQLTrafficHourly(tx, records); err != nil {
+	if err := EnqueueUsageProjections(tx, records); err != nil {
 		return err
 	}
-	return AddProtocolEndpointUsage(tx, records)
+	return persistReportReceipts(tx, records)
 }
 
-func addMySQLTrafficHourly(tx *gorm.DB, records []model.TrafficRecord) error {
-	// SQLite triggers also cover SQL replacements/updates; don't count twice.
-	if datastore.IsSQLite(tx) || len(records) == 0 {
+func addTrafficHourly(tx *gorm.DB, records []model.TrafficRecord) error {
+	if len(records) == 0 {
 		return nil
 	}
 	rows := make(map[hourlyUsageKey]map[string]any)
@@ -75,10 +76,19 @@ func addMySQLTrafficHourly(tx *gorm.DB, records []model.TrafficRecord) error {
 	for _, key := range keys {
 		batch = append(batch, rows[key])
 	}
-	// MySQL VALUES() binds each inserted delta, including batched buckets.
+	// Both dialects bind each inserted delta, including batched buckets.
 	assignments := make(map[string]any)
 	for _, column := range []string{"raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "record_count"} {
-		assignments[column] = gorm.Expr(column + " + VALUES(" + column + ")")
+		incoming := "VALUES(" + column + ")"
+		if datastore.IsSQLite(tx) {
+			incoming = "excluded." + column
+			// SQLite promotes overflowing integer arithmetic to REAL. Reject
+			// that projection instead of committing an inexact value and then
+			// deleting the durable recovery intent. Columns are NOT NULL.
+			assignments[column] = gorm.Expr("CASE WHEN (" + incoming + " > 0 AND " + column + " > 9223372036854775807 - " + incoming + ") OR (" + incoming + " < 0 AND " + column + " < -9223372036854775808 - " + incoming + ") THEN NULL ELSE " + column + " + " + incoming + " END")
+			continue
+		}
+		assignments[column] = gorm.Expr(column + " + " + incoming)
 	}
 	return tx.Table("traffic_usage_hourly").Clauses(clause.OnConflict{DoUpdates: clause.Assignments(assignments)}).CreateInBatches(&batch, 100).Error
 }

@@ -81,7 +81,7 @@ func TestCredentialExpiryRollsBackWhenPublicationCannotPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 	rejectPublishInsert(t, f)
-	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), time.Now().UTC(), 200); err == nil {
+	if _, err := f.h.services.CredentialExpiry(f.h.credentialCipher).ExpireDue(context.Background(), time.Now().UTC(), 200); err == nil {
 		t.Fatal("expiry ignored publication failure")
 	}
 	var sub model.Subscription
@@ -103,7 +103,7 @@ func TestCredentialExpiryRollsBackWhenPublicationCannotPersist(t *testing.T) {
 	if err := f.h.db.Exec("DROP TRIGGER reject_publish").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), time.Now().UTC(), 200); err != nil {
+	if _, err := f.h.services.CredentialExpiry(f.h.credentialCipher).ExpireDue(context.Background(), time.Now().UTC(), 200); err != nil {
 		t.Fatal(err)
 	}
 	var pending model.NodeConfigPublish

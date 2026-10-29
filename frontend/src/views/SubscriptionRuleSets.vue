@@ -13,6 +13,7 @@
 
     <TransientFeedback :success="message" :error="feedbackError" success-title="规则集操作已完成" error-title="规则集操作失败" />
 
+    <PageAlert v-if="ruleDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ ruleDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="ruleDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(search || activeFilter)" @clear="resetFilters">
@@ -109,6 +110,7 @@
       @close="closeEditor"
     >
       <form id="managed-rule-set-form" ref="formElement" class="rule-set-editor" novalidate @submit.prevent="save">
+        <PageAlert v-if="ruleCaptureError" tone="warning" title="当前来源地址不能暂存到登录页">{{ ruleCaptureError }} 请留在本页重新认证，或自行另存后再离开；不会忽略隐藏的未保存内容。</PageAlert>
         <div v-if="form.id" class="editor-meta">
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
           <StatusBadge tone="info" icon="audit">{{ formatNumber(form.rule_count) }} 条规则</StatusBadge>
@@ -233,6 +235,8 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { isCharacterLengthInRange, isHttpUrl } from '../utils/validation'
 import { confirmAction } from '../utils/feedback'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { ruleSetRecoveryFields, ruleSetRecoveryDraft, type RuleSetRecoveryFields } from '../utils/subscriptionEditorRecovery'
 
 const route = useRoute()
 const router = useRouter()
@@ -296,6 +300,8 @@ const emptyForm = () => ({
 })
 const form = reactive(emptyForm())
 const initialSnapshot = ref('')
+const ruleRecoveryBaseline = ref<RuleSetRecoveryFields | null>(null)
+const ruleOriginalSourceURL = ref<string | undefined>(undefined)
 const editorOpen = ref(false)
 const saving = ref(false)
 const editingID = ref(0)
@@ -318,7 +324,7 @@ for (const field of ['name', 'tag', 'description', 'content', 'source_url', 'sou
 }
 watch(() => form.mode, () => editorErrors.clear())
 
-const { items: ruleSets, total, loading, refreshing, error, load } = useRemoteTable<ManagedRuleSet>({
+const { items: ruleSets, total, loading, refreshing, error, load, hasLoaded: ruleListLoaded } = useRemoteTable<ManagedRuleSet>({
   offset,
   limit,
   fetchPage: ({ signal }) => fetchManagedRuleSetsPage({
@@ -331,6 +337,34 @@ const { items: ruleSets, total, loading, refreshing, error, load } = useRemoteTa
   onOffsetCorrected: () => syncURL(true),
 })
 const feedbackError = computed(() => operationError.value || error.value)
+const ruleCaptureError = computed(() => editorOpen.value && !ruleSetRecoveryFields(form, ruleOriginalSourceURL.value, true)
+  ? '未保存的远端地址含认证信息、查询参数或无法识别的格式，不能写入浏览器草稿。' : '')
+const ruleDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.subscription-rule-sets.editor', permission: 'admin', ready: () => ruleListLoaded.value && !editingID.value,
+  read: () => editorOpen.value ? { id: form.id, revision: form.revision, fields: ruleSetRecoveryFields(form, ruleOriginalSourceURL.value, true), baseline: ruleRecoveryBaseline.value } : null,
+  sanitize: ruleSetRecoveryDraft,
+  restore: async (value, context) => {
+    let latest: ManagedRuleSet | undefined, source: Awaited<ReturnType<typeof fetchManagedRuleSetContent>> | undefined
+    if (value.id) {
+      try { [latest, source] = await Promise.all([fetchManagedRuleSet(value.id), fetchManagedRuleSetContent(value.id)]) }
+      catch (cause: any) { if (cause?.response?.status !== 404) throw cause }
+      if (!context.isCurrent()) return false
+    }
+    if (!context.isCurrent()) return false
+    const freshForm = latest && source ? { ...emptyForm(), id: latest.id, name: latest.name, description: latest.description || '', tag: latest.tag,
+      mode: latest.source_url ? 'remote' as const : 'manual' as const, source_url: latest.source_url || '', source_format: latest.source_format || 'zero_rule_ir', content: source.content || defaultContent,
+      sync_interval: latest.interval, is_active: latest.is_active, revision: source.revision, rule_count: source.rule_count, content_bytes: source.content_bytes, usage_count: latest.usage_count, updated_at: latest.updated_at } : undefined
+    const current = freshForm ? ruleSetRecoveryFields(freshForm, freshForm.source_url, true) : undefined
+    const conflict = value.id > 0 && (!latest || !source || latest.id !== value.id || source.id !== value.id || latest.revision !== value.revision || source.revision !== value.revision || JSON.stringify(current) !== JSON.stringify(value.baseline))
+    Object.assign(form, emptyForm(), freshForm || {})
+    setSnapshot()
+    Object.assign(form, value.fields, { id: value.id, revision: value.revision, source_url: value.fields.source_url === null ? latest?.source_url || '' : value.fields.source_url })
+    ruleOriginalSourceURL.value = value.id ? latest?.source_url || '' : undefined
+    ruleRecoveryBaseline.value = value.baseline
+    editorErrors.clear(); revisionConflict.value = conflict; editorOpen.value = true
+  },
+})
+
 
 function setSnapshot() {
   initialSnapshot.value = JSON.stringify(form)
@@ -343,6 +377,7 @@ function clearEditorErrors() {
 
 function resetEditorState() {
   Object.assign(form, emptyForm())
+  ruleRecoveryBaseline.value = null; ruleOriginalSourceURL.value = undefined
   clearEditorErrors()
   setSnapshot()
 }
@@ -391,6 +426,7 @@ async function openEdit(item: ManagedRuleSet) {
       fetchManagedRuleSet(item.id),
       fetchManagedRuleSetContent(item.id),
     ])
+    if (latest.id !== item.id || source.id !== item.id || latest.revision !== source.revision) throw new Error('规则集读取期间版本已变化，请重新加载。')
     Object.assign(form, {
       id: latest.id,
       name: latest.name,
@@ -408,6 +444,8 @@ async function openEdit(item: ManagedRuleSet) {
       usage_count: latest.usage_count,
       updated_at: latest.updated_at,
     })
+    ruleOriginalSourceURL.value = form.source_url
+    ruleRecoveryBaseline.value = ruleSetRecoveryFields(form, form.source_url, true) || null
     clearEditorErrors()
     setSnapshot()
     editorOpen.value = true
@@ -419,8 +457,7 @@ async function openEdit(item: ManagedRuleSet) {
 }
 
 async function reloadEditor() {
-  const item = ruleSets.value.find(candidate => candidate.id === form.id)
-  if (item) await openEdit(item)
+  if (form.id) await openEdit({ id: form.id } as ManagedRuleSet)
 }
 
 function closeEditor() {

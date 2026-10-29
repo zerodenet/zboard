@@ -1,6 +1,4 @@
-import axios from 'axios'
-import { normalizeApiErrorPayload } from '../utils/apiError'
-import { API_BASE, getAuthToken } from './client'
+import { authenticatedAPI as readModelApi } from './client'
 import { appendQueryID, type QueryID } from './queryID'
 
 export type EntityKind = 'user' | 'subscription' | 'node' | 'protocol_endpoint' | 'plan' | 'plan_sku' | 'order' | string
@@ -35,7 +33,19 @@ export interface TrafficTrendPoint {
   record_count: number
 }
 
-export interface TrafficTrendResult {
+export interface TrafficTrendScope {
+  administrative: boolean
+  user_id: number
+  subscription_id: number
+  node_id: number
+  protocol_endpoint_id: number
+  time_zone: string
+}
+
+export interface TrafficTrendSnapshot {
+  // Missing only when reading an older server without the pending protocol.
+  projection_pending?: false
+  scope?: TrafficTrendScope
   from: string
   to: string
   points: TrafficTrendPoint[]
@@ -46,6 +56,22 @@ export interface TrafficTrendResult {
   subscriptions: EntityReference[]
   as_of: string
 }
+
+export interface TrafficTrendPending {
+  projection_pending: true
+  scope: TrafficTrendScope
+  from: string
+  to: string
+  points: null
+  record_count: null
+  connection_sample_count: null
+  peak_connections: null
+  truncated: null
+  subscriptions: null
+  as_of: null
+}
+
+export type TrafficTrendResult = TrafficTrendSnapshot | TrafficTrendPending
 
 export interface TrafficTrendQuery {
   admin?: boolean
@@ -70,27 +96,8 @@ export interface AdminEntityReferenceQuery {
   signal?: AbortSignal
 }
 
-const readModelApi = axios.create({
-  baseURL: API_BASE,
-  timeout: 8000,
-})
-
-readModelApi.interceptors.request.use(config => {
-  const token = getAuthToken()
-  if (token) {
-    config.headers = config.headers || {}
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-readModelApi.interceptors.response.use(
-  response => response,
-  cause => {
-    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
-    return Promise.reject(cause)
-  },
-)
+// Keep chart reads bounded without creating a separate authentication policy.
+const readModelTimeout = 8000
 
 function unwrap<T>(response: any): T {
   return response.data?.data as T
@@ -144,7 +151,33 @@ export async function fetchTrafficTrends(query: TrafficTrendQuery): Promise<Traf
   appendQueryID(params, 'node_id', query.nodeId)
   appendQueryID(params, 'protocol_endpoint_id', query.protocolEndpointId)
   const path = query.admin ? '/admin/traffic/trends' : '/traffic/trends'
-  return unwrap<TrafficTrendResult>(await readModelApi.get(`${path}?${params}`, { signal: query.signal }))
+  const data = unwrap<TrafficTrendResult>(await readModelApi.get(`${path}?${params}`, { timeout: readModelTimeout, signal: query.signal }))
+  // A new-protocol 200 is not necessarily a complete statistics snapshot.
+  if (data && data.projection_pending !== undefined) {
+    const scope = data.scope
+    if (typeof data.projection_pending !== 'boolean' || !scope
+      || typeof scope.administrative !== 'boolean'
+      || !['user_id', 'subscription_id', 'node_id', 'protocol_endpoint_id'].every(key => Number.isSafeInteger(scope[key as keyof TrafficTrendScope]) && Number(scope[key as keyof TrafficTrendScope]) >= 0)
+      || typeof scope.time_zone !== 'string' || !scope.time_zone
+      || scope.administrative !== Boolean(query.admin)
+      || data.from !== query.from || data.to !== query.to
+      || ['subscription_id', 'node_id', 'protocol_endpoint_id', ...(query.admin ? ['user_id'] : [])].some(key => scope[key as keyof TrafficTrendScope] !== Number(params.get(key) || 0))) {
+      throw new Error('流量趋势响应范围不一致，请重新查询。')
+    }
+    if (data.projection_pending) {
+      if (!['points', 'record_count', 'connection_sample_count', 'peak_connections', 'truncated', 'subscriptions', 'as_of'].every(key => data[key as keyof TrafficTrendPending] === null)) {
+        throw new Error('流量趋势更新状态不完整，请重新查询。')
+      }
+    }
+  }
+  if (!data || !data.projection_pending && (!Array.isArray(data.points) || !Array.isArray(data.subscriptions)
+    || !Number.isSafeInteger(data.record_count) || data.record_count < 0
+    || !Number.isSafeInteger(data.connection_sample_count) || data.connection_sample_count < 0
+    || !(data.peak_connections === null || Number.isSafeInteger(data.peak_connections) && data.peak_connections >= 0)
+    || typeof data.truncated !== 'boolean' || typeof data.as_of !== 'string' || !data.as_of)) {
+    throw new Error('流量趋势完整快照不完整，请重新查询。')
+  }
+  return data
 }
 
 export async function fetchAdminEntityReferences(query: AdminEntityReferenceQuery): Promise<EntityReferenceResponse> {
@@ -160,5 +193,5 @@ export async function fetchAdminEntityReferences(query: AdminEntityReferenceQuer
     params.append('targets', target)
   }
   const suffix = params.toString()
-  return unwrap<EntityReferenceResponse>(await readModelApi.get(`/admin/entity-references${suffix ? `?${suffix}` : ''}`, { signal: query.signal }))
+  return unwrap<EntityReferenceResponse>(await readModelApi.get(`/admin/entity-references${suffix ? `?${suffix}` : ''}`, { timeout: readModelTimeout, signal: query.signal }))
 }

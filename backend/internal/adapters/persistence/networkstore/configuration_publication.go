@@ -96,17 +96,33 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 	return
 }
 
-func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx context.Context, deployment network.ConfigurationDeployment, configSHA string) (out network.ConfigurationDeployment, err error) {
+func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx context.Context, deployment network.ConfigurationDeployment, configSHA string, manifests ...string) (out network.ConfigurationDeployment, err error) {
+	if len(manifests) > 1 {
+		return out, network.ErrCredentialDeliveryManifest
+	}
+	manifest := ""
+	if len(manifests) == 1 {
+		manifest = manifests[0]
+		if _, err := network.DecodeCredentialDeliveryManifest(manifest); err != nil {
+			return out, err
+		}
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row, err := lockConfigurationDeployment(tx, deployment)
 		if err != nil {
 			return err
 		}
+		// A deployment identity names one immutable remote configuration intent.
+		// Replaying that intent is safe; replacing its digest would let an old
+		// completion claim a different target after acknowledgement loss.
+		if row.DesiredConfigSHA256 != "" && (row.DesiredConfigSHA256 != configSHA || row.CredentialTargets != manifest) {
+			return network.ErrConfigurationDeploymentLost
+		}
 		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&row).Update("desired_config_sha256", configSHA).Error; err != nil {
+		if err := tx.Model(&row).Updates(map[string]any{"desired_config_sha256": configSHA, "credential_targets": manifest}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&state).Updates(map[string]interface{}{
@@ -152,6 +168,12 @@ func (s ConfigurationPublicationState) CompleteConfigurationPublication(ctx cont
 		if err != nil {
 			return err
 		}
+		// Health and an extant deployment ID do not prove the desired config.
+		// Check both the caller's frozen intent and its reported result before
+		// any readiness, applied-state or node timestamp can be committed.
+		if row.DesiredConfigSHA256 == "" || deployment.DesiredConfigSHA256 != row.DesiredConfigSHA256 || completion.ConfigSHA != row.DesiredConfigSHA256 {
+			return network.ErrConfigurationDeploymentLost
+		}
 		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
 		if err != nil {
 			return err
@@ -187,6 +209,9 @@ func (s ConfigurationPublicationState) CompleteConfigurationPublication(ctx cont
 		if err := tx.Model(&model.ProtocolEndpoint{}).
 			Where("node_id = ? AND LOWER(protocol) IN ?", deployment.NodeID, []string{"trojan", "hysteria2"}).
 			Update("managed_principal_ready", completion.ManagedPrincipalAccess).Error; err != nil {
+			return err
+		}
+		if err := confirmCredentialDelivery(tx, row, now); err != nil {
 			return err
 		}
 		if err := tx.Model(&state).Updates(map[string]interface{}{

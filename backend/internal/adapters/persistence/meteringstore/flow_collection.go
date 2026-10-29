@@ -29,6 +29,9 @@ func ResolveCredential(tx *gorm.DB, node uint, principal string) (CredentialProj
 type FlowCollection struct{ DB *gorm.DB }
 
 func (s FlowCollection) Record(ctx context.Context, event metering.FlowStart) error {
+	if len(event.CoreInstanceID) > coverageRuntimeMaxBytes {
+		return errors.New("flow-start runtime identity exceeds existing event body bound")
+	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row := FlowStartRecord{NodeID: event.NodeID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, Sequence: event.Sequence, PrincipalKey: event.PrincipalKey, MappingState: "unmapped", OccurredAt: event.OccurredAt, ReceivedAt: event.ReceivedAt, CreatedAt: event.ReceivedAt}
 		if event.PrincipalKey != "" {
@@ -46,6 +49,9 @@ func (s FlowCollection) Record(ctx context.Context, event metering.FlowStart) er
 				}
 			}
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return err
+		}
+		return enqueueFlowStatistics(tx, event.NodeID, event.EventID)
 	})
 }

@@ -5,6 +5,8 @@
     </PageHeader>
     <TransientFeedback :success="message" :error="error" success-title="操作已提交" error-title="操作失败" />
 
+    <PageAlert v-if="providerDraftRecovery.message.value" tone="info" title="登录后草稿恢复">{{ providerDraftRecovery.message.value }}</PageAlert>
+    <PageAlert v-if="providerRecoveryConflict" tone="warning" title="草稿需要人工核对">供应商账户版本已变化，草稿仍保留；不能直接覆盖服务器的新内容。请另存名称后重新打开编辑器。</PageAlert>
     <section class="provider-section" aria-label="供应商账户">
       <header class="provider-heading"><div><h2>供应商账户</h2><p>账户凭据仅在创建或更换时填写，保存后不再回显。</p></div><span>{{ accounts.length }} 个账户</span></header>
       <TableSkeleton v-if="(loading || refreshing) && !accounts.length" label="正在加载供应商账户" :columns="7" />
@@ -25,12 +27,13 @@
 
     <ModalDialog :open="accountOpen" :title="editingAccount ? '编辑供应商账户' : '添加供应商账户'" description="Token 加密保存且不会再次回显；编辑时留空可保留原凭据。" :busy="savingAccount" :dirty="accountState.dirty.value" @close="accountOpen = false">
       <form id="provider-account-form" ref="accountFormElement" class="modal-form" novalidate @submit.prevent="saveAccount">
+        <PageAlert v-if="accountForm.api_token" tone="warning" title="Token草稿仅留在本页">未保存的访问凭据不会暂存；请留在本页完成认证后再继续。</PageAlert>
         <PageAlert v-if="accountErrors.formError.value" tone="danger" title="保存供应商账户失败">{{ accountErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="供应商" name="provider-kind" :error="accountErrors.fields.provider_key"><UiSelect v-model="accountForm.provider_key" v-bind="controlAttrs" :options="providerOptions" :disabled="Boolean(editingAccount)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="账户名称" name="provider-name" :error="accountErrors.fields.name" required><UiInput v-bind="controlAttrs" v-model.trim="accountForm.name" maxlength="80" placeholder="例如：生产 Cloudflare" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="供应商访问凭据" name="provider-token" :hint="editingAccount ? '留空保留原凭据；更换时先验证，无效凭据不会覆盖原值。' : '请按供应商要求授予最小 DNS 读取和编辑权限。'" :error="accountErrors.fields.api_token" :required="!editingAccount" full><UiInput v-bind="controlAttrs" v-model.trim="accountForm.api_token" type="password" autocomplete="new-password" /></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" @click="requestClose">取消</UiButton><UiButton type="submit" form="provider-account-form" :loading="savingAccount">{{ editingAccount && !accountForm.api_token ? '保存修改' : '保存并验证' }}</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" @click="requestClose">取消</UiButton><UiButton type="submit" form="provider-account-form" :disabled="providerRecoveryConflict" :loading="savingAccount">{{ editingAccount && !accountForm.api_token ? '保存修改' : '保存并验证' }}</UiButton></template>
     </ModalDialog>
 
   </section>
@@ -39,6 +42,8 @@
 <script setup lang="ts">
 import TableText from '../components/TableText.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { providerBaseline, providerRecovery, sameRecoveryBaseline } from '../utils/adminAssetRecovery'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { confirmAction } from '../utils/feedback'
 import { updateProviderAccount, createProviderAccount, deleteProviderAccount, fetchProviderAccounts, fetchProviderDefinitions, verifyProviderAccount, type ProviderAccount, type ProviderDefinition } from '../api/client'
@@ -74,6 +79,30 @@ const operatingAccount = ref(0)
 const accountForm = reactive({ provider_key: 'cloudflare', name: '', api_token: '' })
 const accountFormElement = ref<HTMLElement | null>(null)
 const accountState = useDirtyForm(() => accountForm)
+let providerEditorGeneration = 0
+const providerRecoveryConflict = ref(false)
+const providerOriginal = ref<ReturnType<typeof providerBaseline>>()
+const providerDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.providers.editor', permission: 'admin', ready: () => !savingAccount.value,
+  read: () => {
+    if (!accountOpen.value) return null
+    if (accountForm.api_token) throw new Error('新Token不能安全暂存；请留在原页完成认证。')
+    return { id: editingAccount.value?.id || 0, baseline: editingAccount.value ? providerOriginal.value : null, fields: { name: accountForm.name, provider_key: accountForm.provider_key } }
+  },
+  sanitize: providerRecovery,
+  restore: async (draft, { isCurrent }) => {
+    const generation = providerEditorGeneration
+    const fresh = draft.id ? (await fetchProviderAccounts()).find(item => item.id === draft.id) : null
+    if (!isCurrent()) return false
+    if (generation !== providerEditorGeneration || accountOpen.value) throw new Error('已有新的本地编辑，原草稿保留待恢复。')
+    if (draft.id && !fresh) throw new Error('原供应商账户已不存在，尚未恢复。')
+    providerRecoveryConflict.value = Boolean(fresh && !sameRecoveryBaseline(draft.baseline, providerBaseline(fresh)))
+    providerOriginal.value = draft.baseline || undefined
+    editingAccount.value = fresh ? { ...fresh, revision: draft.baseline!.revision } : null
+    Object.assign(accountForm, { name: fresh?.name || '', provider_key: fresh?.provider_key || draft.fields.provider_key, api_token: '' }); accountState.markClean()
+    Object.assign(accountForm, draft.fields); accountErrors.clear(); accountOpen.value = true
+  },
+})
 const providerOptions = ref<{ label: string; value: string }[]>([])
 useUnsavedChangesGuard(() => accountOpen.value && accountState.dirty.value, () => accountState.confirmDiscard())
 watch(() => accountForm.name, () => accountErrors.clear('name'))
@@ -91,6 +120,7 @@ async function refreshAll() {
   } catch (cause: any) { error.value = cause?.response?.data?.message || '供应商数据加载失败。' } finally { loading.value = false; refreshing.value = false }
 }
 function openAccount(account?: ProviderAccount) {
+  providerEditorGeneration++; providerRecoveryConflict.value = false; providerOriginal.value = account ? providerBaseline(account) : undefined
   editingAccount.value = account || null
   Object.assign(accountForm, { provider_key: account?.provider_key || 'cloudflare', name: account?.name || '', api_token: '' })
   accountErrors.clear()
@@ -98,6 +128,7 @@ function openAccount(account?: ProviderAccount) {
   accountState.markClean()
 }
 async function saveAccount() {
+  if (providerRecoveryConflict.value) return
   const valid = await accountErrors.applyValidation(collectFieldErrors({
     name: !isUtf8LengthInRange(accountForm.name, 1, 80, true) && '请输入 1–80 字节的账户名称。',
     api_token: !editingAccount.value && !accountForm.api_token.trim() && '请输入 Cloudflare API Token。',

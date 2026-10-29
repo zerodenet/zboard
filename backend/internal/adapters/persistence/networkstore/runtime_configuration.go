@@ -142,7 +142,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 				ID: endpoint.ID, NodeID: endpoint.NodeID, Protocol: endpoint.Protocol, Address: endpoint.Address,
 				ListenAddress: endpoint.ListenAddress,
 				Port:          endpoint.Port, PublicPort: endpoint.PublicPort, MieruPrincipalReady: endpoint.MieruPrincipalReady,
-				ServerConfig: endpoint.ServerConfig, EgressConfig: endpoint.EgressConfig, ActiveSubscriptionCount: activeSubscriptionCount[endpoint.ID],
+				ServerConfig: endpoint.ServerConfig, ClientConfig: endpoint.ClientConfig, EgressConfig: endpoint.EgressConfig, ActiveSubscriptionCount: activeSubscriptionCount[endpoint.ID],
 				Credentials: credentialsByEndpoint[endpoint.ID],
 			}
 			if certificate, exists := certificateByEndpoint[endpoint.ID]; exists {
@@ -199,7 +199,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		result.NetworkEntries = make([]network.RuntimeConfigurationNetworkEntry, 0, len(entries))
 		for _, entry := range entries {
 			item := network.RuntimeConfigurationNetworkEntry{
-				ID: entry.ID, NodeID: entry.NodeID, EndpointID: entry.EndpointID, Network: entry.Network, ListenAddress: entry.ListenAddress,
+				Address: entry.Address, PublicPort: entry.PublicPort, ID: entry.ID, NodeID: entry.NodeID, EndpointID: entry.EndpointID, Network: entry.Network, ListenAddress: entry.ListenAddress,
 				Port: entry.Port, ProxyPoolID: entry.ProxyPoolID, PathConfig: entry.PathConfig,
 			}
 			if landing, exists := landingByID[entry.EndpointID]; exists {

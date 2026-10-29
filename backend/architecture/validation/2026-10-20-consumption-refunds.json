@@ -1,0 +1,34 @@
+{
+  "stage": "P2-13 approved historical consumption refunds",
+  "status": "SQLite and actual MySQL targeted pass; full exact-commit checks pending",
+  "behavior": [
+    "Administrator and same-account ticket required.",
+    "Clearly ended historical paid purchase only; active partial-refund policy unresolved and returns 409.",
+    "Actual original paid amount minus prior refunds and conversions is the sole source budget.",
+    "Wallet, external-channel and mixed original payments all refund to internal wallet; top-ups cannot be refunded again through this operation.",
+    "Approval identity, source budget, wallet entry and audit commit atomically; no subscription fields or new entitlement are changed."
+  ],
+  "migration": "0052_consumption_refunds; new authoritative approval journal, foreign keys and unique request/entry identities; preflight rejects lost financial evidence before SQLite AutoMigrate",
+  "rollback": "Stop writers; preserve journal and budgets. No destructive down migration after refunds. Existing site customization values are retained, corrected legal text updates defaults only.",
+  "validation": {
+    "SQLite_new_and_existing_value_termination_replacement": "pass 10.288s",
+    "MySQL_new_and_existing_value_termination_replacement": "pass 154.735s; isolated MySQL 8.4 random schemas",
+    "MySQL_refund_vs_unsubscribe": "pass three repeats 15.138s",
+    "extra_old_replacement_and_converted_budget": "pass SQLite handler 0.590s",
+    "default_config_preservation": "pass platformstore 0.342s",
+    "legal_frontend": "10 tests passed",
+    "vet": "two affected capability/adapter packages passed",
+    "coverage": [
+      "Duplicate request and conflicting content",
+      "Competing refund requests and unsubscribe race",
+      "Wallet reserved by another order remains reserved",
+      "Approval, ledger and audit fault rollback",
+      "New, interrupted and repeated migration; lost financial journal refuses startup",
+      "Original PaidAmount and newer replacement entitlement preserved"
+    ]
+  },
+  "pending": [
+    "Active-term partial refund entitlement policy; user question pending.",
+    "New administrator UI and full exact-commit backend/MySQL/CI checks tracked separately."
+  ]
+}

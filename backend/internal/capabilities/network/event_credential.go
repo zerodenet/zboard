@@ -10,6 +10,7 @@ var ErrEventCredentialUnavailable = errors.New("Zero event credential is unavail
 type EventNode struct {
 	ID         uint
 	Credential string
+	AssetTag   string `json:"-"` // Captured server-side; empty means unknown.
 }
 
 type EventCredentialRepository interface {

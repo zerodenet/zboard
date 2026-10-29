@@ -30,7 +30,7 @@
       <small>{{ items.length }} / {{ maxItems }} 项</small>
       <span class="legal-items-spacer"></span>
       <UiButton v-if="conflict" variant="ghost" size="sm" type="button" :disabled="saving" @click="emit('reload')"><UiIcon name="refresh" />重新载入</UiButton>
-      <UiButton type="button" :loading="saving" :disabled="!dirty" @click="emit('save')">保存法律信息</UiButton>
+      <UiButton type="button" :loading="saving" :disabled="conflict || !dirty" @click="emit('save')">保存法律信息</UiButton>
     </div>
 
     <p v-if="error" class="legal-items-error" role="alert"><UiIcon name="alert" />{{ error }}</p>

@@ -1,0 +1,57 @@
+{
+  "source": "a9aae1621ce04e303de248747903f3637c1c61b4",
+  "checkout": "/workspace/zboard-principal-final-verify",
+  "phase": "backend",
+  "started_utc": "2026-10-21T00:38:59.409675+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "full-go",
+      "command": "go test -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 288.313,
+      "log": "full-go-a9aae16-final.log"
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 3.568,
+      "log": "vet-a9aae16-final.log"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 1.845,
+      "log": "build-a9aae16-final.log"
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "environment_additions": {
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 21.967,
+      "log": "pure-go-sqlite-a9aae16-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T00:44:15.104191+00:00",
+  "raw_logs_sha256": {
+    "full-go-a9aae16-final.log": "8bc2060d1a180983c8511de9b89a3976acce8121eb7857d80d4180767962862b",
+    "vet-a9aae16-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build-a9aae16-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pure-go-sqlite-a9aae16-final.log": "de5e66190956a459404a1ec6948eff3546b82ba38de39ba8b1a613b143c3f821"
+  },
+  "mysql_local": "Original core fails at900.017s handler; datastore152.038s/network112.003s pass. Independent original jobstore120.268s/copy108.349s pass; see2026-10-21-principal-recovery-mysql-local.json.",
+  "ci": "Exact-source39522585804 all six jobs pass; see2026-10-21-principal-recovery-ci.json. Local timeout remains separate failure."
+}

@@ -3,6 +3,7 @@ package meteringstore
 import (
 	"context"
 	"errors"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -14,13 +15,17 @@ type PrincipalCollection struct{ DB *gorm.DB }
 
 func (s PrincipalCollection) Boundary(ctx context.Context, nodeID uint, event metering.PrincipalEvent, stopped bool) error {
 	instanceID := strings.TrimSpace(event.CoreInstanceID)
+	if len(instanceID) > metering.MaxRuntimeIdentityBytes {
+		return errors.New("principal runtime identity exceeds auxiliary identity budget")
+	}
 	if nodeID == 0 || instanceID == "" {
 		return nil
 	}
 	observedAt := event.ObservedAt.UTC()
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		budget := int64(principalRuntimeReadBudget)
 		var generation PrincipalFlowNodeGeneration
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&generation).Error
+		err := readPrincipalRuntime(tx.Model(&PrincipalFlowNodeGeneration{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID), &generation, &budget)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -64,8 +69,12 @@ func (s PrincipalCollection) Boundary(ctx context.Context, nodeID uint, event me
 }
 
 func (s PrincipalCollection) Observe(ctx context.Context, nodeID uint, event metering.PrincipalEvent, observation metering.PrincipalObservation) error {
+	if len(strings.TrimSpace(event.CoreInstanceID)) > metering.MaxRuntimeIdentityBytes {
+		return errors.New("principal runtime identity exceeds auxiliary identity budget")
+	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		currentGeneration, err := ensureGeneration(tx, nodeID, event, observation.ObservedAt)
+		budget := int64(principalRuntimeReadBudget)
+		currentGeneration, err := ensureGeneration(tx, nodeID, event, observation.ObservedAt, &budget)
 		if err != nil {
 			return err
 		}
@@ -78,6 +87,7 @@ func (s PrincipalCollection) Observe(ctx context.Context, nodeID uint, event met
 		raw := PrincipalFlowObservation{
 			NodeID:                  nodeID,
 			CoreInstanceID:          strings.TrimSpace(event.CoreInstanceID),
+			CoreInstanceSHA256:      metering.RuntimeIdentityDigest(strings.TrimSpace(event.CoreInstanceID)),
 			SessionRegistryRevision: observation.SessionRegistryRevision,
 			EventID:                 strings.TrimSpace(event.EventID),
 			Sequence:                event.Sequence,
@@ -92,18 +102,34 @@ func (s PrincipalCollection) Observe(ctx context.Context, nodeID uint, event met
 			raw.ProtocolCredentialID = credential.ID
 			raw.ProtocolEndpointID = credential.ProtocolEndpointID
 		}
-		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&raw)
-		if result.Error != nil {
-			return result.Error
+		if tx.Dialector.Name() == "mysql" {
+			// RowsAffected for a noop upsert is1 with clientFoundRows=true.
+			// Only the driver's explicit duplicate error enters reconciliation;
+			// malformed values, deadlocks and permission failures stay errors.
+			err := tx.Create(&raw).Error
+			if err != nil {
+				var duplicate *mysqldriver.MySQLError
+				if errors.As(err, &duplicate) && duplicate.Number == 1062 {
+					return verifyPrincipalDuplicate(tx, raw, &budget)
+				}
+				return err
+			}
+		} else {
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&raw)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return verifyPrincipalDuplicate(tx, raw, &budget)
+			}
 		}
-		if result.RowsAffected == 0 || !currentGeneration {
+
+		if !currentGeneration {
 			return nil
 		}
 
 		var current PrincipalFlowCurrent
-		currentErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("node_id = ? AND principal_key = ?", nodeID, observation.PrincipalKey).
-			First(&current).Error
+		currentErr := readPrincipalRuntime(tx.Model(&PrincipalFlowCurrent{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND principal_key = ?", nodeID, observation.PrincipalKey), &current, &budget)
 		if currentErr != nil && !errors.Is(currentErr, gorm.ErrRecordNotFound) {
 			return currentErr
 		}
@@ -149,13 +175,13 @@ func (s PrincipalCollection) Observe(ctx context.Context, nodeID uint, event met
 	})
 }
 
-func ensureGeneration(tx *gorm.DB, nodeID uint, event metering.PrincipalEvent, observedAt time.Time) (bool, error) {
+func ensureGeneration(tx *gorm.DB, nodeID uint, event metering.PrincipalEvent, observedAt time.Time, budget *int64) (bool, error) {
 	instanceID := strings.TrimSpace(event.CoreInstanceID)
 	if instanceID == "" {
 		return false, nil
 	}
 	var generation PrincipalFlowNodeGeneration
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&generation).Error
+	err := readPrincipalRuntime(tx.Model(&PrincipalFlowNodeGeneration{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID), &generation, budget)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		next := PrincipalFlowNodeGeneration{NodeID: nodeID, CoreInstanceID: instanceID, StartedAt: observedAt, UpdatedAt: time.Now().UTC()}
 		return true, tx.Create(&next).Error

@@ -12,6 +12,10 @@
         </UiButton>
       </template>
     </PageHeader>
+    <PageAlert v-if="createDraftRecovery.message.value || planDraftRecovery.message.value || skuDraftRecovery.message.value" tone="info" title="重新认证后的草稿">
+      {{ createDraftRecovery.message.value || planDraftRecovery.message.value || skuDraftRecovery.message.value }}
+      <UiButton variant="ghost" size="sm" type="button" @click="createDraftRecovery.restore(); planDraftRecovery.restore(); skuDraftRecovery.restore()">重新检查草稿恢复</UiButton>
+    </PageAlert>
 
     <TransientFeedback
       :success="message"
@@ -371,9 +375,13 @@
         </section>
         <section class="form-section">
           <div class="form-section-title"><span>2</span><div><h3>套餐策略</h3><p>定义所有 SKU 共享的权限上限和流量口径。</p></div></div>
+          <PageAlert title="更换节点组会同步现有订阅">
+            保存节点组变更后，本套餐所有未结束订阅的接入范围自动同步，无需勾选流量配额同步。两组共有且已确认交付的接入点继续保留；新增接入点需等待配置交付核验后才能使用，移出范围的接入点将撤权。
+          </PageAlert>
           <div class="form-grid form-grid-3">
             <FormField v-slot="{ controlAttrs }" label="节点组" name="edit-plan-node-group" hint="按需检索，不预载全部节点组。" :error="planErrors.fields.node_group_id" required><NodeGroupLookup v-model="planDraft.node_group_id" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量配额" name="edit-plan-traffic" :error="planErrors.fields.traffic_bytes" required><ByteSizeInput v-model="planDraft.traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="历史订阅额度" name="edit-plan-sync-traffic-quota" hint="此选项只控制流量配额，不影响更换节点组时的接入范围同步。同步仍有效的订阅，保留已用流量、有效期、原重置日期和续费锁价。永久额度仅调整原基础批次，已购加购额度保持；无法核对的历史会整笔拒绝。普通单周期额度下调至已用量以下时剩余为零。" :error="planErrors.fields.sync_traffic_quota" full><label class="check-field"><UiCheckbox v-model="planDraft.sync_traffic_quota" v-bind="controlAttrs" /><span>将本次流量配额同步到现有订阅</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="速率限制" name="edit-plan-speed" hint="0 表示不限速。" :error="planErrors.fields.speed_limit_mbps"><UiNumberInput v-model="planDraft.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="设备数" name="edit-plan-device-limit" :error="planErrors.fields.device_limit" required><UiNumberInput v-model="planDraft.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="edit-plan-max-subscriptions" :error="planErrors.fields.max_active_subscriptions"><UiNumberInput v-model="planDraft.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
@@ -402,6 +410,9 @@
       @close="closeSKU"
     >
       <form id="sku-form" ref="skuFormElement" class="form-grid form-grid-3" novalidate @submit.prevent="saveSKU">
+        <PageAlert v-if="skuRecoveryConflict" tone="warning" title="销售规格已在其他会话更新">当前草稿仍可查看，但不能直接覆盖服务器的新内容。
+          <template #actions><UiButton type="button" variant="secondary" @click="reloadRecoveredSKU">重新加载最新规格</UiButton></template>
+        </PageAlert>
         <PageAlert v-if="skuErrors.formError.value" class="field-full" tone="danger" title="无法保存规格">{{ skuErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="销售用途" name="edit-sku-entitlement-mode" full :error="skuErrors.fields.entitlement_mode"><UiSelect v-model="skuDraft.entitlement_mode" v-bind="controlAttrs" :options="entitlementModeOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="规格名称" name="edit-sku-name" :error="skuErrors.fields.name" required><UiInput v-model.trim="skuDraft.name" v-bind="controlAttrs" /></FormField>
@@ -428,7 +439,7 @@
       </form>
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
-        <UiButton form="sku-form" type="submit" :loading="saving">{{ skuDraft.id ? '保存规格' : '创建规格' }}</UiButton>
+        <UiButton form="sku-form" type="submit" :disabled="skuRecoveryConflict" :loading="saving">{{ skuDraft.id ? '保存规格' : '创建规格' }}</UiButton>
       </template>
     </ModalDialog>
   </section>
@@ -479,6 +490,8 @@ import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import UiNumberInput from '../components/UiNumberInput.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { createPlanRecoveryDraft, pickPlanDraft, pickSKUDraft, planRecoveryDraft, skuRecoveryDraft } from '../utils/reauthenticationDraftSchemas'
 import { useAppStore } from '../stores/app'
 import { confirmAction, notify } from '../utils/feedback'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../utils/format'
@@ -562,6 +575,7 @@ const emptyPlanForm = () => ({
   sku: emptySKU(),
 })
 const emptyPlanDraft = () => ({
+  sync_traffic_quota: false,
   id: 0,
   name: '',
   slug: '',
@@ -587,6 +601,65 @@ const skuDraft = reactive<PlanSKU>(emptySKU())
 const createState = useDirtyForm(() => form)
 const planEditorState = useDirtyForm(() => planDraft)
 const skuState = useDirtyForm(() => skuDraft)
+const recoveryReady = ref(false)
+const planDraftBaseline = ref('')
+const createDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.plans.create', permission: 'admin', ready: () => recoveryReady.value,
+  read: () => createOpen.value ? { entityID: 0, revision: 0, baseline: '', fields: { ...form, sort_order: 0 }, sku: form.sku } : null,
+  sanitize: createPlanRecoveryDraft,
+  restore: value => {
+    if (value.entityID !== 0) return false
+    Object.assign(form, value.fields)
+    Object.assign(form.sku, value.sku)
+    createOpen.value = true
+  },
+})
+const planDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.plans.edit', permission: 'admin',
+  ready: () => recoveryReady.value && planEditorOpen.value && detailPlan.value?.id === planDraft.id,
+  read: () => planEditorOpen.value && !createOpen.value && !skuOpen.value ? { entityID: planDraft.id, revision: Number.isSafeInteger(planDraft.revision) ? planDraft.revision : 0, baseline: planDraftBaseline.value, syncTraffic: planDraft.sync_traffic_quota, fields: planDraft } : null,
+  sanitize: planRecoveryDraft,
+  restore: value => {
+    if (value.entityID !== planDraft.id || !detailPlan.value) return false
+    const changed = value.revision > 0 ? detailPlan.value.revision !== value.revision : value.baseline !== planDraftBaseline.value
+    Object.assign(planDraft, value.fields)
+    // Recovery restores the original concurrency boundary, never authorizes an
+    // old draft against the freshly fetched server revision.
+    planDraft.revision = value.revision
+    planDraftBaseline.value = value.baseline
+    planDraft.sync_traffic_quota = value.syncTraffic
+    planRevisionConflict.value = changed || !value.baseline
+  },
+})
+
+const skuDraftBaseline = ref('')
+const skuRecoveryConflict = ref(false)
+const skuDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.plans.sku', permission: 'admin', ready: () => recoveryReady.value && skuOpen.value,
+  read: () => skuOpen.value && !createOpen.value ? { entityID: skuDraft.id, planID: skuDraft.plan_id, baseline: skuDraftBaseline.value, fields: skuDraft } : null,
+  sanitize: skuRecoveryDraft,
+  restore: value => {
+    if (value.entityID !== skuDraft.id || value.planID !== skuDraft.plan_id) return false
+    skuRecoveryConflict.value = value.entityID !== 0 && (!value.baseline || value.baseline !== skuDraftBaseline.value)
+    Object.assign(skuDraft, value.fields)
+    skuDraftBaseline.value = value.baseline
+  },
+})
+async function reloadRecoveredSKU() {
+  if (!skuDraft.id) return
+  try {
+    const fresh = await fetchPlanSKU(skuDraft.id)
+    if (fresh.id !== skuDraft.id || fresh.plan_id !== skuDraft.plan_id) return
+    Object.assign(skuDraft, fresh)
+    skuDraft.allowed_operations = skuOperationsFor(skuDraft)
+    skuDraft.billing_mode = skuDraft.billing_mode || (skuDraft.billing_unit === 'once' ? 'one_time' : 'periodic')
+    skuDraft.entitlement_mode = skuDraft.entitlement_mode || (skuDraft.sku_type === 'traffic_reset' ? 'traffic_reset' : skuDraft.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
+    syncSKUCommerceFields(skuDraft)
+    skuDraftBaseline.value = JSON.stringify({ fields: pickSKUDraft(skuDraft), updatedAt: fresh.updated_at || '' })
+    skuRecoveryConflict.value = false
+    skuState.markClean()
+  } catch { skuErrors.set({}, '暂时无法重新加载规格，已保留当前草稿。请检查网络后重试。') }
+}
 useUnsavedChangesGuard(
   () => (createOpen.value && createState.dirty.value)
     || (planEditorOpen.value && planEditorState.dirty.value)
@@ -637,6 +710,7 @@ const createPlanFieldMap: Record<string, string> = {
   'skus.0.grant_traffic_bytes': 'sku.grant_traffic_bytes',
 }
 const planFieldMap: Record<string, string> = {
+  sync_traffic_quota: 'sync_traffic_quota',
   name: 'name',
   slug: 'slug',
   summary: 'summary',
@@ -980,11 +1054,13 @@ async function syncDetailAndEditorsFromRoute() {
       return
     }
     if (!skuOpen.value || skuDraft.id !== source.id || (skuKey === 'new' && skuDraft.plan_id !== nextPlanID)) {
+      skuRecoveryConflict.value = false
       Object.assign(skuDraft, JSON.parse(JSON.stringify(source)))
       skuDraft.allowed_operations = skuOperationsFor(skuDraft)
       skuDraft.billing_mode = skuDraft.billing_mode || (skuDraft.billing_unit === 'once' ? 'one_time' : 'periodic')
       skuDraft.entitlement_mode = skuDraft.entitlement_mode || (skuDraft.sku_type === 'traffic_reset' ? 'traffic_reset' : skuDraft.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
       syncSKUCommerceFields(skuDraft)
+      skuDraftBaseline.value = source.id ? JSON.stringify({ fields: pickSKUDraft(skuDraft), updatedAt: source.updated_at || '' }) : ''
       skuErrors.clear()
       skuState.markClean()
     }
@@ -1331,7 +1407,9 @@ async function closePlanEditor() {
 }
 
 function assignPlanDraft(detail: PlanDetail) {
+  planDraftBaseline.value = JSON.stringify(pickPlanDraft(detail)) || ''
   Object.assign(planDraft, {
+    sync_traffic_quota: false,
     id: detail.id,
     name: detail.name,
     slug: detail.slug,
@@ -1382,6 +1460,8 @@ function planValidation() {
 }
 
 async function savePlan() {
+  if (planRevisionConflict.value) return
+  const syncTrafficQuota = planDraft.sync_traffic_quota
   planDraft.name = planDraft.name.trim()
   planDraft.slug = planDraft.slug.trim().toLowerCase()
   planDraft.summary = planDraft.summary.trim()
@@ -1400,6 +1480,7 @@ async function savePlan() {
       description: planDraft.description,
       node_group_id: planDraft.node_group_id,
       traffic_bytes: planDraft.traffic_bytes,
+      sync_traffic_quota: syncTrafficQuota,
       speed_limit_mbps: planDraft.speed_limit_mbps,
       max_active_subscriptions: planDraft.max_active_subscriptions,
       is_renewable: planDraft.is_renewable,
@@ -1414,12 +1495,18 @@ async function savePlan() {
     planEditorState.markClean()
     planEditorOpen.value = false
     await setRoute({ editor: null }, true)
-    message.value = '商品信息和套餐策略已保存。'
+    message.value = syncTrafficQuota ? '商品已保存，符合条件的历史订阅流量配额已同步。' : '商品信息和套餐策略已保存。'
     await refreshAll()
   } catch (cause: any) {
     if (cause?.response?.status === 409 || cause?.response?.status === 428) {
       planRevisionConflict.value = true
       planErrors.formError.value = '服务器版本已变化。请重新加载最新商品信息后再保存。'
+      notify('无法保存商品', planErrors.formError.value, 'danger')
+    } else if (cause?.response?.status === 503
+      && cause.response.data?.error?.version === 1
+      && cause.response.data.error.code === 'unavailable'
+      && cause.response.data.error.retryable === true) {
+      planErrors.set({}, '服务暂不可用，已保留当前表单、节点组选择和原版本。请稍后再次点击“保存商品”重试。')
       notify('无法保存商品', planErrors.formError.value, 'danger')
     } else {
       const failure = await planErrors.applyApiError(cause, '商品保存失败，请检查表单内容。', planFormElement, planFieldMap)
@@ -1464,6 +1551,7 @@ function skuPayload() {
 }
 
 async function saveSKU() {
+  if (skuRecoveryConflict.value) return
   normalizeSKUInput(skuDraft)
   syncSKUCommerceFields(skuDraft)
   const valid = await skuErrors.applyValidation(skuValidation(skuDraft), skuFormElement, '请更正标记字段后再保存 SKU。')
@@ -1609,6 +1697,7 @@ onBeforeRouteUpdate(async (to, from) => {
 onMounted(async () => {
   await refresh()
   await syncDetailAndEditorsFromRoute()
+  recoveryReady.value = true
 })
 
 onBeforeUnmount(() => {

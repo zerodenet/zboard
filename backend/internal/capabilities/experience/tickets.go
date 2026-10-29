@@ -19,6 +19,14 @@ type TicketActor struct {
 	IsAdmin bool
 }
 
+// TicketReferences records context only. It grants no access to the referenced
+// resource and cannot initiate any financial or subscription operation.
+type TicketReferences struct {
+	OrderID        *uint `json:"order_id,omitempty"`
+	SubscriptionID *uint `json:"subscription_id,omitempty"`
+	WalletEntryID  *uint `json:"wallet_entry_id,omitempty"`
+}
+
 type NewTicket struct {
 	TicketNo    string
 	Subject     string
@@ -26,21 +34,23 @@ type NewTicket struct {
 	Priority    int16
 	Body        string
 	Attachments []TicketAttachment
+	References  *TicketReferences
 }
 
 type Ticket struct {
-	ID            uint       `json:"id"`
-	TicketNo      string     `json:"ticket_no"`
-	UserID        uint       `json:"user_id"`
-	Subject       string     `json:"subject"`
-	Category      string     `json:"category"`
-	Priority      int16      `json:"priority"`
-	Status        string     `json:"status"`
-	LastMessageAt time.Time  `json:"last_message_at"`
-	ResolvedAt    *time.Time `json:"resolved_at"`
-	ClosedAt      *time.Time `json:"closed_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID            uint              `json:"id"`
+	TicketNo      string            `json:"ticket_no"`
+	UserID        uint              `json:"user_id"`
+	Subject       string            `json:"subject"`
+	Category      string            `json:"category"`
+	Priority      int16             `json:"priority"`
+	Status        string            `json:"status"`
+	LastMessageAt time.Time         `json:"last_message_at"`
+	ResolvedAt    *time.Time        `json:"resolved_at"`
+	ClosedAt      *time.Time        `json:"closed_at"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	References    *TicketReferences `json:"references,omitempty"`
 }
 
 type TicketMessage struct {
@@ -115,6 +125,13 @@ func (s Tickets) Create(ctx context.Context, actor uint, input NewTicket, now ti
 	}
 	if err := validateTicketText("message", input.Body, 1, 5000); err != nil {
 		return 0, err
+	}
+	if input.References != nil {
+		for _, id := range []*uint{input.References.OrderID, input.References.SubscriptionID, input.References.WalletEntryID} {
+			if id != nil && *id == 0 {
+				return 0, fmt.Errorf("%w: ticket reference must be a positive identifier", ErrInvalid)
+			}
+		}
 	}
 	var err error
 	input.Attachments, err = NormalizeTicketAttachments(input.Attachments)

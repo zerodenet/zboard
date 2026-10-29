@@ -1,0 +1,73 @@
+{
+  "source": "ae2aadb3d9d5fc50c2fd9706b25815e17578376a",
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39541657823",
+  "run_id": 39541657823,
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "zrs-compiler",
+      "id": 119030545623,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T04:00:31Z",
+      "completed_at": "2026-10-21T04:01:11Z"
+    },
+    {
+      "name": "contract",
+      "id": 119030545817,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T04:00:31Z",
+      "completed_at": "2026-10-21T04:00:50Z"
+    },
+    {
+      "name": "mysql",
+      "id": 119030545910,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T04:00:32Z",
+      "completed_at": "2026-10-21T04:17:58Z"
+    },
+    {
+      "name": "compose",
+      "id": 119030545935,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T04:00:31Z",
+      "completed_at": "2026-10-21T04:00:39Z"
+    },
+    {
+      "name": "frontend",
+      "id": 119030545948,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T04:00:31Z",
+      "completed_at": "2026-10-21T04:04:32Z"
+    },
+    {
+      "name": "backend",
+      "id": 119030545999,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T04:00:32Z",
+      "completed_at": "2026-10-21T04:08:02Z"
+    }
+  ],
+  "mysql": {
+    "datastore_seconds": 144.02,
+    "handler_seconds": 723.526,
+    "networkstore_seconds": 143.066,
+    "jobstore_seconds": 92.546,
+    "copy_seconds": 159.289,
+    "all_three_original_commands_executed": true
+  },
+  "raw_mysql_log_sha256": "dc513070b23a46bc58793e6f3d4da3d6e847a906dbf3ad1da410a46f28963a93",
+  "raw_mysql_log_bytes": 33862,
+  "limits": [
+    "Exact ae2 source only; no previous CI substitution.",
+    "Earlier a82 failures and repeated historical handler900s failures remain evidence; one success does not prove timing stability.",
+    "Original local MySQL and constrained capacity have separate receipts.",
+    "No timeout, skip, SQL mode, FK or isolation relaxation."
+  ]
+}

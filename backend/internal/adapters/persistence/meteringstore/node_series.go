@@ -33,6 +33,11 @@ func (s NodeSeries) Read(ctx context.Context, actor uint, q metering.NodeSeriesQ
 		read = s.DB
 	}
 	err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if q.Bucket != "minute" {
+			if err := EnsureHourlyUsageReady(tx, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, q.From, q.To); err != nil {
+				return err
+			}
+		}
 		expression, err := nodeSeriesBucket(tx, q.Bucket)
 		if err != nil {
 			return err

@@ -14,7 +14,7 @@ func TestTrafficFirstPagePreservesPartialBucketsAndFallsBack(t *testing.T) {
 }
 
 func TestMySQLTrafficFirstPagePreservesPartialBucketsAndFallsBack(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	checkTrafficFirstPage(t, h.db)
 }
 

@@ -5,20 +5,23 @@ import { expect, it, vi } from 'vitest'
 import Login from './Login.vue'
 import UiButton from '../components/UiButton.vue'
 import UiInput from '../components/UiInput.vue'
-import { login, fetchSystemStatus } from '../api/client'
+import { login, fetchSystemStatus, me } from '../api/client'
 import { useAppStore } from '../stores/app'
-vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), login: vi.fn(), fetchSystemStatus: vi.fn() }))
-it('explains expiry and returns to the original page after signing in', async () => {
+vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), login: vi.fn(), fetchSystemStatus: vi.fn(), me: vi.fn() }))
+vi.mock('../api/identities', () => ({ fetchIdentityPasswordStatus: vi.fn(async () => ({ password_set: true })) }))
+it.each(['/admin/nodes?page=3#details', '/admin/orders?order=27&user_id=1'])('explains expiry and returns to %s after signing in', async redirect => {
   localStorage.clear()
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/login', component: Login },
     { path: '/admin/nodes', component: {} },
+    { path: '/admin/orders', component: {} },
     { path: '/', component: {} },
   ] })
-  await router.push({ path: '/login', query: { redirect: '/admin/nodes?page=3#details', reason: 'session-expired' } })
+  await router.push({ path: '/login', query: { redirect, reason: 'session-expired' } })
   vi.mocked(login).mockResolvedValueOnce({ auth: { token: 'new-login' }, user: { id: 1, email: 'admin@example.test', is_admin: true } })
+  vi.mocked(me).mockResolvedValueOnce({ id: 1, email: 'admin@example.test', is_admin: true } as any)
   vi.mocked(fetchSystemStatus).mockRejectedValueOnce(new Error('offline'))
   const wrapper = mount(Login, { global: { plugins: [pinia, router], components: { UiButton, UiInput }, stubs: { PluginSlot: true, AuthLegalLinks: true } } })
   try {
@@ -27,7 +30,7 @@ it('explains expiry and returns to the original page after signing in', async ()
     await wrapper.get('input[type="password"]').setValue('valid-password-123')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/admin/nodes?page=3#details')
+    expect(router.currentRoute.value.fullPath).toBe(redirect)
     expect(useAppStore().isAuthenticated).toBe(true)
   } finally { wrapper.unmount(); localStorage.clear() }
 })

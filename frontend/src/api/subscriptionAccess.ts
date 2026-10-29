@@ -1,6 +1,4 @@
-import axios from 'axios'
-import { API_BASE, getAuthToken, type ApiRequestOptions } from './client'
-import { normalizeApiErrorPayload } from '../utils/apiError'
+import { authenticatedAPI as subscriptionAccessApi, type ApiRequestOptions } from './client'
 
 export interface SubscriptionAccess {
   configured: boolean
@@ -16,27 +14,8 @@ export interface SubscriptionAccess {
   notice?: string
 }
 
-const subscriptionAccessApi = axios.create({
-  baseURL: API_BASE,
-  timeout: 8000,
-})
-
-subscriptionAccessApi.interceptors.request.use(config => {
-  const token = getAuthToken()
-  if (token) {
-    config.headers = config.headers || {}
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-subscriptionAccessApi.interceptors.response.use(
-  response => response,
-  cause => {
-    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
-    return Promise.reject(cause)
-  },
-)
+// Share identity/reauthentication fences while retaining this bounded timeout.
+const accessTimeout = 8000
 
 function unwrap<T>(response: any): T {
   return response.data?.data as T
@@ -50,19 +29,19 @@ function accessPath(subscriptionId: number) {
 }
 
 export async function fetchSubscriptionAccess(subscriptionId: number, options: ApiRequestOptions = {}): Promise<SubscriptionAccess> {
-  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.get(accessPath(subscriptionId), { signal: options.signal }))
+  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.get(accessPath(subscriptionId), { timeout: accessTimeout, signal: options.signal }))
 }
 
 export async function rotateSubscriptionAccess(subscriptionId: number): Promise<SubscriptionAccess> {
-  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.post(`${accessPath(subscriptionId)}/rotate`))
+  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.post(`${accessPath(subscriptionId)}/rotate`, undefined, { timeout: accessTimeout }))
 }
 
 export async function revokeSubscriptionAccess(subscriptionId: number): Promise<SubscriptionAccess> {
-  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.delete(accessPath(subscriptionId)))
+  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.delete(accessPath(subscriptionId), { timeout: accessTimeout }))
 }
 
 // Explicit operator action; keep credentials out of list/detail API responses.
 export async function fetchOrderSubscriptionAccess(orderId: number, options: ApiRequestOptions = {}): Promise<SubscriptionAccess> {
   if (!Number.isInteger(orderId) || orderId <= 0) throw new Error('orderId must be a positive integer')
-  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.post(`/admin/orders/${orderId}/subscription-access`, undefined, { signal: options.signal }))
+  return unwrap<SubscriptionAccess>(await subscriptionAccessApi.post(`/admin/orders/${orderId}/subscription-access`, undefined, { timeout: accessTimeout, signal: options.signal }))
 }

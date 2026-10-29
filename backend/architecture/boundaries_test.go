@@ -211,7 +211,7 @@ func TestMigratedBusinessEntrypointsDoNotStartPrivateWorkers(t *testing.T) {
 		"../internal/handler/zero_event_runtime.go":       {"ConfigureZeroEventSpool"},
 		"../internal/handler/database_migration.go":       {"AdminDatabaseMigrationStartHandler"},
 		"../internal/handler/admin_operations.go":         {"executeTaskItems", "executeTaskItemsContext"},
-		"../internal/plugins/tasks_runtime.go":            {"syncTaskRegistrations", "SetTaskRuntime", "cancelPluginTasks"},
+		"../internal/plugins/tasks_runtime.go":            {"syncTaskRegistrations", "SetTaskRuntime", "detachPluginTasks"},
 	} {
 		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
 		if err != nil {
@@ -683,7 +683,7 @@ func TestNodeRuntimeCompilationDoesNotReconcileCredentials(t *testing.T) {
 	rendersExternally := false
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "compileNodeRuntimeConfigWithOptionsContext" {
+		if !ok || (fn.Name.Name != "compileNodeRuntimeConfigWithOptionsContext" && fn.Name.Name != "compileNodeRuntimeConfigWithCredentialTargets") {
 			continue
 		}
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -694,7 +694,7 @@ func TestNodeRuntimeCompilationDoesNotReconcileCredentials(t *testing.T) {
 			if selector.Sel.Name == "RuntimeConfigurationSource" {
 				delegates = true
 			}
-			if selector.Sel.Name == "Render" {
+			if selector.Sel.Name == "Render" || selector.Sel.Name == "RenderWithCredentialTargets" {
 				rendersExternally = true
 			}
 			switch selector.Sel.Name {

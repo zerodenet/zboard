@@ -1,19 +1,45 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
 func TestRealZeroNodeGroupChangeReplacesDataPlaneAccess(t *testing.T) {
 	f, oldEndpoint := newRealZeroNodeFixture(t)
-	paid := f.paid(t, f.create(t, 0).ID)
+	fundTestWallet(t, f, 1000)
+	payFromWallet := func(order model.Order) model.Order {
+		t.Helper()
+		service := fundingService(f)
+		if _, err := service.Configure(t.Context(), 1, order.ID, commerce.FundingRequest{UseBalance: true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.Pay(t.Context(), 1, order.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.h.db.First(&order, order.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		return order
+	}
+	paid := payFromWallet(f.create(t, 0))
+	var original model.Subscription
+	if err := f.h.db.First(&original, paid.SubscriptionID).Error; err != nil {
+		t.Fatal(err)
+	}
 	control := f.paid(t, f.create(t, 0).ID)
 	oldSecret, controlSecret := realZeroSecret(t, f, paid.SubscriptionID), realZeroSecret(t, f, control.SubscriptionID)
+	initializeRealZeroNode(t, f, oldEndpoint)
 	f.h.StartNodePublishWorker()
 	t.Cleanup(f.h.CloseNodePublishWorker)
 	waitRealZero(t, 90*time.Second, "old group initially usable", func() error { return realZeroEcho(oldSecret) })
@@ -49,8 +75,47 @@ func TestRealZeroNodeGroupChangeReplacesDataPlaneAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.skuRecord = f.sku(t, f.planRecord.ID, 200, skuOperationChange)
-	change := f.create(t, paid.SubscriptionID)
-	f.paid(t, change.ID)
+	quote := previewPricedOrder(t, f, paid.SubscriptionID)
+	created, err := f.h.services.OrderCreation.Create(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: paid.SubscriptionID, QuoteFingerprint: quote.QuoteFingerprint})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var change model.Order
+	if err := f.h.db.First(&change, created.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var injected atomic.Bool
+	var injectedWithBackground atomic.Bool
+	var preparationQueries atomic.Int32
+	const prepareCallback = "native:group-prepare-invalidation"
+	if err := f.h.db.Callback().Query().Before("gorm:query").Register(prepareCallback, func(q *gorm.DB) {
+		if _, transactional := q.Statement.ConnPool.(gorm.TxCommitter); transactional {
+			return
+		}
+		limit, ok := q.Statement.Clauses["LIMIT"].Expression.(clause.Limit)
+		if !ok || limit.Limit == nil || *limit.Limit != 1 || q.Statement.TableExpr == nil || !strings.Contains(q.Statement.TableExpr.SQL, "idx_credential_lookup_backfill") {
+			return
+		}
+		preparationQueries.Add(1)
+		if injected.CompareAndSwap(false, true) {
+			injectedWithBackground.Store(q.Statement.Context == context.Background())
+			if err := f.h.db.Exec("UPDATE protocol_credentials SET principal_lookup_version = 0 WHERE node_id = ?", oldEndpoint.NodeID).Error; err != nil {
+				t.Error(err)
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.h.db.Callback().Query().Remove(prepareCallback) })
+	payFromWallet(change)
+	var current model.Subscription
+	if err := f.h.db.First(&current, original.ID).Error; err != nil || current.EntitlementEpoch != 1 || current.Config != original.Config || !current.StartAt.After(original.StartAt) {
+		t.Fatal("full replacement lost subscription identity or period", err)
+	}
+	var settled model.SubscriptionValueSettlement
+	if err := f.h.db.Where("subscription_id = ? AND kind = ?", original.ID, "change").First(&settled).Error; err != nil {
+		t.Fatal("missing old residual settlement", err)
+	}
 	committedAt := time.Now()
 	var newCredential model.ProtocolCredential
 	if err := f.h.db.Where("subscription_id = ? AND protocol_endpoint_id = ?", paid.SubscriptionID, replacement.ID).First(&newCredential).Error; err != nil {
@@ -91,6 +156,12 @@ func TestRealZeroNodeGroupChangeReplacesDataPlaneAccess(t *testing.T) {
 		}
 		return newEcho(newSecret)
 	})
+	waitRealZero(t, 15*time.Second, "real native principal preparation invalidation exercised", func() error {
+		if !injected.Load() {
+			return fmt.Errorf("native principal preparation not yet exercised: eligible_queries=%d", preparationQueries.Load())
+		}
+		return nil
+	})
 	elapsed := time.Since(committedAt)
 	held.SetDeadline(time.Now().Add(2 * time.Second))
 	_, _ = held.Write([]byte("after-group-change"))
@@ -100,7 +171,7 @@ func TestRealZeroNodeGroupChangeReplacesDataPlaneAccess(t *testing.T) {
 		t.Fatal("old established connection still forwards after publication")
 	}
 	result, err := json.Marshal(map[string]any{
-		"scenario": "group_change", "passed": true, "physical_nodes": 1, "disjoint_group_listeners": 2,
+		"scenario": "group_change", "passed": true, "full_term_replacement": true, "prepare_race_injected": injected.Load(), "injected_in_background_context": injectedWithBackground.Load(), "native_preparation_queries": preparationQueries.Load(), "subscription_identity_preserved": true, "entitlement_epoch": current.EntitlementEpoch, "old_residual_minor": settled.AmountMinor, "new_full_price_minor": change.PayableAmount, "physical_nodes": 1, "disjoint_group_listeners": 2,
 		"order_handler_return_to_verified_access_ms": float64(elapsed.Nanoseconds()) / 1e6,
 		"old_group_positive_control_passed":          true, "new_group_echo_passed": true, "cross_group_credentials_rejected": true,
 		"old_credential_rejected_probes": 3, "existing_connection_read_bytes": n, "existing_connection_read_error": fmt.Sprint(readErr), "verified_at": time.Now().UTC(),

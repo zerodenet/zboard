@@ -4,6 +4,8 @@
       <span class="mono">{{ variableHelp }}</span>。变量会在任务执行时按每位收件人替换；模板保存、任务创建和实际发送是三个独立步骤。
     </PageAlert>
 
+    <PageAlert v-if="templateDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ templateDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="templateDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
+
     <PageAlert v-if="error" tone="danger" title="邮件模板操作失败">{{ error }}</PageAlert>
 
     <section v-if="mode !== 'operational'" class="template-block" aria-labelledby="registration-email-title">
@@ -70,7 +72,7 @@
         <FormField v-slot="{ controlAttrs }" label="邮件主题" name="email-template-subject" :error="editorErrors.fields.subject_template" required full><UiInput v-model="form.subject_template" v-bind="controlAttrs" maxlength="200" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="纯文本正文" name="email-template-body" hint="支持上方列出的变量；实际发送前按收件人替换。" :error="editorErrors.fields.body_template" required full><UiTextarea v-model="form.body_template" v-bind="controlAttrs" maxlength="100000" rows="12" /></FormField>
         <PageAlert v-if="editorErrors.formError.value" tone="danger" title="邮件模板尚未保存">{{ editorErrors.formError.value }}</PageAlert>
-        <PageAlert v-if="revisionConflict" tone="warning" title="模板已发生变化">另一位管理员已经保存了新版本，请重新载入后再编辑。</PageAlert>
+        <PageAlert v-if="revisionConflict" tone="warning" title="模板已发生变化">原草稿已保留，不能覆盖当前版本。请关闭编辑器，从列表重新打开当前模板后再编辑。</PageAlert>
         <div v-if="preview" class="email-preview">
           <small>示例预览</small>
           <strong>{{ preview.subject }}</strong>
@@ -81,7 +83,7 @@
         <div class="dialog-actions">
           <UiButton variant="ghost" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
           <UiButton variant="secondary" type="button" :loading="previewing" @click="runPreview"><UiIcon name="info" />生成预览</UiButton>
-          <UiButton type="button" :loading="saving" @click="saveTemplate">保存模板</UiButton>
+          <UiButton type="button" :loading="saving" :disabled="revisionConflict" @click="saveTemplate">保存模板</UiButton>
         </div>
       </template>
     </ModalDialog>
@@ -100,6 +102,8 @@ import {
   type EmailTemplateCategory,
   type EmailTemplatePreview,
 } from '../api/client'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { emailTemplateFields, emailTemplateRecoveryDraft, type EmailTemplateFields } from '../utils/settingsReauthenticationDraftSchemas'
 import { useDirtyForm, useFormErrors } from '../composables/useFormState'
 import { confirmAction, notify } from '../utils/feedback'
 import { collectFieldErrors, isIntegerInRange, isSlug, isUtf8LengthInRange } from '../utils/validation'
@@ -134,20 +138,38 @@ const form = reactive(emptyForm())
 const editorState = useDirtyForm(() => form)
 const editorDirty = computed(() => editorState.dirty.value)
 const editorErrors = useFormErrors()
+const recoveryReady = ref(false)
+const editorBaseline = ref<EmailTemplateFields | null>(null)
+const templateDraftRecovery = useReauthenticationDraft({
+  scope: `admin.email-template.${mode}`, permission: 'admin', ready: () => recoveryReady.value,
+  read: () => editorOpen.value && editorDirty.value ? { id: form.id, revision: form.revision, fields: form, baseline: editorBaseline.value } : null,
+  sanitize: emailTemplateRecoveryDraft,
+  restore: value => {
+    if (mode === 'registration' && value.fields.category !== 'registration' || mode === 'operational' && value.fields.category !== 'operational') return false
+    const current = templates.value.find(item => item.id === value.id)
+    revisionConflict.value = value.id > 0 && (!current || current.revision !== value.revision || JSON.stringify(emailTemplateFields(current)) !== JSON.stringify(value.baseline))
+    Object.assign(form, value.fields, { id: value.id, revision: value.revision })
+    editorBaseline.value = value.baseline
+    editorErrors.clear(); preview.value = null; editorOpen.value = true
+  },
+})
 const registrationTemplate = computed(() => templates.value.find(item => item.category === 'registration'))
 const operationalTemplates = computed(() => templates.value.filter(item => item.category === 'operational').sort((a, b) => a.sort_order - b.sort_order || a.id - b.id))
 
 async function loadTemplates() {
+  recoveryReady.value = false
   loading.value = true; error.value = ''
-  try { templates.value = await fetchEmailTemplates() }
+  try { templates.value = await fetchEmailTemplates(); recoveryReady.value = true }
   catch (cause: any) { error.value = cause?.response?.data?.message || '邮件模板加载失败。' }
   finally { loading.value = false }
 }
 function openCreate() {
+  editorBaseline.value = null
   Object.assign(form, emptyForm()); editorErrors.clear(); preview.value = null; revisionConflict.value = false
   editorState.markClean(); editorOpen.value = true
 }
 function openEditor(template: EmailTemplate) {
+  editorBaseline.value = emailTemplateFields(template) || null
   Object.assign(form, template); editorErrors.clear(); preview.value = null; revisionConflict.value = false
   editorState.markClean(); editorOpen.value = true
 }
@@ -175,6 +197,7 @@ async function runPreview() {
   } finally { previewing.value = false }
 }
 async function saveTemplate() {
+  if (revisionConflict.value) return
   if (!await validateForm()) return
   saving.value = true; error.value = ''
   try {

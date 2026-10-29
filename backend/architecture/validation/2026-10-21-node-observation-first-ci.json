@@ -1,0 +1,34 @@
+{
+  "source": "a82e5b60c74d58821884bb703eaa97c2532682f3",
+  "run_id": 39540048932,
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39540048932",
+  "status": "completed",
+  "conclusion": "failure",
+  "jobs": {
+    "backend": "failure",
+    "mysql": "failure",
+    "frontend": "success",
+    "compose": "success",
+    "contract": "success",
+    "zrs-compiler": "success"
+  },
+  "mysql": {
+    "job_id": 119025475166,
+    "datastore_seconds": 191.469,
+    "networkstore_seconds": 210.747,
+    "handler_seconds": 900.019,
+    "assertion_failure": "Credential rotation test admitted old heartbeat HTTP200; independently reproduced locally and fixed by ae2 follow-up.",
+    "timeout_running": "TestMySQLTicketReferencesEnforceOwnerAndCommitWithConversation (0s)",
+    "jobstore": "NOT EXECUTED after failed core command",
+    "copy": "NOT EXECUTED after failed core command"
+  },
+  "raw_mysql_log_sha256": "352d3f779fd538ec9b5a1ce260e793e30583e004ed21da980c0d0fa633406bd5",
+  "raw_mysql_log_bytes": 1127309,
+  "backend_failure": "2026-10-21-node-observation-first-backend-failure.json",
+  "limits": [
+    "Original15m handler timeout retained separately from the credential assertion failure. Last running test alone does not establish timeout cause.",
+    "a82 local originalMySQL/capacity not executed after local full-Go failure.",
+    "Follow-up ae2 is separately pushed; its new full checks/CI are pending.",
+    "No timeout/skip relaxation, production migration or external repository changes."
+  ]
+}

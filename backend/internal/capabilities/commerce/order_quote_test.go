@@ -1,6 +1,7 @@
 package commerce
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -59,5 +60,24 @@ func TestTrafficResetSKURequiresResetOnlyWithNoOverrides(t *testing.T) {
 		if _, err := NormalizeSKU(1, invalid); err == nil {
 			t.Fatal("invalid reset SKU accepted", invalid)
 		}
+	}
+}
+
+func TestFullReplacementPreviewPreservesInt64ResidualOnJSONWire(t *testing.T) {
+	const amount int64 = 9007199254740993
+	payload, err := json.Marshal(OrderPreview{SettlementAmount: amount, SurplusAmount: amount - 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["settlement_amount"]) != `"9007199254740993"` || string(fields["surplus_amount"]) != `"9007199254740992"` {
+		t.Fatal("browser would round real minor units", string(payload))
+	}
+	var decoded OrderPreview
+	if err := json.Unmarshal(payload, &decoded); err != nil || decoded.SettlementAmount != amount {
+		t.Fatal(decoded, err)
 	}
 }

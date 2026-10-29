@@ -1,0 +1,83 @@
+{
+  "scope": "P2-10 known historical-bound item isolation, revocable consent and timestamped account-list notices; P2-P7 incomplete",
+  "parent_commit": "7aba6d61b6c53e6b7b7a0cd879fd44e6ae6cc8d7",
+  "parent_exact_head_ci": "All six SUCCESS https://github.com/zerodenet/zboard/actions/runs/39359911624",
+  "draft_pr": "https://github.com/zerodenet/zboard/pull/78",
+  "schema": "No new migration; existing0051 consent/order fields retained",
+  "actual_behaviors": [
+    "Only errAutomaticHistoryBound is isolated; generic database, evidence and other failures still roll back and propagate",
+    "Known over-bound financial transaction rolls back completely before an independent status/sequence-only transaction",
+    "Affected item is marked history_review_required without charging;30minute retry is limited by the configured recovery window",
+    "Neighbors continue in stable order; a closed window disables consent even for an over-bound item",
+    "Active owner can read consent without an unsafe offer and withdraw future debit authority without old-order valuation",
+    "Withdrawal uses active-user SHARE, ownership read, consent UPDATE/revision and audit; SQLite acquires its writer reservation before a read snapshot",
+    "Account list uses a one-to-one consent join for last result,message,checked_at; no per-flow diagnostic scan or business authorization change",
+    "Order-lock preparation reads only IDs needed for membership comparison, retaining the original exclusive locks and post-owner validation"
+  ],
+  "financial_boundary": "No new price,allocation,refund,debit or entitlement writer. A paused attempt never claims payment,value settlement or delivery success.",
+  "verified_checks": {
+    "before_fix": "FAIL actual SQLite/MySQL:1001 imported canceled unpaid checkouts hid consent,blocked neighbor,and prevented withdrawal; preserved log",
+    "initial_after_fix": "PASS SQLite/MySQL15.224s,including ordinary recovery/manual cash/unsubscribe coverage",
+    "query_and_auto_scope": "PASS handler39.778s; persistence query package had no matching focused test names",
+    "final_related_races": "PASS two rounds33.186s: known-bound isolation,manual cash,unsubscribe,stable wallet competition",
+    "window_end": "PASS actual SQLite/MySQL8.437s: over-bound item still disables at configured deadline",
+    "withdrawal_race": "PASS actual SQLite/MySQL three rounds11.753s: either one prior completed debit or no debit,then no further debit; permission remains disabled",
+    "frontend_focused": "PASS24 behavior tests and typecheck",
+    "backend_full": "PASS handler224.251s,entitlementstore4.523s,application6.279s,inventory0.636s; other unchanged packages may use Go cache",
+    "vet_build": "PASS",
+    "pure_go_sqlite": "PASS7.358s",
+    "frontend_full": "PASS906 tests,8 existing skipped; exactly six baseline exclusions; frozen-copy install pass; build17.14s",
+    "openapi": "VALID282 existing warnings,including final description spacing",
+    "actual_mysql_full": "PASS actual MySQL8.4 datastore105.750s,handler609.128s,networkstore133.914s; final runtime source",
+    "exact_head_ci": "PENDING commit/push"
+  },
+  "failure_evidence": "/tmp/zboard-auto-isolation-before.log retained in cloud; no raw SQL/private test artifacts committed",
+  "proof_example": {
+    "first_item_history": "1001 canceled unpaid imported checkouts; no paid value minted",
+    "first_item": "paused/no debit,stable sequence1",
+    "neighbor": "ordinary wallet renewal completed,stable sequence2",
+    "remaining_wallet_minor": 6000,
+    "reserved_minor": 0,
+    "source_wallet_before_minor": 18000
+  },
+  "reproduction": {
+    "backend": [
+      "go test -p 2 ./...",
+      "go vet -p 2 ./...",
+      "go build -p 2 ./cmd/zboard",
+      "CGO_ENABLED=0 go test -p 2 ./internal/datastore -run SQLite -count=1"
+    ],
+    "mysql": "ZBOARD_TEST_MYSQL_DSN=<isolated8.4instance> go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+    "frontend": "pnpm install --frozen-lockfile --package-import-method=copy; original six-exclusion CI scope; pnpm build",
+    "environment": "Original cloud only;Go1.26.8,Node22.23.0,pnpm11.9.0,actual MySQL8.4/random test schemas;GOMAXPROCS2,-p2"
+  },
+  "cache_maintenance": {
+    "files": 1176,
+    "bytes": 2149522472,
+    "selection": "Only regular immutable Go build-cache data files older than two hours under /workspace/toolchains/cache/go-build",
+    "effect": "Free space653MB to approximately2.7GB; not a business database/queue capacity improvement",
+    "receipt": "/tmp/zboard-build-cache-prune-receipt.json"
+  },
+  "rollback": "No data reversal. Quiesce/drain executors; retain consent,sequence and audit. Reverting to7aba6d6 reintroduces its known bounded-history availability limitation without reversing a completed payment.",
+  "remaining_material_limits": [
+    "Over-bound item itself cannot be automatically financially reconciled; it needs safe current-versus-terminal source convergence/manual review. The1000 bound was not raised.",
+    "Notices are inside account pages,with last-check timestamps; proactive email/push delivery is not implemented.",
+    "Unknown discount agreement, general consumption refunds, historical plan sync and perpetual single-use residual decision remain open.",
+    "P3-P7 remaining protocol/history,metering/statistics/retention,sessions/tickets,capacity/scaling and comprehensive upgrade/fault validation are incomplete."
+  ],
+  "next": "Exercise expiry reconciliation versus automatic renewal lock/recovery boundary before historical plan sync.",
+  "external_and_production": "No new native Zero,real payment provider,capacity,production migration,release,merge or deploy claim.",
+  "changed_source_sha256": {
+    "backend/api/openapi.yaml": "bf3239f25b8ef1475db2e149acb500872bf0fec718050aa135f05b210a030f6d",
+    "backend/internal/adapters/persistence/commercestore/automatic_renewal.go": "c6dc41ca219d43a8c42f979432f3badce43637ba9139a81b18012f23a22a5ae5",
+    "backend/internal/adapters/persistence/commercestore/automatic_renewal_worker.go": "f4fd37c9909b2252b363b2ca159d4576222eb393ab365eaa210f608cda11e261",
+    "backend/internal/adapters/persistence/entitlementstore/subscription_queries.go": "edda5176b8c92bcefbaa4d2ab94c4f25d39fd6ec42f88fc5a4ab6402ad638c81",
+    "backend/internal/capabilities/entitlements/subscription_queries.go": "9e35035250f13500b06f67171a4e321f4cc1d3c3c7fecb5fa0c6b0ced20755f5",
+    "backend/internal/handler/automatic_renewal_isolation_test.go": "feddede96c3568553bbdb94cf997d8e5cc9c7202d2bb2f1f8225f8259482e78c",
+    "frontend/src/api/client.ts": "915a1773a8fd64b1740b12afa3660036fdcb71273473cf35e80e634d7d968058",
+    "frontend/src/components/SubscriptionAutomaticRenewal.test.ts": "f6b4a2c49b533604187ad3aaf7c382e0585e81c2f2dda65da017d1e34ecf129f",
+    "frontend/src/components/SubscriptionAutomaticRenewal.vue": "b2e2b8e4956f33e338f01f4325f3685501077926e2b3008e1501dd23ff04a6b2",
+    "frontend/src/views/account/AccountSubscription.test.ts": "35ab4c1927413e792ff0717fc5a9bb5b64fdab33eb54ce77dd097667bf58876a",
+    "frontend/src/views/account/AccountSubscription.vue": "dd057b6e3031bcfadbf44455b6b32bb5900935500db3974aa8c23695eefe7032"
+  }
+}

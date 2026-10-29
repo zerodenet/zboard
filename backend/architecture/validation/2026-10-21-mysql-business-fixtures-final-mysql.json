@@ -1,0 +1,59 @@
+{
+  "source": "90734ed5683c850f293a42a1435c269eceded27f",
+  "phase": "mysql",
+  "started_utc": "2026-10-21T05:09:21.296518+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 858.581,
+      "log": "mysql-core-90734ed-final.log",
+      "raw_log_bytes": 229,
+      "raw_log_sha256": "2a91e1af64509c5da8b66d3770b8fabad11e68e49b58d93585e03ce05da63fe3",
+      "package_outcomes": [
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t166.291s",
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t856.802s",
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t167.524s"
+      ]
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 126.267,
+      "log": "mysql-jobstore-90734ed-final.log",
+      "raw_log_bytes": 89,
+      "raw_log_sha256": "c3158768d66e008d101d3f9f07329add15a612dc574c2f786c44545169d6ef27",
+      "package_outcomes": [
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore\t125.670s"
+      ]
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 216.357,
+      "log": "mysql-copy-90734ed-final.log",
+      "raw_log_bytes": 94,
+      "raw_log_sha256": "f848151054b42bc6792226cae242ed1d9859d568c385c6fab1e825c25e894bbb",
+      "package_outcomes": [
+        "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore\t215.891s"
+      ]
+    }
+  ],
+  "finished_utc": "2026-10-21T05:29:22.503180+00:00",
+  "scope": "Exact 90734ed source, clean ordinary cloud checkout, original sequential isolated MySQL 8.4 commands and random test databases. Not production.",
+  "limitations": [
+    "Same-source CI 39547192685 failed at original handler 900.021s timeout; 5 other jobs passed; later CI jobstore/copy were not executed.",
+    "One successful local original run does not establish stable aggregate performance or replace failed same-source CI.",
+    "No timeout, assertions, exclusions, permissions or migration-path weakening."
+  ]
+}

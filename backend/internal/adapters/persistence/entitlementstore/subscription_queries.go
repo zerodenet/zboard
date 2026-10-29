@@ -13,12 +13,15 @@ import (
 )
 
 const subscriptionSummaryColumns = `subscriptions.id, subscriptions.user_id, users.email AS user_email,
+			COALESCE(subscription_automatic_renewals.state, '') AS automatic_renewal_state,
+			COALESCE(subscription_automatic_renewals.message, '') AS automatic_renewal_message,
+			subscription_automatic_renewals.last_attempt_at AS automatic_renewal_checked_at,
 			subscriptions.plan_id, plans.name AS plan_name,
 			subscriptions.plan_sku_id, plan_skus.name AS sku_name,
 			subscriptions.node_group_id, subscriptions.subscription_type,
 			subscriptions.start_at, subscriptions.end_at, subscriptions.lifecycle, subscriptions.ends_on_quota_exhaustion, subscriptions.ended_at, subscriptions.end_reason,
 			CASE
- WHEN subscriptions.status = 'canceled' THEN 'canceled'
+ WHEN subscriptions.status IN ('canceled','ended') THEN subscriptions.status
  WHEN subscriptions.ended_at IS NOT NULL OR (subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) THEN 'expired'
 				WHEN subscriptions.status = 'active'
 					AND subscriptions.end_at <= ?
@@ -36,7 +39,18 @@ const subscriptionSummaryColumns = `subscriptions.id, subscriptions.user_id, use
 			subscriptions.traffic_calc_mode, subscriptions.created_at,
 			subscriptions.updated_at`
 
-type SubscriptionQueries struct{ DB *gorm.DB }
+type SubscriptionQueries struct {
+	DB *gorm.DB
+	// Trusted internal clocks support deterministic lifecycle verification.
+	Now func() time.Time
+}
+
+func subscriptionQueryNow(clock func() time.Time) time.Time {
+	if clock != nil {
+		return clock().UTC()
+	}
+	return time.Now().UTC()
+}
 
 func subscriptionReader(tx *gorm.DB, actor uint, admin bool) error {
 	var user model.User
@@ -58,7 +72,7 @@ func subscriptionReader(tx *gorm.DB, actor uint, admin bool) error {
 	return nil
 }
 func subscriptionJoins(query *gorm.DB) *gorm.DB {
-	return query.Joins("LEFT JOIN users ON users.id = subscriptions.user_id").Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id")
+	return query.Joins("LEFT JOIN users ON users.id = subscriptions.user_id").Joins("LEFT JOIN plans ON plans.id = subscriptions.plan_id").Joins("LEFT JOIN plan_skus ON plan_skus.id = subscriptions.plan_sku_id").Joins("LEFT JOIN subscription_automatic_renewals ON subscription_automatic_renewals.subscription_id = subscriptions.id AND subscription_automatic_renewals.user_id = subscriptions.user_id")
 }
 func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (entitlements.SubscriptionDetail, error) {
 	var out entitlements.SubscriptionDetail
@@ -66,7 +80,11 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (entitl
 		if err := subscriptionReader(tx, actor, true); err != nil {
 			return err
 		}
-		columns, args := subscriptionSummarySelect(time.Now().UTC())
+		grace, err := RecoveryGracePeriod(tx)
+		if err != nil {
+			return err
+		}
+		columns, args := subscriptionSummarySelect(subscriptionQueryNow(s.Now), grace)
 		result := subscriptionJoins(tx.Table("subscriptions")).Select(columns, args...).Where("subscriptions.id = ?", id).Scan(&out.SubscriptionSummary)
 		if result.Error != nil {
 			return result.Error
@@ -77,7 +95,7 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (entitl
 		if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", id).Count(&out.TotalCredentialCount).Error; err != nil {
 			return err
 		}
-		out.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: out.Lifecycle, EndAt: out.EndAt, EndedAt: out.EndedAt}, time.Now().UTC())
+		out.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: out.Lifecycle, EndAt: out.EndAt, EndedAt: out.EndedAt, Status: out.Status, EndReason: out.EndReason}, subscriptionQueryNow(s.Now), grace)
 		return tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status = ?", id, "active").Count(&out.ActiveCredentialCount).Error
 	})
 	if err != nil {
@@ -91,7 +109,11 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 		if err := subscriptionReader(tx, actor, admin); err != nil {
 			return err
 		}
-		now := time.Now().UTC()
+		now := subscriptionQueryNow(s.Now)
+		grace, err := RecoveryGracePeriod(tx)
+		if err != nil {
+			return err
+		}
 		query := tx.Model(&model.Subscription{})
 		if admin || !q.LegacyArray {
 			query = subscriptionJoins(query)
@@ -99,6 +121,8 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 		owner := q.UserID
 		if !admin {
 			owner = actor
+			// Finalized instances remain historical evidence, outside current services.
+			query = query.Where("subscriptions.status <> ?", "ended")
 			// Current services exclude ended fixed instances before the asynchronous
 			// retirement worker runs. Their final state remains in order history.
 			query = query.Where("NOT (subscriptions.lifecycle = 'fixed' AND (subscriptions.ended_at IS NOT NULL OR subscriptions.end_at <= ? OR (subscriptions.ends_on_quota_exhaustion = ? AND subscriptions.flow_used >= subscriptions.flow_total)))", now, true)
@@ -109,7 +133,7 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 		if q.ID != 0 {
 			query = query.Where("subscriptions.id = ?", q.ID)
 		}
-		query = subscriptionEligibility(query, q.EligibleFor, now)
+		query = subscriptionEligibility(query, q.EligibleFor, now, grace)
 		if q.Status != "" {
 			query = subscriptionStatus(query, q.Status, now)
 		}
@@ -145,13 +169,13 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 			if err := query.Count(&out.Total).Error; err != nil {
 				return err
 			}
-			columns, args := subscriptionSummarySelect(now)
+			columns, args := subscriptionSummarySelect(now, grace)
 			if err := query.Select(columns, args...).Order("subscriptions.id desc").Offset(q.Offset).Limit(q.Limit).Scan(&out.Items).Error; err != nil {
 				return err
 			}
 			for index := range out.Items {
 				item := &out.Items[index]
-				item.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: item.Lifecycle, EndAt: item.EndAt, EndedAt: item.EndedAt}, now)
+				item.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: item.Lifecycle, EndAt: item.EndAt, EndedAt: item.EndedAt, Status: item.Status, EndReason: item.EndReason}, now, grace)
 			}
 			return nil
 		}
@@ -177,23 +201,23 @@ func subscriptionStatus(query *gorm.DB, status string, now time.Time) *gorm.DB {
 	case "active":
 		return query.Where("subscriptions.ended_at IS NULL AND (subscriptions.ends_on_quota_exhaustion = FALSE OR subscriptions.flow_used < subscriptions.flow_total) AND (subscriptions.status = ? OR (subscriptions.status = ? AND subscriptions.flow_used >= subscriptions.flow_total)) AND subscriptions.end_at > ?", "active", "expired", now)
 	case "expired":
-		return query.Where("(subscriptions.ended_at IS NOT NULL OR (subscriptions.status IN ('active', 'expired') AND subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) OR (subscriptions.status IN ? AND subscriptions.end_at <= ?) OR (subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total))", []string{"active", "expired"}, now, "expired", now)
+		return query.Where("subscriptions.status IN ('active', 'expired') AND (subscriptions.ended_at IS NOT NULL OR (subscriptions.status IN ('active', 'expired') AND subscriptions.ends_on_quota_exhaustion = TRUE AND subscriptions.flow_used >= subscriptions.flow_total) OR (subscriptions.status IN ? AND subscriptions.end_at <= ?) OR (subscriptions.status = ? AND subscriptions.end_at > ? AND subscriptions.flow_used < subscriptions.flow_total))", []string{"active", "expired"}, now, "expired", now)
 	default:
 		return query.Where("subscriptions.status = ?", status)
 	}
 }
-func subscriptionEligibility(query *gorm.DB, purpose string, now time.Time) *gorm.DB {
+func subscriptionEligibility(query *gorm.DB, purpose string, now time.Time, configuredGrace ...time.Duration) *gorm.DB {
 	if purpose == "manage" {
 		var predicates []string
 		var args []any
 		for _, operation := range []string{"renew", "change", "addon", "reset"} {
-			predicate, values := subscriptionOperationPredicate(operation, now)
+			predicate, values := subscriptionOperationPredicate(operation, now, configuredGrace...)
 			predicates = append(predicates, predicate)
 			args = append(args, values...)
 		}
 		return query.Where("("+strings.Join(predicates, " OR ")+")", args...)
 	}
-	if predicate, args := subscriptionOperationPredicate(purpose, now); predicate != "" {
+	if predicate, args := subscriptionOperationPredicate(purpose, now, configuredGrace...); predicate != "" {
 		return query.Where(predicate, args...)
 	}
 	return query

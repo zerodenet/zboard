@@ -35,6 +35,9 @@ func TestTrafficAggregateExactEdgesAndEveryScope(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
+		t.Fatal(err)
+	}
 	for _, scope := range []TrafficScope{{}, {UserID: 3}, {SubscriptionID: 4}, {NodeID: 1}, {ProtocolEndpointID: 2}, {UserID: 3, SubscriptionID: 4, NodeID: 1, ProtocolEndpointID: 2}, {NodeID: 9}} {
 		for _, window := range [][2]time.Time{{from, to}, {from, from.Add(20 * time.Minute)}, {from.Truncate(time.Hour), to.Truncate(time.Hour)}} {
 			var actual, expected struct{ Used, Raw, Count int64 }
@@ -65,6 +68,9 @@ func BenchmarkTrafficMonthlyAggregation(b *testing.B) {
 	to := from.Add(30 * 24 * time.Hour)
 	// 300,000 accepted samples across thirty user/node scopes; ingestion is outside timing.
 	if err := db.Exec(`WITH RECURSIVE samples(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM samples WHERE i < 299999) INSERT INTO traffic_records(user_id,subscription_id,node_id,report_id,used_bytes,raw_bytes,record_at) SELECT i%10+1, i%10+1, i%3+1, CAST(i AS TEXT), 1000, 1200, datetime(?, '+' || CAST(i*86400*30/300000 AS INTEGER) || ' seconds') || '.001' FROM samples`, from.Format("2006-01-02 15:04:05")).Error; err != nil {
+		b.Fatal(err)
+	}
+	if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
 		b.Fatal(err)
 	}
 	var summaryRows int64
@@ -106,6 +112,9 @@ func TestTrafficDailyTrendPreservesQuarterHourTimezoneBoundaries(t *testing.T) {
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
+		t.Fatal(err)
 	}
 	q := metering.TrafficTrendQuery{Administrative: true, From: from, Days: 2, Timezone: location.String()}
 	for i := 0; i < 2; i++ {

@@ -1,0 +1,89 @@
+{
+  "recorded_utc": "2026-10-22T03:11:56.287682+00:00",
+  "context_head": "a092f9686b60a206c6bfb7717cb5927be4ada321",
+  "capacity_status": "No new offered load;376 two original preflight failures remain. Neither a092 nor panic candidate capacity is claimed verified.",
+  "original_gate_bytes": 1677721600,
+  "gate_or_runner_changes": false,
+  "successful_lossless_physical_reserve_archives": [
+    {
+      "private_receipt": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-stopped-copy-reserve-20261022T0208.json",
+      "receipt_sha256": "7612d6f9599c592b02558a5c4425384672348c2fb6b5a98960a8c13f9f2d84ee",
+      "source": "/workspace/zboard/.codex-local-artifacts/recovery-validation/browser-1012-root-20261021T064351Z/data/events/.emergency-reserve",
+      "original_bytes": 268435456,
+      "original_sha256": "a6d72ac7690f53be6ae46ba88506bd97302a093f7108472bd9efc3cefda06484",
+      "archive_bytes": 260934,
+      "archive_sha256": "03faa1f2d0b7c44a70b898cfddfbaedf1766c35e49e0b74007129115879a6bca",
+      "actual_exclusive_spool_lock": true,
+      "all_other_files_unchanged": true,
+      "restore_exact_bytes_mode_timestamps_before_reuse": true
+    },
+    {
+      "private_receipt": "/workspace/zboard/.codex-local-artifacts/recovery-validation/mixed-20261022T020455Z-BOR4IZ-stopped-reserve.json",
+      "receipt_sha256": "7e844e1ccef8b0cf31e6e7a5555e5c1029a4cbe66444ea959742442d9beec206",
+      "source": "/workspace/zboard-projection-check-final-verify/.codex-local-artifacts/acceptance/mixed-20261022T020455Z-BOR4IZ/data/events/.emergency-reserve",
+      "original_bytes": 268435456,
+      "original_sha256": "a6d72ac7690f53be6ae46ba88506bd97302a093f7108472bd9efc3cefda06484",
+      "archive_bytes": 260934,
+      "archive_sha256": "03faa1f2d0b7c44a70b898cfddfbaedf1766c35e49e0b74007129115879a6bca",
+      "actual_exclusive_spool_lock": true,
+      "all_other_files_unchanged": true,
+      "restore_exact_bytes_mode_timestamps_before_reuse": true
+    },
+    {
+      "private_receipt": "/workspace/zboard/.codex-local-artifacts/recovery-validation/mixed-20261022T020840Z-8iOfc6-stopped-reserve.json",
+      "receipt_sha256": "3f85abecaa7a2f052873827f2334f0d702b75f1d9a301b716f7b5150db8b5b12",
+      "source": "/workspace/zboard-projection-check-final-verify/.codex-local-artifacts/acceptance/mixed-20261022T020840Z-8iOfc6/data/events/.emergency-reserve",
+      "original_bytes": 268435456,
+      "original_sha256": "a6d72ac7690f53be6ae46ba88506bd97302a093f7108472bd9efc3cefda06484",
+      "archive_bytes": 260934,
+      "archive_sha256": "03faa1f2d0b7c44a70b898cfddfbaedf1766c35e49e0b74007129115879a6bca",
+      "actual_exclusive_spool_lock": true,
+      "all_other_files_unchanged": true,
+      "restore_exact_bytes_mode_timestamps_before_reuse": true
+    }
+  ],
+  "legacy_archive_not_executed": {
+    "at": "2026-10-22T02:50:06.727250+00:00",
+    "action": "Lossless archive of four stopped legacy browser-copy emergency reserves",
+    "status": "NOT_EXECUTED; first target stopped before gzip/unlink; remaining targets skipped",
+    "reason": "Required actual .owner.lock does not exist in these legacy spools. No lock created and no proof weakened.",
+    "archive_or_reserve_mutations": false,
+    "targets": [
+      {
+        "target": ".codex-local-artifacts/acceptance/session-browser-wp0g9rmm/data/events/.emergency-reserve",
+        "ownership_lock_exists": false,
+        "reserve_unchanged_exists": true,
+        "archive_exists": false
+      },
+      {
+        "target": ".codex-local-artifacts/acceptance/session-browser-xbzyl7l3/data/events/.emergency-reserve",
+        "ownership_lock_exists": false,
+        "reserve_unchanged_exists": true,
+        "archive_exists": false
+      },
+      {
+        "target": ".codex-local-artifacts/acceptance/session-browser-1mfrdjth/data/events/.emergency-reserve",
+        "ownership_lock_exists": false,
+        "reserve_unchanged_exists": true,
+        "archive_exists": false
+      },
+      {
+        "target": ".codex-local-artifacts/acceptance/session-browser-_s2oorm9/data/events/.emergency-reserve",
+        "ownership_lock_exists": false,
+        "reserve_unchanged_exists": true,
+        "archive_exists": false
+      }
+    ]
+  },
+  "metadata_directory_read_denied": {
+    "at": "2026-10-22T02:49:39.964949+00:00",
+    "prior_action": "rg --files --hidden --no-ignore -g .emergency-reserve -g !**/.git/** .codex-local-artifacts",
+    "prior_exit": 2,
+    "denial_type": "OS directory read permission denied; no auto-review rejection",
+    "denied_example": ".codex-local-artifacts/acceptance/zero-revocation-20261019T185608Z-dBmLDM/node-state/backups/config-1",
+    "denied_scope_status": "No retry, elevation or modification. Protected node backup directories are outside this follow-up.",
+    "followup_scope": "Only the four readable session-browser directories discovered; each requires existing server_exit_code0 plus actual exclusive spool ownership before reversible reserve archive."
+  },
+  "prior_binary_archive_denial": "Previous proc1/old binary archive was not retried or bypassed.",
+  "authority_cleanup": "No database, event payload, checkpoint, dedup, ledger, source/parts, original successful capacity export or prior receipt deleted."
+}

@@ -3,12 +3,10 @@ package meteringstore
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
-	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 	"time"
 )
@@ -20,24 +18,24 @@ type TrafficTrends struct {
 
 func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficTrendQuery) (metering.TrafficTrendData, error) {
 	var out metering.TrafficTrendData
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var user model.User
-		err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id", "is_admin", "status").First(&user, actor).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return metering.ErrTrendPermission
+	if err := authorizeReportingRead(ctx, s.DB, actor, q.Administrative); err != nil {
+		return out, err
+	}
+	if !q.Administrative {
+		q.UserID = actor
+	}
+	database := s.ReadDB
+	if database == nil {
+		database = s.DB
+	}
+	err := database.WithContext(ctx).Transaction(func(read *gorm.DB) error {
+		var err error
+		windows := make([][2]time.Time, 0, len(q.Buckets))
+		for _, bucket := range q.Buckets {
+			windows = append(windows, [2]time.Time{bucket.StartUTC, bucket.EndUTC})
 		}
-		if err != nil {
+		if err := EnsureHourlyUsageWindowsReady(read, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, windows); err != nil {
 			return err
-		}
-		if user.Status != "active" || (q.Administrative && !user.IsAdmin) {
-			return metering.ErrTrendPermission
-		}
-		if !q.Administrative {
-			q.UserID = actor
-		}
-		read := tx
-		if s.ReadDB != nil && s.ReadDB != s.DB {
-			read = s.ReadDB.WithContext(ctx)
 		}
 		load := func() (metering.TrafficTrendSnapshot, error) {
 			result := metering.TrafficTrendSnapshot{AsOf: time.Now().UTC()}
@@ -77,7 +75,7 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 			}
 		}
 		return nil
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return metering.TrafficTrendData{}, err
 	}

@@ -47,13 +47,16 @@ func TestDashboardRankingsExactPartialHoursAndBoundedQueries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
+		t.Fatal(err)
+	}
 	counter := &dashboardQueryCounter{Interface: db.Config.Logger}
 	read := db.Session(&gorm.Session{Logger: counter})
 	result, err := (Dashboard{DB: read}).LoadTrafficRankings(context.Background(), period)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counter.queries.Load() != 2 {
+	if counter.queries.Load() != 4 {
 		t.Fatalf("queries %d", counter.queries.Load())
 	}
 	if len(result.Nodes) != 10 || len(result.Users) != 10 {
@@ -72,7 +75,7 @@ func TestDashboardRankingsExactPartialHoursAndBoundedQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counter.queries.Load() != 1 || len(nodes.Nodes) != 10 || len(nodes.Users) != 0 {
+	if counter.queries.Load() != 3 || len(nodes.Nodes) != 10 || len(nodes.Users) != 0 {
 		t.Fatalf("nodes=%+v queries=%d", nodes, counter.queries.Load())
 	}
 

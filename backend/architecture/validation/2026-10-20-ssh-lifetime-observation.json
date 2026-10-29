@@ -1,0 +1,23 @@
+{
+  "stage": "P7 remote process cleanup observation",
+  "failed_ci": "https://github.com/zerodenet/zboard/actions/runs/39466880437",
+  "failed_source": "d98b01806f557cf19ea78e6522b475a4a8be0b72",
+  "failed_test": "TestRemoteLifetimeStopsOnlyOwnedChildrenAndReleasesLock/node_deadline",
+  "observation": "nested CLI still alive: R at immediate post-SSH-EOF /proc observation",
+  "production_change": false,
+  "change": "Use one existing nine-second cleanup budget for command result, SSH EOF and observed descendant termination. SIGKILL delivery to a grandchild is not synchronous with wrapper EOF. Preserve live-child failure, publication lock release and unrelated-peer survival assertions.",
+  "previous_budget": "two independent nine-second waits followed by immediate child observation",
+  "new_budget": "one shared nine-second deadline including child observation; no timeout extension or test retry",
+  "reproduction": {
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/adapters/ssh -run '^TestRemoteLifetimeStopsOnlyOwnedChildrenAndReleasesLock$' -count=5 -timeout 3m",
+    "result": "pass",
+    "package_seconds": 48.263,
+    "note": "Five old-test runs did not reproduce the CI scheduling race; historical failure retained."
+  },
+  "verification": {
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/adapters/ssh -count=5 -timeout 3m",
+    "result": "pass; precise package duration in persistent ssh-lifetime-final.log",
+    "package_seconds": 49.921
+  },
+  "remaining": "New exact-commit CI required. This test correction does not prove new production cleanup behavior or external-node execution."
+}

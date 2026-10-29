@@ -1,0 +1,66 @@
+{
+  "source": "24bd247f1694f650a4420f300645d706efd57d61",
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39543508030",
+  "run_id": 39543508030,
+  "status": "completed",
+  "conclusion": "failure",
+  "jobs": [
+    {
+      "name": "zrs-compiler",
+      "id": 119036388253,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "frontend",
+      "id": 119036388499,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "contract",
+      "id": 119036388532,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "backend",
+      "id": 119036388552,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "compose",
+      "id": 119036388602,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "mysql",
+      "id": 119036388603,
+      "status": "completed",
+      "conclusion": "failure"
+    }
+  ],
+  "mysql": {
+    "datastore_seconds": 196.554,
+    "handler_seconds": 900.024,
+    "networkstore_seconds": 187.261,
+    "timeout_running": "TestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself (3s)",
+    "assertion_failures": [],
+    "jobstore": "NOT EXECUTED after failed core command",
+    "copy": "NOT EXECUTED after failed core command"
+  },
+  "limits": [
+    "This metadata head has its own failed CI; ae2 six-job success is not substituted.",
+    "Last active case/time does not prove cumulative timeout cause.",
+    "Original timeout, exclusions, negative assertions and test command are unchanged."
+  ],
+  "last_fixture_stack": [
+    "2026-10-21T04:36:55.4250634Z \t\tTestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself (3s)",
+    "2026-10-21T04:36:55.4272716Z github.com/zerodenet/zboard/backend/internal/handler.newMySQLPublishHandlers(0x39a84aba2d88)",
+    "2026-10-21T04:36:55.4274056Z github.com/zerodenet/zboard/backend/internal/handler.TestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself(0x39a84aba2d88)"
+  ],
+  "raw_mysql_log_bytes": 1102003,
+  "raw_mysql_log_sha256": "ee26c1d64c7ad393b2076cfed180a4fdbc2646f9dd448d12202dbeee40758dc4"
+}

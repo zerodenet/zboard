@@ -6,6 +6,8 @@
 
     <TransientFeedback :success="message" :error="error" success-title="权限组已更新" error-title="权限组操作失败" />
 
+    <PageAlert v-if="groupDraftRecovery.message.value" tone="info" title="登录后草稿恢复">{{ groupDraftRecovery.message.value }}<template #actions><UiButton variant="ghost" type="button" @click="groupDraftRecovery.restore()">重新检查草稿恢复</UiButton></template></PageAlert>
+
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters><WorkbenchFilterBar :active="Boolean(search || enabledFilter || groupID)" :active-count="Number(Boolean(search)) + Number(Boolean(enabledFilter)) + Number(Boolean(groupID))" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" field-label="权限组名称或代码" placeholder="名称、代码或说明" @apply="applyFilters" /><UiButton v-if="groupID" variant="ghost" size="sm" type="button" @click="clearGroupFilter">权限组 #{{ groupID }}<UiIcon name="close" /></UiButton><WorkbenchFilterSelect v-model="enabledFilter" label="启用状态" :options="enabledOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
       <TableSkeleton v-if="loading && !groups.length" label="正在加载权限组" :columns="7" />
@@ -70,6 +72,8 @@ import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { nodeGroupBaseline, nodeGroupRecovery } from '../utils/nodeGroupRecovery'
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { confirmAction } from '../utils/feedback'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
@@ -101,6 +105,8 @@ const formElement = ref<HTMLElement | null>(null)
 const originalEndpointIDs = ref<number[]>([])
 const originalEntryIDs = ref<number[]>([])
 const revisionConflict = ref(false)
+const originalGroupBaseline = ref('')
+let groupEditorGeneration = 0
 const emptyForm = () => ({ id: 0, name: '', code: '', description: '', is_enabled: true, revision: 0, updated_at: '', protocol_endpoint_ids: [] as number[], network_entry_ids: [] as number[] })
 const form = reactive(emptyForm())
 const editorState = useDirtyForm(() => form)
@@ -127,15 +133,36 @@ const { items: groups, total, loading, refreshing, error, load: refresh } = useR
   onOffsetCorrected: () => syncURL(true),
 })
 
+const groupDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.node-groups.editor', permission: 'admin', ready: () => !saving.value,
+  read: () => editorOpen.value ? { entityID: form.id, revision: form.revision, baseline: originalGroupBaseline.value, originalEndpointIDs: originalEndpointIDs.value, originalEntryIDs: originalEntryIDs.value, fields: form } : null,
+  sanitize: nodeGroupRecovery,
+  async restore(draft, context) {
+    if (editorOpen.value || editingID.value) return false
+    const generation = groupEditorGeneration
+    const detail = draft.entityID ? await fetchNodeGroupDetail(draft.entityID) : undefined
+    if (!context.isCurrent() || generation !== groupEditorGeneration || editorOpen.value || editingID.value || (draft.entityID > 0 && detail?.id !== draft.entityID)) return false
+    // Never pair an old membership draft with a newly fetched revision.
+    Object.assign(form, emptyForm(), { id: draft.entityID, revision: draft.revision }, draft.fields)
+    originalEndpointIDs.value = [...draft.originalEndpointIDs]
+    originalEntryIDs.value = [...draft.originalEntryIDs]
+    originalGroupBaseline.value = draft.baseline
+    revisionConflict.value = Boolean(detail && (detail.revision !== draft.revision || nodeGroupBaseline(detail) !== draft.baseline))
+    editorErrors.clear()
+    if (revisionConflict.value) editorErrors.formError.value = '草稿保留原版本及成员基线；服务器已变化，请重新加载后再编辑。'
+    editorOpen.value = true
+  },
+})
 function generatedGroupCode(name: string) { const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40); return slug || `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` }
 async function syncURL(replace = false) { const page = Math.floor(offset.value / limit.value) + 1; const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(groupID.value ? { group: String(groupID.value) } : {}), ...(search.value ? { q: search.value } : {}), ...(enabledFilter.value ? { enabled: enabledFilter.value } : {}), ...(page > 1 ? { page: String(page) } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }
 async function applyFilters() { offset.value = 0; await syncURL(); await refresh() }
 async function clearGroupFilter() { groupID.value = 0; await applyFilters() }
 async function clearFilters() { groupID.value = 0; search.value = ''; enabledFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
-function openCreate() { Object.assign(form, emptyForm()); originalEndpointIDs.value = []; originalEntryIDs.value = []; revisionConflict.value = false; editorState.markClean(); editorErrors.clear(); editorOpen.value = true }
+function openCreate() { groupEditorGeneration++; Object.assign(form, emptyForm()); originalEndpointIDs.value = []; originalEntryIDs.value = []; revisionConflict.value = false; originalGroupBaseline.value = ''; editorState.markClean(); editorErrors.clear(); editorOpen.value = true }
 async function openEdit(group: NodeGroupSummary) {
   if (editingID.value) return
+  groupEditorGeneration++
   editingID.value = group.id
   error.value = ''
   try {
@@ -151,6 +178,7 @@ async function openEdit(group: NodeGroupSummary) {
       protocol_endpoint_ids: [...(detail.protocol_endpoint_ids || [])],
       network_entry_ids: [...(detail.network_entry_ids || [])],
     })
+    originalGroupBaseline.value = nodeGroupBaseline(detail)
     originalEndpointIDs.value = [...(detail.protocol_endpoint_ids || [])]
     originalEntryIDs.value = [...(detail.network_entry_ids || [])]
     revisionConflict.value = false
@@ -179,6 +207,7 @@ async function reloadEditor() {
       protocol_endpoint_ids: [...(detail.protocol_endpoint_ids || [])],
       network_entry_ids: [...(detail.network_entry_ids || [])],
     })
+    originalGroupBaseline.value = nodeGroupBaseline(detail)
     originalEndpointIDs.value = [...(detail.protocol_endpoint_ids || [])]
     originalEntryIDs.value = [...(detail.network_entry_ids || [])]
     revisionConflict.value = false
@@ -192,6 +221,7 @@ async function reloadEditor() {
 }
 function closeEditor() { if (!saving.value) editorOpen.value = false }
 async function save() {
+  if (revisionConflict.value) { editorErrors.formError.value = '草稿基于旧版本，请重新加载后再编辑。'; return }
 	form.name = form.name.trim()
 	form.code = form.code.trim().toLowerCase()
 	form.description = form.description.trim()

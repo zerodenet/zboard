@@ -179,6 +179,30 @@ func TestModelsRequireExactReviewedOwnership(t *testing.T) {
 	source := `package model
 type User struct{}
 type PaymentEvent struct{}
+type TrafficDiagnosticMaterial struct{}
+type TrafficDiagnosticMaterialOther struct{}
+type MeteringReportReceipt struct{}
+type MeteringReportReceiptOther struct{}
+type PrincipalStatisticsState struct{}
+type PrincipalStatisticsPending struct{}
+type PrincipalStatisticsSample struct{}
+type PrincipalStatisticsHourly struct{}
+type PrincipalStatisticsFuture struct{}
+type FlowStartStatisticsState struct{}
+type FlowStartStatisticsPending struct{}
+type FlowStartStatisticsPoint struct{}
+type FlowStartStatisticsMinute struct{}
+type FlowStartStatisticsFuture struct{}
+type TrafficMetaArchive struct{}
+type TrafficMetaArchiveOther struct{}
+type OrderDiscountRedemption struct{}
+type OrderDiscountRedemptionOther struct{}
+type NodeObservationMaterialBudget struct{}
+type NodeObservationMaterialBudgetOther struct{}
+type NodeObservationRetirementPart struct{}
+type NodeObservationRetirementPartOther struct{}
+type NodeObservationRetirement struct{}
+type NodeObservationRetirementFuture struct{}
 type InventedFutureModel struct{}
 `
 	if err := os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0600); err != nil {
@@ -194,11 +218,80 @@ type InventedFutureModel struct{}
 			owners[row.Symbol] = row.Owner
 		}
 	}
+	for _, name := range []string{"NodeObservationMaterialBudget", "NodeObservationRetirement", "NodeObservationRetirementPart"} {
+		if owners[name] != "resources" {
+			t.Fatal("observation material owner must be exact", owners)
+		}
+	}
+	for _, name := range []string{"NodeObservationMaterialBudgetOther", "NodeObservationRetirementFuture", "NodeObservationRetirementPartOther"} {
+		if owners[name] != "unassigned" {
+			t.Fatal("unreviewed future model inherited authority", owners)
+		}
+	}
 	if owners["User"] != "identity" || owners["PaymentEvent"] != "commerce" {
 		t.Fatal(owners)
 	}
 	if owners["InventedFutureModel"] != "unassigned" {
 		t.Fatalf("new model was silently assigned: %v", owners)
+	}
+	if owners["MeteringReportReceipt"] != "metering" || owners["MeteringReportReceiptOther"] != "unassigned" {
+		t.Fatal("report identity owner must be exact")
+	}
+	if owners["OrderDiscountRedemption"] != "commerce" || owners["OrderDiscountRedemptionOther"] != "unassigned" {
+		t.Fatal("discount recovery ownership must be exact", owners)
+	}
+	for _, name := range []string{"PrincipalStatisticsState", "PrincipalStatisticsPending", "PrincipalStatisticsSample", "PrincipalStatisticsHourly"} {
+		if owners[name] != "metering" {
+			t.Fatal("principal statistics exact owner", name, owners)
+		}
+	}
+	for _, name := range []string{"FlowStartStatisticsState", "FlowStartStatisticsPending", "FlowStartStatisticsPoint", "FlowStartStatisticsMinute"} {
+		if owners[name] != "metering" {
+			t.Fatal("flow statistics exact owner", name, owners)
+		}
+	}
+	if owners["FlowStartStatisticsFuture"] != "unassigned" {
+		t.Fatal("future flow statistics inherited owner", owners)
+	}
+	if owners["PrincipalStatisticsFuture"] != "unassigned" {
+		t.Fatal("future statistics owner inherited", owners)
+	}
+	if owners["TrafficMetaArchive"] != "metering" || owners["TrafficMetaArchiveOther"] != "unassigned" {
+		t.Fatal("native proof archive ownership must be exact", owners)
+	}
+	if owners["TrafficDiagnosticMaterial"] != "metering" || owners["TrafficDiagnosticMaterialOther"] != "unassigned" {
+		t.Fatalf("diagnostic provenance ownership must remain exact: %v", owners)
+	}
+}
+
+func TestDiagnosticRetentionLifecycleKeepsExactOwnership(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "handler")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source := `package handler
+func Example() {
+ h.StartTrafficDiagnosticRetentionWorker()
+ h.CloseTrafficDiagnosticRetentionWorker()
+ h.StartTrafficDiagnosticRetentionOtherWorker()
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "example.go"), []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := inventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := map[string]string{}
+	for _, row := range rows {
+		if row.Kind == "lifecycle" {
+			owners[row.Symbol] = row.Owner
+		}
+	}
+	if owners["h.StartTrafficDiagnosticRetentionWorker"] != "metering" || owners["h.CloseTrafficDiagnosticRetentionWorker"] != "metering" || owners["h.StartTrafficDiagnosticRetentionOtherWorker"] != "unassigned" {
+		t.Fatal("diagnostic lifecycle ownership broadened or missing", owners)
 	}
 }
 
@@ -240,19 +333,103 @@ func TestRepositoryContractInventoryIsComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]int{
-		"plugin_rpc":               16,
-		"plugin_capability":        30,
+		"plugin_rpc":               18,
+		"plugin_capability":        32,
 		"host_operation":           16,
 		"plugin_host_operation":    16,
 		"external_http_scope":      3,
-		"cross_domain_transaction": 10,
+		"cross_domain_transaction": 24,
 	}
 	counts := map[string]int{}
+	controlledDebit, unsubscribe, retirement, replacement, automatic := false, false, false, false, false
+	consumptionRefund, planQuotaSync, planGroupSync := false, false, false
+	observationHandoff, observationApply := false, false
+	observationRetry, observationRetryWrite := false, false
+	materialRetirement := false
+	diagnosticRetirement := false
 	for _, row := range rows {
 		counts[row.Kind]++
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "metering.diagnostic_material_retirement" && row.Owner == "metering" && row.File == "internal/adapters/persistence/meteringstore/diagnostic_material_retention.go" {
+			diagnosticRetirement = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.observation_material_retirement" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/expired_material.go" {
+			materialRetirement = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_retry" && row.Owner == "resources" && row.File == "internal/adapters/persistence/networkstore/node_observation_retry.go" {
+			observationRetry = true
+		}
+		if row.Kind == "write_candidate" && row.Symbol == "h.services.ObservationIntents.Retry" && row.Owner == "resources" && row.File == "internal/handler/node_observation_retry.go" {
+			observationRetryWrite = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "metering.buffered_observation_handoff" && row.Owner == "metering" && row.File == "internal/application/zero_event_projection.go" {
+			observationHandoff = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "resources.node_observation_projection" && row.Owner == "resources" && row.File == "internal/adapters/persistence/observationstore/worker.go" {
+			observationApply = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.plan_group_sync" && row.Owner == "commerce" {
+			planGroupSync = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.plan_quota_sync" && row.Owner == "commerce" {
+			planQuotaSync = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.consumption_refund" && row.Owner == "commerce" {
+			consumptionRefund = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.controlled_wallet_debit" && row.Owner == "commerce" {
+			controlledDebit = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.subscription_unsubscribe" && row.Owner == "commerce" && row.File == "internal/adapters/persistence/commercestore/subscription_termination.go" {
+			unsubscribe = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.automatic_renewal" && row.Owner == "commerce" {
+			automatic = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "commerce.full_term_replacement" && row.Owner == "commerce" {
+			replacement = true
+		}
+		if row.Kind == "cross_domain_transaction" && row.Symbol == "entitlements.subscription_retirement" && row.Owner == "entitlements" {
+			retirement = true
+		}
 		if row.Owner == "unassigned" {
 			t.Errorf("unassigned inventory evidence: %+v", row)
 		}
+	}
+	if !diagnosticRetirement {
+		t.Error("diagnostic material retirement must retain exact source transaction ownership")
+	}
+	if !materialRetirement {
+		t.Error("observation material retirement must retain explicit bounded source transaction ownership")
+	}
+	if !automatic {
+		t.Fatal("automatic renewal transaction must retain explicit ownership evidence")
+	}
+	if !observationRetry || !observationRetryWrite {
+		t.Error("controlled observation retry must retain explicit transaction and HTTP write ownership")
+	}
+	if !observationHandoff || !observationApply {
+		t.Error("financial handoff and auxiliary apply must retain distinct transaction ownership")
+	}
+	if !planGroupSync {
+		t.Fatal("plan group synchronization must retain its explicit transaction ownership")
+	}
+	if !planQuotaSync {
+		t.Fatal("plan quota synchronization must retain its explicit transaction ownership")
+	}
+	if !consumptionRefund {
+		t.Fatal("consumption refund must retain its explicit financial transaction ownership")
+	}
+	if !retirement {
+		t.Error("retirement lost its entitlement transaction ownership")
+	}
+	if !replacement {
+		t.Error("full replacement lost its commerce transaction ownership")
+	}
+	if !unsubscribe {
+		t.Error("unsubscribe settlement lost its commerce transaction ownership")
+	}
+	if !controlledDebit {
+		t.Error("controlled wallet debit lost its commerce transaction ownership")
 	}
 	for kind, expected := range want {
 		if counts[kind] != expected {
@@ -269,6 +446,15 @@ func TestNewContractEvidenceCannotBypassOwnershipLedger(t *testing.T) {
  rpc Future
  (Empty) returns (Empty);
 }`,
+		"pkg/pluginapi/v1/future.proto": `package example.service;
+option service = "description";
+// service Pretend { rpc Comment(Empty) returns (Empty); }
+option description = "rpc Fake(Empty) returns (Empty)";
+service Independent {
+ /* rpc Hidden(Empty) returns (Empty); */
+ rpc Added(Empty) returns (Empty) { option description = "rpc Nested()"; }
+}
+service Another { rpc Next(Empty) returns (Empty); }`,
 		"internal/plugins/capabilities.go": `package plugins
 const KnownCapability = "zboard.known.v1"
 const FutureCapability = "zboard.future.v1"
@@ -323,13 +509,23 @@ func Commit() {}`,
 		t.Fatal(err)
 	}
 	futureKinds := map[string]bool{}
+	independent := map[string]bool{}
 	for _, row := range rows {
+		if row.Kind == "plugin_rpc" && row.File == "pkg/pluginapi/v1/future.proto" {
+			if row.Owner != "unassigned" {
+				t.Fatalf("new service inherited ownership: %+v", row)
+			}
+			independent[row.Symbol] = true
+		}
 		if row.Symbol == "PluginControl.Future" || row.Symbol == "zboard.future.v1" || row.Symbol == "future.read" {
 			if row.Owner != "unassigned" {
 				t.Fatalf("future evidence inherited ownership: %+v", row)
 			}
 			futureKinds[row.Kind] = true
 		}
+	}
+	if len(independent) != 2 || !independent["Independent.Added"] || !independent["Another.Next"] {
+		t.Fatalf("independent services not inventoried exactly: %v", independent)
 	}
 	for _, kind := range []string{"plugin_rpc", "plugin_capability", "host_operation", "plugin_host_operation", "external_http_scope"} {
 		if !futureKinds[kind] {
@@ -365,4 +561,65 @@ func TestStaleLedgerEvidenceIsUnassigned(t *testing.T) {
 		}
 	}
 	t.Fatal("stale RPC ledger entry was not rejected")
+}
+
+func TestLocalWorkerRuntimeSitesKeepExactJobsOwnership(t *testing.T) {
+	root := t.TempDir()
+	files := []string{"internal/localworkers/process.go", "internal/localworkers/supervisor.go", "internal/application/projection_supervisor.go", "internal/localworkers/future.go"}
+	for _, name := range files {
+		target := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte("package example\nfunc run(){ go work(); time.NewTicker(time.Second) }\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := inventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, row := range rows {
+		if row.Kind != "goroutine" && row.Kind != "timer" {
+			continue
+		}
+		want := "jobs"
+		if row.File == "internal/localworkers/future.go" {
+			want = "unassigned"
+		}
+		if row.Owner != want {
+			t.Fatalf("runtime owner for %s: got=%s want=%s", row.File, row.Owner, want)
+		}
+		counts[row.File]++
+	}
+	for _, name := range files {
+		if counts[name] != 2 {
+			t.Fatalf("missing runtime evidence %s: %v", name, counts)
+		}
+	}
+}
+
+func TestDiscountRedemptionLifecycleKeepsExactOwnership(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "handler")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "example.go"), []byte("package example\nfunc Example(){ h.StartDiscountRedemptionWorker(); h.StartDiscountRedemptionOtherWorker() }\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := inventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, row := range rows {
+		if row.Kind == "lifecycle" {
+			seen[row.Symbol] = row.Owner
+		}
+	}
+	if seen["h.StartDiscountRedemptionWorker"] != "commerce" || seen["h.StartDiscountRedemptionOtherWorker"] != "unassigned" {
+		t.Fatal("discount lifecycle ownership broadened or missing", seen)
+	}
 }

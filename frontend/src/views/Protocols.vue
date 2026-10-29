@@ -35,6 +35,8 @@
       <div class="stack"><p>选择服务接入方式。</p><UiButton @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton @click="createService('forward')">前置端口转发</UiButton><p>复用现有父协议，可登记外部转发地址，也可由面板托管入口服务器的 Zero 转发。</p></div>
     </ModalDialog>
     <div class="protocol-listener-content">
+    <PageAlert v-if="protocolDraftRecovery.message.value" tone="info" title="登录后草稿恢复">{{ protocolDraftRecovery.message.value }}</PageAlert>
+    <PageAlert v-if="protocolRecoveryConflict" tone="warning" title="草稿需要人工核对">协议服务或节点组版本已变化，普通字段草稿仍保留；不能直接覆盖服务器的新内容。请另存后重新打开编辑器。</PageAlert>
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
     <PageAlert v-if="deferredMessage" tone="warning" title="新设置暂未生效">{{ deferredMessage }}<template #actions><UiButton variant="ghost" size="sm" @click="deferredMessage = ''">知道了</UiButton></template></PageAlert>
     <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
@@ -76,8 +78,8 @@
               <td class="table-primary-column"><div class="cell-title"><strong :title="endpoint.name">{{ endpoint.name }}</strong><span>{{ endpoint.service_kind === 'forward' ? '入口' : '协议' }} #{{ endpoint.id }}<template v-if="endpoint.service_kind === 'forward'"> → 协议 #{{ endpoint.parent_protocol_id }}</template> · {{ protocolLabel(endpoint.protocol) }}</span></div></td>
               <td class="protocol-node-column"><div class="cell-title"><RouterLink :to="adminContextLink('/admin/nodes', { node: String(endpoint.node_id) })">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</RouterLink><span>{{ endpoint.service_kind === 'forward' ? (endpoint.forward?.deployment_mode === 'external' ? '外部转发 · 父服务器' : 'Zero 托管转发') : 'Zero 协议监听' }} · {{ endpoint.node_online ? '服务器在线' : endpoint.node_last_seen_at ? '服务器离线' : '未收到心跳' }}</span></div></td>
               <td><div class="cell-title"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /><span>{{ endpoint.forward?.deployment_mode === 'external' ? '外部维护转发' : `内部端口 ${endpoint.port}` }}</span></div></td>
-              <td><div class="protocol-status-control"><UiSwitch :model-value="endpoint.is_active" :disabled="isTogglePending(endpoint) || (!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported)" :title="!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported ? endpoint.kernel_unsupported_reason : undefined" :aria-label="`${endpoint.is_active ? '停用' : '启用'}协议服务 ${endpoint.name}`" @update:model-value="value => toggleEndpoint(endpoint, value)" /><div class="cell-title"><span>{{ toggleBusyKeys.has(`${endpoint.service_kind || 'listener'}:${endpoint.id}`) ? '正在提交' : isTogglePending(endpoint) ? '任务处理中' : endpoint.is_active ? '已启用' : '已停用' }}</span></div></div></td>
-              <td><div class="protocol-load" :title="endpoint.forward ? '父协议汇总，包含其他共享入口；无法按前置入口单独拆分' : '当前协议服务的活跃负载和今日流量'"><strong><span><UiIcon name="users" />{{ formatNumber(endpoint.usage?.active_users) }}</span><span><UiIcon name="link" />{{ formatNumber(endpoint.usage?.active_flows) }}</span></strong><span class="protocol-load-traffic"><UiIcon name="activity" />{{ formatCompactBytes(endpoint.usage?.used_bytes_today) }}</span></div></td>
+              <td><div class="protocol-status-control"><UiSwitch :model-value="endpoint.is_active" :disabled="isTogglePending(endpoint) || (!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported)" :title="!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported ? endpoint.kernel_unsupported_reason : undefined" :aria-label="`${endpoint.is_active ? '停用' : '启用'}协议服务 ${endpoint.name}`" @update:model-value="value => toggleEndpoint(endpoint, value)" /><div class="cell-title"><span>{{ toggleBusyKeys.has(`${endpoint.service_kind || 'listener'}:${endpoint.id}`) ? '正在提交' : isTogglePending(endpoint) ? '任务处理中' : endpoint.is_active ? '已启用' : '已停用' }}</span><small v-if="endpoint.publication?.status === 'connections_pending'">配置已应用；旧连接撤权待核验</small></div></div></td>
+              <td><div class="protocol-load" :title="endpoint.usage?.traffic_projection_pending ? '流量统计正在更新，已结算流量不受影响' : endpoint.forward ? '父协议汇总，包含其他共享入口；无法按前置入口单独拆分' : '当前协议服务的活跃负载和今日流量'"><strong><span><UiIcon name="users" />{{ formatNumber(endpoint.usage?.active_users) }}</span><span><UiIcon name="link" />{{ formatNumber(endpoint.usage?.active_flows) }}</span></strong><span class="protocol-load-traffic"><UiIcon name="activity" />{{ endpoint.usage?.traffic_projection_pending ? '统计更新中' : formatCompactBytes(endpoint.usage?.used_bytes_today) }}</span></div></td>
               <td data-column-priority="3"><TableText :value="endpoint.forward ? endpoint.forward.node_group_names?.join('、') || '未分配' : endpoint.node_group_memberships?.map(group=>group.name).join('、') || '未分配'" /></td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
@@ -119,14 +121,14 @@
           <div><span>活跃用户</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_users) }}</strong></div>
           <div><span>活跃连接</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_flows) }}</strong></div>
           <div><span>活跃凭证</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_credentials) }}</strong></div>
-          <div><span>今日流量</span><strong>{{ formatBytes(selectedEndpointDetail.usage?.used_bytes_today) }}</strong></div>
-          <div><span>本期累计流量</span><strong>{{ formatBytes(selectedEndpointDetail.usage?.used_bytes_total) }}</strong></div>
+          <div><span>今日流量</span><strong>{{ selectedEndpointDetail.usage?.traffic_projection_pending ? '统计更新中' : formatBytes(selectedEndpointDetail.usage?.used_bytes_today) }}</strong></div>
+          <div><span>本期累计流量</span><strong>{{ selectedEndpointDetail.usage?.traffic_projection_pending ? '统计更新中' : formatBytes(selectedEndpointDetail.usage?.used_bytes_total) }}</strong></div>
           <div><span>统计起点</span><TimeBadge :value="selectedEndpointDetail.usage?.reset_at" /></div>
           <div><span>最近使用</span><TimeBadge :value="selectedEndpointDetail.usage?.last_used_at" /></div>
           <div><span>最后更新</span><TimeBadge :value="selectedEndpointDetail.updated_at" /></div>
         </section>
         <section class="panel deployment-history">
-          <header class="panel-header"><div><h2>流量统计周期</h2><p>重置后从零统计新周期；原始流量记录、订阅配额和计费保持不变。</p></div><UiButton variant="secondary" size="sm" type="button" @click="openUsageReset">重置统计</UiButton></header>
+          <header class="panel-header"><div><h2>流量统计周期</h2><p>{{ selectedEndpointDetail.usage?.traffic_projection_pending ? '流量统计正在更新，已结算流量不受影响；更新完成后可重置统计。' : '重置后从零统计新周期；原始流量记录、订阅配额和计费保持不变。' }}</p></div><UiButton variant="secondary" size="sm" type="button" :disabled="selectedEndpointDetail.usage?.traffic_projection_pending" @click="openUsageReset">重置统计</UiButton></header>
           <PageAlert v-if="usageResetsError" tone="danger" title="统计周期加载失败">{{ usageResetsError }}</PageAlert>
           <DataTable v-if="usageResets.length" caption="协议服务流量统计周期" :row-count="usageResets.length" :min-width="580">
             <thead><tr><th>重置时间</th><th>上期用量</th><th>原因</th></tr></thead>
@@ -175,6 +177,7 @@
     </ModalDialog>
 
     <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑协议服务' : copySourceID ? '复制协议配置' : '创建协议服务'" :description="form.id ? '协议配置可切换承载 VPS；保存前会校验凭证、端口和完整配置。' : copySourceID ? '已复制原服务配置为独立草稿，可更换节点、入口和名称后保存。' : '跟随步骤完成节点、连接参数和配置确认。'" size="xl" :busy="saving" @close="closeEditor">
+      <PageAlert v-if="protocolSensitiveChanged" tone="warning" title="连接配置草稿仅留在本页">连接凭据、出口或自定义配置已修改，无法安全暂存；请留在本页完成认证。普通入口字段仅在这些配置未修改时可恢复。</PageAlert>
       <form id="protocol-form" ref="protocolFormElement" class="protocol-editor" novalidate @submit.prevent="save">
         <UiStepNav :steps="wizardSteps" :current="editorStep" :max-step="form.id ? 3 : editorStep" label="协议服务配置步骤" @select="goToStep" />
         <PageAlert v-if="editorErrors.formError.value || editorError" tone="danger" title="无法保存协议服务">{{ editorErrors.formError.value || editorError }}
@@ -280,7 +283,7 @@
               当前草稿携带的节点组版本已过期。重新加载关联不会覆盖协议参数，但会以最新关联作为新的比较基线。
               <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="membershipReloading" @click="reloadNodeGroupMemberships"><UiIcon name="refresh" />重新加载关联</UiButton></template>
             </PageAlert>
-            <FormField v-slot="{ controlAttrs }" label="运行状态" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并发布该运行实例</span></div></FormField>
+            <FormField v-slot="{ controlAttrs }" label="业务启用" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并推进配置交付；实际执行结果需核验</span></div></FormField>
             <FormField label="关联节点组" name="protocol-node-groups" :error="editorErrors.fields.node_group_membership_changes" full>
               <NodeGroupMembershipEditor v-model="form.node_group_memberships" :can-add="Boolean(form.is_active)" />
             </FormField>
@@ -305,7 +308,7 @@
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="editorStep === 1 ? requestClose() : editorStep--">{{ editorStep === 1 ? '取消' : '上一步' }}</UiButton>
         <UiButton v-if="editorStep < 3" type="button" @click="nextStep">下一步</UiButton>
-        <UiButton v-else form="protocol-form" type="submit" :disabled="!canSaveSelectedProtocol || membershipRevisionConflict" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
+        <UiButton v-else form="protocol-form" type="submit" :disabled="protocolRecoveryConflict || !canSaveSelectedProtocol || membershipRevisionConflict" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
       </template>
     </ModalDialog>
     </div>
@@ -347,6 +350,9 @@ import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import WorkbenchFilterLookup from '../components/WorkbenchFilterLookup.vue'
 import UiSwitch from '../components/UiSwitch.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { useAppStore } from '../stores/app'
+import { protocolAssetBaseline, protocolAssetRecovery, sameRecoveryBaseline } from '../utils/adminAssetRecovery'
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { useSelectionScope } from '../composables/useSelectionScope'
 import { nextSortDirection, resolveSortDirection, resolveSortField, resolveTableDensity } from '../composables/tableState'
@@ -477,6 +483,63 @@ const protocolFieldMap: Record<string, string> = {
   node_group_membership_changes: 'node_group_membership_changes',
 }
 const editorState = useDirtyForm(() => ({ form, structured, egress }))
+const protocolRecoveryApp = useAppStore()
+let protocolEditorGeneration = 0
+const protocolRecoveryConflict = ref(false), protocolRecovered = ref(false)
+let protocolRestoringDraft = false
+const protocolOriginal = ref<ReturnType<typeof protocolAssetBaseline>>()
+// Memory only: raw configuration, credentials and import text never leave this
+// page. Any change outside the explicit asset whitelist rejects whole capture.
+const protocolProtectedBaseline = ref('')
+function protocolProtectedState() {
+  return JSON.stringify({ protocol: form.protocol, parent_protocol_id: form.parent_protocol_id, managed_certificate_id: form.managed_certificate_id, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, is_active: form.is_active, config: form.config, client_config: form.client_config, egress_config: form.egress_config, optional_config: form.optional_config, tags: form.tags, structured, egress })
+}
+const protocolSensitiveChanged = computed(() => editorOpen.value && protocolProtectedBaseline.value !== protocolProtectedState())
+function recordProtocolRecoveryBase(detail?: any) {
+  protocolOriginal.value = detail ? protocolAssetBaseline(detail) : undefined
+  protocolProtectedBaseline.value = protocolProtectedState()
+}
+const protocolDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.protocols.asset', permission: 'admin', ready: () => !saving.value,
+  read: () => {
+    if (!editorOpen.value) return null
+    if (copySourceID.value || protocolSensitiveChanged.value) throw new Error('无法安全暂存连接配置，请留在原页完成认证。')
+    return { id: form.id, baseline: form.id ? protocolOriginal.value : null, fields: form }
+  },
+  sanitize: protocolAssetRecovery,
+  restore: async (draft, { isCurrent }) => {
+    const generation = protocolEditorGeneration
+    const [detail, nodes, certificates] = await Promise.all([
+      draft.id ? fetchProtocolEndpoint(draft.id) : Promise.resolve(null),
+      draft.fields.node_id ? fetchNodesPage({ nodeId: draft.fields.node_id, limit: 1 }) : Promise.resolve({ items: [] }),
+      draft.fields.node_id ? fetchManagedCertificatesPage({ nodeId: draft.fields.node_id, limit: 200 }) : Promise.resolve({ items: [] }),
+    ])
+    if (!isCurrent()) return false
+    if (generation !== protocolEditorGeneration || editorOpen.value || orderingOpen.value) throw new Error('已有新的本地编辑，原草稿保留待恢复。')
+    protocolRecoveryConflict.value = Boolean(detail && !sameRecoveryBaseline(draft.baseline, protocolAssetBaseline(detail)))
+    protocolRecovered.value = Boolean(detail)
+    copySourceID.value = 0
+    selectedNode.value = nodes.items[0] || null
+    managedCertificates.value = certificates.items
+    originalNodeID.value = detail?.node_id || 0
+    originalPort.value = detail?.port || 0; originalPublicPort.value = detail?.public_port || 0
+    originalNodeGroupMemberships.value = (draft.baseline?.node_group_memberships || []).map(item => ({ ...item }))
+    membershipRevisionConflict.value = false
+    Object.assign(form, emptyForm(), detail || {}, {
+      parent_protocol_id: detail?.parent_protocol_id || 0, managed_certificate_id: detail?.managed_certificate_id || 0,
+      config: detail?.config || '{}', client_config: detail?.client_config || '{}', egress_config: detail?.egress_config || '', optional_config: detail?.optional_config || '{}', tags: detail?.tags || '[]',
+      node_group_memberships: (detail?.node_group_memberships || []).map((item: ProtocolEndpointNodeGroupMembership) => ({ ...item })),
+    })
+    protocolRestoringDraft = true
+    Object.assign(structured, emptyStructured()); Object.assign(egress, emptyEgress())
+    if (detail) { readStructuredConfig(); readEgressConfig() }
+    editorState.markClean()
+    Object.assign(form, draft.fields, { node_group_memberships: draft.fields.node_group_memberships.map(item => ({ ...item })) })
+    recordProtocolRecoveryBase(); protocolOriginal.value = draft.baseline || undefined
+    editorErrors.clear(); editorError.value = ''; editorStep.value = 1; editorOpen.value = true
+    try { await nextTick() } finally { protocolRestoringDraft = false }
+  },
+})
 useUnsavedChangesGuard(
   () => (editorOpen.value && editorState.dirty.value) || (orderingOpen.value && orderingDirty.value),
   () => orderingOpen.value && orderingDirty.value
@@ -579,7 +642,7 @@ for (const [source, field] of [
   [() => structured.reality_server_name, 'structured.reality_server_name'], [() => structured.reality_short_id, 'structured.reality_short_id'],
 ] as Array<[() => unknown, string]>) watch(source, () => editorErrors.clear(field))
 watch(() => structured.security, value => {
-  if (form.protocol === 'vless' && value === 'reality') {
+  if (!protocolRestoringDraft && form.protocol === 'vless' && value === 'reality') {
     structured.transport = 'tcp'
     if (!structured.reality_private_key) void regenerateRealityKeys()
   }
@@ -818,6 +881,10 @@ function openUsageReset() {
 async function saveUsageReset() {
   const endpointID = selectedEndpointDetail.value?.id
   if (!endpointID || !usageResetReason.value.trim()) return
+  if (selectedEndpointDetail.value?.usage?.traffic_projection_pending) {
+    usageResetError.value = '流量统计正在更新，请稍后重试。'
+    return
+  }
   usageResetSaving.value = true
   usageResetError.value = ''
   try {
@@ -992,8 +1059,9 @@ async function saveOrdering() {
   }
 }
 
-function closeEditor() { if (!saving.value) editorOpen.value = false }
+function closeEditor() { if (!saving.value) { protocolEditorGeneration++; editorOpen.value = false } }
 async function openCreate() {
+  protocolEditorGeneration++; protocolRecoveryConflict.value = false; protocolRecovered.value = false
   copySourceID.value = 0
   originalNodeID.value = 0
   originalPort.value = 0
@@ -1018,9 +1086,11 @@ async function openCreate() {
     editorError.value = '节点列表暂时无法加载；恢复连接后可在上方搜索并选择承载节点。'
   }
   editorState.markClean()
+  recordProtocolRecoveryBase()
   editorOpen.value = true
 }
 async function openEdit(endpoint: any) {
+  protocolEditorGeneration++; protocolRecoveryConflict.value = false; protocolRecovered.value = false
   copySourceID.value = 0
   membershipRevisionConflict.value = false
   error.value = ''
@@ -1050,6 +1120,7 @@ async function openEdit(endpoint: any) {
     readStructuredConfig()
     readEgressConfig()
     editorState.markClean()
+    recordProtocolRecoveryBase(detail)
     editorStep.value = 1
     editorError.value = ''
     editorErrors.clear()
@@ -1060,6 +1131,7 @@ async function openEdit(endpoint: any) {
 }
 
 async function openCopy(endpoint: ProtocolEndpointListItem) {
+  protocolEditorGeneration++; protocolRecoveryConflict.value = false; protocolRecovered.value = false
   if (!endpoint.kernel_supported) {
     error.value = endpoint.kernel_unsupported_reason || '当前内核不支持复制此协议。'
     return
@@ -1097,6 +1169,7 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
     editorError.value = ''
     editorErrors.clear()
     editorState.markClean()
+    recordProtocolRecoveryBase()
     editorOpen.value = true
   } catch (e: any) {
     copySourceID.value = 0
@@ -1230,6 +1303,15 @@ function validateJSONFields() {
   return fields
 }
 async function save() {
+  if (protocolRecoveryConflict.value) return
+  if (protocolRecovered.value) {
+    const generation = protocolEditorGeneration, actor = protocolRecoveryApp.user.id, token = protocolRecoveryApp.token
+    try {
+      const fresh = await fetchProtocolEndpoint(form.id)
+      if (generation !== protocolEditorGeneration || actor !== protocolRecoveryApp.user.id || token !== protocolRecoveryApp.token || protocolRecoveryApp.reauthRequired) return
+      if (!sameRecoveryBaseline(protocolOriginal.value, protocolAssetBaseline(fresh))) { protocolRecoveryConflict.value = true; return }
+    } catch { editorError.value = '无法核对原协议服务，保留草稿且未保存。'; return }
+  }
   if (!canSaveSelectedProtocol.value) {
     editorError.value = selectedProtocolCapability.value.reason || '当前内核不支持所选协议。'
     return

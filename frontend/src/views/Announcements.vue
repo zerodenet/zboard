@@ -4,6 +4,7 @@
       <template #actions><PageRefreshButton :loading="loading" label="刷新公告" @click="load" /><UiButton type="button" @click="newAnnouncement">新建公告</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="success" :error="error" />
+    <PageAlert v-if="announcementDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ announcementDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="announcementDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <UiSection>
       <DataTable v-if="items.length" caption="站点公告列表" :row-count="items.length" :min-width="980">
         <thead><tr><th class="table-primary-column">公告</th><th>级别</th><th data-column-priority="2">受众</th><th data-column-priority="3">提醒</th><th>状态</th><th data-column-priority="2">有效时间</th><th></th></tr></thead>
@@ -16,6 +17,7 @@
       <section class="editor-card" role="dialog" aria-modal="true" aria-label="公告编辑器">
         <header><div><small>Announcement</small><h2>{{ form.id ? '编辑公告' : '新建公告' }}</h2></div><UiButton variant="ghost" icon type="button" aria-label="关闭" @click="closeEditor">×</UiButton></header>
         <div class="stack">
+          <PageAlert v-if="announcementRecoveryConflict" tone="warning" title="公告已发生变化">原草稿仍可查看，不能直接保存或删除。请另存内容，再关闭并重新打开当前公告。</PageAlert>
           <FormField v-slot="{ controlAttrs }" label="标题" name="announcement-title" required><UiInput v-model.trim="form.title" v-bind="controlAttrs" maxlength="160" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="正文（Markdown）" name="announcement-content" hint="支持标题、粗体、列表、引用、代码和安全的 HTTP(S) 链接。" required><UiTextarea v-model="form.content" v-bind="controlAttrs" rows="9" maxlength="16384" /></FormField>
           <div class="form-grid"><FormField v-slot="{ controlAttrs }" label="级别" name="announcement-severity"><UiSelect v-model="form.severity" v-bind="controlAttrs" :options="severityOptions" /></FormField><FormField v-slot="{ controlAttrs }" label="受众" name="announcement-audience"><UiSelect v-model="form.audience" v-bind="controlAttrs" :options="audienceOptions" /></FormField><FormField v-slot="{ controlAttrs }" label="状态" name="announcement-status"><UiSelect v-model="form.status" v-bind="controlAttrs" :options="statusOptions" /></FormField></div>
@@ -24,7 +26,7 @@
           <label class="toggle-row"><UiCheckbox v-model="form.dismissible" /><span>允许直接关闭；关闭会记录已读。关闭此项后用户仍可点击“我知道了”确认并收起。</span></label>
           <section class="announcement-preview"><header><strong>用户视角预览</strong><span>安全 Markdown</span></header><MarkdownContent :content="form.content || '公告正文预览'" /></section>
           <PageAlert v-if="form.status === 'published'" tone="warning" title="时效由服务端自动执行">到达开始时间后展示；超过结束时间后自动退出提醒区但保留在公告中心。归档会立即从所有用户视图移除，之后可永久删除。</PageAlert>
-          <div class="form-actions"><UiButton v-if="form.id && form.status === 'draft'" variant="danger" type="button" :loading="deleting" @click="remove">删除草稿</UiButton><UiButton variant="ghost" type="button" @click="closeEditor">取消</UiButton><UiButton type="button" :loading="saving" @click="save">保存公告</UiButton></div>
+          <div class="form-actions"><UiButton v-if="form.id && form.status === 'draft'" variant="danger" type="button" :loading="deleting" :disabled="announcementRecoveryConflict" @click="remove">删除草稿</UiButton><UiButton variant="ghost" type="button" @click="closeEditor">取消</UiButton><UiButton type="button" :loading="saving" :disabled="announcementRecoveryConflict" @click="save">保存公告</UiButton></div>
         </div>
       </section>
     </div>
@@ -44,9 +46,14 @@ import StatusBadge from '../components/StatusBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 import { confirmAction } from '../utils/feedback'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { announcementDraftFields, announcementRecoveryDraft, type AnnouncementDraftFields } from '../utils/communicationsReauthenticationDraftSchemas'
 
 const loading = ref(false), saving = ref(false), deleting = ref(false), editing = ref(false)
 const success = ref(''), error = ref(''), items = ref<AdminAnnouncement[]>([])
+const announcementsReady = ref(false)
+const announcementRecoveryConflict = ref(false)
+const announcementBaseline = ref<AnnouncementDraftFields | null>(null)
 const originalStatus = ref<AdminAnnouncement['status']>('draft')
 type AnnouncementForm = { id: number; title: string; content: string; severity: AdminAnnouncement['severity']; audience: AdminAnnouncement['audience']; status: AdminAnnouncement['status']; popup_enabled: boolean; dismissible: boolean; starts_at: string; ends_at: string; revision: number }
 const blank = (): AnnouncementForm => ({ id: 0, title: '', content: '', severity: 'info', audience: 'all', status: 'draft', popup_enabled: false, dismissible: true, starts_at: '', ends_at: '', revision: 0 })
@@ -57,14 +64,41 @@ const statusOptions = computed(() => form.id && originalStatus.value === 'publis
   ? [{ label: '已发布', value: 'published' }, { label: '已归档', value: 'archived' }]
   : [{ label: '草稿', value: 'draft' }, { label: '已发布', value: 'published' }])
 
-async function load() { loading.value = true; try { items.value = (await fetchAdminAnnouncements()).items } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告加载失败。') } finally { loading.value = false } }
-function newAnnouncement() { Object.assign(form, blank()); originalStatus.value = 'draft'; editing.value = true }
+const announcementDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.announcements.editor', permission: 'admin', ready: () => announcementsReady.value && !loading.value,
+  read: () => editing.value ? { id: form.id, revision: form.revision, fields: form, baseline: announcementBaseline.value } : null,
+  sanitize: announcementRecoveryDraft,
+  restore: async (value, context) => {
+    let fresh: AdminAnnouncement | undefined
+    if (value.id) {
+      // The editor list is paged; a previously visible announcement may have
+      // moved to another page. Never infer deletion from only the first page.
+      for (let offset = 0; offset < 5000; offset += 50) {
+        const page = await fetchAdminAnnouncements(offset, 50)
+        if (!context.isCurrent()) return false
+        fresh = page.items.find(item => item.id === value.id)
+        if (fresh || offset + page.items.length >= page.total || page.items.length === 0) break
+      }
+    }
+    if (!context.isCurrent()) return false
+    const currentFields = fresh ? announcementDraftFields({ ...fresh, starts_at: localDate(fresh.starts_at), ends_at: localDate(fresh.ends_at) }) : undefined
+    announcementRecoveryConflict.value = value.id > 0 && (!fresh || fresh.status === 'archived' || fresh.revision !== value.revision || JSON.stringify(currentFields) !== JSON.stringify(value.baseline))
+    // Publication choice is never recovered from browser storage. Existing
+    // records retain only their freshly fetched server state; new ones are draft.
+    Object.assign(form, blank(), value.fields, { id: value.id, revision: value.revision, status: fresh?.status || 'draft' })
+    announcementBaseline.value = value.baseline
+    originalStatus.value = fresh?.status || 'draft'
+    editing.value = true
+  },
+})
+async function load() { loading.value = true; try { items.value = (await fetchAdminAnnouncements()).items; announcementsReady.value = true } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告加载失败。') } finally { loading.value = false } }
+function newAnnouncement() { Object.assign(form, blank()); originalStatus.value = 'draft'; announcementBaseline.value = null; announcementRecoveryConflict.value = false; editing.value = true }
 function localDate(value?: string | null) { if (!value) return ''; const date = new Date(value); const offset = date.getTimezoneOffset() * 60000; return new Date(date.getTime() - offset).toISOString().slice(0, 16) }
-function edit(item: AdminAnnouncement) { Object.assign(form, { ...item, starts_at: localDate(item.starts_at), ends_at: localDate(item.ends_at) }); originalStatus.value = item.status; editing.value = true }
+function edit(item: AdminAnnouncement) { Object.assign(form, { ...item, starts_at: localDate(item.starts_at), ends_at: localDate(item.ends_at) }); originalStatus.value = item.status; announcementBaseline.value = announcementDraftFields(form) || null; announcementRecoveryConflict.value = false; editing.value = true }
 function closeEditor() { if (!saving.value && !deleting.value) editing.value = false }
 function payload(): AnnouncementWriteRequest { return { title: form.title, content: form.content, severity: form.severity, audience: form.audience, status: form.status, popup_enabled: form.popup_enabled, dismissible: form.dismissible, starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null, ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null, ...(form.id ? { expected_revision: form.revision } : {}) } }
-async function save() { saving.value = true; error.value = ''; try { if (form.id) await updateAnnouncement(form.id, payload()); else await createAnnouncement(payload()); success.value = '公告已保存。'; editing.value = false; await load() } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告保存失败。') } finally { saving.value = false } }
-async function remove() { if (!await confirmAction({ title: '删除公告草稿？', message: '草稿删除后无法恢复。', confirmText: '删除草稿', tone: 'danger' })) return; deleting.value = true; try { await deleteAnnouncement(form.id); success.value = '公告草稿已删除。'; editing.value = false; await load() } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告删除失败。') } finally { deleting.value = false } }
+async function save() { if (announcementRecoveryConflict.value || saving.value) return; saving.value = true; error.value = ''; try { if (form.id) await updateAnnouncement(form.id, payload()); else await createAnnouncement(payload()); success.value = '公告已保存。'; editing.value = false; await load() } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告保存失败。') } finally { saving.value = false } }
+async function remove() { if (announcementRecoveryConflict.value) return; if (!await confirmAction({ title: '删除公告草稿？', message: '草稿删除后无法恢复。', confirmText: '删除草稿', tone: 'danger' })) return; deleting.value = true; try { await deleteAnnouncement(form.id); success.value = '公告草稿已删除。'; editing.value = false; await load() } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告删除失败。') } finally { deleting.value = false } }
 function itemPayload(item: AdminAnnouncement, status: AdminAnnouncement['status']): AnnouncementWriteRequest { return { title: item.title, content: item.content, severity: item.severity, audience: item.audience, status, popup_enabled: item.popup_enabled, dismissible: item.dismissible, starts_at: item.starts_at, ends_at: item.ends_at, expected_revision: item.revision } }
 async function archiveItem(item: AdminAnnouncement) { if (!await confirmAction({ title: '归档这条公告？', message: '归档后会立即从访客、用户公告中心和未读统计中移除。', confirmText: '归档公告', tone: 'danger' })) return; try { await updateAnnouncement(item.id, itemPayload(item, 'archived')); success.value = '公告已归档并从用户侧移除。'; await load() } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告归档失败。') } }
 async function deleteItem(item: AdminAnnouncement) { if (!await confirmAction({ title: '永久删除公告？', message: '草稿或已归档公告删除后无法恢复。', confirmText: '永久删除', tone: 'danger' })) return; try { await deleteAnnouncement(item.id); success.value = '公告已永久删除。'; await load() } catch (cause) { error.value = normalizeApiErrorMessage(cause, '公告删除失败。') } }

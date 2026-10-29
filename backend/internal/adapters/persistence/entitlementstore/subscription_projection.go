@@ -2,6 +2,7 @@ package entitlementstore
 
 import (
 	"context"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
@@ -38,14 +39,14 @@ func (s SubscriptionProjection) ProjectionData(ctx context.Context, subscription
 			endpointIDs = append(endpointIDs, row.ProtocolEndpointID)
 		}
 	}
-	var credentials []model.ProtocolCredential
-	if err := s.DB.WithContext(ctx).Where("subscription_id IN ? AND status = ? AND revoked_at IS NULL AND expires_at > ?", subscriptionIDs, "active", now).Find(&credentials).Error; err != nil {
+	var credentials []credentialstore.DeliveryProjection
+	if err := credentialstore.ProjectedCredentials(s.DB.WithContext(ctx)).Where("protocol_credentials.subscription_id IN ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionIDs, "active", now).Find(&credentials).Error; err != nil {
 		return result, err
 	}
 	result.Credentials = make([]entitlements.SubscriptionProjectionCredential, 0, len(credentials))
 	for _, row := range credentials {
 		result.Credentials = append(result.Credentials, entitlements.SubscriptionProjectionCredential{
-			ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
+			DeliveryStatus: row.DeliveryStatus(), ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
 			CredentialID: row.CredentialID, PrincipalKey: row.PrincipalKey, SecretCiphertext: row.Secret, Status: row.Status,
 			ListenPort: row.ListenPort, PublicPort: row.PublicPort, ExpiresAt: row.ExpiresAt, LastUsedAt: row.LastUsedAt, RevokedAt: row.RevokedAt,
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,

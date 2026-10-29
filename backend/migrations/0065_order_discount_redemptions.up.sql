@@ -1,0 +1,21 @@
+CREATE TABLE order_discount_redemptions (
+order_id bigint unsigned NOT NULL,
+redemption_key varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+binding_hash varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+binding_json text NOT NULL,
+provider_id varchar(160) NOT NULL,
+desired varchar(16) NOT NULL,
+observed varchar(16) NOT NULL,
+token varchar(512) NOT NULL,
+revision bigint unsigned NOT NULL,
+lease_token varchar(64) NOT NULL,
+lease_until datetime(3) NOT NULL,
+next_attempt_at datetime(3) NOT NULL,
+last_error varchar(64) NOT NULL,
+created_at datetime(3) NOT NULL,
+updated_at datetime(3) NOT NULL,
+PRIMARY KEY (order_id),
+UNIQUE KEY idx_order_discount_redemption_key (redemption_key),
+KEY idx_order_discount_redemption_due (next_attempt_at, order_id),
+KEY idx_order_discount_redemption_expiry (desired, created_at, order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

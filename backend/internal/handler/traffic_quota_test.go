@@ -139,7 +139,7 @@ func TestTrafficQuotaRejectsUnknownViewAndUnauthenticatedRequests(t *testing.T) 
 }
 
 func TestMySQLTrafficQuotaMatchesFullSummaryWithoutHistoryDependency(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	var subscription model.Subscription
 	if err := h.db.First(&subscription, credential.SubscriptionID).Error; err != nil {
 		t.Fatal(err)

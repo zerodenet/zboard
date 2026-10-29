@@ -299,6 +299,7 @@ func TestExternalIdentityPasswordChangeAndAuditFailureCancelBinding(t *testing.T
 }
 func TestExternalIdentityCallbackRespectsDatabaseMigrationWriteLock(t *testing.T) {
 	h, _, _ := identityTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	if err := h.db.Create(&model.Task{Type: "database_migration", Scope: "{}", Content: "{}", Status: taskStatusRunning}).Error; err != nil {
 		t.Fatal(err)
 	}

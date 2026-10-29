@@ -59,7 +59,7 @@
       <p v-if="error" class="policy-documents-error" role="alert"><UiIcon name="alert" />{{ error }}</p>
       <span></span>
       <UiButton v-if="conflict" variant="ghost" type="button" :disabled="saving" @click="emit('reload')"><UiIcon name="refresh" />重新载入</UiButton>
-      <UiButton type="button" :loading="saving" :disabled="!dirty" @click="emit('save')">保存政策文档</UiButton>
+      <UiButton type="button" :loading="saving" :disabled="conflict || !dirty" @click="emit('save')">保存政策文档</UiButton>
     </div>
   </div>
 </template>

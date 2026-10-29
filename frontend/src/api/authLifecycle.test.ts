@@ -12,6 +12,23 @@ beforeEach(() => {
   api.defaults.adapter = ok
 })
 describe('API login lifecycle', () => {
+  it('rejects calls during reauthentication without dispatching or replaying writes', async () => {
+    setAuthToken('current')
+    await api.post('/orders/1/pay', {}, { adapter: rejectStatus(401) }).catch(() => undefined)
+    const transport = vi.fn(ok)
+    await expect(api.post('/orders/1/pay', {}, { adapter: transport })).rejects.toMatchObject({ code: 'AUTH_SESSION_EXPIRED' })
+    setAuthToken('replacement')
+    await Promise.resolve()
+    expect(transport).not.toHaveBeenCalled()
+  })
+  it('only permits discovery of public login methods while business calls are paused', async () => {
+    setAuthToken('current')
+    await api.get('/navigation', { adapter: rejectStatus(401) }).catch(() => undefined)
+    const transport = vi.fn(ok)
+    await api.get('/plugin-ui/slots', { params: { surface: 'public', slot: 'auth.login.methods' }, adapter: transport })
+    await expect(api.get('/plugin-ui/slots', { params: { surface: 'admin', slot: 'admin.orders' }, adapter: transport })).rejects.toMatchObject({ code: 'AUTH_SESSION_EXPIRED' })
+    expect(transport).toHaveBeenCalledOnce()
+  })
   it('expires the current session once for concurrent bare HTTP 401 failures', async () => {
     setAuthToken('current')
     const listener = vi.fn()
@@ -30,6 +47,15 @@ describe('API login lifecycle', () => {
     } }).catch(() => undefined)
     expect(isAuthSessionExpired()).toBe(false)
     expect(getAuthToken()).toBe('new')
+  })
+  it('rejects a successful response from the previous account without invalidating the current login', async () => {
+    setAuthToken('old')
+    await expect(api.get('/account/orders', { adapter: async config => {
+      setAuthToken('new')
+      return ok(config)
+    } })).rejects.toMatchObject({ code: 'AUTH_SESSION_CHANGED' })
+    expect(getAuthToken()).toBe('new')
+    expect(isAuthSessionExpired()).toBe(false)
   })
   it('keeps login for forbidden and network failures', async () => {
     setAuthToken('current')

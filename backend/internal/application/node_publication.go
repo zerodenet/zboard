@@ -1,6 +1,8 @@
 package application
 
 import (
+	"context"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
@@ -27,4 +29,11 @@ func ClaimNodePublication(tx *gorm.DB, now time.Time) (network.Publication, bool
 
 func CompleteNodePublication(tx *gorm.DB, item network.Publication, now time.Time, failure error) error {
 	return (networkstore.PublicationQueue{DB: tx}).Complete(tx.Statement.Context, item, now, failure)
+}
+
+func (s *Services) ConnectionRevocation(cipher metering.CredentialDecryptor) network.ConnectionRevocationAuthorization {
+	return networkstore.ConnectionRevocation{DB: s.Identity.db, Cipher: cipher}
+}
+func (s *Services) MarkPublicationConfigurationApplied(ctx context.Context, item network.Publication, sha string) (bool, error) {
+	return (networkstore.PublicationQueue{DB: s.Identity.db}).MarkConfigurationApplied(ctx, item, sha)
 }

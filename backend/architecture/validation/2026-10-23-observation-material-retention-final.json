@@ -1,0 +1,260 @@
+{
+  "source": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+  "recorded_utc": "2026-10-23T16:36:41.702693+00:00",
+  "tracked_clean": true,
+  "branch": "codex/core-convergence",
+  "develop": "658671e9f3978df1c79f4030fdb072a877f10bf5",
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "overall_complete": false,
+  "backend": {
+    "source": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+    "checkout": "/workspace/zboard",
+    "phase": "backend",
+    "started_utc": "2026-10-23T15:54:18.382779+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "1"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 1 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 606.101,
+        "log": "full-go-6ebf4e6-final.log",
+        "log_sha256": "aa20c8099524618b43487a4ea43c51ccc270c928339084a7544e861ffcd776b2",
+        "package_results": [
+          "ok  \tgithub.com/zerodenet/zboard/backend/api\t0.125s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/architecture\t0.469s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/cmd/zboard\t0.525s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/localfiles\t0.004s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore\t0.584s",
+          "?   \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore\t[no test files]",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore\t3.126s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/experiencestore\t0.933s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/identitystore\t4.793s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore\t6.641s",
+          "?   \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/menustore\t[no test files]",
+          "?   \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/messagingstore\t[no test files]",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore\t3.804s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t67.991s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/observabilitystore\t1.246s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore\t0.031s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore\t24.879s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/pluginstore\t0.389s",
+          "?   \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/publicationstore\t[no test files]",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/smtp\t0.004s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/ssh\t9.907s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/zero\t2.879s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/application\t7.144s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/catalog\t0.002s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/commerce\t0.011s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/entitlements\t0.004s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/experience\t0.041s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/identity\t0.199s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/jobs\t0.681s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/messaging\t0.003s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/metering\t0.002s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/network\t0.020s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/observability\t0.001s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/platform\t0.003s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/config\t0.008s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t21.796s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t220.831s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/jobrun\t0.002s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/model\t0.006s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/navigation\t1.077s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/nodecleanup\t0.365s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/plugins\t73.353s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/readtiming\t0.002s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/security\t0.002s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/server\t0.264s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/version\t0.001s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/zeroevent\t1.504s",
+          "?   \tgithub.com/zerodenet/zboard/backend/migrations\t[no test files]",
+          "ok  \tgithub.com/zerodenet/zboard/backend/pkg/capabilityapi/v1\t0.003s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/tools/acceptance\t1.112s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/tools/capabilityinventory\t0.383s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/tools/pluginpackager\t0.011s"
+        ]
+      },
+      {
+        "name": "vet",
+        "command": "go vet -p 1 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 21.439,
+        "log": "vet-6ebf4e6-final.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "package_results": []
+      },
+      {
+        "name": "build",
+        "command": "go build ./cmd/zboard",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 2.062,
+        "log": "build-6ebf4e6-final.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "package_results": []
+      },
+      {
+        "name": "pure-go-sqlite",
+        "command": "go test -p 1 ./internal/datastore -run SQLite -count=1",
+        "environment_additions": {
+          "CGO_ENABLED": "0"
+        },
+        "exit_code": 0,
+        "wall_seconds": 92.847,
+        "log": "pure-go-sqlite-6ebf4e6-final.log",
+        "log_sha256": "93a22a320284190586eba124a0d500464a8af00badd1c1d20e87dc90096590a6",
+        "package_results": [
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t20.203s"
+        ]
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T16:06:20.833304+00:00"
+  },
+  "mysql": {
+    "source": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+    "checkout": "/workspace/zboard",
+    "phase": "mysql",
+    "started_utc": "2026-10-23T16:08:18.364372+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "1"
+    },
+    "checks": [
+      {
+        "name": "mysql-core",
+        "command": "go test -p 1 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1204.659,
+        "log": "mysql-core-6ebf4e6-final.log",
+        "log_sha256": "c49a51e4973eb53732d5954e0dd1281c47cef58dbe4de27d0920a48b85944a73",
+        "package_results": [
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t160.819s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t749.286s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t160.757s",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/application\t18.656s"
+        ]
+      },
+      {
+        "name": "mysql-jobstore",
+        "command": "go test -p 1 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 145.249,
+        "log": "mysql-jobstore-6ebf4e6-final.log",
+        "log_sha256": "538ea9687699e1636f9075e6b145a5575067b8be5755bbc7c6b95e7512d02cbe",
+        "package_results": [
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore\t140.389s"
+        ]
+      },
+      {
+        "name": "mysql-copy",
+        "command": "go test -p 1 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 308.702,
+        "log": "mysql-copy-6ebf4e6-final.log",
+        "log_sha256": "a5302efece73f75c09bc1eef711d36dc75b15d819e5abc968fc122ee0b56b5db",
+        "package_results": [
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore\t258.805s"
+        ]
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T16:35:56.975617+00:00"
+  },
+  "ci": {
+    "source": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+    "run_id": 39982182279,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39982182279",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "backend",
+        "id": 120512020588,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "compose",
+        "id": 120512020919,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "frontend",
+        "id": 120512020949,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "zrs-compiler",
+        "id": 120512020977,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "contract",
+        "id": 120512020997,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "mysql",
+        "id": 120512021071,
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "package_seconds": {
+      "datastore": 200.163,
+      "handler": 798.472,
+      "networkstore": 208.907,
+      "application": 24.823,
+      "jobstore": 120.978,
+      "platformstore": 236.722
+    },
+    "raw_mysql_log": "ci-39982182279-mysql-success.log",
+    "limits": "Original commands, coverage and 15m-per-package timeout unchanged; redo waits retained in successful log; not evidence of absence or sole cause of historical failure.",
+    "raw_mysql_log_sha256": "3297923f536075759ac9ccd5bbaf131deb828375fd25fdc17ca88721e454e229"
+  },
+  "cache_boundary": {
+    "source": "6ebf4e6da4186b0e3a3194d743e4acb81fcc3c65",
+    "controller_pid": 680299,
+    "controller_start_ticks": "5145246",
+    "started_utc": "2026-10-23T16:29:38.017791+00:00",
+    "purpose": "Pause only the original local validation controller while its current child finishes; clear only authorized idle Go build cache; resume same controller without changing commands or timeout.",
+    "controller_paused_utc": "2026-10-23T16:29:38.017995+00:00",
+    "idle_confirmed_utc": "2026-10-23T16:30:48.069643+00:00",
+    "active_workloads": [],
+    "target": "/workspace/toolchains/cache/go-build",
+    "resolved": "/workspace/toolchains/cache/go-build",
+    "symlinks": false,
+    "free_before": 36044800,
+    "command": "go clean -cache",
+    "exit_code": 0,
+    "output": "",
+    "free_after": 556167168,
+    "controller_resumed_utc": "2026-10-23T16:30:48.273003+00:00"
+  },
+  "cache_boundary_note": "Original controller was paused only while its current child completed. Cache clearing occurred with no active Go/test/node workload, then same controller resumed; jobstore command wall includes controller scheduling/idle boundary overhead. Test package wall and original 15m timeouts remained unchanged.",
+  "unverified": [
+    "Overall P4 retention and finite replay/identity growth",
+    "Current capacity/scaling resource gate (original threshold unchanged, no new load run)",
+    "P6 independent worker/autoscaling benefit and recovery",
+    "External coupon lifecycle, actual kernel offline lease",
+    "Final comprehensive upgrade/OS failure/browser/external/production acceptance"
+  ],
+  "scope": "Local isolated SQLite/MySQL and exact-head CI. No production migration/deployment/merge, no other repository changes. Historical failed CI900s and112/157 HTTP503 retained.",
+  "source_scope_note": "This receipt verifies exact committed6eb, before later whole-termination scope edits. The target/race/frontend candidate source manifests are independently preserved in2026-10-23-observation-material-retention.json. Neither receipt certifies later code."
+}

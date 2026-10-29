@@ -1,0 +1,35 @@
+{
+  "source": "a82e5b60c74d58821884bb703eaa97c2532682f3",
+  "command": "GOMAXPROCS=2 go test -p 2 ./...",
+  "exit_code": 1,
+  "wall_seconds": 297.342,
+  "handler_seconds": 195.907,
+  "failures": [
+    "TestNodeConnectorHeartbeatPreservesMissingObservations/rotated_credential_fences_already_authenticated_request: HTTP200 after credential rotation; final conditional UPDATE fence lost in new activity transaction. This is a real new-code regression, not a weakened old assertion.",
+    "TestRepositoryContractInventoryIsComplete: three new observation models and new lifecycle entry lack owner mappings."
+  ],
+  "not_executed_after_first_failed_command": [
+    "go vet -p 2 ./...",
+    "go build -p 2 ./cmd/zboard",
+    "CGO_ENABLED=0 go test -p 2 ./internal/datastore -run SQLite -count=1"
+  ],
+  "raw_log_sha256": "80a0bc1e1427d4f5ee006b6cf5fa03f54dbd23b332a91ee6ac6e287847af5951",
+  "raw_log_bytes": 1203260,
+  "next": "Isolated fix preserves exact conditional write after authentication, commits no counter/provenance for rejected old credential, tests actual MySQL unchanged-row replay and restores owner mappings. No original test exclusion/removal. New fixed source requires full independent checks.",
+  "limits": [
+    "a82 original local MySQL/capacity not yet executed; not substituted with earlier sources.",
+    "Targeted handoff/race passed for declared scope; complete backend failure remains authoritative.",
+    "No production migration, deployment or merge."
+  ],
+  "ci_backend": {
+    "run_id": 39540048932,
+    "job_id": 119025475314,
+    "status": "completed",
+    "conclusion": "failure",
+    "handler_seconds": 278.088,
+    "failures": "Same credential-rotation and four inventory-owner assertions as local, not timeout.",
+    "raw_log_bytes": 1470437,
+    "raw_log_sha256": "500aad1b3f3543e423976df05ac1c1559eaaa9224555bbb5cf1315bef0bceb0e",
+    "remaining_steps": "Stopped at Go test; later SDK, pureSQLite, vet/build steps not executed in this failed job."
+  }
+}

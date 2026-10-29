@@ -24,7 +24,7 @@ func (h *handlers) DashboardTrafficRankingsHandler(w http.ResponseWriter, r *htt
 	response, err := h.services.Dashboard.Rankings(r.Context(), period, dimension)
 	finish()
 	if err != nil {
-		ServerError(w, err)
+		dashboardReadError(w, err)
 		return
 	}
 	OK(w, response)

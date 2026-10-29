@@ -1,0 +1,130 @@
+{
+  "stage": "P7 owned migration preparation and copy retry",
+  "status": "Final SQLite focused suite, isolated MySQL same-server defensive refusal and vet pass; original cross-driver MySQL suite passed before defensive change; exact-commit full CI pending",
+  "workspace_head_at_record": "53a056d32633dcbda9b243553d85a88fe9fc2090",
+  "tested_commit": "uncommitted shared integration working tree; no exact-commit claim",
+  "receipt": {
+    "table": "zboard_migration_preparation",
+    "row_id": 1,
+    "token_bits": 256,
+    "states": [
+      "preparing",
+      "prepared",
+      "completed"
+    ],
+    "source_target_identity": "SHA-256 of actual physical SQLite file identity, or MySQL server UUID plus database name",
+    "contains_dsn_or_password": false,
+    "in_application_copy_inventory": false,
+    "formal_migration_added": false,
+    "migration_0055_added": false
+  },
+  "boundaries": [
+    "Only a destination claimed while empty and sealed against actual initialization data can retry.",
+    "Source database and original task nonce/run must be verified; a new task on that same source may resume prepared evidence.",
+    "Before clearing rows, destination transaction rechecks token, ownership, complete schema/seed fingerprints and locks rows and empty ranges.",
+    "Copied data, copied task/item/run success and receipt completed share one destination transaction.",
+    "Preparing, missing receipt and completed outcomes are never destructively replayed.",
+    "Source confirmation loss requires operator reconciliation against completed target evidence; no automatic datasource switch.",
+    "Strict MySQL baseline hook accepts only in-process verified preparing ownership with otherwise empty schema/history; ordinary migrations retain rejection.",
+    "No source deletion, generic initialized-seed waiver, history fabrication, source-lock relaxation or production action."
+  ],
+  "tests": [
+    {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/adapters/persistence/platformstore -run '^(TestMigrationCopier|TestMigrationFileIdentity|TestMigrationEmbedded|TestMigrationTarget)' -count=1 -timeout 4m",
+      "result": "pass",
+      "database": "SQLite",
+      "seconds": 8.215,
+      "log": "/tmp/zboard-migration-preparation-final-sqlite.log"
+    },
+    {
+      "command": "ZBOARD_TEST_MYSQL_DSN='<isolated test DSN>' GOMAXPROCS=1 go test -p 1 ./internal/adapters/persistence/platformstore -run '^TestMySQLMigrationCopier' -count=1 -timeout 10m",
+      "result": "pass_before_final_same_server_defense",
+      "database": "MySQL 8.4 isolated random databases, both cross-driver directions",
+      "seconds": 108.804,
+      "log": "/tmp/zboard-migration-preparation-mysql.log",
+      "coverage": [
+        "Actual SQL failure and rollback then retry",
+        "Same-source new task retry",
+        "Unowned and modified target rejection",
+        "Wrong source/physical target/task nonce",
+        "Preparing/missing/completed receipt refusal",
+        "Receipt completion SQL failure and rollback",
+        "DDL-window business/config/menu/template preservation",
+        "Valid and invalid in-process baseline proof",
+        "Unknown tables and ordinary RunMigrations refusal",
+        "Empty table range locks block concurrent writer",
+        "READ COMMITTED refused before clear"
+      ]
+    },
+    {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/application -run '^(TestDatabaseSnapshotUsesSingleConnectionAndCommitsCopiedTask|TestCopyDestinationRestoresConstraintsOnFailureAndPanic|TestCopyDestinationCancellationReleasesConnection|TestDatabaseCopyPreservesProjectionRowsAndRejectsMissingDestination)$' -count=1 -timeout 3m",
+      "result": "pass",
+      "seconds": 0.592
+    },
+    {
+      "command": "GOMAXPROCS=1 go vet -p 1 ./internal/adapters/persistence/platformstore ./internal/adapters/persistence/menustore",
+      "result": "pass",
+      "log": "/tmp/zboard-migration-preparation-final-vet.log"
+    },
+    {
+      "command": "GOMAXPROCS=1 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -p 1 -c -o /tmp/zboard-migration-file-identity-windows.test.exe internal/adapters/persistence/platformstore/migration_file_identity_windows.go internal/adapters/persistence/platformstore/migration_file_identity_test.go",
+      "result": "cross_compile_pass_only",
+      "runtime_verified": false
+    },
+    {
+      "command": "ZBOARD_TEST_MYSQL_DSN='<isolated test DSN>' GOMAXPROCS=1 go test -p 1 ./internal/adapters/persistence/platformstore -run '^TestMySQLMigrationCopierResumesBetweenMySQLDatabases$' -count=1 -timeout 4m",
+      "result": "failed_terminated_after_global_read_lock_block",
+      "seconds": 107.429,
+      "log": "/tmp/zboard-migration-preparation-mysql-same-server.log",
+      "failure": "Source FLUSH TABLES WITH READ LOCK blocks target writes on same actual MySQL server; public API already forbids same-driver migration.",
+      "cleanup": {
+        "only_owned_random_databases": [
+          "zboard_copy_9adc1dbd01e84d1c8dd55b6aaf4ebc70",
+          "zboard_copy_afb16db2767649b79825af6db328e34e"
+        ],
+        "removed": true,
+        "global_lock_released_by_process_close_and_successful_DDL": true,
+        "owned_sessions_after": 0
+      },
+      "diagnosis_log": "/tmp/zboard-migration-preparation-mysql-same-server-diagnosis.log"
+    },
+    {
+      "command": "ZBOARD_TEST_MYSQL_DSN='<isolated test DSN>' GOMAXPROCS=1 go test -p 1 ./internal/adapters/persistence/platformstore -run '^TestMySQLMigrationCopierRejectsSameServerBeforeAnyTargetWrites$' -count=1 -timeout 2m",
+      "result": "pass",
+      "seconds": 4.132,
+      "log": "/tmp/zboard-migration-preparation-mysql-topology-guard.log",
+      "database": "MySQL 8.4 two isolated random databases on same actual server",
+      "coverage": [
+        "Distinct database names have distinct database identity hashes but share actual server UUID",
+        "Check and Copy reject within 5-second context before receipt/schema DDL",
+        "Target table inventory stays completely empty",
+        "PrepareSchema callback is never called",
+        "Source user is retained"
+      ]
+    }
+  ],
+  "environment": {
+    "date": "2026-10-20",
+    "scope": "Cloud integration workspace only",
+    "go": "1.26.8",
+    "gomaxprocs": 1,
+    "mysql": "8.4 isolated random databases",
+    "production_actions": false
+  },
+  "limits": [
+    "No exact integrating-commit full-suite or CI claim; original 108.804s cross-driver MySQL suite was not repeated after the final same-server-only defensive guard.",
+    "No Windows runtime test.",
+    "SQLite requires persistent file and supported stable physical file identity.",
+    "MySQL destination requires InnoDB and RR/Serializable range protection.",
+    "Different physical MySQL servers not tested; public same-driver migration unsupported.",
+    "No automatic adoption of legacy failed targets without ownership evidence, partial DDL, or completed destination.",
+    "No capacity, production transfer, deployment or rollback acceptance claim."
+  ],
+  "process_state_at_handoff": {
+    "platformstore_test": 0,
+    "compile": 0,
+    "link": 0,
+    "db_slot_released": true,
+    "next_action": "Parent controlled P4 capacity A/B window; no further child tests planned"
+  }
+}

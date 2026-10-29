@@ -6,6 +6,7 @@ import SubscriptionRuleSets from './SubscriptionRuleSets.vue'
 import UiSelect from '../components/UiSelect.vue'
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), list: vi.fn(), confirm: vi.fn() }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 vi.mock('../api/managedRuleSets', () => ({
   createManagedRuleSet: mocks.create, fetchManagedRuleSetsPage: mocks.list,
   deleteManagedRuleSet: vi.fn(), fetchManagedRuleSet: vi.fn(), fetchManagedRuleSetContent: vi.fn(),

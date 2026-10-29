@@ -28,17 +28,19 @@ func (m *Manager) SetTaskRuntime(runtime *jobs.Runtime) {
 	m.tasks.mu.Unlock()
 	m.syncTaskRegistrations(context.Background())
 }
-func (m *Manager) cancelPluginTasks() {
+
+// Host shutdown or lease loss removes only local registrations. Explicit
+// plugin disable/replacement still uses deactivatePluginTasks below.
+// Caller serializes registration reconciliation when it can still be running.
+func (m *Manager) detachPluginTasks() {
 	m.tasks.mu.Lock()
 	runtime := m.tasks.runtime
 	ids := m.tasks.registered
 	m.tasks.registered = map[string]string{}
 	m.tasks.mu.Unlock()
 	if runtime != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
 		for id := range ids {
-			_ = runtime.Deactivate(ctx, id)
+			runtime.Detach(id)
 		}
 	}
 }
@@ -102,7 +104,7 @@ func (m *Manager) syncTaskRegistrations(parent context.Context) {
 		return
 	}
 	if m.lost.Load() {
-		m.cancelPluginTasks()
+		m.detachPluginTasks()
 		return
 	}
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)

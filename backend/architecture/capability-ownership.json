@@ -1,6 +1,8 @@
 {
   "version": 1,
   "plugin_rpcs": [
+    {"name": "CommerceRedemptionProvider.ExecuteCommerceRedemption", "owner": "commerce", "source": "pkg/pluginapi/v1/commerce_redemption.proto"},
+    {"name": "CommerceQuoteProvider.EvaluateCommerceQuote", "owner": "commerce", "source": "pkg/pluginapi/v1/commerce_quote.proto"},
     {"name": "PluginControl.GetInfo", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
     {"name": "PluginControl.Health", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
     {"name": "PluginControl.DescribeConfig", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"},
@@ -19,6 +21,8 @@
     {"name": "PluginControl.HandlePageAction", "owner": "extensions", "source": "pkg/pluginapi/v1/control.proto"}
   ],
   "plugin_capabilities": [
+    {"name": "zboard.commerce.discount.redemption.v1", "owner": "commerce", "source": "internal/plugins/commerce_redemption_provider.go"},
+    {"name": "zboard.commerce.quote.provider.v1", "owner": "commerce", "source": "internal/plugins/commerce_quote_provider.go"},
     {"name": "zboard.ui.page.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
     {"name": "zboard.config.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
     {"name": "zboard.storage.v1", "owner": "extensions", "source": "internal/plugins/admission.go"},
@@ -89,6 +93,155 @@
   ],
   "cross_domain_transactions": [
     {
+      "id": "metering.diagnostic_material_retirement",
+      "owner": "metering",
+      "source": "internal/adapters/persistence/meteringstore/diagnostic_material_retention.go",
+      "symbol": "DiagnosticMaterialRetention.Retire",
+      "participants": [
+        "metering",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction_per_diagnostic_source",
+      "compensation": "Lock the durable legacy-only material receipt and exact source row; verify original hash/byte count and minimum age before replacing only optional Meta and committing retired_at. Rollback preserves the complete body and provenance. Corrupt, busy, native and unclassified historical sources are retained; no amount, quota, nonce, cursor, identity or native rounding proof is deleted.",
+      "outbox": "Newly received legacy optional bodies and their exact original-material receipt commit with accounting; the shared executor owns later retirement. Replayed reports reuse the original financial row and never recreate an archived body."
+    },
+    {
+      "id": "resources.node_observation_retry",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/networkstore/node_observation_retry.go",
+      "symbol": "ObservationIntentOperations.RetryObservationIntent",
+      "participants": [
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Requeue one held inactive-node candidate and audit the inspected attempt/reason together. Current administrator and restored original asset are checked under locks; changed, already admitted or unsafe candidates never requeue again. No immutable material, financial fact, valid active lease or worker validation is replaced.",
+      "outbox": "Existing durable pending observation intent is consumed by the same exact-token/source/asset worker, with no direct node counter or configuration confirmation."
+    },
+    {
+      "id": "commerce.plan_group_sync",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/plan_group_sync.go",
+      "symbol": "synchronizePlanGroup",
+      "participants": ["commerce", "entitlements", "resources", "observability"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback the plan revision, every eligible subscription group, credential revocations, publication intents and audit together. Shared authorized endpoints retain their confirmed binding. Preserve quota, paid terms, reset dates and historical orders; the bounded transaction refuses oversized updates.",
+      "outbox": "Old-node revocations and current-group publications are durable before commit; the existing publication worker prepares and verifies new bindings. Immediate resource contention rolls back and permits an explicit retry of the unchanged intent."
+    },
+    {
+      "id": "commerce.plan_quota_sync",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/plan_quota_sync.go",
+      "symbol": "synchronizePlanTrafficQuota",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback plan revision, all eligible current quota changes, credential expiration, quota events, publication intents and administrator audit together. Preserve historical orders, actual payment, used bytes, end dates and scheduled reset dates. Bound or mixed-source failures reject the entire update.",
+      "outbox": "Existing subscription publication intents are persisted in the plan update transaction; credential restoration uses the existing reconciliation path."
+    },
+    {
+      "id": "commerce.consumption_refund",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/consumption_refunds.go",
+      "symbol": "ConsumptionRefunds.Approve",
+      "participants": [
+        "commerce",
+        "experience",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback trusted original paid-source budget consumption, wallet credit, approval identity and audit together; reject active entitlements here and direct whole termination to the shared subscription settlement transaction.",
+      "outbox": "No external payout or payment-provider call; approved consumption refunds credit the internal wallet only."
+    },
+    {
+      "id": "commerce.automatic_renewal",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/automatic_renewal_worker.go",
+      "symbol": "AutomaticRenewals.processAutomaticRenewalPrepared",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback stable queue sequence, explicit consent attempt state, order, existing wallet reservation/capture, actual paid value snapshot, quota/credential epoch, audit and publication intent together. Known business failures roll back the payment savepoint before retaining an explanatory non-charge status. A specifically identified history-bound failure rolls back the entire financial attempt before a separate sequence/status-only transaction; it never claims value or payment was reconciled.",
+      "outbox": "Reuse the same reserved-wallet payment and native publication-intent writer as manual payment; never call external payment channels."
+    },
+    {
+      "id": "commerce.full_term_replacement",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/full_replacement_settlement.go",
+      "symbol": "settleFullReplacement",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback actual-paid source budgets, gross residual wallet credit, deferred reservation and capture, prior-order termination/cancellation, closed quota epoch, retired and fresh credentials, full new purchase evidence, audit and publication intent together. Legacy pending orders retain their pre-upgrade unversioned agreement.",
+      "outbox": "Existing NodeConfigPublish intents persist with fulfillment; unknown remote outcomes retain native result verification and do not repeat financial settlement."
+    },
+    {
+      "id": "resources.configuration_delivery_confirmation",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/networkstore/configuration_publication.go",
+      "symbol": "ConfigurationPublicationState.CompleteConfigurationPublication",
+      "participants": ["resources", "network", "entitlements"],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback applied state and binding projections together; retain the immutable target and reconcile an unknown remote outcome before any repeat delivery.",
+      "outbox": "The existing NodeConfigPublish intent advances to its separately recoverable connection verification phase. Schema recovery only reconstructs confirmed projections and requeues unconfirmed bindings through the same publication writer."
+    },
+    {
+      "id": "entitlements.subscription_retirement",
+      "owner": "entitlements",
+      "source": "internal/adapters/persistence/entitlementstore/credential_expiry.go",
+      "symbol": "CredentialExpiry.ExpireDueCredentials",
+      "participants": [
+        "entitlements",
+        "commerce",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Roll back final lifecycle status, cancellation/reservation release, credential recovery digest and secret destruction, token revocation, audit and publication intent together. Preserve metering cursors, deduplication records, quota events and existing terminal order snapshots.",
+      "outbox": "Existing node publication intents commit with authorization revocation; transport execution remains separate."
+    },
+    {
+      "id": "commerce.subscription_unsubscribe",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/subscription_termination.go",
+      "symbol": "SubscriptionTermination.terminate",
+      "participants": [
+        "commerce",
+        "entitlements",
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Roll back cash-source budgets, refund ledger, pending-order reservation release, permanent subscription termination, credential/token revocation and audit together. Owner and administrator entrances share this sole transaction. Legacy subscriptions.status.cancel also enters this transaction as an explicit no-refund whole-termination command with its original mutation key/hash and immutable default-value/actual-zero evidence; it never invokes a second financial writer. Administrative approval verifies current permission, audits default/actual amounts and reason, and allows zero without a refund entry; source budgets cap all overrides at actual paid money. Repeated scoped identities return the original settlement; changed value quotes require explicit reconfirmation.",
+      "outbox": "Credential revocation persists existing node publication intents in the same transaction; remote disconnection remains separately verified."
+    },
+    {
+      "id": "commerce.controlled_wallet_debit",
+      "owner": "commerce",
+      "source": "internal/adapters/persistence/commercestore/wallet_adjustments.go",
+      "symbol": "WalletAdjustments.Debit",
+      "participants": [
+        "commerce",
+        "experience",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Rollback available-balance debit, immutable ledger, same-user ticketed adjustment and audit together; a global request identity prevents duplicate debits. External payout observations do not move money; failed-payout reversal restores the original debit once.",
+      "outbox": "No external payout is executed or queued; manual external observations remain distinct facts."
+    },
+    {
       "id": "commerce.payment_fact_settlement",
       "owner": "commerce",
       "source": "internal/adapters/persistence/commercestore/payment_facts.go",
@@ -105,7 +258,7 @@
       "symbol": "OrderSettlement.Apply",
       "participants": ["commerce", "entitlements", "resources", "observability"],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback order transition, entitlement fulfillment, audit row, and publication intent together; repeated paid settlement is idempotent.",
+      "compensation": "Rollback order transition, entitlement fulfillment, closed quota epoch, old credential retirement, fresh credential issuance, audit row, and publication intent together; repeated paid settlement is idempotent.",
       "outbox": "NodeConfigPublish intents are committed with a newly fulfilled subscription."
     },
     {
@@ -115,7 +268,7 @@
       "symbol": "CompletionAccounting.Complete",
       "participants": ["metering", "entitlements", "resources"],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback traffic, usage cursor, quota deduction, credential expiry, and publication intents together; node_id plus report_id deduplicates replay.",
+      "compensation": "Rollback traffic, usage cursor, current or closed-epoch quota deduction, credential expiry, and publication intents together; node_id plus report_id deduplicates replay. Closed-epoch usage never mutates current entitlement quota or expiration.",
       "outbox": "When quota is exhausted, NodeConfigPublish intents are inserted before commit and delivered asynchronously."
     },
     {
@@ -135,7 +288,7 @@
       "symbol": "SubscriptionMutations.Apply",
       "participants": ["entitlements", "resources", "observability"],
       "atomicity": "single_database_transaction",
-      "compensation": "Rollback subscription state, credential change, publication intent, mutation receipt and audit together; a unique idempotency key returns the same receipt for identical replay.",
+      "compensation": "Rollback term extension, credential change, publication intent, mutation receipt and audit together; a unique idempotency key returns the same receipt for identical replay. New status.cancel writes are unavailable here and enter commerce.subscription_unsubscribe; historical status-only receipts remain authorized immutable history.",
       "outbox": "NodeConfigPublish intents are committed with the subscription change."
     },
     {
@@ -187,6 +340,45 @@
       "atomicity": "joins_calling_domain_transaction",
       "compensation": "The calling transaction rolls back the intent; committed failures retain the row for leased retry while newer requests coalesce by generation.",
       "outbox": "NodeConfigPublish is the durable outbox record; the shared jobs runtime leases and delivers it to the Zero adapter."
+    },
+    {
+      "id": "metering.buffered_observation_handoff",
+      "owner": "metering",
+      "source": "internal/application/zero_event_projection.go",
+      "symbol": "Services.ProjectBufferedEvents",
+      "participants": [
+        "metering",
+        "resources"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "Roll back original financial facts and immutable observation header/parts together when durable handoff fails; leave original spool checkpoint replayable. Later auxiliary node projection failures never roll back settled accounting.",
+      "outbox": "NodeObservationIntent and optional parts or an explicit capacity/size gap receipt carry immutable receiver-side source identity. EnqueueBatch prepares all headers before shared retained-byte budget; no node or observation-state lock is acquired by the authority producer."
+    },
+    {
+      "id": "resources.observation_material_retirement",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/observationstore/expired_material.go",
+      "symbol": "MaterialRetention.Retire",
+      "participants": [
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction_per_source",
+      "compensation": "Node then exact asset state then immutable header/retirement then budget locks. Keep active claims, every current/floor/stat pin, legacy floor and corrupt material. Applied unreferenced bodies retire in one transaction; expired unapplied sources verify full SHA256 in bounded resumable steps, fence to explicit retired/gap, then recheck per-part hashes before bounded part+checksum deletion/budget decrement. Each failed transaction rolls back its deletion/checkpoint/accounting. Review time never replaces CreatedAt TTL. No billing, authorization, spool checkpoint or financial source identity is removed.",
+      "outbox": "No external side effect or financial write. Durable original header plus0067 retirement/checkpoint/gap receipt recognizes exact late duplicates without recreating optional material; full expired observation replay is explicitly unavailable. Core and scheduled retention use the same repository."
+    },
+    {
+      "id": "resources.node_observation_projection",
+      "owner": "resources",
+      "source": "internal/adapters/persistence/observationstore/worker.go",
+      "symbol": "Worker.apply",
+      "participants": [
+        "resources",
+        "observability"
+      ],
+      "atomicity": "single_database_transaction",
+      "compensation": "A short claim releases queue lock before node application. Apply locks node then exact asset state then owned token/lease ACK; lost ownership rolls back counters and refs while retaining complete source for recovery.",
+      "outbox": "Pending/claimed/held/applied intent and material remain durable; no financial ledger, credential or generic job-ledger locks are acquired by this auxiliary projection."
     }
   ]
 }

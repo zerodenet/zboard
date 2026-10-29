@@ -256,8 +256,14 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 			memberships[groupID][endpointID] = struct{}{}
 		}
 	}
+	deliveryByID := map[uint]string{}
+	pendingEndpoints := map[uint]bool{}
 	credentials := make([]model.ProtocolCredential, 0, len(projection.Credentials))
 	for _, row := range projection.Credentials {
+		deliveryByID[row.ID] = row.DeliveryStatus
+		if row.DeliveryStatus == "pending" {
+			pendingEndpoints[row.ProtocolEndpointID] = true
+		}
 		credentials = append(credentials, model.ProtocolCredential{
 			ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
 			CredentialID: row.CredentialID, PrincipalKey: row.PrincipalKey, Secret: row.SecretCiphertext,
@@ -296,6 +302,9 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 	// A stale heartbeat means the control plane cannot observe the node; it
 	// must not erase already provisioned routes from a refreshed subscription.
 	for _, credential := range credentials {
+		if deliveryByID[credential.ID] == "pending" {
+			continue
+		}
 		groupID := subscriptionGroup[credential.SubscriptionID]
 		if _, member := memberships[groupID][credential.ProtocolEndpointID]; !member {
 			continue
@@ -314,7 +323,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 		if !exists {
 			continue
 		}
-		if !node.IsEnabled || node.LastSeenAt == nil || !filter.matchesEndpoint(endpoint, node) {
+		if !node.IsEnabled || (node.LastSeenAt == nil && deliveryByID[credential.ID] != "confirmed") || !filter.matchesEndpoint(endpoint, node) {
 			continue
 		}
 		if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, node); !supported {
@@ -325,7 +334,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 			continue
 		}
 		manifestNodes = append(manifestNodes, subscriptionManifestNode{
-			ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: credential.SubscriptionID,
+			DeliveryStatus: deliveryByID[credential.ID], ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: credential.SubscriptionID,
 			CredentialID: credential.CredentialID, Name: endpoint.Name, Region: node.Region,
 			Address: endpoint.Address, Port: credential.ListenPort, PublicPort: credential.PublicPort,
 			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,
@@ -334,6 +343,9 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 	}
 
 	for _, endpoint := range endpoints {
+		if pendingEndpoints[endpoint.ID] {
+			continue
+		}
 		if _, seen := seenEndpoints[endpoint.ID]; seen || h.endpointDeliversSubscriptionCredential(endpoint) {
 			continue
 		}

@@ -1,30 +1,13 @@
 package meteringstore
 
 import (
-	"gorm.io/gorm"
-	"sync/atomic"
+	"context"
 	"time"
 )
 
-var fairUseRawCleanupNextUnixMilli atomic.Int64
-
-// AfterCreate performs opportunistic, process-throttled retention. At high
-// event volume the atomic fast path avoids a database query for almost every
-// event; cleanup is deliberately best-effort so Fair Use storage maintenance
-// cannot make Zero event delivery or traffic accounting fail.
-func (row *FlowStartRecord) AfterCreate(tx *gorm.DB) error {
-	now := row.ReceivedAt.UTC()
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	return RunRetentionCleanup(
-		tx,
-		&fairUseRawCleanupNextUnixMilli,
-		now,
-		func(tx *gorm.DB, cutoff time.Time) *gorm.DB {
-			return tx.Where("received_at < ?", cutoff).Delete(&FlowStartRecord{})
-		},
-		now.Add(-15*24*time.Hour),
-		"raw activity",
-	)
+// Flow starts are receive-time diagnostics, separate from TrafficRecord/FlowUsage
+// settlement identities. The existing fifteen-day horizon also bounds diagnostic
+// (node_id, event_id) deduplication: an old replay may be observed again after pruning.
+func (s ObservationRetention) PruneFlowStarts(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	return s.pruneProjectedFlowStarts(ctx, cutoff, limit)
 }

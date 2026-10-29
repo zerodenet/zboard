@@ -110,6 +110,7 @@ func TestFilesAndTicketAttachmentsCompleteAuthenticatedLifecycle(t *testing.T) {
 
 func TestSiteImageUploadAndSettingsKeepPublicAndPrivateFilesSeparate(t *testing.T) {
 	f := newTrafficReadFixture(t)
+	prepareTestMaintenanceSource(t, f.h)
 	if err := f.h.db.Create(&model.Installation{ID: 1, SiteURL: "https://panel.example"}).Error; err != nil {
 		t.Fatal(err)
 	}

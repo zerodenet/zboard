@@ -1,0 +1,222 @@
+{
+  "scope": "P2/P3-06 recovery entitlement epochs, historical quota and credential isolation; not full-term swap or whole P2-P7 completion",
+  "recorded_at_utc": "2026-10-20T00:03:11.652241+00:00",
+  "parent_head": "864dfb00007dab58a25d4db42eedf1bc186cacfa",
+  "develop_base": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "develop_rechecked_at_utc": "2026-10-20T00:04:19.753780+00:00",
+  "migration": "0048",
+  "checks": {
+    "backend": {
+      "command": "go test -p 2 ./...",
+      "status": "passed",
+      "handler_seconds": 192.101,
+      "log": "/tmp/zboard-epoch-projection-final-backend.log"
+    },
+    "vet_build": {
+      "command": "go vet -p 2 ./... && go build -p 2 ./cmd/zboard",
+      "status": "passed",
+      "log": "/tmp/zboard-epoch-projection-final-vet-build.log"
+    },
+    "mysql": {
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "status": "passed",
+      "version": "8.4",
+      "isolated_random_databases": true,
+      "datastore_seconds": 77.46,
+      "handler_seconds": 474.36,
+      "networkstore_seconds": 115.605,
+      "log": "/tmp/zboard-epoch-projection-final-full-mysql.log"
+    },
+    "later_stale_job_and_projection_mysql": {
+      "status": "passed",
+      "seconds": 7.673,
+      "log": "/tmp/zboard-epoch-stale-job-final-mysql.log"
+    },
+    "later_stale_job_and_projection_sqlite": {
+      "status": "passed",
+      "seconds": 1.365,
+      "log": "/tmp/zboard-epoch-stale-job-final-sqlite.log"
+    },
+    "pure_go_sqlite": {
+      "command": "CGO_ENABLED=0 go test -p 2 ./internal/datastore ./internal/handler -run 'SQLite|^TestRecoveredEntitlement|^TestClosedEpochLate|^TestEntitlementEpochFormal|^TestLegacyTrafficReport|^TestCompletionResumesPrincipal' -count=1",
+      "status": "passed",
+      "datastore_seconds": 5.354,
+      "handler_seconds": 16.431,
+      "log": "/tmp/zboard-epoch-projection-final-pure-sqlite.log"
+    },
+    "openapi": {
+      "status": "passed",
+      "existing_warnings": 282,
+      "log": "/tmp/zboard-epoch-openapi.log"
+    },
+    "previous_exact_head_ci": {
+      "sha": "864dfb00007dab58a25d4db42eedf1bc186cacfa",
+      "url": "https://github.com/zerodenet/zboard/actions/runs/39341003064",
+      "all_six_jobs": "success"
+    },
+    "new_head_ci": "pending push"
+  },
+  "native_latest": [
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T235118Z-jhMDWu",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "entitlement_epoch": 1,
+            "existing_connection_read_bytes": 0,
+            "existing_connection_read_error": "EOF",
+            "expiry_boundary": "forced isolated database fixture; management and data plane are real",
+            "fresh_wire_credential": true,
+            "independent_control_passed": true,
+            "old_credential_rejected_probes": 3,
+            "order_handler_return_to_verified_access_ms": 16608.443577,
+            "passed": true,
+            "projection_invalidation_between_preparation_and_accounting": true,
+            "scenario": "renewal_epoch",
+            "subscription_identity_preserved": true,
+            "subscription_url_preserved": true,
+            "verified_at": "2026-10-19T23:53:30.438446734Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "84eddcc5ca2f6072822fc601e68a3646e4003cc8a0f7276a6686ec4004667304",
+      "source_files": 1650,
+      "test_binary_sha256": "b19a2faf6b12bf79787414147d296ff3797e11debb346d3d5f5e2bba1c73fd11",
+      "current_runtime_differences": [],
+      "later_test_or_document_differences": [
+        "backend/internal/handler/entitlement_epoch_test.go"
+      ]
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T235331Z-C38jEE",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "accounting_observed_after_denial_ms": 1.555317,
+            "first_denial_after_load_ms": 3110.469832,
+            "ledger_bytes": 1024,
+            "passed": true,
+            "positive_control_passed": true,
+            "publication_confirmed_after_accounting_observed_ms": 271.620321,
+            "quota_bytes": 1024,
+            "rejected_probes_after_publication": 3,
+            "scenario": "exhaustion",
+            "subscription_used_bytes": 1024,
+            "successful_echo_probes": 55,
+            "verified_at": "2026-10-19T23:55:00.28217805Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "84eddcc5ca2f6072822fc601e68a3646e4003cc8a0f7276a6686ec4004667304",
+      "source_files": 1650,
+      "test_binary_sha256": "b19a2faf6b12bf79787414147d296ff3797e11debb346d3d5f5e2bba1c73fd11",
+      "current_runtime_differences": [],
+      "later_test_or_document_differences": [
+        "backend/internal/handler/entitlement_epoch_test.go"
+      ]
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T235501Z-4ZDxjR",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "existing_connection_closed_confirmed": true,
+            "existing_connection_read_bytes": 0,
+            "existing_connection_read_error": "EOF",
+            "new_connection_rejection_ms": 2519.151917,
+            "passed": true,
+            "positive_control_passed": true,
+            "real_flow_accounted": true,
+            "rejected_probes": 3,
+            "scenario": "expiry",
+            "verified_at": "2026-10-19T23:56:16.721271322Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "84eddcc5ca2f6072822fc601e68a3646e4003cc8a0f7276a6686ec4004667304",
+      "source_files": 1650,
+      "test_binary_sha256": "b19a2faf6b12bf79787414147d296ff3797e11debb346d3d5f5e2bba1c73fd11",
+      "current_runtime_differences": [],
+      "later_test_or_document_differences": [
+        "backend/internal/handler/entitlement_epoch_test.go"
+      ]
+    }
+  ],
+  "preserved_failure": {
+    "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T234244Z-QFekOE",
+    "overall_passed": false,
+    "data_plane_scenario_passed": true,
+    "receiver_errors": {
+      "500": 1
+    },
+    "original_error_message_captured": false,
+    "root_cause_limit": "Original500 has no direct error-message evidence. A deterministic independent projection-invalidation race reproduced the same failure class; fixed with bounded transaction re-preparation and verified with injected real ingress. Do not claim the original unclassified500 was directly diagnosed."
+  },
+  "regressions": {
+    "user_lock_before": {
+      "log": "/tmp/zboard-epoch-user-lock-before.log",
+      "expected_failure": "MySQL3572 NOWAIT proves accounting held subscription while waiting for user FK"
+    },
+    "projection_race_before": {
+      "log": "/tmp/zboard-epoch-projection-race-before.log",
+      "expected_failure": "canonical owner lost to ambiguous-ownership error after derived coverage changed between prepare and transaction"
+    },
+    "after": "passed; genuine ambiguous ownership still rejects and per-request row work remains1024"
+  },
+  "earlier_runs": {
+    "normal_recovery_before_user_lock": "zero-revocation-20261019T233257Z-gvpZsG passed",
+    "exhaustion_before_projection_retry": "zero-revocation-20261019T234418Z-URuhUR passed",
+    "expiry_before_projection_retry": "zero-revocation-20261019T234523Z-Q75oJD passed",
+    "mysql_fixture_failure": "/tmp/zboard-epoch-schema-mysql.log: attempted to drop FK-supporting index before replacement; corrected disposable fixture without disabling FKs"
+  },
+  "benchmark": {
+    "command": "go test -p 2 ./internal/handler -run '^$' -bench '^BenchmarkZeroAccounting/FullBatch$' -benchtime=100x -count=1",
+    "go": "1.26.8",
+    "gomaxprocs": 2,
+    "cgo_enabled": 1,
+    "driver": "SQLite",
+    "SQL_per_32_flow_batch": 85,
+    "events_per_second": 3193,
+    "p95_ms_per_batch": 12.23,
+    "p99_ms_per_batch": 13.54,
+    "log": "/tmp/zboard-epoch-final-benchmark.log",
+    "limitation": "single local microbenchmark after focused checks, no throughput-improvement, capacity or production-SLO claim"
+  },
+  "external_contract": {
+    "repository": "zerodenet/core",
+    "read_only_commit": "71b3db1ff5b01dbb50576b36c6ba6d76922c67c7",
+    "examined_auth_export": "crates/engine/src/api/export.rs auth_to_snapshot",
+    "inference": "examined path does not establish an authenticated per-flow authorization epoch; do not equate event ConfigRevision with it",
+    "binary_sha256": "1f75740f1f5c1fefb7cb3aae219c7cbfe3365bd2dce33f58216a1001dc47268b",
+    "tested_native_protocol": "VLESS",
+    "other_protocols_not_claimed": true
+  },
+  "artifact_maintenance": {
+    "verified_identical_public_binary_copies": 47,
+    "hardlinked_duplicates": 46,
+    "bytes_and_sha256_preserved": true,
+    "business_queues_dedup_ledgers_or_failed_logs_changed": false
+  },
+  "limits": [
+    "full-term swap, surplus funding and generic refunds remain incomplete",
+    "same-epoch paid/scheduled reset metering boundaries remain a P2/P4 task",
+    "physical resource deletion and older shared credential paths remain incomplete",
+    "statistics/observation projections still couple to core accounting transactions",
+    "no frontend/SDK source changes; exact-head CI follows push",
+    "no production payment, migration, release or deployment; no core/sink/client/plugin repository changes",
+    "original natural native500 was unclassified; deterministic race and final injected native regression are separately identified",
+    "P4-P7 and overall P2/P3 are not complete"
+  ]
+}

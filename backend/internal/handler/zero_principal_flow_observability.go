@@ -214,6 +214,12 @@ func (h *handlers) TrafficTrendsWithPrincipalFlowsHandler(w http.ResponseWriter,
 		copyRecordedResponse(w, recorded)
 		return
 	}
+	if trafficTrendIsPending(wire.Data) {
+		// Pending numeric fields and as_of are null. Copy the exact response
+		// before unmarshalling into the complete numeric DTO or reading Principals.
+		copyRecordedResponse(w, recorded)
+		return
+	}
 	var response trafficTrendResponse
 	if err := json.Unmarshal(wire.Data, &response); err != nil {
 		copyRecordedResponse(w, recorded)
@@ -240,6 +246,7 @@ func (h *handlers) TrafficTrendsWithPrincipalFlowsHandler(w http.ResponseWriter,
 		return
 	}
 	applyPrincipalFlowTrendRows(&response, rows)
+	w.Header().Set("X-Zboard-Statistics-State", "complete")
 	writeJSONResponse(w, http.StatusOK, wire.Message, response, wire.Error)
 }
 
@@ -267,6 +274,10 @@ func (h *handlers) readPrincipalTrends(r *http.Request, buckets []systemCalendar
 	return h.services.PrincipalTrends().Read(r.Context(), claims.UserID, metering.PrincipalTrendQuery{Administrative: admin, UserID: user, SubscriptionID: subscription, Buckets: converted})
 }
 func writePrincipalTrendError(w http.ResponseWriter, err error) {
+	if errors.Is(err, metering.ErrUsageProjectionPending) {
+		writeCapabilityError(w, http.StatusServiceUnavailable, err.Error(), "usage_projection_pending")
+		return
+	}
 	if errors.Is(err, metering.ErrTrendPermission) {
 		Forbidden(w, "当前账号无权读取此趋势。")
 		return

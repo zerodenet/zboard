@@ -1,0 +1,300 @@
+# 本轮增量升级与回滚说明
+
+状态：P2 分批实施，**不是 P7 完整发布验收**。仅针对从 `7c7283fb34840883fccaba1de6e0a98edb24dfb1` 到当前 Draft PR #78 已实现批次的兼容核对。不得据此自动部署或执行生产迁移。整体差距见 [实施记录](core-convergence-plan.md)。
+
+## 0037 购买策略快照
+
+新列 `orders.purchase_snapshot`，最大 2048 字符；空串表示历史快照未知，不能从当前目录回填成“购买时事实”。版本 1 保存基础价/币种/付费周期及续费效果、是否可续费、流量重置策略、计量方式和家庭限制。既有金额/额度/速度/设备等订单列仍是不可变购买快照；接入组成员及当前资源容量继续按资源权威管理。
+
+新订单从选购时捕获策略，支付等待期间目录修改不替换它；换购/重置/续费报价的确认指纹包含此策略及已选额度/速度/设备。未知版本、缺字段或与原订单商业列冲突拒绝履约，不降级为目录现值。新限时续费只延长有效期，不立即追加/清零流量或移动原定重置日。恢复窗口内的续费仍按恢复成功新起点生效。升级前已创建的订单保留原 renewal_effect 承诺；空快照继续旧兼容行为，并明确不是已捕获的历史策略。
+
+MySQL 使用追加的 `0037_commercial_purchase_snapshot.up.sql`，SQLite 使用对应模型加列及方言 DDL。迁移与启动恢复同用加列核验：DDL 已完成但版本记录缺失可继续记账；记录已存在而列缺失可恢复列，但不伪造已经丢失的快照内容。核心 orders 表缺失时不能自动造空表冒充历史恢复。0001–0036 发布迁移保持不变，尤其 0035/0036 及 node publication 恢复逻辑保留。
+
+## 升级前核对
+
+1. 在隔离副本验证新库、当前基线升级、重复启动、DDL 后中断、已记录缺列与既有订单/订阅/凭据/发布队列保留。待支付、已付款、未决发布分别核对，不能只比总行数。
+2. 备份完整数据库、本地事件 spool/checkpoint、文件附件及部署凭据密钥。记录各自快照时间及待处理水位；数据库和 spool 必须能共同解释已 ACK 事实。
+3. 按既有维护机制停止新交易和任务领取，核对在途租约/未知远端结果。数据库迁移与生产切换仅由管理员在独立变更窗口执行。
+4. 新二进制的 `-migrate-only -f <部署配置>` 会准备完整 schema 后退出；不要在未知环境或默认 DSN 下执行。先在隔离副本验证配置，检查版本行、默认空值及原单金额/实付/期限/用量/发布状态。
+5. 新 UI 与后端配套提供锁价报价，旧普通账户支付事实 scope 不再具有写权限，使用已经准入的原生支付插件。不得为兼容旧自签 scope 重新开放越权入口。
+
+## 回滚边界
+
+- 0037 的 down 文件是保留数据的空操作，旧业务列与购买证据均不删除；不靠回退 DDL 丢弃快照。**保留列不等于旧二进制能直接启动或正确处理新待支付订单。**
+- 基线 migration history 校验只认识其自带版本；新 0037 收据可能使旧二进制按未知历史拒绝启动。不能直接切旧镜像后让旧 worker 自行补跑。应优先使用保留新迁移清单与快照解释能力的修复版本。
+- 确需回退到基线时，必须先停写/停领并导出完整迁移收据、核对新版本未决订单和资金事实，由管理员审核兼容措施。不得自动删除迁移历史、清空去重/账本或丢失新交易；仅恢复升级前备份也无法保留升级后的合法写入，需要独立核账方案。
+- 旧版不读取策略快照，可能按当前目录解释新订单，并存在已修复的自签支付权限与 MySQL 重放缺口。因此不能把二进制回退视作无风险恢复。执行任何恢复后先只读核对，再恢复领取及交易。
+
+## 当前证据与未验证
+
+SQLite/MySQL 8.4 实库测试覆盖 0037 加列、重复迁移、DDL 后缺收据、收据已有而缺列，以及金额、实付、订阅关联和既有快照保留；快照缺失不重建虚假历史。购买策略及提前续费有行为回归。具体命令和最新结果见实施记录。
+
+尚未执行生产副本演练、真实生产升级/回滚、全部 P2 金融流程、P3–P6 目标及 P7 综合发布验收；真实内核、插件渠道及容量证据需分别报告。不得将以上限制写成已经完成的发布准备。
+
+
+## 0038 货币余额与充值
+
+新增 wallet_accounts（用户/币种复合主键）与 wallet_entries（全局账务身份及来源订单），旧 MySQL orders.plan_sku_id 放宽为 NULL，充值单不关联商品和权益。SQL CHECK 与应用校验共同限制 0 <= reserved <= balance；SQLite/MySQL 均限制删除已有账务的用户和来源订单。现有订单、订阅、发布/计量及 0037 快照不回填、不删除。
+
+升级先核对用户/订单数量、每币种余额与追加账本、预留余额、支付事件及原渠道交易关联。0038 后缺失任何金融表不是安全的空表恢复：启动前检查会拒绝该状态，即使迁移记录存在也不造空表。未记账但部分表已有金融证据同样停止，必须从可靠副本恢复并核对；只有尚无金融事实的空 DDL 中断才自动补齐。不得删除迁移收据绕过检查。测试已覆盖上述双库情形。
+
+0038 down 为保留数据的空操作，不删账本、不恢复 SKU NOT NULL。旧基线不知道新迁移、充值类型与资金事实，不能直接用旧二进制处理新充值订单。优先向前修复，备份和恢复需包含完整账本/支付事件/订单及审计，不能仅恢复余额汇总或重跑渠道通知。当前不支持提现，消费、混合支付、退款及资金迟到分类仍在后续 P2 批次；不要把当前 schema 当成全部财务流程已经可用。
+
+
+## 已购周期的独立价格约定
+
+续费查询以最近新购/换购作为当前价格约定系列，分别读取该系列内每种实际成交币种/付费周期的第一笔基础价。初次选择没有历史成交的周期时，不推算年价或隐式自动收取现价；预览返回 current_catalog 与 requires_price_acceptance，创建必须带当前报价指纹。目录价格变化会使旧指纹失效。支付后该周期的真实成交基础价成为后续锁价，原周期锁价和其他独立订阅不被覆盖。没有任何可核对原购买的旧订阅仍需人工核实，不能把当前目录当历史。
+
+本批没有新增 schema 或回填历史。已创建待支付订单按原快照结算；回退版本会重新拒绝跨周期新报价或错误忽略新周期约定，不宜让旧 worker 接管未完成订单。页面显示当前报价及明确确认语义，不自动重放购买。
+
+
+## 0039 付款尝试、独立收据与工单核对
+
+新增 payment_attempts 与 payment_receipts。宿主在订单可支付时原子记录渠道身份/金额/币种；原付款尝试保留到取消后，用于接收已经实际发生的迟到付款。已付订单向新插件开放读上下文时，不授予新收款权限；现有尝试或可核对的历史绑定仍可重放。支付插件必须提供真实核验事实，不能把浏览器付款页当现金事实。收据以 SHA256(provider + NUL + provider_trade_no) 去重，避免 MySQL 字符串默认排序规则合并大小写不同的真实交易；事件 ID 继续承担通知重放身份。
+
+已取消订单、已经履约后的另一笔真实付款，以及核验收款时权益条件已变化的订单，保留收据并按实际渠道实付转入原用户同币种余额。后者只在可解释的业务校验/容量条件变化时回退权益局部事务并取消原订单；数据库/凭据/发布意图等技术失败整笔回滚、不 ACK，供可靠重试。新款项不会复活已结束订阅，不按面值或优惠额加余额。旧已付订单与其已知渠道交易相同的重放不会重复加钱；旧人工付款没有渠道身份时不猜测，保留 review_required 收据。
+
+待核对收据提供实际管理页入口。当前管理员关联同一用户的工单并给出依据，可确认原付款已用，或确认新款项转入余额；结论/账本/操作人/工单/审计同事务，重复相同结论幂等，改变结论冲突。用户查看安全归属摘要；管理员另可查看规范化渠道身份、交易号和核对备注，以实际对账。均不返回原始渠道回包或令牌。订单和金融证据外键限制硬删除。
+
+历史边界：不批量伪造以前未保存的付款尝试或收据。旧人工事实需工单核对；升级前已发起但没有任何面板持久依据的外部收款，需要可信渠道对账后受控处理。已有插件身份按当前签名发布者/插件宿主稳定身份隔离，跨身份迁移或密钥变化后的渠道归并尚需明确配套，不能当作生产集成已经验收。普通账户禁用、插件停用/撤权时仍拒绝无效调用，不以缺失授权绕过信任边界。
+
+0039 缺表或丢失金额/归属等金融列时，启动在 SQLite AutoMigrate 前拒绝伪造空收据；仅尚无金融证据的 DDL 中断可恢复。重复迁移保留余额/收据/原订单；MySQL 同时核对唯一身份索引及收据外键。0039 down 保留数据，不清事件、尝试、收据或账本。旧二进制不支持新迁移与归属语义，应向前修复；不得删除迁移收据强行回退。
+
+
+## 0040 冻结资金分配与余额消费
+
+新增order_fundings，约束wallet_minor + cash_minor = amount_minor且均非负，资金状态为reserved/captured/released。余额预留、扣款、释放均追加账本，原资金来源不覆盖。新资金分配仅一笔/订单，进入渠道后不能修改现金部分。既有无分配的待支付订单继续按原总额核验；受控旧集成若实际收取原总价而新分配已变化，只入余额并释放旧预留，不按错误分配履约。SDK宿主context payable_amount表示渠道允许收取的补差，外部支付插件必须按此事实核对，不能用订单总额或SKU现价代替。
+
+默认期限30分钟。到期调度复用原数据库jobs，单次有界处理；队列延迟时如实保留预留，用户可明确取消以触发同一原子释放。迟到现金与订单权益分别记录，不自动复活。余额+渠道实付保留在资金分配和独立收据中；实付总额包含已经捕获的余额贡献。纯余额/零金额单的自助确认不经过不可信浏览器“支付成功”标记，而由核心验证真实账本和冻结价格后履约。
+
+升级副本需核对每币种余额/预留、账本delta与before/after、每订单分配、独立现金收据、未决权益与发布意图。已记账缺金融表/列停止；余额汇总行缺失但账本仍在也停止相关操作，不得当零余额并新建汇总行。SQL约束损坏的恢复先恢复真实证据和外键，再恢复写入。
+
+0040 down保留金融证据，不释放或删除资金，不允许直接回退旧二进制处理新混合单。旧版以订单总额验证渠道付款，不理解补差、预留和释放；切回可能拒绝真实已付或重复处理。停写、停领、备份完整DB/spool，核对在途现金与资金状态后选择向前修复；生产回滚/迁移没有在本任务执行。
+
+
+## 新续费的目标状态快照
+
+新renewal购买策略追加可选renewal_target，捕获真实业务起止日/配置，不使用计量用量、心跳或UpdatedAt。履约前校验同一订阅的目标状态；旧目标已被其他交易改变时，已收到的真实现金转余额并取消旧单，不能继续重复延长。无新列或历史回填；旧已确认订单缺字段保留原约定。回退到忽略此字段的旧逻辑会丢失并发保护，不能在新意图尚未核对完时回切旧worker。未来启用自动续费前必须处理缺目标依据的旧未决单。
+
+## 0041 受控扣减与人工出款结果
+
+新增wallet_adjustments和wallet_payout_results，分别记录内部余额扣减/唯一恢复、外部人工观察。不得把记录成功当作真实银行出款，也不得因人工标失败自动增加余额。明确恢复只针对原扣减且最多一次，原金额/币种/用户和原工单不覆盖；私有人工流水/备注只通过当前管理员入口读取。普通用户余额流水只保留可公开账务原因。
+
+升级核对wallet_entries与wallet_accounts的余额/预留差额、每笔调整唯一entry_id、唯一恢复reversal_entry_id、同用户工单、操作者、追加人工结果及审计。新增外键保护用户/工单/账本/调整和人工结果，既有来源订单外键保留。不能用虚构订单表示人工扣减。已记录0041却丢表/关键列立即停止；未记账的残缺schema已有扣减或结果同样停止，仅无事实的DDL中断可恢复。恢复必须包含两张表、原账本、余额与审计，不能通过删除迁移记录绕过核账。
+
+0041 down保留证据；没有任何生产迁移。回退忽略0041的旧二进制不识别新人工扣减/恢复工作流，应优先向前修复并核对在途手工出款。已完成恢复的调整不能重新出款；人工银行执行始终由工单流程核实，本程序不提供提现或自动外部转账。
+
+## 发布目标摘要的额外持久化校验
+
+一条ProtocolDeployment首次保存desired_config_sha256后只允许相同摘要重试。完成操作要求数据库目标、调用方冻结目标和确认结果三者一致；无目标或旧摘要拒绝提交成功/readiness/last_sync_at。无新schema或历史回填，未决结果仍使用原生reconcile路径，不能删除未决部署以强行重发。目标改变通过新部署意图推进。此保护不构成逐端点/逐凭据已交付证据；回退旧worker前须核对未决配置，优先向前修复。
+
+## 0042 真实履约价值快照
+
+orders新增私有LONGTEXT/TEXT entitlement_value_snapshot，旧数据默认空值，不等于零实付、零残值或已核实现金。新策略可选value_allocation_model固定在报价与订单；旧未决单缺此约定保持原履约兼容，后续价值转换需明确核对。新快照包含原订单/订阅、实际付款可信性、真实前后权益与实际付费区间、已有额度事件顺序以及明确分摊单元。人工标记付款不能自动生成已核实现金分摊；来源未证的旧换购抵扣不成为现金。
+
+已记录0042但订单表/价值事实列缺失时，启动在自动迁移前停止，禁止用空列覆盖丢失的金融证据。未记录的单列DDL中断可补齐或保留既有列后记账，不重写原订单、实付、期限与快照。down只保留证据。升级核对新单事实与支付/账本、额度事件、真实起止时间及重置前后累计用量；无事实的旧单不能通过重放或现价回填伪造。
+
+不得让不写该事实的旧worker与新worker并行履约。回退优先向前修复；旧二进制即使能读取旧策略，也不理解新价值约定与事实，不能接管未来换购/退订结算。当前算法只作为下一交易批次的真实来源，不表示已有完整退款流程。没有执行生产迁移。
+
+## 0043 自助退订结算证据（P2-10）
+
+新增三张可加性表，不改历史成交快照。预算以可核对实际支付为上限，退款与换购转出分开计，折扣不成为资金来源。保存私有报价与来源分配、用户/操作者、幂等请求及余额账目引用。新库/重复迁移与空DDL中断可恢复；已记录却缺表/关键列，或未记录但部分表有金融事实，启动失败要求恢复完整证据，不能删除迁移行掩盖数据丢失。
+
+回滚保留0043表、订单refund_amount、余额账本、canceled/ended_at、token/凭据撤销、配额事件及待发布意图。先停止新退订，核对结算金额等于来源之和及对应账本增额，原订单累计退额受预算限制；零残值无账本。核对待付续费取消/预留释放，迟到收据应为wallet_credit。旧二进制不认识新身份，不得对已结算订单强制标付/执行旧换购或删证据重放；需要这些写入时先前向修复。down保数，不自动倒扣用户余额或恢复授权。
+
+以上只在隔离测试库验证，未执行生产迁移。业务终止只证明撤权意图已持久化，公开内核旧连接关闭的ZBoard适配仍缺，不能当作远端断连证明。
+
+## 0044 终止身份与凭据摘要
+
+新增protocol_credentials.retired_principal_hash和节点范围索引，未改0001–0043。最终终止保留subscription及所有计量/去重/配额/汇总记录，用status=ended阻止恢复，撤销访问与清除规范凭据/token密文前保存必要单向匹配摘要。新状态使用现有varchar字段。已记账缺表/字段不得空补；只有缺索引等不丢现有摘要的中断DDL自动完成。不能恢复先前版本已经删除的历史数据，也不伪造回填事实。
+
+先备份数据库、密钥和持久缓冲；隔离核对终止前后订单金额、终止摘要、原始/计费总量、累计游标身份、退款来源预算及预留释放。终止后重放同身份不增加扣量；迟到增量仍受原配额封顶，不能复活服务/产生欠费；新付款按已取消订单收据进入余额。权限及其他订阅应不受影响。异常密码主体多重归属应进入明确核对，不能任意计费。
+
+down保留摘要与全部金融/恢复事实。密文清除是已结束凭据的销毁，不可从摘要反解。旧二进制虽不会把ended恢复为active，但无法利用新摘要解析密码主体的迟到事件；不可直接让旧消费者继续丢弃未知事件。先停消费并保留spool/checkpoint，优先前向修复；若必须回退，应在隔离副本证明可以从可信备份按同一凭据ID恢复仅所需密文，保留ended/撤销、全部新增结算及当前游标，并逐项对账后再恢复消费。不得整体倒回旧库、重复返款、清去重、删摘要或重新开启旧授权。
+
+此批不归档诊断、不声称清除原始缓冲/未映射观察中所有敏感材料，也未完成P4增长边界。公开Zero旧连接强制关闭仍缺ZBoard适配，原生验收失败仍保留。
+
+## 提前续费估值连续性（无新增迁移）
+
+本轮确认旧残值加真实新增实付，立即退订1.20+10=11.20；额度和重置日不变，后续仅按真实时间/新消费减少当前基线，未来金额不重价。私有估值模型版本进入指纹，现有未提交报价在代码升级后应由用户明确重新核对，已提交同一请求仍返回原收据。旧无可靠成交依据或改变额度/重置日的遗留续费仍需核对，不用当前目录回填历史。
+
+不增加schema或重新记账；仅在明确退订时按当前有效报价执行既有原子结算。回退到ae8b629后，重叠估值会重新变为人工核对状态；已经结算的余额/原单退款/来源预算不得删除或按旧算法再算。不能让回退代码自动处理新模型未决报价。可选可信时钟仅由内部装配/隔离测试提供，生产默认UTC壁钟与原秒级计价舍入保持，HTTP/插件不能传入时钟。
+
+## 0045：发布后的连接核验恢复
+
+新增 `node_config_publishes.phase`（空值为配置阶段，connections 为原生连接核验）与 `applied_config_sha256`。正式迁移与恢复路径同时覆盖；SQLite 使用当前模型及幂等 schema reconciliation，MySQL 覆盖部分 ALTER 中断和记录已存在的缺字段恢复。保留业务数据、队列代次、租约、reconciling、suspended，不清空任务、不放宽结果核验。若连接阶段的 SHA 证据丢失，恢复为配置阶段，由既有精确原生配置核验重新取得依据。
+
+默认仍是完整单进程和已有共享 worker，无新增 Agent、Redis 或消息队列。SSH 用户必须实际能使用原生 UDS 的 stream-local forwarding 才能完成连接关闭；否则显示连接待核验，已应用配置仍有效。恢复后仅补连接核验，新的业务变更仍推进新代次。
+
+Down 脚本保留辅助字段及待核验意图。旧二进制不理解 connections 阶段，可能按旧配置任务处理并清除，因此不能宣称存在未完成连接意图时直接降级可无损恢复。需要回滚时先停止面板/worker、备份完整队列及业务库，在新版核验完成，或制定保留待处理意图的人工隔离恢复方案后才启动旧版；不通过删表/删任务处理。这里只提供升级、核对及回滚准备，没有执行生产迁移。
+
+
+## 0046：主体归属辅助索引
+
+仅新增protocol_credentials的principal_digest、secret_principal_digest、principal_lookup_version及三条节点范围索引。没有金融、流量或授权事实迁移；已有0044退休摘要的算法与含义保持。正式迁移/兼容路径覆盖新库、记录已存在但派生列丢失、部分DDL和索引形状修复。丢失任何派生列时把lookup版本归零，按规范凭据/退休摘要有界重建，绝不将未重建行视为覆盖完成。缺少规范凭据/退休摘要的既有数据损失预检不放宽。
+
+version0为待回填、1为可核对、2为存在不可解密secret。其他未知身份可能隐藏碰撞时返回待核验，需修复密钥/源数据并显式将相关派生版本归零重新核对；不猜测secret、不选择最新行。回填只UPDATE三列，不UPSERT密文，已提交批次可安全继续。归属仍经过规范事实和事务内授权复核。
+
+Down保留辅助列/索引，不清理凭据、退休摘要或累计游标。旧二进制不能维护派生索引；若降级后曾签发、迁移或修复凭据，重新前进前在停写、备份和核对后重置相关派生版本0并重建，不能使用旧缓存冒充新事实。密文已终止销毁的回滚限制仍按0044执行。这里只在隔离测试库验证，没有生产迁移。
+
+## 0047：冻结绑定清单与确认投影
+
+新增protocol_deployments.credential_targets、protocol_credentials.delivery_required、network_entries.delivery_required，及credential_delivery_confirmations、network_entry_delivery_confirmations、node_credential_delivery_states。清单没有明文/密文，仅资源ID与版本化单向摘要。来源记录的目标SHA、清单、结果、原时间是依据；三张投影不授予商业权限，可从最新已确认来源重建。数据库迁移清单包含这三张表，不漏复制/核对。
+
+首升旧门槛默认为false，表示旧兼容、非已确认。当前唯一签发及托管前置保存路径显式置true，待自身绑定确认后再输出。已记录0047却门槛字段丢失时用true默认值原子补列，避免DDL提交后进程退出造成未核验放行；普通发布队列补全核验意图，不覆盖活动租约、不删未决配置结果。已确认且仍匹配的绑定不会因为门槛恢复失去确认。0047源清单列或已有确认所引用的来源记录丢失需恢复，不伪造空清单；原0044密文销毁和计量游标限制仍适用。
+
+辅助丢表/列、部分DDL、回填中断可以重建；先检查来源完整性，重建时锁节点并复核较新的确认，原SHA/时间保持。删除端点仅将发布的触发引用置NULL，保留全节点目标与结果。不要手动删最后确认来源、待核验目标或迁移记录绕过检查。归档这些来源前须另有经验证的独立恢复依据，当前P4尚未提供。
+
+回滚保留所有源清单、门槛、投影、队列及业务数据。旧二进制忽略门槛/新投影，会重新暴露未交付新凭据及前置；因此需先停止相关签发/线路写入与worker，备份并核对待确认配置，优先前向修复。不能声称任意旧版继续写入后再前进仍保留这些语义。down不自动删表、不倒扣余额、不改变订阅授权。只在隔离测试库演练，没有生产操作。
+
+## 0048：恢复期间与历史凭据
+
+按正常停写/备份/保留缓冲流程升级；没有执行生产迁移。既有订阅、凭据、流量及配额事件作为原始代次0，不补造过去的成交。先建立包含current_scope的新唯一索引，再移除旧subscription/endpoint唯一范围，保持当前范围1唯一、历史NULL可共存；principal/凭据ID唯一和MySQL外键保留。兼容恢复补未完成列/表/索引，版本最后记录。运行时只有履约事务关闭期间，计量事务推进其迟到计数。
+
+关闭额度表保存关闭时用量、后续用量、总额、方向、期间和触发订单。记录后源表/字段丢失、代次不连续或当前凭据范围不符，要求恢复源事实，不能补0或删旧凭据绕过；辅助唯一索引可恢复。计量找不到关闭源时保持待处理，不转扣当前期间。归档不能先删除这些源额度、身份、游标及回放边界。
+
+恢复后订阅ID/token地址不变，客户端应更新内容获取新凭据；提前续费不更换当前凭据。旧user/endpoint报告不能证明恢复期间或多订阅归属时返回409，认证principal事件继续可用；不能凭版本号承诺所有内核/协议已验证。
+
+0048 down保留事实，不逆转付款、重启旧密文或删除历史。恢复之后不能直接启动仍强制旧双列唯一约束的程序：旧自动迁移会失败，旧逻辑可能选到历史凭据。停相关写入/消费者、保留SQL和本地持久缓冲、核对新旧额度/计量/凭据，优先前向修复，不删历史以迁就旧约束。
+
+## 0049：完整换购的待结算贡献
+
+新建换购订单包含私有Version2/full-term报价快照、真实来源金额、原代次及原QuotedAt。升级前的无版本待付款订单继续原协议，不把旧折抵猜作可退现金。0049给order_fundings增加entitlement_minor及范围检查（0≤entitlement≤wallet）；同时将MySQL orders.change_snapshot从4096字符扩为LONGTEXT，保存有界多来源报价；SQLite已有TEXT不变。旧资金预留默认0，wallet仍为新订单总钱包贡献，实际付款前现金预留为wallet-entitlement。正式SQLite/MySQL语句由恢复路径复用，先DDL/约束后记录版本；已有资金预留在重复启动及DDL中断后保持。迁移记录已存在而金额来源列或orders.change_snapshot丢失时拒绝启动并要求恢复，不能补零掩盖。
+
+结算审计的AmountMinor是旧总残值，AppliedMinor用于新订单，WalletMinor为净结余（Amount=Applied+Wallet）；EntryID引用**总额**退款流水。钱包中还会出现该订单的抵扣预留和完整扣款，不能再将净结余额重复充值。新订单PaidAmount为完整新成交价，旧订单PaidAmount不变，RefundAmount/来源预算仅增加实际释放的旧残值。结算后立即退订按新成交实付估值，商业折扣不能变成余额。
+
+Down保留列、约束、Version2快照、资金/关闭代次和凭据历史。旧二进制不理解待结算贡献，会误释放并不存在的现金预留，也可能按旧保留期限方式处理新订单；不能直接降级继续处理Version2订单。先停面板/worker和付款写入，完整备份数据库、发布队列及本地持久缓冲，核对所有Version2订单的reserved/captured/released和收款归属，再前向修复或制定保留新语义的恢复程序。不能删资金记录/迁移记录后启动旧版。本轮只操作隔离测试库，未执行生产迁移。
+
+## 0050：续费恢复策略来源
+
+新增SQLite/MySQL正式迁移初始化私有整数配置subscription_renewal_grace_days=7；现有配置通过冲突不变策略保留，自定义值/revision不重写。先核验策略再记录迁移；记录已经存在时，RunMigrations在任何表修复或默认初始化之前检查来源完整性。丢失行或system_configs表需从备份恢复实际配置；不能删除迁移记录并猜成默认7天。范围0–3650天，0立即结束恢复窗口；缩短会影响已有未结束订阅，延长不会复活终态。历史订单/账务/计量归属和清理审计保留。
+
+升级前备份配置、迁移记录、订单、凭据和累计计量恢复状态，核对当前窗口及待付款单的独立订阅目标。旧未绑定的非新购订单需要人工核对，不能据当前套餐猜归属；可信收款在不能履约时按已有收款入余额路径保留资金。首次升级默认7天与旧实现相同。回滚保留配置与0050记录，down不删策略；旧程序仍硬编码7天，若管理员已更改窗口，必须在维护模式核对回滚代码的实际资格/清理行为并暂停清理及付款，不能声称任意旧版安全兼容新窗口。已清理凭据不会因回滚自动恢复。
+
+复制目标时，清空初始化行与复制业务数据必须在同一目标事务中。故障后目标初始化7天仍存在；成功后源库14天/revision9及历史投影按原样复制，SQLite/MySQL专项覆盖。另有既存待办：完整MigrationCopier先验空再准备结构，准备后的默认行会让一次失败后的整套Copy重试被判非空；需要目标归属/可恢复准备协议，不能直接放宽对未知目标的验空。这一待办不是0050复制数据的已完成恢复证明。
+
+## 0051：显式自动扣款授权及稳定执行顺序
+
+新增subscription_automatic_renewals及automatic_renewal_scans，旧订阅不回填授权，默认关闭。保留每订阅购买系列/已确认条件摘要、版本、最近订单、状态、检查时间和尝试序号；顺序行从0开始。SQLite/MySQL正式SQL与恢复协调复用，无已发布迁移修改。记录0051后丢失授权表、顺序表/行或权威字段，启动失败要求恢复；即使尚未记录版本，只要已有授权但对应顺序来源丢失，也不能重新从0开始。首次DDL中断及重复迁移保留原授权和顺序。表加入权威复制清单，不能被统计/邮件历史清理移除。
+
+升级前备份授权、顺序、订单、账本、资金预留、权益及计量恢复状态；核对未启用订阅不会自动生成新授权。没有生产迁移。回滚先进入维护模式停止并排空当前程序/worker，确认在途事务提交或回滚；保留0051记录与两表，不删除用户许可或序号。旧版没有该自动任务，不能保留新worker并行运行；再次升级恢复任务前核对订单、实际余额、订阅终态/代次和许可条件。退订、窗口清理、换购的停止许可与相应业务事务同成败。未知提交结果从原订单、余额及当前有效期核对，不另发新自动订单重复扣款。
+
+自动执行只进行本机现有任务系统中的有界扫描，默认单进程可执行；未实现本批自动伸缩。当前沿用1000条关联订单上限，超限不能自动核对且会使本轮扫描返回错误；排除或压缩这部分历史前必须证明终态与实付/幂等证据不再被依赖。整套迁移复制失败后目标初始化行导致验空重试受阻的既存P7限制仍在，不能通过清除授权、序号或放宽目标验空掩盖。
+
+## P2-10：无新迁移的许可可用性修复
+
+继续使用0051既有字段，无数据回填或历史金额改写。暂停项保留enabled意图、版本、最近检查/到期边界、30分钟重验日期与审计序号；到期终态则关闭许可并递增版本。关闭入口不依赖历史订单的可估值性；已完成的付款不会因关闭而自动退款。新列表字段均为可选只读结果与时间，不替代业务/交付状态。
+
+回滚至7aba6d6需先停领并排空执行器，保留许可、顺序与审计记录。旧程序可读既有字段，但会重新出现超限项阻塞/不可读取关闭的限制；不会凭新暂停状态发放权益或反转已完成付款。完整退款与商业事实沿原写入路径核对，不能清空历史或提高上限掩盖问题。
+
+### 0052/0053 incremental approval and projection evidence
+
+0052 records administrator-approved historical consumption refunds. Stop writers before binary rollback, retain approval IDs, original paid budgets, wallet and audit together; do not run destructive rollback after money was credited. Active-term partial refunds are currently refused pending an entitlement rule. Default legal text now follows wallet refunds, while saved site policies are preserved for administrator review.
+
+0053 separates daily statistics from authoritative metering with a durable pending queue. Stop old synchronous writers during cutover; do not run both versions concurrently. Keep existing daily aggregates unchanged and never backfill the additive projection from all historical traffic. Back up/copy pending rows and referenced traffic facts together. Before rolling back to synchronous writers, stop settlement, drain the queue with the new worker and verify it is empty; the down migration preserves recovery evidence. Missing recorded queue/columns cause startup refusal. Hourly/online projections remain coupled and no diagnostic archival is enabled.
+
+
+## 0054：小时统计独立投影与显式降级准备
+
+0054沿用0053可靠队列，新增hourly_pending、用户/订阅/节点范围、实际投影UTC小时及五条范围索引。升级前停止所有旧同步写入者及worker，并一致备份数据库与本地持久缓冲。旧0053待处理行的hourly_pending=false表示小时增量已写，不能重放；新事实显式true，小时与daily增量和队列删除由独立事务共同提交。保留现有hourly数值，移除旧SQLite/MySQL小时触发器，避免双写。已记录却丢队列、字段或时间依据时拒绝启动，不能补空。缺失的派生hourly表可由已确认事实重建，排除尚待小时投影的事实。
+
+小时统计积压时相应统计读返回503/usage_projection_pending，不提供完整数值。当前额度view=quota和工作台current、收入trend不等待该投影。SQLite仍为单写者，投影写事务会占用该写槽；MySQL投影worker采用READ COMMITTED避开队列尾端范围锁，权威结算事务的隔离级别不变。此差异不构成双库等性能承诺。
+
+降级须先停止所有writer及worker，在当前版本独立排空可靠队列，确认小时与daily数据完整。保留0054迁移记录、队列和来源，不能运行破坏性down或删除pending。然后使用当前二进制显式执行维护入口：
+
+```sh
+zboard -f /path/to/zboard.yaml -prepare-hourly-rollback
+```
+
+该命令不启动HTTP/任务执行器，与-migrate-only互斥。它核查0054来源、空队列和可恢复统计状态；SQLite恢复旧同步小时触发器，MySQL保留旧应用写入路径所需的表。命令成功后继续保持停写，再启动明确兼容这些业务事实的旧版本。普通当前版本启动仍会移除这些触发器；不可在维护命令后又启动当前写入者，再同时启动旧程序。0054的统计降级准备不替代0043–0052金融/凭据语义的各自限制。
+
+本节说明代码提供的升级/回退路径，实库及专项结果单独记录；未执行生产迁移或生产降级。
+
+
+## P7：已验证目标准备收据与失败重试
+
+数据库复制为新目标创建本地zboard_migration_preparation收据，不新增0055，也不加入应用数据复制清单。收据在初始化前绑定256位随机token、源/目标实际物理身份及源任务nonce/run；初始化完成后严格核对当前代码实际默认行，再封存完整schema/seed指纹。SQLite与MySQL实际seed分别验证；自定义配置、菜单、模板、账本、其他业务数据不能作为默认初始化行被清除。MySQL新基线只在进程内所有权核验通过且仅有该收据/空迁移记录时可初始化；普通启动的未知旧库保护保持。
+
+prepared目标可在同源的原任务或新任务中重试；清空任何目标行之前，同一目标事务重验token、原任务nonce、物理身份、schema/seed并锁住已有行和空InnoDB范围。数据复制、目标任务/run成功及收据completed同事务。MySQL须InnoDB及RR/Serializable；RC不提供必要空范围保护而拒绝。SQLite须支持稳定物理身份的持久文件，不接受内存DB；Windows只做过helper交叉编译，没有实机证明。
+
+preparing、没有可信收据的旧失败目标及completed结果不被自动接管。DDL中断或所有权/指纹不符时保持目标原样，先核对源任务、备份与物理库，再制定恢复，不删除收据/业务数据或伪造prepared。目标提交而源确认丢失时，completed与目标任务提供核对依据；不能再次复制覆盖目标，也不会自动切换datasource。此协议不删除源数据或代替备份。
+
+现有公开迁移入口不允许同driver迁移；适配层额外按实际MySQL server UUID拒绝同实例跨库，原因是既有源FLUSH TABLES WITH READ LOCK会阻塞目标写入。预检发生在收据/DDL写入之前，不靠host文本猜测。源快照锁保持，未贸然放宽。SQLite↔隔离MySQL实际复制/故障恢复已验证，跨独立MySQL实例与Windows运行仍未验证。
+
+真实MySQL同实例实验曾阻塞并明确终止，失败证据保留；只清理该测试两个随机库，确认锁及owned session已释放。最新UUID拒绝4.132s、SQLite8.215s、两包vet通过，原跨driver全专项108.804s通过；精确整合提交完整检查另记。CI把新platformstore实库包安排在原MySQL事务竞态命令之后，防止源全服务器读锁污染其他时延/等待断言；原-p2/-count1/-timeout15m保持。详见core-convergence-migration-retry-evidence.md及validation/2026-10-20-migration-retry.json。未执行生产迁移。
+
+
+## P3-07：无schema变更的套餐接入范围同步
+
+新的套餐换组事务会立即更新已有未结束/恢复窗口中的订阅范围，独立于quota同步；同组共享的已确认凭据保留。核对原/新node_group_id、逐订阅审计、撤权与新组发布意图；付款/额度/历史订单不重写。超过1000份或资源竞争整笔拒绝，没有部分成功。暂时资源忙返回可重试unavailable，保留原请求/版本；浏览器不自动重放，可信事件/缓冲按原身份重试，失败不推进checkpoint。
+
+回退程序不会自动恢复旧组或撤销已发的配置，不删除审计/确认/队列。业务回退应在当前版本明确创建新的套餐revision并同步目标范围，再按原生核验核对远端；不要倒回数据库或把旧观察当确认。降级旧代码可能重新出现旧RR范围和并发锁问题，先停在途写入与worker，优先前向修复。此处仅准备隔离验证和说明，无生产迁移/发布。
+
+### 0055 purchase discount evidence (pending final validation)
+
+MySQL orders.purchase_snapshot expands from VARCHAR(2048) to TEXT DEFAULT ('');
+SQLite retains TEXT. Application evidence is bounded to60KiB. Existing snapshot
+bytes and payment/rights values are untouched. Retry after DDL-before-receipt is
+idempotent; already-wider TEXT/MEDIUMTEXT/LONGTEXT never narrows. After a completed
+0055, missing orders/purchase_snapshot requires restoration before startup; this
+guard protects purchase facts independently of the existing publication recovery.
+
+The down script deliberately retains the wider column. Disable new discount
+selection and reconcile pending discounted orders with a compatible binary before
+binary rollback: an older strict snapshot reader may refuse new discount evidence.
+Do not truncate terms, clear snapshots or infer old prices. This describes release
+preparation only; no production migration is authorized or executed.
+
+### 0057 automatic recurring approval authority
+
+Adds agreement_version default1 and private approval_snapshot TEXT to existing
+subscription consent; V1 rows retain their meaning. Missing recorded authority
+columns/table refuse startup before SQLite AutoMigrate. Unrecorded partial DDL
+with new authority requires restoration; empty old V1 structure can complete.
+Invalid individual approvals do not become a global startup outage: automatic
+execution isolates them without charging, and users may still withdraw consent.
+
+Down preserves fields and evidence. Stop automatic execution before rollback;
+retain approvals, paid snapshots, wallet/audit and outstanding intents. Do not
+convert V2 consent to V1 or let an incompatible worker charge it. Verify refusal
+on an isolated copy before any binary rollback. No production migration occurred.
+See core-convergence-automatic-recurring.md for the transaction and plugin limits.
+
+### 0058 owner-scoped support context
+
+Adds nullable order_id/subscription_id/wallet_entry_id to tickets. Existing NULL
+context stays unknown. References and initial conversation share the existing
+ticket transaction; no payment, balance or subscription facts change. Formal
+SQLite/MySQL DDL and interrupted empty partial recovery are exercised on actual
+drivers. Before SQLite AutoMigrate, missing recorded fields or incomplete fields
+already containing context refuse startup for restoration instead of replacing
+evidence with NULL. Repeated intact migrations preserve historical tickets.
+
+Down retains columns and receipt. Older strict migration inventories may refuse
+0058; use a compatible fix, retain historical context and verify recovery on an
+isolated copy. Never delete receipt/context to force rollback. No production
+migration occurred. See core-convergence-ticket-context.md and validation receipt.
+
+
+### 0060 durable node observation handoff (targeted validated)
+
+Adds node_observation_intents, immutable60KiB parts and per-asset independent
+Latest/Stats state, without nodes/financial foreign keys. Migrate with old
+consumers/counter writers quiescent. Receipt is last after old cursors are imported
+only as unattributed floors. Recorded structural evidence loss refuses startup
+before SQLite AutoMigrate/copy. Do not reconstruct old attribution from current
+labels. Partial empty initialization can resume; actual metadata read failures
+propagate. A conflicting ready index refuses; missing valid index can recover.
+
+Owned copy retains all dispositions, leases, tokens, raw parts, refs and tombstones;
+legacy floor import and completion share the owned target transaction. Cross-engine
+cached timestamps use millisecond precision, while immutable source material and
+receiver comparison stamp preserve original nanoseconds. Billing identities,
+rounding and report/checkpoint boundaries are unchanged.
+
+Down deliberately retains0060 tables, receipt and material. An old binary cannot
+drain these intents or maintain source state. Concurrent old/new writers and
+old-write/roll-forward are unsupported. Preserve a coherent database/spool backup
+and compatible recovery plan; never delete source facts to force binary rollback.
+No production migration/deploy occurred. See [handoff behavior and limits](core-convergence-node-observation-handoff.md)
+and its targeted receipt. New integrated full checks and CI are separate gates.

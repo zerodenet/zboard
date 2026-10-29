@@ -269,6 +269,12 @@ func TestProtocolUsageReadsBoundedDailyProjectionInsteadOfLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	if err := db.Create(&model.Node{ID: 9, Name: "projection-node", Config: "{}", NodeCredential: "test-credential"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ProtocolEndpoint{ID: 9, NodeID: 9, Name: "projection-endpoint", Protocol: "trojan", Port: 443}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&model.TrafficRecord{ProtocolEndpointID: 9, ReportID: "raw-ledger", Nonce: "raw-ledger", UsedBytes: 9999, At: now}).Error; err != nil {
 		t.Fatal(err)
 	}

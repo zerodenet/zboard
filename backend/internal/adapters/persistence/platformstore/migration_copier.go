@@ -2,7 +2,6 @@ package platformstore
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
 	"gorm.io/gorm"
@@ -19,20 +18,24 @@ func (s MigrationCopier) Copy(ctx context.Context, target platform.MigrationTarg
 	if err := MigrationSourceQuiescent(s.DB.WithContext(ctx), runID); err != nil {
 		return err
 	}
+	if _, err := migrationTaskIdentity(s.DB.WithContext(ctx), taskID, runID, true); err != nil {
+		return err
+	}
 	db, err := OpenMigrationTarget(ctx, target.TargetDriver, target.TargetDataSource)
 	if err != nil {
-		return fmt.Errorf("open target: %w", err)
+		return migrationCheckError(platform.ErrMigrationTargetConnection, err)
 	}
 	pool, err := db.DB()
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-	if err := EnsureMigrationTargetEmpty(db.WithContext(ctx)); err != nil {
+	if err := ensureMigrationTopologySupported(s.DB.WithContext(ctx), db.WithContext(ctx)); err != nil {
 		return err
 	}
-	if err := s.PrepareSchema(db.WithContext(ctx)); err != nil {
-		return fmt.Errorf("prepare target schema: %w", err)
+	receipt, err := prepareMigrationDestination(ctx, s.DB, db, taskID, runID, s.PrepareSchema)
+	if err != nil {
+		return err
 	}
-	return CopyMaintenanceDatabaseSnapshot(ctx, s.DB, db, taskID, runID)
+	return copyPreparedMigrationSnapshot(ctx, s.DB, db, taskID, runID, receipt)
 }

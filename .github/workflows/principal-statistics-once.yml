@@ -1,0 +1,118 @@
+# P4-only summary evidence. Raw databases/logs remain private for this temporary VM lifetime.
+# This does not provide durable raw backups, P6 benefit proof or production acceptance.
+name: principal-statistics-once
+run-name: principal-statistics ${{ github.event.pull_request.head.sha || github.sha }}
+
+on:
+  workflow_dispatch:
+  # A new label event only; keeping the label never reruns on later pushes.
+  pull_request:
+    types: [labeled]
+
+jobs:
+  principal-statistics:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' &&
+       github.event.label.name == 'validation:principal-statistics' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+          cache-dependency-path: backend/go.sum
+      - name: Verify summary and mount-evidence policy without databases
+        run: python3 -m unittest discover -s scripts -p 'test_acceptance_principal_statistics_summary.py'
+      - name: Create only new private outside-checkout evidence parents
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root=$(mktemp -d "$RUNNER_TEMP/zboard-principal-XXXXXXXX")
+          mkdir "$root/private" "$root/artifacts"
+          printf 'P4_ROOT=%s\n' "$root" >> "$GITHUB_ENV"
+      - name: Build exact committed-source helper once
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          (cd backend; CGO_ENABLED=0 go build -p 2 -o "$P4_ROOT/private/helper" ./tools/acceptance-principal-statistics) > "$P4_ROOT/private/build.stdout" 2> "$P4_ROOT/private/build.stderr"
+      - name: Execute original P4 SQLite growth, retention and bounded replay
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          "$P4_ROOT/private/helper" -driver sqlite -artifact-root "$P4_ROOT/artifacts" -sources 1024 -windows 32 -timezone Asia/Kathmandu -min-free-bytes 536870912 -execute > "$P4_ROOT/private/sqlite.json" 2> "$P4_ROOT/private/sqlite.stderr"
+      - name: Start only this invocation's isolated MySQL with an actual new bind mapping
+        id: mysql_setup
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          data=$(mktemp -d "$P4_ROOT/mysql-data-XXXXXXXX")
+          # Only this new empty fixture directory; its private parent remains0700.
+          chmod 755 "$data"
+          printf '%s\n' "$data" > "$P4_ROOT/private/mysql-data-root.txt"
+          owner="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n' "$owner" > "$P4_ROOT/private/mysql-owner.txt"
+          docker run --detach --label "zboard.acceptance.p4=$owner" --publish 127.0.0.1::3306 --mount "type=bind,source=$data,target=/var/lib/mysql" -e MYSQL_ROOT_PASSWORD=zboard-isolated-ci --health-cmd='mysqladmin ping -h 127.0.0.1 -uroot -pzboard-isolated-ci' --health-interval=5s --health-timeout=5s --health-retries=30 mysql:8.4 > "$P4_ROOT/private/mysql-id.txt" 2> "$P4_ROOT/private/mysql-start.stderr"
+          id=$(cat "$P4_ROOT/private/mysql-id.txt")
+          docker inspect "$id" > "$P4_ROOT/private/mysql-inspect.json"
+          python3 scripts/principal_statistics_public_summary.py --private-root "$P4_ROOT/private" --verify-mysql-binding
+          for attempt in $(seq 1 150); do
+            state=$(docker inspect --format '{{.State.Health.Status}}' "$id")
+            [ "$state" != unhealthy ] || exit 1
+            if [ "$state" = healthy ]; then break; fi
+            sleep 1
+          done
+          [ "$(docker inspect --format '{{.State.Health.Status}}' "$id")" = healthy ]
+          docker inspect "$id" > "$P4_ROOT/private/mysql-inspect.json"
+          python3 scripts/principal_statistics_public_summary.py --private-root "$P4_ROOT/private" --verify-mysql-binding
+          python3 - <<'PYPORT' > "$P4_ROOT/private/mysql-port.txt"
+          import json, os
+          from pathlib import Path
+          row=json.loads((Path(os.environ['P4_ROOT'])/'private/mysql-inspect.json').read_text())[0]
+          ports=row['NetworkSettings']['Ports']['3306/tcp']
+          if len(ports)!=1 or ports[0]['HostIp']!='127.0.0.1' or not ports[0]['HostPort'].isdigit() or not 1<=int(ports[0]['HostPort'])<=65535:
+              raise SystemExit('isolated loopback mapping unavailable')
+          print(ports[0]['HostPort'])
+          PYPORT
+      - name: Execute same helper against its verified isolated MySQL data filesystem
+        if: ${{ always() && steps.mysql_setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          id=$(cat "$P4_ROOT/private/mysql-id.txt")
+          docker inspect "$id" > "$P4_ROOT/private/mysql-inspect.json"
+          python3 scripts/principal_statistics_public_summary.py --private-root "$P4_ROOT/private" --verify-mysql-binding
+          port=$(cat "$P4_ROOT/private/mysql-port.txt")
+          data=$(cat "$P4_ROOT/private/mysql-data-root.txt")
+          export ZBOARD_ACCEPTANCE_MYSQL_DSN="root:zboard-isolated-ci@tcp(127.0.0.1:$port)/?parseTime=true&loc=UTC"
+          "$P4_ROOT/private/helper" -driver mysql -isolated-mysql -mysql-data-root "$data" -artifact-root "$P4_ROOT/artifacts" -sources 1024 -windows 32 -timezone Asia/Kathmandu -min-free-bytes 536870912 -execute > "$P4_ROOT/private/mysql.json" 2> "$P4_ROOT/private/mysql.stderr"
+          # Retain the new schema, data, container and raw evidence for this VM lifetime.
+          # No manual DROP/rm/prune/stop, security setting or external connection.
+      - name: Export only numeric, boolean, hash and fixed-class evidence
+        if: always()
+        shell: bash
+        env:
+          P4_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          root=${P4_ROOT:-$RUNNER_TEMP/zboard-principal-not-started}
+          python3 scripts/principal_statistics_public_summary.py --private-root "$root/private" --artifact-root "$root/artifacts" --revision "$P4_REVISION" --output "$RUNNER_TEMP/principal-public/summary.json"
+      - name: Preserve the safe P4-only summary even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: principal-statistics-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/principal-public/summary.json
+          if-no-files-found: error

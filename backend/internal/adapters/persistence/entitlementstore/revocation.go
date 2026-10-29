@@ -13,13 +13,18 @@ import (
 // Callers own the subscription transaction. Read only routing identities;
 // revocation does not need to materialize credential secrets.
 func persistCredentialRevocation(tx *gorm.DB, query *gorm.DB, status string, now time.Time) error {
+	_, err := persistCredentialRevocationWithPublisher(tx, query, status, now, networkstore.EnqueueNodePublication)
+	return err
+}
+
+func persistCredentialRevocationWithPublisher(tx *gorm.DB, query *gorm.DB, status string, now time.Time, publish func(*gorm.DB, uint, uint, uint) error) (int, error) {
 	var credentials []model.ProtocolCredential
 	if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("id", "node_id", "protocol_endpoint_id").Find(&credentials).Error; err != nil {
-		return err
+		return 0, err
 	}
 	if len(credentials) == 0 {
-		return nil
+		return 0, nil
 	}
 	sort.Slice(credentials, func(i, j int) bool {
 		if credentials[i].NodeID == credentials[j].NodeID {
@@ -32,8 +37,8 @@ func persistCredentialRevocation(tx *gorm.DB, query *gorm.DB, status string, now
 		if credential.NodeID == lastNode {
 			continue
 		}
-		if err := networkstore.EnqueueNodePublication(tx, credential.NodeID, credential.ProtocolEndpointID, 0); err != nil {
-			return err
+		if err := publish(tx, credential.NodeID, credential.ProtocolEndpointID, 0); err != nil {
+			return 0, err
 		}
 		lastNode = credential.NodeID
 	}
@@ -41,14 +46,22 @@ func persistCredentialRevocation(tx *gorm.DB, query *gorm.DB, status string, now
 	if status == "revoked" {
 		updates["revoked_at"] = now
 	}
-	return tx.Model(&model.ProtocolCredential{}).Where("id IN ?", credentialIDs(credentials)).Updates(updates).Error
+	result := tx.Model(&model.ProtocolCredential{}).Where("id IN ?", credentialIDs(credentials)).Updates(updates)
+	return int(result.RowsAffected), result.Error
 }
 
 func RevokeOutsideGroup(tx *gorm.DB, sub model.Subscription, now time.Time) error {
-	membership := tx.Table(networkstore.CredentialMembershipSQL+" AS node_group_endpoints").Select("protocol_endpoint_id").Where("node_group_id = ?", sub.NodeGroupID)
+	ids, err := networkstore.CurrentCredentialEndpointIDs(tx, sub.NodeGroupID)
+	if err != nil {
+		return err
+	}
 	query := tx.Model(&model.ProtocolCredential{}).
-		Where("subscription_id = ? AND status IN ? AND protocol_endpoint_id NOT IN (?)", sub.ID,
-			[]string{"active", "prepared"}, membership)
+		Where("subscription_id = ? AND status IN ?", sub.ID, []string{"active", "prepared"})
+	// An empty current scope revokes every old binding. NOT IN(NULL) would
+	// silently retain them, and a derived membership read can be stale under RR.
+	if len(ids) != 0 {
+		query = query.Where("protocol_endpoint_id NOT IN ?", ids)
+	}
 	return persistCredentialRevocation(tx, query, "revoked", now)
 }
 

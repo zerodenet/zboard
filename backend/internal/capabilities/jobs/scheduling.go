@@ -62,3 +62,16 @@ type SchedulingStore interface {
 	Schedules(context.Context) ([]ScheduleView, error)
 	CancelHandler(context.Context, string) error
 }
+
+// ScheduleDispatch is a committed scheduling observation, not permission to
+// bypass Claim's global budget, resource fence, maintenance or lease rules.
+type ScheduleDispatch struct {
+	NextAt   time.Time
+	Runnable bool
+}
+
+// DispatchSchedulingStore reports the outcome of the same canonical Schedule
+// writer. Stores without this optional observation retain ordinary polling.
+type DispatchSchedulingStore interface {
+	ScheduleDispatch(context.Context, Definition) (ScheduleDispatch, error)
+}

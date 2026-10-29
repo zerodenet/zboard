@@ -66,6 +66,9 @@ type FileSpool struct {
 	snapshotCh chan snapshotRequest
 	closeCh    chan closeRequest
 	writerDone chan struct{}
+	ownership  *os.File // held until explicit Close drains every file mutator
+	closeDone  chan struct{}
+	closeErr   error          // protected by mu; published to every concurrent Close
 	active     *activeSegment // owned by the writer goroutine
 
 	readMu       sync.Mutex
@@ -111,6 +114,7 @@ func NewFileSpool(cfg Config) (*FileSpool, error) {
 		snapshotCh:      make(chan snapshotRequest),
 		closeCh:         make(chan closeRequest),
 		writerDone:      make(chan struct{}),
+		closeDone:       make(chan struct{}),
 		compressionCh:   make(chan struct{}, 1),
 		compressionDone: make(chan struct{}),
 		storageCh:       make(chan struct{}, 1),
@@ -118,7 +122,7 @@ func NewFileSpool(cfg Config) (*FileSpool, error) {
 	}, nil
 }
 
-func (s *FileSpool) Start(parent context.Context) error {
+func (s *FileSpool) Start(parent context.Context) (err error) {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -133,6 +137,17 @@ func (s *FileSpool) Start(parent context.Context) error {
 	if err := os.MkdirAll(s.cfg.Directory, 0o750); err != nil {
 		return fmt.Errorf("create spool directory: %w", err)
 	}
+	owner, err := acquireSpoolOwnership(s.cfg.Directory)
+	if err != nil {
+		return err
+	}
+	// No reserve, checkpoint or recovery access precedes kernel ownership. A
+	// failed startup must release its descriptor so recovery can be retried.
+	defer func() {
+		if !s.started {
+			err = errors.Join(err, releaseSpoolOwnership(owner))
+		}
+	}()
 	// Reserve creation is best-effort. A host that is already too full to create
 	// the reserve must still be allowed to recover and consume an existing spool.
 	_ = s.ensureEmergencyReserve()
@@ -147,6 +162,7 @@ func (s *FileSpool) Start(parent context.Context) error {
 	s.checkpoint = checkpoint
 	s.active = active
 	s.ctx, s.cancel = context.WithCancel(parent)
+	s.ownership = owner
 	s.started = true
 	go s.writerLoop()
 	go s.storageLoop()
@@ -199,12 +215,21 @@ func (s *FileSpool) Append(ctx context.Context, event Envelope) error {
 
 func (s *FileSpool) Close() error {
 	s.mu.Lock()
+	if s.closeDone == nil {
+		s.closeDone = make(chan struct{})
+	}
 	if s.closed {
+		done := s.closeDone
 		s.mu.Unlock()
-		return nil
+		<-done
+		s.mu.RLock()
+		err := s.closeErr
+		s.mu.RUnlock()
+		return err
 	}
 	if !s.started {
 		s.closed = true
+		close(s.closeDone)
 		s.mu.Unlock()
 		return nil
 	}
@@ -221,6 +246,17 @@ func (s *FileSpool) Close() error {
 	}
 	<-s.compressionDone
 	<-s.storageDone
+	// Commit/Compact may already have passed their lifecycle checks, and a
+	// reader may still own an active snapshot. Keep ownership while they drain.
+	// Do not hold mu while acquiring readMu: each operation uses readMu -> mu.
+	s.readMu.Lock()
+	err = errors.Join(err, releaseSpoolOwnership(s.ownership))
+	s.mu.Lock()
+	s.ownership = nil
+	s.closeErr = err
+	close(s.closeDone)
+	s.mu.Unlock()
+	s.readMu.Unlock()
 	return err
 }
 

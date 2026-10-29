@@ -1,0 +1,53 @@
+{
+  "source_before": "7ef3bc54783f30f375a6741784627ed0c1899595",
+  "scope": "Keep the private worker/timer AST boundary while following cancelPluginTasks -> detachPluginTasks in actual local process cleanup",
+  "ci_failures": [
+    {
+      "source": "36901133e46c83aa1f0e3324ea5ad8d813f63815",
+      "url": "https://github.com/zerodenet/zboard/actions/runs/39490905371",
+      "backend": "failed: audited entrypoint cancelPluginTasks no longer exists",
+      "other_jobs": "mysql/frontend/contract/compose/zrs-compiler passed"
+    },
+    {
+      "source": "7ef3bc54783f30f375a6741784627ed0c1899595",
+      "url": "https://github.com/zerodenet/zboard/actions/runs/39491689069",
+      "backend": "same stale audit entrypoint failure",
+      "other_jobs": "mysql/frontend/contract/compose/zrs-compiler passed; includes new whole jobstore MySQL coverage"
+    }
+  ],
+  "corrected": {
+    "command": "GOMAXPROCS=1 go test -p 1 ./architecture -count=1",
+    "result": "pass",
+    "package_seconds": 0.666,
+    "assertions": "All audited entrypoints must exist; prohibit Go statements and NewTicker/NewTimer/AfterFunc in every audited function. No assertion or entrypoint removed."
+  },
+  "same_source_local_mysql": {
+    "source": "36901133e46c83aa1f0e3324ea5ad8d813f63815",
+    "core": {
+      "result": "pass",
+      "command": "GOMAXPROCS=2 go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "packages_seconds": {
+        "datastore": 122.713,
+        "handler": 898.699,
+        "networkstore": 100.099
+      },
+      "wall_seconds": 903.783
+    },
+    "copy": {
+      "result": "pass",
+      "package_seconds": 113.698,
+      "wall_seconds": 114.561
+    },
+    "jobstore": {
+      "result": "pass",
+      "package_seconds": 126.507
+    },
+    "qualification": "Sequential local quiet run; handler has only 1.301s margin to original limit. Not a performance/SLO claim. Does not verify subsequent uncommitted ticket/browser/periodic changes."
+  },
+  "migration": "None",
+  "remaining": [
+    "Final source full backend and CI",
+    "Independent worker/autoscaling and fresh final-source capacity not accepted",
+    "Preserve earlier local timeout and race latency guard failures"
+  ]
+}

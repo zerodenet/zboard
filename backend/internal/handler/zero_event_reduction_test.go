@@ -169,7 +169,7 @@ func TestBufferedEventsPersistOnlyPanelFieldsAndResolvedPrincipal(t *testing.T) 
 }
 
 func TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", credential.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestZeroEventWindowRejectsRegressedCountersWithoutCheckpointAdvance(t *test
 }
 
 func TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", credential.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestZeroWindowKeepsExistingReportIdentityBeforeCollapsing(t *testing.T) {
 	}
 }
 
-func TestBufferedWarningStormOnlyProjectsNodeStateOnce(t *testing.T) {
+func TestBufferedWarningStormRetainsUnknownSourcesWithoutBilling(t *testing.T) {
 	h, _ := accountingBenchmarkFixture(t)
 	node, runtime := receiptFixture(t, h)
 	for i := 0; i < 100; i++ {
@@ -254,9 +254,14 @@ func TestBufferedWarningStormOnlyProjectsNodeStateOnce(t *testing.T) {
 	if err := h.projectZeroNodeEvents(context.Background(), batch.Events); err != nil {
 		t.Fatal(err)
 	}
-	var cursor zeroEventNodeCursor
-	if err := h.db.Where("node_id = ?", node.ID).First(&cursor).Error; err != nil || cursor.Sequence != 100 {
-		t.Fatalf("cursor=%+v err=%v", cursor, err)
+	for i := 0; i < 4; i++ {
+		if _, err := h.services.NodeObservations.Drain(context.Background(), 32, 8*1024*1024); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var held int64
+	if err := h.db.Table("node_observation_intents").Where("node_id = ? AND status = ? AND reason = ?", node.ID, "held", "unknown_source").Count(&held).Error; err != nil || held != 100 {
+		t.Fatalf("unknown sources lost: held=%d err=%v", held, err)
 	}
 	var count int64
 	if err := h.db.Model(&model.TrafficRecord{}).Count(&count).Error; err != nil || count != 0 {

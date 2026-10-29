@@ -57,7 +57,7 @@ type ConfigurationPublicationRepository interface {
 	BeginConfigurationPublication(context.Context, ConfigurationPublicationRequest, time.Time) (ConfigurationPublicationStart, error)
 	UncertainConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
 	ResolveConfigurationPublication(context.Context, ConfigurationDeployment, bool, string, time.Time) error
-	SetConfigurationPublicationDesired(context.Context, ConfigurationDeployment, string) (ConfigurationDeployment, error)
+	SetConfigurationPublicationDesired(context.Context, ConfigurationDeployment, string, ...string) (ConfigurationDeployment, error)
 	ActivateConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelEncryptedCredential) error
 	RestoreConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelConnectorSnapshot) error
 	CompleteConfigurationPublication(context.Context, ConfigurationDeployment, ConfigurationPublicationCompletion, time.Time) (ConfigurationDeployment, error)
@@ -77,11 +77,32 @@ func (s ConfigurationPublicationState) Begin(ctx context.Context, request Config
 	return s.Repository.BeginConfigurationPublication(ctx, request, s.now())
 }
 
-func (s ConfigurationPublicationState) SetDesired(ctx context.Context, deployment ConfigurationDeployment, configSHA string) (ConfigurationDeployment, error) {
+func (s ConfigurationPublicationState) SetDesired(ctx context.Context, deployment ConfigurationDeployment, configSHA string, targets ...[]CredentialDeliveryTarget) (ConfigurationDeployment, error) {
 	if s.Repository == nil || deployment.ID == 0 || strings.TrimSpace(configSHA) == "" {
 		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
 	}
+	if len(targets) > 1 {
+		return ConfigurationDeployment{}, ErrCredentialDeliveryManifest
+	}
+	if len(targets) == 1 {
+		manifest, err := EncodeCredentialDeliveryManifest(targets[0])
+		if err != nil {
+			return ConfigurationDeployment{}, err
+		}
+		return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), manifest)
+	}
 	return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA))
+}
+
+func (s ConfigurationPublicationState) SetDesiredWithTargets(ctx context.Context, deployment ConfigurationDeployment, configSHA string, targets ConfigurationDeliveryTargets) (ConfigurationDeployment, error) {
+	if s.Repository == nil || deployment.ID == 0 || strings.TrimSpace(configSHA) == "" {
+		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
+	}
+	manifest, err := EncodeCredentialDeliveryManifest(targets.Credentials, targets.NetworkEntries)
+	if err != nil {
+		return ConfigurationDeployment{}, err
+	}
+	return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), manifest)
 }
 
 func (s ConfigurationPublicationState) ActivateConnectorCredential(ctx context.Context, deployment ConfigurationDeployment, credential KernelEncryptedCredential) error {

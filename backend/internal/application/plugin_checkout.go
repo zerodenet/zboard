@@ -18,27 +18,27 @@ import (
 )
 
 type checkoutAuthority struct {
-	AccountID uint   `json:"account_id"`
-	OrderID   uint   `json:"order_id"`
-	Identity  string `json:"identity"`
+	AccountID        uint   `json:"account_id"`
+	OrderID          uint   `json:"order_id"`
+	Identity         string `json:"identity"`
+	PaymentPermitted *bool  `json:"payment_permitted,omitempty"`
 }
 
 func (s *PluginHostServices) PluginCheckout(ctx context.Context, pluginID, identityID string, accountID, orderID uint) (pluginv1.CheckoutContext, string, error) {
 	if s == nil || s.services == nil || s.services.Identity.secret == "" {
 		return pluginv1.CheckoutContext{}, "", plugins.ErrUnavailable
 	}
-	page, err := s.services.OrderQueries.Owned(ctx, accountID, commerce.OrderQuery{ID: orderID, Limit: 1})
+	o, permitted, err := s.services.PaymentCheckout.Open(ctx, accountID, orderID, identityID)
 	if err != nil {
-		if errors.Is(err, commerce.ErrOrderPermission) {
+		if errors.Is(err, commerce.ErrOrderPermission) || errors.Is(err, commerce.ErrNotFound) {
 			return pluginv1.CheckoutContext{}, "", plugins.ErrPermission
 		}
 		return pluginv1.CheckoutContext{}, "", plugins.ErrUnavailable
 	}
-	if len(page.Items) != 1 {
-		return pluginv1.CheckoutContext{}, "", plugins.ErrPermission
+	if o.Status != "pending" && o.Status != "paid" && o.Status != "failed" && !(o.Status == "canceled" && permitted) {
+		return pluginv1.CheckoutContext{}, "", plugins.ErrConflict
 	}
-	o := page.Items[0]
-	if o.Status != "pending" && o.Status != "paid" && o.Status != "failed" {
+	if (o.Status == "pending" || o.Status == "failed") && !permitted {
 		return pluginv1.CheckoutContext{}, "", plugins.ErrConflict
 	}
 	var installation model.Installation
@@ -52,7 +52,7 @@ func (s *PluginHostServices) PluginCheckout(ctx context.Context, pluginID, ident
 	u.Path = strings.TrimRight(u.Path, "/") + "/account/orders"
 	u.RawPath = ""
 	u.RawQuery = (url.Values{"payment_order": {strconv.FormatUint(uint64(o.ID), 10)}, "payment_plugin": {pluginID}}).Encode()
-	payload, _ := json.Marshal(checkoutAuthority{AccountID: accountID, OrderID: orderID, Identity: identityID})
+	payload, _ := json.Marshal(checkoutAuthority{AccountID: accountID, OrderID: orderID, Identity: identityID, PaymentPermitted: &permitted})
 	token := "p2." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(s.principalSignature(pluginID, append([]byte("checkout\x00"), payload...)))
 	return pluginv1.CheckoutContext{OrderID: o.ID, TradeNo: o.TradeNo, AccountID: o.UserID, PayableAmount: o.PayableAmount, Currency: o.Currency, CurrencyPrecision: 2, Status: o.Status, ReturnURL: u.String()}, token, nil
 }

@@ -11,7 +11,7 @@ import (
 
 func ResetNodeProjection(tx *gorm.DB, nodeID uint, coreInstanceID, eventID string, observedAt time.Time, source string) error {
 	var currents []PrincipalFlowCurrent
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).Find(&currents).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("node_id,principal_key,user_id,subscription_id").Where("node_id = ?", nodeID).Find(&currents).Error; err != nil {
 		return err
 	}
 	if len(currents) == 0 {
@@ -63,13 +63,6 @@ func RefreshScope(tx *gorm.DB, scopeType string, scopeID, nodeID uint, coreInsta
 		return err
 	}
 	now := time.Now().UTC()
-	current := PrincipalFlowScopeCurrent{ScopeType: scopeType, ScopeID: scopeID, ActiveFlows: total.ActiveFlows, UpdatedAt: now}
-	if err := tx.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "scope_type"}, {Name: "scope_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"active_flows", "updated_at"}),
-	}).Create(&current).Error; err != nil {
-		return err
-	}
 	observation := PrincipalFlowScopeObservation{
 		ScopeType:               scopeType,
 		ScopeID:                 scopeID,
@@ -82,5 +75,13 @@ func RefreshScope(tx *gorm.DB, scopeType string, scopeID, nodeID uint, coreInsta
 		ObservedAt:              observedAt.UTC(),
 		CreatedAt:               now,
 	}
-	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&observation).Error
+	known := false
+	if err := persistPrincipalScopeObservation(tx, &observation, &known); err != nil {
+		return err
+	}
+	if known {
+		return nil
+	}
+	current := PrincipalFlowScopeCurrent{ScopeType: scopeType, ScopeID: scopeID, ActiveFlows: total.ActiveFlows, UpdatedAt: now}
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "scope_type"}, {Name: "scope_id"}}, DoUpdates: clause.AssignmentColumns([]string{"active_flows", "updated_at"})}).Create(&current).Error
 }

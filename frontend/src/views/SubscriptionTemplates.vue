@@ -9,6 +9,7 @@
 
     <TransientFeedback :success="message" :error="error" success-title="模板操作已完成" error-title="模板操作失败" />
 
+    <PageAlert v-if="templateDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ templateDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="templateDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(search || activeFilter)" @clear="resetFilters">
@@ -42,6 +43,7 @@
 
     <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑订阅模板' : '新建订阅模板'" description="选择目标客户端格式；完整配置格式支持策略与规则定制，节点订阅格式只负责安全生成节点。" size="xl" :busy="saving || previewing" :return-focus-selector="form.id ? `[data-row-action-trigger='template-${form.id}']` : ''" @close="closeEditor">
       <form id="subscription-template-form" ref="formElement" class="template-editor" novalidate @submit.prevent="save">
+        <PageAlert v-if="templateCaptureError" tone="warning" title="当前模板不能暂存到登录页">{{ templateCaptureError }} 请留在本页重新认证，或自行另存后再离开；不会只暂存部分字段。</PageAlert>
         <div v-if="form.id" class="editor-meta">
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
           <TimeBadge :value="form.updated_at" />
@@ -154,6 +156,8 @@ import {
   type SupportedSubscriptionRenderer,
 } from '../utils/subscriptionTemplateEditor'
 import { collectFieldErrors, isHttpUrl, isIntegerInRange, isOneOf, isSlug, isUtf8LengthInRange } from '../utils/validation'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { templateRecoveryFields, templateRecoveryCustomization, restoreTemplateCustomization, templateURLReferenceOrigin, subscriptionTemplateRecoveryDraft, type TemplateRecoveryFields } from '../utils/subscriptionEditorRecovery'
 
 type EditableRenderer = SubscriptionRenderer | SupportedSubscriptionRenderer
 
@@ -174,6 +178,11 @@ const message = ref('')
 const editorRouteKey = ref(typeof route.query.template === 'string' ? route.query.template : '')
 const revisionConflict = ref(false)
 const rawCustomizationError = ref('')
+const templateRecoveryReady = ref(false)
+const templateRecoveryBaseline = ref<TemplateRecoveryFields | null>(null)
+let templateOriginalRenderer: EditableRenderer = 'clash'
+let templateOriginalCustomization = defaultSubscriptionCustomization('clash')
+const templateRetainedURLOrigins = new Map<EditableRenderer, SubscriptionTemplateCustomization>()
 const previewResult = ref<SubscriptionTemplatePreview | null>(null)
 const previewSource = ref('')
 const formElement = ref<HTMLElement | null>(null)
@@ -200,12 +209,65 @@ for (const field of Object.keys(templateFieldMap)) {
 }
 watch(() => JSON.stringify(form.customization), () => editorErrors.clear('template-customization'))
 let detailRequestSequence = 0
-const { items: templates, total, loading, refreshing, error, load } = useRemoteTable<SubscriptionTemplate>({
+const { items: templates, total, loading, refreshing, error, load, hasLoaded: templateListLoaded } = useRemoteTable<SubscriptionTemplate>({
   offset,
   limit,
   fetchPage: ({ signal }) => fetchSubscriptionTemplatesPage({ q: search.value || undefined, active: activeFilter.value === '' ? undefined : activeFilter.value === 'true', offset: offset.value, limit: limit.value }, { signal }),
   errorMessage: (cause: any) => cause?.response?.data?.message || '订阅模板加载失败。',
   onOffsetCorrected: () => syncURL(true),
+})
+
+function originalForRenderer(renderer: EditableRenderer) {
+  return templateRetainedURLOrigins.get(renderer) || (renderer === templateOriginalRenderer ? templateOriginalCustomization : defaultSubscriptionCustomization(renderer))
+}
+function readTemplateRecoveryDraft() {
+  if (rawCustomizationError.value) return undefined
+  const fields = templateRecoveryFields(form, originalForRenderer(form.renderer as EditableRenderer), true)
+  const drafts = new Map(rendererDrafts)
+  drafts.set(form.renderer as EditableRenderer, form.customization)
+  const stored = [...drafts].map(([renderer, customization]) => ({ renderer, customization: templateRecoveryCustomization(customization, originalForRenderer(renderer), true) }))
+  if (!fields || stored.some(item => !item.customization) || (form.id && !templateRecoveryBaseline.value)) return undefined
+  return { id: form.id, revision: form.revision, fields, baseline: templateRecoveryBaseline.value, rendererDrafts: stored }
+}
+const templateCaptureError = computed(() => !editorOpen.value || readTemplateRecoveryDraft() ? '' : rawCustomizationError.value
+  ? 'Raw JSON 尚未同步到模板模型，无法完整暂存。'
+  : '高级配置、未知结构字段、带凭据的未保存远端地址或非标准 DNS 路径无法安全暂存。')
+const templateDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.subscription-templates.editor', permission: 'admin', ready: () => templateRecoveryReady.value && templateListLoaded.value && !editingID.value,
+  // An unsafe open editor must fail capture, never look like an absent draft.
+  read: () => editorOpen.value ? readTemplateRecoveryDraft() || { blocked: true } : null,
+  sanitize: subscriptionTemplateRecoveryDraft,
+  restore: async (value, context) => {
+    const target = typeof route.query.template === 'string' ? route.query.template : ''
+    if (target && target !== (value.id ? String(value.id) : 'new')) return false
+    let fresh: SubscriptionTemplate | undefined
+    if (value.id) {
+      try { fresh = await fetchSubscriptionTemplate(value.id) }
+      catch (cause: any) { if (cause?.response?.status !== 404) throw cause }
+      if (!context.isCurrent()) return false
+    }
+    if (!context.isCurrent()) return false
+    const normalized = fresh ? normalizeSubscriptionCustomization(fresh.renderer, fresh.customization) : defaultSubscriptionCustomization(value.fields.renderer as EditableRenderer)
+    const current = fresh ? templateRecoveryFields({ ...fresh, customization: normalized }, normalized, true) : undefined
+    const conflict = value.id > 0 && (!fresh || fresh.id !== value.id || fresh.revision !== value.revision || JSON.stringify(current) !== JSON.stringify(value.baseline))
+    templateOriginalRenderer = (fresh?.renderer || value.fields.renderer) as EditableRenderer
+    templateOriginalCustomization = cloneCustomization(normalized)
+    templateRetainedURLOrigins.clear()
+    for (const entry of value.rendererDrafts) templateRetainedURLOrigins.set(entry.renderer as EditableRenderer, templateURLReferenceOrigin(entry.customization, originalForRenderer(entry.renderer as EditableRenderer)))
+    templateRetainedURLOrigins.set(value.fields.renderer as EditableRenderer, templateURLReferenceOrigin(value.fields.customization, originalForRenderer(value.fields.renderer as EditableRenderer)))
+    ++detailRequestSequence
+    suppressRendererDraftSwitch = true
+    Object.assign(form, emptyForm(), fresh || {}, value.fields, { id: value.id, revision: value.revision,
+      customization: restoreTemplateCustomization(value.fields.customization, originalForRenderer(value.fields.renderer as EditableRenderer)) })
+    suppressRendererDraftSwitch = false
+    rendererDrafts.clear()
+    for (const entry of value.rendererDrafts) rendererDrafts.set(entry.renderer as EditableRenderer, restoreTemplateCustomization(entry.customization, originalForRenderer(entry.renderer as EditableRenderer)))
+    rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
+    templateRecoveryBaseline.value = value.baseline
+    rawCustomizationError.value = ''; editorErrors.clear(); revisionConflict.value = conflict
+    previewResult.value = null; previewSource.value = ''
+    editorRouteKey.value = value.id ? String(value.id) : 'new'; editorOpen.value = true
+  },
 })
 
 async function syncURL(replace = false) {
@@ -233,6 +295,10 @@ async function loadEditor(id: number) {
     suppressRendererDraftSwitch = true
     Object.assign(form, detail, { customization: normalizeSubscriptionCustomization(detail.renderer, detail.customization) })
     suppressRendererDraftSwitch = false
+    templateOriginalRenderer = form.renderer as EditableRenderer
+    templateOriginalCustomization = cloneCustomization(form.customization)
+    templateRetainedURLOrigins.clear()
+    templateRecoveryBaseline.value = form.id ? templateRecoveryFields(form, form.customization, true) || null : null
     rendererDrafts.clear()
     rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
     rawCustomizationError.value = ''
@@ -258,6 +324,10 @@ async function syncEditorFromRoute() {
     suppressRendererDraftSwitch = true
     Object.assign(form, emptyForm())
     suppressRendererDraftSwitch = false
+    templateOriginalRenderer = form.renderer as EditableRenderer
+    templateOriginalCustomization = cloneCustomization(form.customization)
+    templateRetainedURLOrigins.clear()
+    templateRecoveryBaseline.value = form.id ? templateRecoveryFields(form, form.customization, true) || null : null
     rendererDrafts.clear()
     rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
     rawCustomizationError.value = ''
@@ -305,6 +375,7 @@ async function runPreview() {
 }
 
 async function save() {
+  if (saving.value || revisionConflict.value) return
   form.name = form.name.trim()
   form.slug = form.slug.trim().toLowerCase()
   form.description = form.description.trim()
@@ -418,7 +489,7 @@ onBeforeRouteUpdate(async (to, from) => {
   })
 })
 
-onMounted(async () => { await load(); await syncEditorFromRoute() })
+onMounted(async () => { await load(); await syncEditorFromRoute(); templateRecoveryReady.value = true })
 
 function cloneCustomization(value: SubscriptionTemplateCustomization): SubscriptionTemplateCustomization {
   return JSON.parse(JSON.stringify(value))

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 )
 
@@ -158,7 +159,7 @@ func (h *handlers) loadDashboardView(ctx context.Context, period dashboardPeriod
 	switch view {
 	case "current":
 		return map[string]any{"as_of": now, "active_subscriptions": snapshot.Business.ActiveSubscriptions,
-			"service":       map[string]any{"active_subscriptions": snapshot.Service.ActiveSubscriptions, "active_flows": snapshot.Service.ActiveFlows, "online_nodes": snapshot.Service.OnlineNodes, "enabled_nodes": snapshot.Service.EnabledNodes},
+			"service":       map[string]any{"active_subscriptions": snapshot.Service.ActiveSubscriptions, "active_flows": snapshot.Service.ActiveFlows, "observed_active_subscriptions": snapshot.Service.ObservedActiveSubscriptions, "observed_active_flows": snapshot.Service.ObservedActiveFlows, "online_nodes": snapshot.Service.OnlineNodes, "enabled_nodes": snapshot.Service.EnabledNodes},
 			"subscriptions": snapshot.Subscriptions, "attention": snapshot.Attention, "infrastructure": snapshot.Infrastructure, "coverage": snapshot.Coverage}, nil
 	case "statistics":
 		b := snapshot.Business
@@ -174,6 +175,8 @@ func (h *handlers) loadDashboardView(ctx context.Context, period dashboardPeriod
 
 func dashboardReadError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, metering.ErrUsageProjectionPending):
+		writeCapabilityError(w, http.StatusServiceUnavailable, err.Error(), "usage_projection_pending")
 	case errors.Is(err, context.DeadlineExceeded):
 		writeCapabilityError(w, http.StatusGatewayTimeout, "工作台读取超时，请重试。", "deadline_exceeded")
 	case errors.Is(err, context.Canceled):

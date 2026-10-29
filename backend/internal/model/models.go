@@ -85,6 +85,7 @@ type PlanSKU struct {
 }
 
 type Subscription struct {
+	EntitlementEpoch        uint64 `json:"-" gorm:"not null;default:0;-:migration"`
 	KernelPolicyRevision    uint64 `json:"-" gorm:"not null;default:0"`
 	KernelPolicyFingerprint string `json:"-" gorm:"size:64;not null;default:''"`
 
@@ -92,6 +93,8 @@ type Subscription struct {
 	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion" gorm:"not null;default:false"`
 	EndedAt               *time.Time `json:"ended_at,omitempty" gorm:"index"`
 	EndReason             string     `json:"end_reason,omitempty" gorm:"size:20;not null;default:''"`
+	// Operational retry scheduling only; never payment or entitlement evidence.
+	RetirementRetryAt *time.Time `json:"-"`
 
 	ID                uint       `json:"id" gorm:"primaryKey"`
 	UserID            uint       `json:"user_id" gorm:"index"`
@@ -119,6 +122,8 @@ type Subscription struct {
 }
 
 type Order struct {
+	EntitlementValueSnapshot   string     `json:"-" gorm:"type:text;not null;default:'';-:migration"`
+	PurchaseSnapshot           string     `json:"-" gorm:"type:text;not null;default:('')"`
 	CreationKey                *string    `json:"-" gorm:"size:64;uniqueIndex"`
 	CreationFingerprint        string     `json:"-" gorm:"size:64;not null;default:''"`
 	SubscriptionEndedAt        *time.Time `json:"subscription_ended_at,omitempty"`
@@ -126,7 +131,7 @@ type Order struct {
 	SubscriptionFinalFlowTotal int64      `json:"subscription_final_flow_total" gorm:"not null;default:0"`
 	SubscriptionFinalFlowUsed  int64      `json:"subscription_final_flow_used" gorm:"not null;default:0"`
 
-	ChangeSnapshot        string     `json:"-" gorm:"size:4096;not null;default:'';-:migration"`
+	ChangeSnapshot        string     `json:"-" gorm:"type:longtext;not null;default:'';-:migration"`
 	AssignedBy            uint       `json:"-" gorm:"not null;default:0"`
 	AssignmentNote        string     `json:"-" gorm:"size:500;not null;default:''"`
 	AssignmentFingerprint string     `json:"-" gorm:"size:64;not null;default:''"`
@@ -166,46 +171,61 @@ type Order struct {
 }
 
 type Node struct {
-	ID                      uint             `json:"id" gorm:"primaryKey"`
-	Name                    string           `json:"name" gorm:"size:64;uniqueIndex"`
-	Region                  string           `json:"region" gorm:"size:32"`
-	Address                 string           `json:"address" gorm:"size:128"`
-	NodeCredential          string           `json:"-" gorm:"type:text"`
-	NodeCredentialPrefix    string           `json:"node_credential_prefix,omitempty" gorm:"size:12"`
-	NodeCredentialRevokedAt *time.Time       `json:"node_credential_revoked_at,omitempty"`
-	CommunicationProtocol   int16            `json:"communication_protocol" gorm:"not null;default:1"`
-	Status                  int16            `json:"status" gorm:"not null;default:0"`
-	LifecycleStatus         string           `json:"lifecycle_status" gorm:"size:20;not null;default:active"`
-	Config                  string           `json:"config" gorm:"type:json"`
-	IsEnabled               bool             `json:"is_enabled" gorm:"not null;default:true"`
-	Remark                  string           `json:"remark" gorm:"size:255"`
-	IsOnline                bool             `json:"is_online" gorm:"default:false"`
-	LastSeenAt              *time.Time       `json:"last_seen_at"`
-	LastSyncAt              *time.Time       `json:"last_sync_at"`
-	Version                 string           `json:"version" gorm:"size:64"`
-	SSHHost                 string           `json:"ssh_host" gorm:"size:64"`
-	SSHPort                 int              `json:"ssh_port" gorm:"default:22"`
-	SSHUser                 string           `json:"ssh_user" gorm:"size:64"`
-	SSHAuthMethod           string           `json:"ssh_auth_method" gorm:"size:20;not null;default:password"`
-	SSHPwd                  string           `json:"-" gorm:"column:ssh_pwd;type:text"`
-	SSHPrivateKeyPassphrase string           `json:"-" gorm:"type:text"`
-	SSHPrivilegeMode        string           `json:"ssh_privilege_mode" gorm:"size:16;not null;default:none"`
-	SSHPrivilegePassword    string           `json:"-" gorm:"type:text"`
-	SSHPrivilegeConfigured  bool             `json:"ssh_privilege_password_configured" gorm:"-"`
-	SSHHostKeyFingerprint   string           `json:"ssh_host_key_fingerprint" gorm:"size:128"`
-	SSHVerifiedAt           *time.Time       `json:"ssh_verified_at,omitempty"`
-	ConnectorLastSeenAt     *time.Time       `json:"connector_last_seen_at,omitempty"`
-	ConnectorOnline         bool             `json:"connector_online" gorm:"-"`
-	UptimeSeconds           uint64           `json:"uptime_seconds"`
-	ActiveFlows             uint64           `json:"active_flows"`
-	BytesUp                 uint64           `json:"bytes_up"`
-	BytesDown               uint64           `json:"bytes_down"`
-	TrafficSecret           string           `json:"-" gorm:"column:traffic_secret;type:text"`
-	TrafficSecretPrefix     string           `json:"traffic_secret_prefix,omitempty" gorm:"size:12"`
-	TrafficSecretRevokedAt  *time.Time       `json:"traffic_secret_revoked_at,omitempty"`
-	CreatedAt               time.Time        `json:"created_at"`
-	UpdatedAt               time.Time        `json:"updated_at"`
-	KernelState             *NodeKernelState `json:"kernel_state,omitempty" gorm:"foreignKey:NodeID"`
+	// AssetTag identifies this panel asset, not a host, runtime or credential.
+	AssetTag                string     `json:"-" gorm:"size:64;not null;default:'';<-:create"`
+	ID                      uint       `json:"id" gorm:"primaryKey"`
+	Name                    string     `json:"name" gorm:"size:64;uniqueIndex"`
+	Region                  string     `json:"region" gorm:"size:32"`
+	Address                 string     `json:"address" gorm:"size:128"`
+	NodeCredential          string     `json:"-" gorm:"type:text"`
+	NodeCredentialPrefix    string     `json:"node_credential_prefix,omitempty" gorm:"size:12"`
+	NodeCredentialRevokedAt *time.Time `json:"node_credential_revoked_at,omitempty"`
+	CommunicationProtocol   int16      `json:"communication_protocol" gorm:"not null;default:1"`
+	Status                  int16      `json:"status" gorm:"not null;default:0"`
+	LifecycleStatus         string     `json:"lifecycle_status" gorm:"size:20;not null;default:active"`
+	Config                  string     `json:"config" gorm:"type:json"`
+	IsEnabled               bool       `json:"is_enabled" gorm:"not null;default:true"`
+	Remark                  string     `json:"remark" gorm:"size:255"`
+	IsOnline                bool       `json:"is_online" gorm:"default:false"`
+	LastSeenAt              *time.Time `json:"last_seen_at"`
+	LastSyncAt              *time.Time `json:"last_sync_at"`
+	Version                 string     `json:"version" gorm:"size:64"`
+	SSHHost                 string     `json:"ssh_host" gorm:"size:64"`
+	SSHPort                 int        `json:"ssh_port" gorm:"default:22"`
+	SSHUser                 string     `json:"ssh_user" gorm:"size:64"`
+	SSHAuthMethod           string     `json:"ssh_auth_method" gorm:"size:20;not null;default:password"`
+	SSHPwd                  string     `json:"-" gorm:"column:ssh_pwd;type:text"`
+	SSHPrivateKeyPassphrase string     `json:"-" gorm:"type:text"`
+	SSHPrivilegeMode        string     `json:"ssh_privilege_mode" gorm:"size:16;not null;default:none"`
+	SSHPrivilegePassword    string     `json:"-" gorm:"type:text"`
+	SSHPrivilegeConfigured  bool       `json:"ssh_privilege_password_configured" gorm:"-"`
+	SSHHostKeyFingerprint   string     `json:"ssh_host_key_fingerprint" gorm:"size:128"`
+	SSHVerifiedAt           *time.Time `json:"ssh_verified_at,omitempty"`
+	ConnectorLastSeenAt     *time.Time `json:"connector_last_seen_at,omitempty"`
+	ConnectorOnline         bool       `json:"connector_online" gorm:"-"`
+	UptimeSeconds           uint64     `json:"uptime_seconds"`
+	// Read-only joined evidence. Never persisted/updated through Node ORM or
+	// confused with defaults on a newly created/legacy observation source.
+	ObservationKnown             bool             `json:"-" gorm:"->;-:migration"`
+	ObservationLatestSourceKnown bool             `json:"-" gorm:"->;-:migration"`
+	ObservationStatsSourceKnown  bool             `json:"-" gorm:"->;-:migration"`
+	ObservationSource            string           `json:"-" gorm:"->;-:migration"`
+	ObservationLatestReference   string           `json:"-" gorm:"->;-:migration"`
+	ObservationStatsReference    string           `json:"-" gorm:"->;-:migration"`
+	ObservationCounterReceivedAt *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationLatestOccurredAt  *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationLatestReceivedAt  *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationStatsOccurredAt   *time.Time       `json:"-" gorm:"->;-:migration"`
+	ObservationStatsReceivedAt   *time.Time       `json:"-" gorm:"->;-:migration"`
+	ActiveFlows                  uint64           `json:"active_flows"`
+	BytesUp                      uint64           `json:"bytes_up"`
+	BytesDown                    uint64           `json:"bytes_down"`
+	TrafficSecret                string           `json:"-" gorm:"column:traffic_secret;type:text"`
+	TrafficSecretPrefix          string           `json:"traffic_secret_prefix,omitempty" gorm:"size:12"`
+	TrafficSecretRevokedAt       *time.Time       `json:"traffic_secret_revoked_at,omitempty"`
+	CreatedAt                    time.Time        `json:"created_at"`
+	UpdatedAt                    time.Time        `json:"updated_at"`
+	KernelState                  *NodeKernelState `json:"kernel_state,omitempty" gorm:"foreignKey:NodeID"`
 }
 
 type NodeKernelState struct {
@@ -482,22 +502,29 @@ type SubscriptionTemplateRuleSetBinding struct {
 // Secrets are encrypted at rest; observable events carry only CredentialID and
 // PrincipalKey so a kernel event can be attributed without exposing the secret.
 type ProtocolCredential struct {
-	ID                 uint       `json:"id" gorm:"primaryKey"`
-	SubscriptionID     uint       `json:"subscription_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:1;index;not null"`
-	UserID             uint       `json:"user_id" gorm:"index;not null"`
-	ProtocolEndpointID uint       `json:"protocol_endpoint_id" gorm:"uniqueIndex:ux_protocol_credential_subscription_endpoint,priority:2;index;not null"`
-	NodeID             uint       `json:"node_id" gorm:"index;not null"`
-	CredentialID       string     `json:"credential_id" gorm:"size:96;uniqueIndex;not null"`
-	PrincipalKey       string     `json:"principal_key" gorm:"size:128;uniqueIndex;not null"`
-	Secret             string     `json:"-" gorm:"type:text;not null"`
-	ListenPort         int        `json:"listen_port" gorm:"not null"`
-	PublicPort         int        `json:"public_port" gorm:"not null"`
-	Status             string     `json:"status" gorm:"size:20;index;not null;default:active"`
-	ExpiresAt          time.Time  `json:"expires_at" gorm:"index;not null"`
-	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
-	RevokedAt          *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	EntitlementEpoch       uint64     `json:"-" gorm:"not null;default:0;-:migration"`
+	CurrentScope           *uint8     `json:"-" gorm:"default:1;-:migration"`
+	DeliveryRequired       bool       `json:"-" gorm:"not null;default:false;-:migration"`
+	PrincipalDigest        string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
+	SecretPrincipalDigest  string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
+	PrincipalLookupVersion uint8      `json:"-" gorm:"not null;default:0;-:migration"`
+	RetiredPrincipalHash   string     `json:"-" gorm:"size:64;not null;default:'';-:migration"`
+	ID                     uint       `json:"id" gorm:"primaryKey"`
+	SubscriptionID         uint       `json:"subscription_id" gorm:"index;not null"`
+	UserID                 uint       `json:"user_id" gorm:"index;not null"`
+	ProtocolEndpointID     uint       `json:"protocol_endpoint_id" gorm:"index;not null"`
+	NodeID                 uint       `json:"node_id" gorm:"index;not null"`
+	CredentialID           string     `json:"credential_id" gorm:"size:96;uniqueIndex;not null"`
+	PrincipalKey           string     `json:"principal_key" gorm:"size:128;uniqueIndex;not null"`
+	Secret                 string     `json:"-" gorm:"type:text;not null"`
+	ListenPort             int        `json:"listen_port" gorm:"not null"`
+	PublicPort             int        `json:"public_port" gorm:"not null"`
+	Status                 string     `json:"status" gorm:"size:20;index;not null;default:active"`
+	ExpiresAt              time.Time  `json:"expires_at" gorm:"index;not null"`
+	LastUsedAt             *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt              *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 // FlowUsage is the idempotent cursor for Zero flow.updated/flow.completed
@@ -525,6 +552,7 @@ type FlowUsage struct {
 }
 
 type TrafficRecord struct {
+	EntitlementEpoch        uint64    `json:"-" gorm:"not null;default:0;-:migration"`
 	ID                      uint      `json:"id" gorm:"primaryKey"`
 	UserID                  uint      `json:"user_id" gorm:"index"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty" gorm:"index"`
@@ -630,18 +658,21 @@ type RegistrationEmailChallenge struct {
 // status is denormalized here for queue queries; every transition is also
 // recorded in TicketMessage so the full history remains traceable.
 type Ticket struct {
-	ID            uint       `json:"id" gorm:"primaryKey"`
-	TicketNo      string     `json:"ticket_no" gorm:"size:32;uniqueIndex;not null"`
-	UserID        uint       `json:"user_id" gorm:"index;not null"`
-	Subject       string     `json:"subject" gorm:"size:160;not null"`
-	Category      string     `json:"category" gorm:"size:32;index;not null"`
-	Priority      int16      `json:"priority" gorm:"index;not null;default:1"`
-	Status        string     `json:"status" gorm:"size:24;index;not null;default:open"`
-	LastMessageAt time.Time  `json:"last_message_at" gorm:"index;not null"`
-	ResolvedAt    *time.Time `json:"resolved_at"`
-	ClosedAt      *time.Time `json:"closed_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID             uint       `json:"id" gorm:"primaryKey"`
+	TicketNo       string     `json:"ticket_no" gorm:"size:32;uniqueIndex;not null"`
+	UserID         uint       `json:"user_id" gorm:"index;not null"`
+	OrderID        *uint      `json:"-"`
+	SubscriptionID *uint      `json:"-"`
+	WalletEntryID  *uint      `json:"-"`
+	Subject        string     `json:"subject" gorm:"size:160;not null"`
+	Category       string     `json:"category" gorm:"size:32;index;not null"`
+	Priority       int16      `json:"priority" gorm:"index;not null;default:1"`
+	Status         string     `json:"status" gorm:"size:24;index;not null;default:open"`
+	LastMessageAt  time.Time  `json:"last_message_at" gorm:"index;not null"`
+	ResolvedAt     *time.Time `json:"resolved_at"`
+	ClosedAt       *time.Time `json:"closed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // TicketMessage contains both human replies and system status events.
@@ -783,6 +814,7 @@ type AnnouncementRead struct {
 }
 
 type ProtocolDeployment struct {
+	CredentialTargets   string     `json:"-" gorm:"type:text;not null;default:'';-:migration"`
 	ID                  uint       `json:"id" gorm:"primaryKey;index:idx_protocol_deployments_endpoint_latest,priority:2"`
 	ProtocolEndpointID  uint       `json:"protocol_endpoint_id" gorm:"index;index:idx_protocol_deployments_endpoint_latest,priority:1;default:null"`
 	NodeID              uint       `json:"node_id" gorm:"index;not null"`
@@ -800,14 +832,15 @@ type ProtocolDeployment struct {
 }
 
 type QuotaEvent struct {
-	ID             uint      `json:"id" gorm:"primaryKey"`
-	SubscriptionID uint      `json:"subscription_id" gorm:"index;uniqueIndex:ux_quota_event_reference,priority:1;not null"`
-	EventType      string    `json:"event_type" gorm:"size:24;uniqueIndex:ux_quota_event_reference,priority:2;not null"`
-	DeltaBytes     int64     `json:"delta_bytes"`
-	BalanceBefore  int64     `json:"balance_before"`
-	BalanceAfter   int64     `json:"balance_after"`
-	ReferenceType  string    `json:"reference_type" gorm:"size:32;uniqueIndex:ux_quota_event_reference,priority:3;not null"`
-	ReferenceID    string    `json:"reference_id" gorm:"size:128;uniqueIndex:ux_quota_event_reference,priority:4;not null"`
-	Detail         string    `json:"detail" gorm:"type:json"`
-	CreatedAt      time.Time `json:"created_at"`
+	EntitlementEpoch uint64    `json:"-" gorm:"not null;default:0;-:migration"`
+	ID               uint      `json:"id" gorm:"primaryKey"`
+	SubscriptionID   uint      `json:"subscription_id" gorm:"index;uniqueIndex:ux_quota_event_reference,priority:1;not null"`
+	EventType        string    `json:"event_type" gorm:"size:24;uniqueIndex:ux_quota_event_reference,priority:2;not null"`
+	DeltaBytes       int64     `json:"delta_bytes"`
+	BalanceBefore    int64     `json:"balance_before"`
+	BalanceAfter     int64     `json:"balance_after"`
+	ReferenceType    string    `json:"reference_type" gorm:"size:32;uniqueIndex:ux_quota_event_reference,priority:3;not null"`
+	ReferenceID      string    `json:"reference_id" gorm:"size:128;uniqueIndex:ux_quota_event_reference,priority:4;not null"`
+	Detail           string    `json:"detail" gorm:"type:json"`
+	CreatedAt        time.Time `json:"created_at"`
 }

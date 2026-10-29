@@ -1,0 +1,16 @@
+{
+  "base": "5964c5385b1f7563fcb0b3b13ed6448f5916e121",
+  "scope": "Local bounded drain, registration generation fencing, lifecycle locks outside storage waits, forwarding durable cancellation observer",
+  "validation": [
+    {"scope": "Five old-source blocked Claim/Register, Schedule/Deactivate, maintenance DB callback, same-name registration and hidden cancellation observer regressions", "result": "expected failure", "package_seconds": 2.255},
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/capabilities/jobs -count=1", "result": "pass", "package_seconds": 0.580},
+    {"scope": "Focused runtime/empty/canceled drain races,10 repetitions", "result": "pass", "package_seconds": 6.800},
+    {"scope": "Old wrapper with actual SQLite two-Store cancellation", "result": "expected failure", "wall_seconds": 3.921},
+    {"command": "GOMAXPROCS=1 go test -race -p 1 ./internal/capabilities/jobs ./internal/adapters/persistence/jobstore -run 'Runtime|AlreadyCanceledDrain|EmptyRuntime' -count=3", "result": "pass", "jobs_seconds": 2.760, "jobstore_seconds": 10.602, "wall_seconds": 20.181}
+  ],
+  "retained_failure": {"scope": "Earlier whole jobs/jobstore race run", "test": "TestDispatchCapacityP95WithBacklog", "observed_p95_ms": 802.695827, "unchanged_gate_ms": 500, "data_race_reported": false, "result": "failure"},
+  "migration": "None; no durable state/lease/financial writer changes",
+  "rollback": "Source revert preserves stored intents but restores hidden cross-process cancellation and unbounded lifecycle-lock wait risks",
+  "remaining": ["Final-source whole jobstore actual MySQL", "Actual handler/router/plugin process-shutdown integration", "New-head full backend and CI", "Independent worker and measured controlled autoscaling"],
+  "production_migration_executed": false
+}

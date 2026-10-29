@@ -42,19 +42,23 @@
         label="最高连接数"
         :value="observabilityError || observability.peak_connections === null ? '—' : observability.peak_connections.toLocaleString('zh-CN')"
         icon="activity"
-        :status="observabilityLoading ? '加载中' : observabilityError ? '读取失败' : observability.peak_connections === null ? '未采集' : '区间峰值'"
+        :status="observabilityLoading ? '加载中' : observabilityError ? '读取失败' : observabilityProjectionPending ? '统计更新中' : observability.peak_connections === null ? '未采集' : '区间峰值'"
         tone="info"
-        :meta="observabilityLoading ? '正在读取连接观测' : observabilityError ? '连接观测读取失败' : observability.peak_connections === null ? '当前范围暂无连接观测；旧版内核会保持未采集状态' : '取筛选范围内的最高并发值'"
+        :meta="observabilityLoading ? '正在读取连接观测' : observabilityError ? '连接观测读取失败' : observabilityProjectionPending ? observabilitySnapshotAvailable ? '上次完整统计的区间峰值，当前统计正在更新' : '当前范围统计未知，正在等待更新' : observability.peak_connections === null ? '当前范围暂无连接观测；旧版内核会保持未采集状态' : '取筛选范围内的最高并发值'"
       />
     </UiMetricStrip>
 
     <PageAlert v-if="observabilityError" tone="danger" title="流量趋势加载失败">{{ observabilityError }} <UiButton variant="secondary" @click="observabilityResource.load()">重试趋势</UiButton></PageAlert>
-    <TrafficObservabilityChart v-else
+    <TrafficObservabilityChart v-if="!observabilityError || observabilitySnapshotAvailable"
       :points="observability.points"
       :loading="observabilityLoading || !observabilityLoaded"
       :truncated="observability.truncated"
       :record-count="observability.record_count"
       :peak-connections="observability.peak_connections"
+      :projection-pending="observabilityProjectionPending"
+      :snapshot-available="observabilitySnapshotAvailable"
+      :as-of="observability.as_of"
+      @refresh="observabilityResource.load()"
     />
 
     <PageAlert v-if="nodeSeriesError" tone="danger" title="节点流量趋势加载失败">{{ nodeSeriesError }} <UiButton variant="secondary" @click="nodeSeriesResource.load()">重试节点流量</UiButton></PageAlert>
@@ -177,6 +181,9 @@ import PageAlert from '../../components/PageAlert.vue'
 import MetricCard from '../../components/MetricCard.vue'
 import UiMetricStrip from '../../components/UiMetricStrip.vue'
 import { useRemoteResource } from '../../composables/useRemoteResource'
+import { useTrafficTrendResource } from '../../composables/useTrafficTrendResource'
+import { useAppStore } from '../../stores/app'
+import { getDisplayTimeZone } from '../../utils/timeZone'
 import { trafficNodeBucket } from '../../utils/trafficNodeBucket'
 import { keyedLoad } from '../../composables/keyedLoad'
 import UiButton from '../../components/UiButton.vue'
@@ -192,11 +199,11 @@ import TrafficObservabilityChart from './TrafficObservabilityChart.vue'
 import {
   emptyTrafficObservabilityResult,
   fetchTrafficObservability,
-  type TrafficObservabilityResult,
 } from './trafficObservability'
 
 const route = useRoute()
 const router = useRouter()
+const app = useAppStore()
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
@@ -209,8 +216,9 @@ const bucket = ref<TrafficUsageBucket>(normalizeBucket(route.query.bucket))
 const summaryResource = useRemoteResource<Record<string, any>>({
   initial: () => ({}), fetch: ({ signal }) => fetchTrafficSummary(false, { signal }), errorMessage: '流量汇总加载失败。',
 })
-const observabilityResource = useRemoteResource<TrafficObservabilityResult>({
+const observabilityResource = useTrafficTrendResource({
   initial: emptyTrafficObservabilityResult,
+  scope: () => trendKey(),
   fetch: ({ signal }) => fetchTrafficObservability({
     subscriptionId: subscriptionFilter.value || undefined, from: from.value, to: to.value, signal,
   }),
@@ -224,7 +232,8 @@ const nodeSeriesResource = useRemoteResource<TrafficNodeSeries | null>({
   errorMessage: '节点流量趋势加载失败。',
 })
 const { data: summary, loading: summaryLoading, error: summaryError, loaded: summaryLoaded } = summaryResource
-const { data: observability, loading: observabilityLoading, error: observabilityError, loaded: observabilityLoaded } = observabilityResource
+const { data: observability, loading: observabilityLoading, error: observabilityError, loaded: observabilityLoaded,
+  snapshotAvailable: observabilitySnapshotAvailable, projectionPending: observabilityProjectionPending } = observabilityResource
 const { data: nodeSeries, loading: nodeSeriesLoading, error: nodeSeriesError, loaded: nodeSeriesLoaded } = nodeSeriesResource
 
 const bucketOptions = [
@@ -278,7 +287,7 @@ function chartBucket(): TrafficUsageBucket {
   return trafficNodeBucket(bucket.value, from.value, to.value)
 }
 
-const trendKey = () => JSON.stringify([subscriptionFilter.value, from.value, to.value])
+function trendKey() { return JSON.stringify([app.user.id, app.user.isAdmin, getDisplayTimeZone(), subscriptionFilter.value, from.value, to.value]) }
 const loadRecordQuery = keyedLoad(() => JSON.stringify([trendKey(), bucket.value, cursor.value, limit.value]), recordTable)
 const loadTrendQuery = keyedLoad(trendKey, observabilityResource)
 const loadNodeQuery = keyedLoad(() => JSON.stringify([trendKey(), chartBucket()]), nodeSeriesResource)
@@ -364,6 +373,13 @@ watch(() => route.fullPath, async () => {
   }
 })
 
+watch(() => JSON.stringify([app.user.id, app.user.isAdmin, getDisplayTimeZone()]), () => {
+  summaryResource.reset()
+  recordTable.reset()
+  recordStatistics.reset()
+  nodeSeriesResource.reset()
+  void loadAll()
+})
 onMounted(async () => {
   if (!route.query.from || !route.query.to) await syncURL(true)
   await loadAll()

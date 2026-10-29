@@ -1,0 +1,89 @@
+{
+  "recorded_at_utc": "2026-10-19T19:31:02.897884+00:00",
+  "repository": "zerodenet/zboard",
+  "branch": "codex/core-convergence",
+  "base_develop": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "previous_commit": "3b4e9a80b36bc5a0608462730f164fed66b7b97b",
+  "source_manifest_sha256": "20c2c5de6904e908c8af05157296e042327fd22c439b36317d8c909e69938eca",
+  "source_file_count": 2042,
+  "source_manifest_definition": "Sorted tracked/untracked nonignored Go/module/Vue/TypeScript/SQL/YAML files under backend,frontend,.github/workflows plus ownership and frontend package JSON; concatenate path NUL file_SHA256 newline. Architecture validation JSON is excluded.",
+  "result": "local checks passed; exact pushed head CI to be checked independently",
+  "backend_handler_seconds": 118.357,
+  "mysql_full_seconds": {
+    "datastore": 66.741,
+    "handler": 323.513
+  },
+  "mysql_full_source_limit": "Full run preceded final cancellation read-model and insertion fences; subsequent real-MySQL tests cover those additions. Do not represent that earlier full run as an exact-final-head full run.",
+  "frontend": {
+    "passed": 894,
+    "existing_skipped": 8,
+    "new_exclusions": 0,
+    "build_seconds": 15.98
+  },
+  "openapi": {
+    "valid": true,
+    "existing_warnings": 282
+  },
+  "evidence": {
+    "backend_full": {
+      "path": "/tmp/zboard-termination-backend-commit.log",
+      "sha256": "8c3954b2968219765e8034869b47d07ddecbb1b1e4d32d9256d13abde23f29dd"
+    },
+    "backend_vet": {
+      "path": "/tmp/zboard-termination-vet-commit.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "mysql_full_before_final_fences": {
+      "path": "/tmp/zboard-termination-mysql-final.log",
+      "sha256": "dd7c110a8b05690b11e78dc926c99bbc2de348a120da8a8e154f781577d7e9ad"
+    },
+    "mysql_and_sqlite_read_window": {
+      "path": "/tmp/zboard-termination-window-final.log",
+      "sha256": "d6498bcdc0b9acd973503ca4e2dd4b0b373f47d7ed181608635155bee876a652"
+    },
+    "mysql_read_committed_insertion_fence": {
+      "path": "/tmp/zboard-termination-insertion-fence.log",
+      "sha256": "2f3a261f2b99ba88170062cff13bb460c7f140b602ef182be105cceee2425bb9"
+    },
+    "mysql_sqlite_payment_race": {
+      "path": "/tmp/zboard-termination-payment-race.log",
+      "sha256": "55472463811e91021e823ae4b703fa669e4cfb0fda01537235873a9106efe41c"
+    },
+    "sqlite_pure_go": {
+      "path": "/tmp/zboard-termination-sqlite-pure-final.log",
+      "sha256": "9e6ece0f5cd5f3735fa1272ec0742a281631ce94e0372cb179c28862d3159371"
+    },
+    "frontend_original_ci_scope": {
+      "path": "/tmp/zboard-termination-frontend-final.log",
+      "sha256": "2c32985cf1f64a1db1d835d3534fbec8f3a87d38a25727256430b99f59dddb6c"
+    },
+    "frontend_build": {
+      "path": "/tmp/zboard-termination-build-frontend-final.log",
+      "sha256": "400d0f1e326bbfea9b9e5cfad37eedd1d981a4df18939d6ef3d866f641a9a1f0"
+    },
+    "openapi": {
+      "path": "/tmp/zboard-termination-openapi-final.log",
+      "sha256": "ddfe804c27de55bb81440fa0e311fd3521e385c79fed9bf159773eaa556b3c79"
+    }
+  },
+  "earlier_failures_retained": [
+    "/tmp/zboard-termination-mysql-full.log",
+    "/tmp/zboard-termination-frontend-full.log",
+    "/tmp/zboard-termination-openapi.log"
+  ],
+  "production": false,
+  "real_external_payment": false,
+  "native_disconnection_proven": false,
+  "remaining": [
+    "overlapping-current-cycle renewal valuation awaits decision",
+    "fresh-term plan change and transfer proof",
+    "generic consumption refund and wallet auto-renewal",
+    "configurable recovery window and history-preserving retirement",
+    "discount agreements and historical plan synchronization",
+    "P3 native connection closure / delivery visibility",
+    "P4 settlement/read-model/diagnostic retention separation",
+    "P5 unified business invalidation",
+    "P6 measured controlled local scaling",
+    "P7 complete upgrade/fault/capacity acceptance"
+  ]
+}

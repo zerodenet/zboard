@@ -1,0 +1,199 @@
+{
+  "source": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+  "recorded_utc": "2026-10-22T02:10:52.328526+00:00",
+  "status": "not verified: two exact-source attempts stopped before offered load",
+  "original_disk_gate_bytes": 1677721600,
+  "gates_or_runners_changed": false,
+  "attempts": [
+    {
+      "passed": false,
+      "expected_revision": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "started_at": "2026-10-22T02:04:55.029336+00:00",
+      "finished_at": "2026-10-22T02:07:06.822185+00:00",
+      "parameters": {
+        "NODES": "2",
+        "SUBSCRIPTIONS": "20",
+        "HISTORY_RECORDS": "2000",
+        "DURATION_SECONDS": "60",
+        "EVENT_RATE": "20",
+        "READERS": "4"
+      },
+      "original_runner_exit": 1,
+      "original_acceptance_passed": null,
+      "hash_binding": {
+        "checkout_commit_unchanged": true,
+        "checkout_still_clean": true,
+        "source_before_after_equal": true,
+        "source-sha256.txt_matches_observer": true,
+        "source-after-build-sha256.txt_matches_observer": true,
+        "zboard_binary_before_after_equal": true,
+        "acceptance_binary_before_after_equal": true,
+        "acceptance-load.py_copy_matches_source": true,
+        "acceptance-report.py_copy_matches_source": true
+      },
+      "rss_observations": {
+        "container_id": "02a3ccf92b4b6bfcc9b961a72440d6fa71f5fa0f1eddc32820a02ad5c5c0ceea",
+        "samples": 1,
+        "errors": [],
+        "available": true,
+        "first_rss_kib": 40844,
+        "last_rss_kib": 40844,
+        "sampled_peak_rss_kib": 40844
+      },
+      "sqlite_space": {
+        "available": true,
+        "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+        "page_size": 4096,
+        "page_count": 1209,
+        "freelist_pages": 6,
+        "allocated_bytes": 4952064,
+        "objects": {
+          "index": {
+            "bytes": 3338240,
+            "pages": 815
+          },
+          "internal": {
+            "bytes": 126976,
+            "pages": 31
+          },
+          "table": {
+            "bytes": 1462272,
+            "pages": 357
+          }
+        }
+      },
+      "original_evidence_directory": "/workspace/zboard-projection-check-final-verify/.codex-local-artifacts/acceptance/mixed-20261022T020455Z-BOR4IZ",
+      "note": "Supplemental RSS/dbstat do not replace or relax any original gate. One short single-process run; no worker scaling or capacity ceiling claim.",
+      "storage_preflight": {
+        "at": "2026-10-22T02:07:04.692141757Z",
+        "disk_free_bytes": 1345019904,
+        "files": {
+          "events/.emergency-reserve": 268435456,
+          "events/.owner.lock": 0,
+          "fixture.json": 2898,
+          "zboard.db": 4952064,
+          "zboard.db-shm": 32768,
+          "zboard.db-wal": 4527912,
+          "zboard.json": 579
+        }
+      },
+      "result": "NOT_EXECUTED_LOAD: original normal-pressure storage preflight rejected available disk; no HTTP/latency/delivery result",
+      "raw_proofs": {
+        "baseline-controller-hvrw025f/baseline-binding.json": {
+          "bytes": 1922,
+          "sha256": "6f9751179dfeb2cd7a15b280992014b3abc80f9f34df2f2ac01470905f2cfdc2"
+        },
+        "baseline-controller-hvrw025f/preflight.json": {
+          "bytes": 715,
+          "sha256": "a4308fbbedc6fff1a2e21fcb53615d4f0fe38b6e620c6e9f505daf16c84ad73a"
+        },
+        "baseline-controller-hvrw025f/runner.log": {
+          "bytes": 215,
+          "sha256": "4fc6d252c9bc567480827cdc140212221af3d07f5fcd3854c5e38ec2ad803bae"
+        },
+        "mixed-20261022T020455Z-BOR4IZ/storage-preflight.json": {
+          "bytes": 244,
+          "sha256": "ede2cec0b049b9ef1bb471723a0946094bc9812ef26f7cfae22248c567141b85"
+        }
+      }
+    },
+    {
+      "passed": false,
+      "expected_revision": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+      "started_at": "2026-10-22T02:08:40.678910+00:00",
+      "finished_at": "2026-10-22T02:08:56.871412+00:00",
+      "parameters": {
+        "NODES": "2",
+        "SUBSCRIPTIONS": "20",
+        "HISTORY_RECORDS": "2000",
+        "DURATION_SECONDS": "60",
+        "EVENT_RATE": "20",
+        "READERS": "4"
+      },
+      "original_runner_exit": 1,
+      "original_acceptance_passed": null,
+      "hash_binding": {
+        "checkout_commit_unchanged": true,
+        "checkout_still_clean": true,
+        "source_before_after_equal": true,
+        "source-sha256.txt_matches_observer": true,
+        "source-after-build-sha256.txt_matches_observer": true,
+        "zboard_binary_before_after_equal": true,
+        "acceptance_binary_before_after_equal": true,
+        "acceptance-load.py_copy_matches_source": true,
+        "acceptance-report.py_copy_matches_source": true
+      },
+      "rss_observations": {
+        "container_id": "8e547e17bef7b0d14632cf7630b080b865cdc8cc62daa6289f3665f0def7b774",
+        "samples": 1,
+        "errors": [],
+        "available": true,
+        "first_rss_kib": 52240,
+        "last_rss_kib": 52240,
+        "sampled_peak_rss_kib": 52240
+      },
+      "sqlite_space": {
+        "available": true,
+        "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+        "page_size": 4096,
+        "page_count": 1212,
+        "freelist_pages": 6,
+        "allocated_bytes": 4964352,
+        "objects": {
+          "index": {
+            "bytes": 3342336,
+            "pages": 816
+          },
+          "internal": {
+            "bytes": 126976,
+            "pages": 31
+          },
+          "table": {
+            "bytes": 1470464,
+            "pages": 359
+          }
+        }
+      },
+      "original_evidence_directory": "/workspace/zboard-projection-check-final-verify/.codex-local-artifacts/acceptance/mixed-20261022T020840Z-8iOfc6",
+      "note": "Supplemental RSS/dbstat do not replace or relax any original gate. One short single-process run; no worker scaling or capacity ceiling claim.",
+      "storage_preflight": {
+        "at": "2026-10-22T02:08:54.839389794Z",
+        "disk_free_bytes": 1152761856,
+        "files": {
+          "events/.emergency-reserve": 268435456,
+          "events/.owner.lock": 0,
+          "fixture.json": 2898,
+          "zboard.db": 4964352,
+          "zboard.db-shm": 32768,
+          "zboard.db-wal": 4569112,
+          "zboard.json": 579
+        }
+      },
+      "result": "NOT_EXECUTED_LOAD: original normal-pressure storage preflight rejected available disk; no HTTP/latency/delivery result",
+      "raw_proofs": {
+        "baseline-controller-odmkepru/baseline-binding.json": {
+          "bytes": 1922,
+          "sha256": "47705677458b2552d399151b7c02ff7061255e6938b26ca2337264157cee5cf0"
+        },
+        "baseline-controller-odmkepru/preflight.json": {
+          "bytes": 715,
+          "sha256": "a4308fbbedc6fff1a2e21fcb53615d4f0fe38b6e620c6e9f505daf16c84ad73a"
+        },
+        "baseline-controller-odmkepru/runner.log": {
+          "bytes": 215,
+          "sha256": "d137478a39609df566e314e7962e4de61868b74bfd9df3aa99e5e9d856eaaf4d"
+        },
+        "mixed-20261022T020840Z-8iOfc6/storage-preflight.json": {
+          "bytes": 244,
+          "sha256": "1c5d1e2e856d208d359e0bf64a0e4f79467b0f32ded2f64999eef04de63a53fc"
+        }
+      }
+    }
+  ],
+  "notes": [
+    "No acceptance-result or 60-second load was produced; source and binary hash bindings passed, which is not capacity acceptance.",
+    "The earlier exact1012 successful 20eps run and historical112/157 HTTP503 failure remain their own evidence; neither is rewritten or attributed to376.",
+    "Only stopped independent-copy physical emergency reserves were losslessly gzip archived after exclusive spool flock and decompression length/hash verification. Every DB/WAL/checkpoint/event/owner-lock inode and source receipt stayed unchanged; restore reserve before reusing copies.",
+    "No original successful capacity export, authoritative traffic state, dedup, source/parts or production data was deleted."
+  ]
+}

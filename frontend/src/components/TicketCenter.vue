@@ -10,8 +10,13 @@
         <UiButton v-if="!admin" type="button" @click="openCreate"><UiIcon name="plus" />新建工单</UiButton>
       </template>
     </PageHeader>
+    <PageAlert v-if="createDraftRecovery.message.value || replyDraftRecovery.message.value" tone="info" title="重新认证后的草稿">
+      {{ createDraftRecovery.message.value || replyDraftRecovery.message.value }}
+      <UiButton variant="ghost" size="sm" type="button" @click="createDraftRecovery.restore(); replyDraftRecovery.restore()">重新检查草稿恢复</UiButton>
+    </PageAlert>
 
     <TransientFeedback :success="message" :error="error" success-title="工单操作已完成" error-title="工单操作失败" />
+    <PageAlert v-if="createContextNotice && !createOpen" tone="info">{{ createContextNotice }}</PageAlert>
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
@@ -74,6 +79,10 @@
             </div>
           </header>
 
+          <dl v-if="ticketReferenceRows.length" class="ticket-reference-records" aria-label="关联记录">
+            <div v-for="reference in ticketReferenceRows" :key="reference.key"><dt>{{ reference.label }}</dt><dd>#{{ reference.id }}</dd></div>
+          </dl>
+
           <div ref="timelineElement" class="ticket-timeline">
             <div v-if="detail.has_older_messages" class="timeline-history-control">
               <UiButton variant="secondary" size="sm" type="button" :loading="loadingOlder" @click="loadOlderMessages">
@@ -97,7 +106,8 @@
             <TicketAttachmentEditor v-model="replyAttachments" v-model:busy="replyUploading" :disabled="saving" />
             <footer><small>{{ replyBody.length }} / 5000</small><UiButton type="submit" :loading="saving" :disabled="!replyBody.trim() || replyUploading">发送回复</UiButton></footer>
           </form>
-          <div v-else class="closed-notice"><UiIcon name="check" /><div><strong>工单已关闭</strong><p>时间线保持只读。如有新问题，请创建新的工单。</p></div></div>
+          <UiTextarea v-if="detail.ticket.status === 'closed' && replyBody" :model-value="replyBody" readonly aria-label="已关闭工单的未发送草稿" />
+          <div v-if="detail.ticket.status === 'closed'" class="closed-notice"><UiIcon name="check" /><div><strong>工单已关闭</strong><p>时间线保持只读。如有新问题，请创建新的工单。</p></div></div>
         </template>
         <div v-else class="ticket-detail-empty"><span><UiIcon name="ticket" /></span><h2>选择一条工单</h2><p>这里会按需展示问题详情、回复和状态流转记录。</p></div>
       </article>
@@ -107,10 +117,12 @@
 
     <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="新建工单" description="请尽量一次性提供问题现象和复现信息。" size="lg" :busy="saving || createUploading" @close="createOpen = false">
       <form id="create-ticket-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="submitTicket">
+        <PageAlert v-if="createContextNotice" class="field-full" tone="info">{{ createContextNotice }}</PageAlert>
         <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法提交工单">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="问题主题" name="ticket-subject" :error="createErrors.fields.subject" required full><UiInput v-model.trim="draft.subject" v-bind="controlAttrs" maxlength="160" placeholder="例如：订阅导入后节点连接超时" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题分类" name="ticket-category" :error="createErrors.fields.category"><UiSelect v-model="draft.category" v-bind="controlAttrs" :options="categoryOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="优先级" name="ticket-priority" :error="createErrors.fields.priority"><UiSelect v-model.number="draft.priority" v-bind="controlAttrs" :options="priorityOptions" /></FormField>
+        <FormField v-for="reference in referenceFields" :key="reference.key" v-slot="{ controlAttrs }" :label="`${reference.label}编号（可选）`" :name="`ticket-${reference.key}`" :error="createErrors.fields[reference.key]" hint="仅可关联当前账户的记录；留空则不关联。"><UiInput v-model.trim="referenceDraft[reference.key]" v-bind="controlAttrs" inputmode="numeric" :disabled="saving" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题描述" name="ticket-body" :error="createErrors.fields.body" hint="请勿提交密码、订阅凭证等敏感信息。" required full><UiTextarea v-model.trim="draft.body" v-bind="controlAttrs" maxlength="5000" placeholder="操作步骤、错误提示、发生时间，以及你已经尝试过的方法。" /></FormField>
         <FormField label="附件（可选）" name="ticket-attachments" full><TicketAttachmentEditor v-model="draft.attachments" v-model:busy="createUploading" :disabled="saving" /></FormField>
       </form>
@@ -122,10 +134,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { closeTicket, createTicket, fetchTicket, fetchTickets, replyTicket, updateTicketStatus, type Ticket, type TicketCategory, type TicketDetail, type TicketStatus } from '../api/client'
+import { closeTicket, createTicket, fetchTicket, fetchTickets, replyTicket, updateTicketStatus, type Ticket, type TicketCategory, type TicketDetail, type TicketReferences, type TicketStatus } from '../api/client'
 import { confirmAction } from '../utils/feedback'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { ticketRecoveryDraft, ticketReplyRecoveryDraft } from '../utils/reauthenticationDraftSchemas'
 import { formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo } from '../utils/navigation'
 import { collectFieldErrors, isCharacterLengthInRange, isOneOf } from '../utils/validation'
@@ -159,6 +173,7 @@ const loadingOlder = ref(false)
 const saving = ref(false)
 const message = ref('')
 const createOpen = ref(false)
+const createContextNotice = ref('')
 const replyBody = ref('')
 const replyAttachments = ref<TicketAttachment[]>([])
 const replyUploading = ref(false), createUploading = ref(false)
@@ -173,8 +188,35 @@ const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const draft = reactive<{ subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments: TicketAttachment[] }>({ subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
-const createState = useDirtyForm(() => draft)
+const referenceFields: { key: keyof TicketReferences; label: string }[] = [
+  { key: 'order_id', label: '关联订单' }, { key: 'subscription_id', label: '关联订阅' }, { key: 'wallet_entry_id', label: '关联余额账目' },
+]
+const referenceDraft = reactive({ order_id: '', subscription_id: '', wallet_entry_id: '' })
+const createState = useDirtyForm(() => ({ ...draft, references: referenceDraft }))
+const ticketReferenceRows = computed(() => referenceFields.flatMap(field => {
+  const id = detail.value?.ticket.references?.[field.key]
+  return Number.isSafeInteger(id) && id! > 0 ? [{ ...field, id: id! }] : []
+}))
 const replyState = useDirtyForm(() => ({ body: replyBody.value, attachments: replyAttachments.value }))
+const recoveryReady = ref(false)
+const createDraftRecovery = useReauthenticationDraft({
+  scope: 'account.tickets.create', permission: 'account', ready: () => recoveryReady.value && !admin.value,
+  read: () => !admin.value && createOpen.value ? { subject: draft.subject, category: draft.category, priority: draft.priority, body: draft.body, references: { ...referenceDraft } } : null,
+  sanitize: ticketRecoveryDraft,
+  restore: value => {
+    Object.assign(draft, { subject: value.subject, category: value.category, priority: value.priority, body: value.body, attachments: [] })
+    Object.assign(referenceDraft, value.references)
+    createOpen.value = true
+  },
+})
+const replyDraftRecovery = useReauthenticationDraft({
+  scope: admin.value ? 'admin.tickets.reply' : 'account.tickets.reply', permission: admin.value ? 'admin' : 'account',
+  ready: () => recoveryReady.value && Boolean(detail.value && detail.value.ticket.id === selectedTicketID.value),
+  read: () => !createOpen.value && selectedTicketID.value && replyBody.value ? { ticketID: selectedTicketID.value, body: replyBody.value } : null,
+  sanitize: ticketReplyRecoveryDraft,
+  restore: value => { if (value.ticketID !== detail.value?.ticket.id) return false; replyBody.value = value.body; replyAttachments.value = [] },
+})
+
 useUnsavedChangesGuard(
   () => (createOpen.value && createState.dirty.value) || replyState.dirty.value,
   async () => {
@@ -212,6 +254,7 @@ watch(() => draft.subject, () => createErrors.clear('subject'))
 watch(() => draft.category, () => createErrors.clear('category'))
 watch(() => draft.priority, () => createErrors.clear('priority'))
 watch(() => draft.body, () => createErrors.clear('body'))
+for (const field of referenceFields) watch(() => referenceDraft[field.key], () => createErrors.clear(field.key))
 watch(replyBody, () => replyErrors.clear('body'))
 const { items: tickets, total, loading, refreshing, error, load: loadTicketPage } = useRemoteTable<Ticket>({
   offset,
@@ -295,8 +338,51 @@ async function changePage(value: { offset: number; limit: number }) {
 }
 
 async function openCreate() {
+  if (admin.value) return
   if (!await discardReplyForNavigation('新建工单后，当前回复草稿将被清空。')) return
+  if (route.query.new === '1') {
+    appliedCreateContext = ''
+    applyCreateContext()
+    return
+  }
+  resetCreateDraft()
+  createContextNotice.value = ''
+  createErrors.clear(); createState.markClean(); createOpen.value = true
+}
+
+function resetCreateDraft() {
   Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
+  Object.assign(referenceDraft, { order_id: '', subscription_id: '', wallet_entry_id: '' })
+}
+function referenceID(value: string) {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return undefined
+  const id = Number(trimmed)
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined
+}
+let appliedCreateContext = ''
+function applyCreateContext() {
+  if (admin.value) return
+  if (route.query.new !== '1') { appliedCreateContext = ''; return }
+  const context = JSON.stringify(referenceFields.map(field => route.query[field.key]))
+  if (context === appliedCreateContext) return
+  appliedCreateContext = context
+  if (replyState.dirty.value) {
+    createContextNotice.value = '当前工单有未发送的回复，关联信息尚未应用。请先发送回复，或点击“新建工单”明确确认是否放弃回复。'
+    return
+  }
+  if (createState.dirty.value) {
+    createContextNotice.value = '已保留当前新工单草稿，链接中的关联信息未覆盖。'
+    createOpen.value = true
+    return
+  }
+  resetCreateDraft()
+  for (const field of referenceFields) {
+    const value = route.query[field.key]
+    referenceDraft[field.key] = typeof value === 'string' ? value : Array.isArray(value) ? value.join(',') : ''
+  }
+  if (referenceDraft.order_id || referenceDraft.wallet_entry_id) draft.category = 'billing'
+  createContextNotice.value = '关联信息已预填，请核对记录并填写问题后明确提交。'
   createErrors.clear(); createState.markClean(); createOpen.value = true
 }
 
@@ -373,7 +459,11 @@ async function loadOlderMessages() {
 }
 
 async function submitTicket() {
-  if (saving.value || createUploading.value) return
+  if (admin.value || saving.value || createUploading.value) return
+  if (replyState.dirty.value) {
+    createErrors.set({}, '当前工单有未发送的回复，请先处理该回复后再新建工单。')
+    return
+  }
   draft.subject = draft.subject.trim()
   draft.body = draft.body.trim()
   const valid = await createErrors.applyValidation(collectFieldErrors({
@@ -381,25 +471,32 @@ async function submitTicket() {
     category: !isOneOf(draft.category, ticketCategories) && '请选择有效的问题分类。',
     priority: !isOneOf(draft.priority, ticketPriorities) && '请选择有效的优先级。',
     body: !isCharacterLengthInRange(draft.body, 1, 5000, true) && '问题描述需包含 1 到 5000 个字符。',
+    ...Object.fromEntries(referenceFields.map(field => [field.key, Boolean(referenceDraft[field.key].trim()) && referenceID(referenceDraft[field.key]) === undefined && '请输入有效的正整数编号，或留空取消关联。'])),
   }), createFormElement, '请更正标记字段后再提交工单。')
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    const created = await createTicket({ ...draft })
-    createOpen.value = false; Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
+    const references: TicketReferences = {}
+    for (const field of referenceFields) {
+      const id = referenceID(referenceDraft[field.key])
+      if (id !== undefined) references[field.key] = id
+    }
+    const created = await createTicket({ ...draft, ...(Object.keys(references).length ? { references } : {}) })
+    createOpen.value = false; resetCreateDraft(); createContextNotice.value = ''
     createState.markClean()
+    replyBody.value = ''; replyAttachments.value = []; replyErrors.clear(); replyState.markClean()
     selectedTicketID.value = created.ticket.id
     detail.value = created
     message.value = `工单 ${created.ticket.ticket_no} 已提交。`
     await syncURL()
     await loadTickets()
     await scrollTimeline()
-  } catch (e: any) { await createErrors.applyApiError(e, '工单提交失败。', createFormElement, { subject: 'subject', category: 'category', priority: 'priority', message: 'body', body: 'body' }) }
+  } catch (e: any) { await createErrors.applyApiError(e, '工单提交失败。', createFormElement, { subject: 'subject', category: 'category', priority: 'priority', message: 'body', body: 'body', order_id: 'order_id', subscription_id: 'subscription_id', wallet_entry_id: 'wallet_entry_id', 'references.order_id': 'order_id', 'references.subscription_id': 'subscription_id', 'references.wallet_entry_id': 'wallet_entry_id' }) }
   finally { saving.value = false }
 }
 
 async function sendReply() {
-  if (!detail.value || saving.value || replyUploading.value) return
+  if (!detail.value || detail.value.ticket.status === 'closed' || saving.value || replyUploading.value) return
   replyBody.value = replyBody.value.trim()
   const valid = await replyErrors.applyValidation(collectFieldErrors({
     body: !isCharacterLengthInRange(replyBody.value, 1, 5000, true) && '回复需包含 1 到 5000 个字符。',
@@ -460,6 +557,10 @@ watch(() => detail.value?.ticket.status, (status) => {
   if (status) selectedStatus.value = status
 })
 watch(() => route.fullPath, async () => {
+  // A create link carries draft context, not a request to change the active
+  // conversation or discard its reply. Explicit ticket/list actions still use
+  // their existing navigation and discard confirmation flow.
+  if (!admin.value && route.query.new === '1') return
   const nextFilters = {
     q: String(route.query.q || ''),
     status: String(route.query.status || ''),
@@ -493,6 +594,7 @@ watch(() => route.fullPath, async () => {
 })
 
 onBeforeRouteUpdate(async (to) => {
+  if (!admin.value && to.query.new === '1') return true
   if (!replyState.dirty.value) return true
   const nextTicket = validTicketID(to.query.ticket)
   const currentTicket = selectedTicketID.value
@@ -505,15 +607,22 @@ onBeforeRouteUpdate(async (to) => {
   return discardReplyForNavigation('切换工单或列表状态后，当前回复草稿将被清空。')
 })
 
+watch(() => [route.query.new, route.query.order_id, route.query.subscription_id, route.query.wallet_entry_id], applyCreateContext, { immediate: true })
+
 onMounted(async () => {
   await loadTickets()
   const initialTicket = validTicketID(route.query.ticket)
   if (initialTicket) await loadTicketDetail(initialTicket)
+  recoveryReady.value = true
 })
 onBeforeUnmount(() => detailController?.abort())
 </script>
 
 <style scoped>
+.ticket-reference-records { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.ticket-reference-records div { display: flex; gap: 8px; }
+.ticket-reference-records dt { color: var(--muted); }
+.ticket-reference-records dd { margin: 0; }
 .page-alert { margin-bottom: 14px; }
 .ticket-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
 .ticket-summary article { display: flex; align-items: center; gap: 14px; padding: 17px 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }

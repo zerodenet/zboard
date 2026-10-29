@@ -1,4 +1,5 @@
 <template>
+  <div :key="app.sessionEpoch" :inert="app.reauthRequired || undefined" style="display: contents">
   <MaintenanceScreen
     v-if="showMaintenance"
     :title="app.maintenance.title"
@@ -21,11 +22,13 @@
       <UiButton v-if="route.matched.length" variant="secondary" @click="frontendLoadFailure = null">留在当前页面</UiButton>
     </div>
     <AnnouncementStack v-if="showAnnouncementPrompt" :items="app.announcements" />
-    <RouterView />
+    <RouterView v-if="!route.meta?.requiresAdmin || app.isAdmin" />
   </template>
   <NavigationProgress />
   <div v-if="app.maintenance.enabled && app.isAdmin" class="admin-maintenance-banner">整站维护模式已开启<span v-if="app.maintenance.migration_in_progress"> · 数据库迁移正在执行</span><span v-else-if="app.maintenance.migration_cutover_pending"> · 等待数据库切换确认</span></div>
   <FeedbackHost />
+  </div>
+  <SessionReauthentication v-if="app.reauthRequired" />
 </template>
 
 <script setup lang="ts">
@@ -34,6 +37,7 @@ import { useRoute } from 'vue-router'
 import AnnouncementStack from './components/AnnouncementStack.vue'
 import NavigationProgress from './components/NavigationProgress.vue'
 import FeedbackHost from './components/FeedbackHost.vue'
+import SessionReauthentication from './components/SessionReauthentication.vue'
 import MaintenanceScreen from './components/MaintenanceScreen.vue'
 import { MAINTENANCE_STATE_EVENT, type MaintenanceState } from './api/client'
 import { useAppStore } from './stores/app'

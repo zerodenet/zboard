@@ -1,0 +1,64 @@
+{
+  "source": "8ae692e2859da869f0d55c3fac0bb0a8ccc5b07a",
+  "run_id": 39993946459,
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39993946459",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "frontend",
+      "id": 120552509988,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "mysql",
+      "id": 120552510317,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "compose",
+      "id": 120552510328,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "backend",
+      "id": 120552510382,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "zrs-compiler",
+      "id": 120552510383,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "contract",
+      "id": 120552510440,
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "package_seconds": {
+    "datastore": 201.477,
+    "handler": 825.105,
+    "networkstore": 215.761,
+    "application": 22.645,
+    "jobstore": 128.219,
+    "platformstore": 248.995
+  },
+  "local_candidate_receipt": "2026-10-23-dashboard-observation-coverage.json",
+  "local_full": {
+    "backend4": "not executed on this head",
+    "mysql3": "not executed on this head",
+    "race_count3": "not executed on this head",
+    "reason": "Original environment storage below observed prior full backend cache requirement; no wider cleanup, original timeout/coverage/capacity gates unchanged."
+  },
+  "overall_complete": false,
+  "notes": "Exact8ae CI is separate from later b5/diagnostic changes. Successful MySQL log retains100MiB redo-wait warning; not inferred sole historical failure cause.",
+  "raw_mysql_log": "ci-39993946459-mysql-success.log",
+  "raw_mysql_log_sha256": "fb0ea9b534d82e5081dd7326ba4306dedde3a23c88cb3405920149ec2dc60515"
+}

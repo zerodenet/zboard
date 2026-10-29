@@ -1,6 +1,7 @@
 import { effectScope } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useRemoteResource } from './useRemoteResource'
+import { AUTH_SESSION_RESTORED_EVENT, expireAuthSession, resetAuthSessionExpired } from '../utils/authSession'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -10,6 +11,35 @@ function deferred<T>() {
 }
 
 describe('useRemoteResource', () => {
+  it('retains an expired read until recovery, retries that read, and leaves healthy editor data alone', async () => {
+    const scope = effectScope()
+    const fetch = vi.fn().mockResolvedValueOnce(42).mockRejectedValueOnce({ response: { status: 401 } }).mockResolvedValueOnce(43)
+    const healthyFetch = vi.fn().mockResolvedValue(7)
+    const [resource, healthy] = scope.run(() => [
+      useRemoteResource({ initial: () => 0, fetch, errorMessage: 'expired' }),
+      useRemoteResource({ initial: () => 0, fetch: healthyFetch, errorMessage: 'failed' }),
+    ])!
+    try {
+      await resource.load(); await healthy.load()
+      expireAuthSession()
+      await resource.load()
+      expect(resource.data.value).toBe(42)
+      expect(resource.phase.value).toBe('unauthorized')
+      resetAuthSessionExpired()
+      window.dispatchEvent(new Event(AUTH_SESSION_RESTORED_EVENT))
+      await vi.waitFor(() => expect(resource.data.value).toBe(43))
+      expect(healthyFetch).toHaveBeenCalledOnce()
+      expect(healthy.data.value).toBe(7)
+    } finally { scope.stop(); resetAuthSessionExpired() }
+    window.dispatchEvent(new Event(AUTH_SESSION_RESTORED_EVENT))
+    expect(fetch).toHaveBeenCalledTimes(3)
+  })
+  it('classifies a late response from an invalidated credential as requiring identity recovery', async () => {
+    const resource = useRemoteResource({ initial: () => 0, fetch: () => Promise.reject({ code: 'AUTH_SESSION_CHANGED' }), errorMessage: 'identity changed' })
+    await resource.load()
+    expect(resource.errorKind.value).toBe('unauthorized')
+    expect(resource.canAutoRefresh.value).toBe(false)
+  })
   it('aborts old reads and ignores their response even if the transport ignores cancellation', async () => {
     const first = deferred<number>(), second = deferred<number>()
     const fetch = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)

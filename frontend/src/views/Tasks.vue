@@ -6,6 +6,7 @@
 
     <TransientFeedback :success="message" :error="error" success-title="任务操作已完成" error-title="任务操作失败" />
 
+    <PageAlert v-if="taskDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ taskDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="taskDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <PageAlert v-if="summaryError" tone="danger" title="任务概览加载失败">{{ summaryError }}</PageAlert>
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters><WorkbenchFilterBar :active="Boolean(typeFilter || statusFilter)" @clear="clearFilters"><WorkbenchFilterSelect v-model="typeFilter" label="任务类型" :options="taskTypeOptions" @apply="applyFilters" /><StatusCountFilters label="按状态查看运营任务" :value="statusFilter" :items="taskStatusCounts" :loading="summaryLoading" @select="filterSummary" /></WorkbenchFilterBar></template>
@@ -31,6 +32,7 @@
 
     <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="创建运营任务" description="选择作用范围和执行内容；任务创建后可以立即运行或留在队列。" size="lg" :busy="creating" @close="createOpen = false">
       <form id="create-task-form" ref="createFormElement" class="stack" novalidate @submit.prevent="createTask">
+        <PageAlert v-if="taskDraftRestored" tone="info" title="未创建的任务草稿">已恢复普通内容与目标选择。请重新核对作用范围；“创建后立即执行”已关闭，系统没有创建或发送任务。</PageAlert>
         <PageAlert v-if="createErrors.formError.value" tone="danger" title="无法创建任务">{{ createErrors.formError.value }}</PageAlert>
         <div class="form-grid">
           <FormField v-slot="{ controlAttrs }" label="任务类型" name="task-type" :error="createErrors.fields.type"><UiSelect v-model="form.type" v-bind="controlAttrs" :options="createTaskTypeOptions" @change="resetScope" /></FormField>
@@ -88,6 +90,8 @@ import { preserveAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput, truncateOutput } from '../utils/output'
 import { trackAdminTask } from '../utils/taskTracker'
 import { collectFieldErrors, isIntegerInRange, isOneOf, isUtf8LengthInRange } from '../utils/validation'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { taskRecoveryDraft } from '../utils/communicationsReauthenticationDraftSchemas'
 
 const selectedTask = ref<AdminTask | null>(null)
 const mailHistory = ref<{ taskID: number; itemID: number } | null>(null)
@@ -129,6 +133,7 @@ const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.valu
 const itemOffset = ref(0), itemLimit = ref(50)
 const itemStatusFilter = ref('')
 const createOpen = ref(false)
+const taskRecoveryReady = ref(false), taskDraftRestored = ref(false)
 const createFormElement = ref<HTMLElement | null>(null)
 const scopeMode = ref<'all' | 'users' | 'subscriptions'>('all')
 const selectedScopeIDs = ref<number[]>([])
@@ -168,7 +173,7 @@ const emailTemplateOptions = computed(() => [
   ...emailTemplates.value.filter(item => item.is_active).map(item => ({ label: item.name, value: item.id })),
 ])
 const scopeOptions = computed(() => [{ label: '全部有效目标', value: 'all' }, ...(form.type === 'quota' ? [{ label: '选择指定订阅', value: 'subscriptions' }] : []), { label: '选择指定用户', value: 'users' }])
-const { items: tasks, total, loading, refreshing, error, load } = useRemoteTable<AdminTask>({
+const { items: tasks, total, loading, refreshing, error, load, hasLoaded: taskListLoaded } = useRemoteTable<AdminTask>({
   offset,
   limit,
   fetchPage: ({ signal }) => fetchAdminTasksPage({ type: typeFilter.value || undefined, status: statusFilter.value === '' ? undefined : Number(statusFilter.value), offset: offset.value, limit: limit.value }, { signal }),
@@ -182,6 +187,19 @@ const { items: taskItems, total: itemTotal, loading: itemLoading, error: itemErr
     ? fetchAdminTaskItems(selectedTask.value.id, { status: itemStatusFilter.value === '' ? undefined : Number(itemStatusFilter.value), offset: itemOffset.value, limit: itemLimit.value }, { signal })
     : Promise.resolve({ items: [], total: 0 }),
   errorMessage: (cause: any) => cause?.response?.data?.message || '目标结果加载失败。',
+})
+const taskDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.tasks.create', permission: 'admin', ready: () => taskRecoveryReady.value && taskListLoaded.value,
+  read: () => createOpen.value ? { type: form.type, max_attempts: form.max_attempts, scope_mode: scopeMode.value, scope_ids: scopeMode.value === 'all' ? [] : [...selectedScopeIDs.value], quota: form.type === 'quota' ? quota : null, email: form.type === 'email' ? email : null } : null,
+  sanitize: taskRecoveryDraft,
+  restore: (value) => {
+    Object.assign(form, { type: value.type, max_attempts: value.max_attempts, auto_run: false })
+    Object.assign(quota, value.quota || { delta_mb: 1024, reason: '' })
+    Object.assign(email, value.email || { subject: '', body: '' })
+    scopeMode.value = value.scope_mode; selectedScopeIDs.value = [...value.scope_ids]
+    selectedEmailTemplateID.value = 0; createErrors.clear()
+    createOpen.value = true; taskDraftRestored.value = true
+  },
 })
 function parseIDs() {
   const values = selectedScopeIDs.value.map(Number)
@@ -227,6 +245,7 @@ async function applyFilters() { offset.value = 0; await syncURL(); await load() 
 async function clearFilters() { typeFilter.value = ''; statusFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await load() }
 async function openCreate() {
+  taskDraftRestored.value = false
   Object.assign(form, { type: 'quota', max_attempts: 3, auto_run: false })
   Object.assign(quota, { delta_mb: 1024, reason: '' })
   Object.assign(email, { subject: '', body: '' })
@@ -265,7 +284,7 @@ async function createTask() {
     if (scopeMode.value === 'subscriptions') scope.subscription_ids = ids
     const task = await createAdminTask({ type: form.type, scope, content: form.type === 'quota' ? { ...quota } : { ...email }, max_attempts: form.max_attempts, auto_run: form.auto_run })
     if (form.auto_run) trackAdminTask(task)
-    createOpen.value = false; message.value = '任务已创建。'; quota.reason = ''; email.subject = ''; email.body = ''; await refreshAll()
+    createOpen.value = false; taskDraftRestored.value = false; message.value = '任务已创建。'; quota.reason = ''; email.subject = ''; email.body = ''; await refreshAll()
   } catch (e: any) { await createErrors.applyApiError(e, '任务创建失败，请检查表单内容。', createFormElement, createTaskFieldMap()) }
   finally { creating.value = false }
 }
@@ -295,7 +314,7 @@ watch(() => route.fullPath, async () => {
   if (!taskID && selectedTask.value) { stopDetailPolling(); invalidateTaskItems(); selectedTask.value = null; taskItems.value = []; itemTotal.value = 0 }
   else if (taskID && selectedTask.value?.id !== taskID) await openTaskByID(taskID)
 })
-onMounted(async () => { await refreshAll(); const taskID = Number(route.query.task) || 0; if (taskID) await openTaskByID(taskID); if (route.query.create === 'email') { await openCreate(); form.type = 'email'; createState.markClean() } overviewPollTimer = window.setInterval(() => { if ((summary.value?.pending || 0) + (summary.value?.running || 0) > 0) void refreshAll() }, 5000) })
+onMounted(async () => { await refreshAll(); const taskID = Number(route.query.task) || 0; if (taskID) await openTaskByID(taskID); if (route.query.create === 'email') { await openCreate(); form.type = 'email'; createState.markClean() } taskRecoveryReady.value = true; overviewPollTimer = window.setInterval(() => { if ((summary.value?.pending || 0) + (summary.value?.running || 0) > 0) void refreshAll() }, 5000) })
 onBeforeUnmount(() => { stopDetailPolling(); if (overviewPollTimer !== undefined) window.clearInterval(overviewPollTimer) })
 </script>
 

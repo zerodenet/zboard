@@ -71,6 +71,10 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if err != nil {
 		return result, err
 	}
+	subscription, currentEpoch, err := batch.quotaSubscription(tx, credential, subscription)
+	if err != nil {
+		return result, err
+	}
 	endpoint, err := batch.endpoint(tx, credential.ProtocolEndpointID)
 	if err != nil {
 		return result, err
@@ -80,7 +84,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if err != nil {
 		return result, err
 	}
-	usage, found, legacy, err := LoadFlowUsage(tx, result.NodeID, event.CoreInstanceID, flow.FlowID, credential.ID, flow.Revision, metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown})
+	usage, found, legacy, err := batch.loadUsage(tx, in, credential.ID, metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown})
 	if err != nil {
 		return result, err
 	}
@@ -120,6 +124,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		recordAt = now
 	}
 	record := model.TrafficRecord{
+		EntitlementEpoch:        credential.EntitlementEpoch,
 		UserID:                  subscription.UserID,
 		SubscriptionID:          subscription.ID,
 		NodeID:                  result.NodeID,
@@ -146,12 +151,19 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		subscription.FlowUsed += charged
 		if subscription.FlowUsed >= subscription.FlowTotal {
 			subscription.FlowUsed = subscription.FlowTotal
-			result.Exhausted = true
+			result.Exhausted = currentEpoch
 		}
-		*subscription = model.Subscription(entitlements.RecordQuotaExhaustion(entitlements.Subscription(*subscription), now))
-		batch.dirtySubscriptions[subscription.ID] = now
+		if currentEpoch {
+			*subscription = model.Subscription(entitlements.RecordQuotaExhaustion(entitlements.Subscription(*subscription), now))
+			batch.dirtySubscriptions[subscription.ID] = now
+		} else {
+			key := entitlementQuotaKey{subscription.ID, credential.EntitlementEpoch}
+			batch.closed[key].FlowUsed = subscription.FlowUsed
+			batch.dirtyClosed[key] = now
+		}
 	}
 
+	previousUsageKey := usage.FlowID
 	usageKey := metering.FlowUsageKey(event.CoreInstanceID, flow.FlowID)
 	usage.ProtocolCredentialID = credential.ID
 	usage.NodeID = result.NodeID
@@ -179,6 +191,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		return result, err
 	}
 
+	batch.rememberUsage(previousUsageKey, usage)
 	batch.touched[credential.ID] = now
 	if result.Exhausted {
 		if s.EnqueuePublications == nil {

@@ -1,0 +1,320 @@
+{
+  "scope": "P3-04 frozen credential and managed-forward bindings; not overall P2/P3/P4-P7 completion",
+  "develop_base": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "parent_head": "ab7814b1926d26593beac8464852ce626e71a2f7",
+  "migration": "0047",
+  "business_authorization_and_financial_rules_changed": false,
+  "native_scenarios": [
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T225011Z-tGUt00",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "cross_group_credentials_rejected": true,
+            "disjoint_group_listeners": 2,
+            "existing_connection_read_bytes": 0,
+            "existing_connection_read_error": "EOF",
+            "new_group_echo_passed": true,
+            "old_credential_rejected_probes": 3,
+            "old_group_positive_control_passed": true,
+            "order_handler_return_to_verified_access_ms": 11088.444221,
+            "passed": true,
+            "physical_nodes": 1,
+            "scenario": "group_change",
+            "verified_at": "2026-10-19T22:53:30.160738409Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "15f280b6e3273509df842a7f06dfb7a23b703f0c3c60e1456753c8a6c564f303",
+      "source_files": 1634,
+      "test_binary_hash_evidence": "f399fa6bde808a2a049be07b9244b0c348a716cd6258f3be6007d97718b4ad0c",
+      "current_runtime_differences": [],
+      "later_test_or_ci_differences": [
+        "backend/tools/capabilityinventory/main_test.go"
+      ]
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T225011Z-90Ojol",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "crashed_component": "publisher_process",
+            "failed_attempts_persisted": 1,
+            "failed_generation_retained": 1,
+            "first_publisher_pid": 15,
+            "new_request_after_crash": false,
+            "old_credential_rejected_probes": 3,
+            "outage": "ssh_listener_only",
+            "passed": true,
+            "positive_control_passed": true,
+            "replacement_publisher_pid": 24,
+            "scenario": "recovery",
+            "ssh_restored_to_verified_revocation_ms": 7819.673595,
+            "stale_access_confirmed_before_recovery": true,
+            "verified_at": "2026-10-19T22:53:37.076110749Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "15f280b6e3273509df842a7f06dfb7a23b703f0c3c60e1456753c8a6c564f303",
+      "source_files": 1634,
+      "test_binary_hash_evidence": "f399fa6bde808a2a049be07b9244b0c348a716cd6258f3be6007d97718b4ad0c",
+      "current_runtime_differences": [],
+      "later_test_or_ci_differences": [
+        "backend/tools/capabilityinventory/main_test.go"
+      ]
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T225011Z-7AsLYk",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "configuration_deployments_after_recovery": 2,
+            "configuration_deployments_before_crash": 2,
+            "existing_connection_read_bytes": 0,
+            "existing_connection_read_error": "EOF",
+            "first_publisher_pid": 16,
+            "new_business_request_after_crash": false,
+            "old_flow_usable_during_native_control_denial": true,
+            "passed": true,
+            "phase": "connections",
+            "positive_control_passed": true,
+            "replacement_publisher_pid": 24,
+            "restored_to_verified_closure_ms": 31385.67272,
+            "scenario": "connection_recovery",
+            "verified_at": "2026-10-19T22:54:06.563162723Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "15f280b6e3273509df842a7f06dfb7a23b703f0c3c60e1456753c8a6c564f303",
+      "source_files": 1634,
+      "test_binary_hash_evidence": "f399fa6bde808a2a049be07b9244b0c348a716cd6258f3be6007d97718b4ad0c",
+      "current_runtime_differences": [],
+      "later_test_or_ci_differences": [
+        "backend/tools/capabilityinventory/main_test.go"
+      ]
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T225529Z-4zXRt8",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "existing_connection_closed_confirmed": true,
+            "existing_connection_read_bytes": 0,
+            "existing_connection_read_error": "EOF",
+            "new_connection_rejection_ms": 30636.817016,
+            "passed": true,
+            "positive_control_passed": true,
+            "real_flow_accounted": true,
+            "rejected_probes": 3,
+            "scenario": "expiry",
+            "verified_at": "2026-10-19T22:57:16.67672017Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "15f280b6e3273509df842a7f06dfb7a23b703f0c3c60e1456753c8a6c564f303",
+      "source_files": 1634,
+      "test_binary_hash_evidence": "f399fa6bde808a2a049be07b9244b0c348a716cd6258f3be6007d97718b4ad0c",
+      "current_runtime_differences": [],
+      "later_test_or_ci_differences": [
+        "backend/tools/capabilityinventory/main_test.go"
+      ]
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T225808Z-LoSSbO",
+      "result": {
+        "passed": true,
+        "scenarios": [
+          {
+            "accounting_observed_after_denial_ms": 1.181077,
+            "first_denial_after_load_ms": 2186.382793,
+            "ledger_bytes": 1024,
+            "passed": true,
+            "positive_control_passed": true,
+            "publication_confirmed_after_accounting_observed_ms": 262.981552,
+            "quota_bytes": 1024,
+            "rejected_probes_after_publication": 3,
+            "scenario": "exhaustion",
+            "subscription_used_bytes": 1024,
+            "successful_echo_probes": 40,
+            "verified_at": "2026-10-19T22:59:10.763410734Z"
+          }
+        ],
+        "driver_exit_code": 0,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "source_before_after_equal": true,
+      "source_manifest_sha256": "0680aa92bb03ee7ed05b05f8d6194aeb34d741da7623fbfcd1c5e3ffb26b0851",
+      "source_files": 1634,
+      "test_binary_hash_evidence": "f399fa6bde808a2a049be07b9244b0c348a716cd6258f3be6007d97718b4ad0c",
+      "current_runtime_differences": [],
+      "later_test_or_ci_differences": [
+        "backend/tools/capabilityinventory/main_test.go"
+      ]
+    }
+  ],
+  "preserved_failed_attempts": [
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T225011Z-RZ5fX9",
+      "result": {
+        "passed": false,
+        "scenarios": [],
+        "driver_exit_code": 1,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "reason": "Native durable outbox paused below disk reserve during five-node parallel run plus frontend/build work; retained guard, timeouts, event state and original failures; serial resource-budget rerun passed",
+      "disk_guard_samples": [
+        {
+          "available_bytes": 1069588480,
+          "reserved_bytes": 1688509644,
+          "requested_bytes": 457
+        },
+        {
+          "available_bytes": 1072455680,
+          "reserved_bytes": 1688509644,
+          "requested_bytes": 457
+        },
+        {
+          "available_bytes": 1078915072,
+          "reserved_bytes": 1688509644,
+          "requested_bytes": 457
+        }
+      ]
+    },
+    {
+      "directory": ".codex-local-artifacts/acceptance/zero-revocation-20261019T225011Z-NRzqww",
+      "result": {
+        "passed": false,
+        "scenarios": [],
+        "driver_exit_code": 1,
+        "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+      },
+      "reason": "Native durable outbox paused below disk reserve during five-node parallel run plus frontend/build work; retained guard, timeouts, event state and original failures; serial resource-budget rerun passed",
+      "disk_guard_samples": [
+        {
+          "available_bytes": 1069707264,
+          "reserved_bytes": 1688509644,
+          "requested_bytes": 457
+        },
+        {
+          "available_bytes": 1073364992,
+          "reserved_bytes": 1688509644,
+          "requested_bytes": 457
+        },
+        {
+          "available_bytes": 1060663296,
+          "reserved_bytes": 1688509644,
+          "requested_bytes": 457
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "backend_test_vet_build": {
+      "status": "passed",
+      "log": "/tmp/zboard-delivery-backend-ready.log",
+      "networkstore_seconds": 53.211,
+      "handler_seconds": 246.375,
+      "final_doc_inventory": "passed /tmp/zboard-delivery-document-contracts-final.log",
+      "final_complete": "passed /tmp/zboard-delivery-final-complete.log"
+    },
+    "mysql_prescribed": {
+      "status": "passed",
+      "log": "/tmp/zboard-delivery-mysql-final-full.log",
+      "datastore_seconds": 111.196,
+      "handler_seconds": 473.752
+    },
+    "mysql_adapter_and_recovery": {
+      "status": "passed",
+      "log": "/tmp/zboard-delivery-repair-final-mysql.log",
+      "handler_seconds": 9.906,
+      "networkstore_seconds": 32.737
+    },
+    "expanded_ci_mysql": {
+      "status": "passed",
+      "log": "/tmp/zboard-delivery-ci-mysql-expanded.log",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "datastore_seconds": 44.274,
+      "handler_seconds": 336.6,
+      "networkstore_seconds": 75.844
+    },
+    "pure_go_sqlite": {
+      "status": "passed",
+      "log": "/tmp/zboard-delivery-pure-sqlite-final.log",
+      "datastore_seconds": 9.375,
+      "networkstore_seconds": 10.274,
+      "handler_seconds": 0.67
+    },
+    "frontend": {
+      "install": "pnpm install --frozen-lockfile --package-import-method=copy",
+      "original_ci_exclusions_preserved": true,
+      "passed": 896,
+      "existing_skipped": 8,
+      "build_seconds": 14.03,
+      "log": "/tmp/zboard-delivery-frontend.log"
+    },
+    "openapi": {
+      "valid": true,
+      "existing_warnings": 282,
+      "log": "/tmp/zboard-delivery-openapi.log"
+    },
+    "previous_exact_ci": {
+      "head": "ab7814b1926d26593beac8464852ce626e71a2f7",
+      "six_jobs": "success",
+      "url": "https://github.com/zerodenet/zboard/actions/runs/39331843769"
+    },
+    "exact_head_ci": {
+      "commit": "abfe0aa02f1036a334dca79c8f593c0ef26755ee",
+      "url": "https://github.com/zerodenet/zboard/actions/runs/39339110344",
+      "jobs": {
+        "backend": "success",
+        "frontend": "success",
+        "mysql": "success",
+        "contract": "success",
+        "compose": "success",
+        "zrs-compiler": "success"
+      }
+    }
+  },
+  "external_read_only": {
+    "sink_commit": "d6520b50df646f01d69f9e64eabffec26c1554c4",
+    "paths": [
+      "src-tauri/src/services/subscription_wrapper.rs",
+      "src-tauri/crates/engine-client/src/subscription.rs",
+      "src-tauri/src/services/subscription.rs"
+    ],
+    "source_inspection_only": true,
+    "external_files_changed": false
+  },
+  "limits": [
+    "Native acceptance is isolated public fixed Zero build, VLESS traffic, not all protocols or production",
+    "Observed durations include concurrent local checks; not throughput or stop-latency commitments",
+    "Legacy shared credentials and per-endpoint static fallback still need further convergence",
+    "Entitlement/metering generations, full-term replacement and other P2 lifecycle work incomplete",
+    "Final node deletion/history attribution and P4 retention decoupling incomplete",
+    "P5 full UI, P6 measured local scaling and P7 comprehensive preparation incomplete"
+  ],
+  "other_failures_preserved": [
+    "/tmp/zboard-delivery-backend-first.log: fixed-query budget and moved compiler boundary; retained four-query budget and ownership guards",
+    "/tmp/zboard-delivery-proof-sqlite.log: test failed to use returned reconciling identity; corrected fixture, not product checks",
+    "/tmp/zboard-delivery-all-bindings-mysql.log: MySQL fixture zero dates/foreign keys; corrected valid fixture",
+    "/tmp/zboard-delivery-mysql-full.log: new preflight blocked historical missing-table recovery; separated recoverable gates from immutable source and added durable verification recovery",
+    "/tmp/zboard-delivery-repair-mysql.log: restored old baseline lacks optional deployment_mode; recovery uses existing node identity instead",
+    "/tmp/zboard-delivery-document-contracts.log: new declared transaction requires inventory count14; updated count, ownership checks retained"
+  ]
+}

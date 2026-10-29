@@ -1,15 +1,33 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
+import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchAccountProtocolLoads, fetchAccountSubscriptionsPage, fetchActiveSubscriptionTemplatesPage } from '../../api/client'
+import { createTicket, fetchTickets, fetchAccountProtocolLoads, fetchAccountSubscriptionsPage, fetchActiveSubscriptionTemplatesPage } from '../../api/client'
 import { fetchSubscriptionAccess, revokeSubscriptionAccess, rotateSubscriptionAccess, type SubscriptionAccess } from '../../api/subscriptionAccess'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import SubscriptionTermination from '../../components/SubscriptionTermination.vue'
+import SubscriptionAutomaticRenewal from '../../components/SubscriptionAutomaticRenewal.vue'
+import { useAppStore } from '../../stores/app'
+import { formatBytes } from '../../utils/format'
+import TicketCenter from '../../components/TicketCenter.vue'
+import UiButton from '../../components/UiButton.vue'
+import UiInput from '../../components/UiInput.vue'
+import UiSelect from '../../components/UiSelect.vue'
+import UiTextarea from '../../components/UiTextarea.vue'
+import TimeBadge from '../../components/TimeBadge.vue'
 import AccountSubscription from './AccountSubscription.vue'
 
 vi.mock('../../api/client', () => ({
+  getAuthToken: vi.fn(() => ''),
   fetchAccountSubscriptionsPage: vi.fn(),
   fetchActiveSubscriptionTemplatesPage: vi.fn(),
   fetchAccountProtocolLoads: vi.fn(),
+  createTicket: vi.fn(),
+  fetchTickets: vi.fn(),
+  fetchTicket: vi.fn(),
+  closeTicket: vi.fn(),
+  replyTicket: vi.fn(),
+  updateTicketStatus: vi.fn(),
 }))
 vi.mock('../../api/subscriptionAccess', () => ({
   fetchSubscriptionAccess: vi.fn(),
@@ -39,6 +57,7 @@ function access(id: number): SubscriptionAccess {
 describe('account subscription independent loading and access identity', () => {
   let wrapper: VueWrapper | undefined
   let router: Router
+  let pinia: ReturnType<typeof createPinia>
 
   beforeEach(() => {
     vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page(subscriptions))
@@ -47,17 +66,26 @@ describe('account subscription independent loading and access identity', () => {
     vi.mocked(fetchSubscriptionAccess).mockImplementation(async id => access(id))
     vi.mocked(rotateSubscriptionAccess).mockImplementation(async id => access(id))
     vi.mocked(revokeSubscriptionAccess).mockResolvedValue(undefined as any)
+    vi.mocked(fetchTickets).mockResolvedValue(page([]))
   })
   afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
-  async function open(path = '/account/subscription') {
+  async function open(path = '/account/subscription', routed = false) {
     router = createRouter({ history: createMemoryHistory(), routes: [
-      { path: '/account/subscription', component: { template: '<div />' } },
+      { path: '/account/subscription', component: routed ? AccountSubscription : { template: '<div />' } },
       { path: '/account/plans', component: { template: '<div />' } },
+      { path: '/account/tickets', component: TicketCenter },
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(AccountSubscription, { global: { plugins: [router], stubs: { ConfirmDialog: true } } })
+    pinia = createPinia()
+    wrapper = mount(routed ? RouterView : AccountSubscription, { global: {
+      plugins: [pinia, router], components: { UiButton, UiInput, UiSelect, UiTextarea, TimeBadge },
+      stubs: {
+        ConfirmDialog: true, TicketAttachmentEditor: true, PageRefreshButton: true,
+        ModalDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
+      },
+    } })
     await flushPromises()
     return wrapper
   }
@@ -66,6 +94,72 @@ describe('account subscription independent loading and access identity', () => {
     expect(match, `button ${text}`).toBeDefined()
     return match!
   }
+
+  it.each([1, 2])('prefills a ticket for row %i independently of the managed credential without submitting or rotating', async id => {
+    const selected = 3 - id
+    await open(`/account/subscription?subscription=${selected}`, true)
+    const rows = wrapper!.findAll('tbody tr')
+    expect(rows.map(row => row.find('a[href^="/account/tickets"]').attributes('href'))).toEqual([
+      '/account/tickets?new=1&subscription_id=1',
+      '/account/tickets?new=1&subscription_id=2',
+    ])
+    expect(wrapper!.text()).toContain(`fixture-${selected}`)
+    const accessReads = vi.mocked(fetchSubscriptionAccess).mock.calls.length
+    const support = rows[id - 1]!.get('a[href^="/account/tickets"]')
+    expect(support.text()).toBe('就此订阅提交工单')
+    await support.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/account/tickets')
+    expect(router.currentRoute.value.query).toEqual({ new: '1', subscription_id: String(id) })
+    expect((wrapper!.get('#ticket-subscription_id').element as HTMLInputElement).value).toBe(String(id))
+    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('')
+    expect((wrapper!.get('#ticket-wallet_entry_id').element as HTMLInputElement).value).toBe('')
+    expect(wrapper!.text()).not.toContain(`fixture-${selected}`)
+    expect(createTicket).not.toHaveBeenCalled()
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+    expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(accessReads)
+  })
+
+  it('offers support for expired and ended history independently of renewal or access eligibility', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.status === 'active'
+      ? page([]) : page(subscriptions.map((sub, index) => ({ ...sub, status: index ? 'ended' : 'expired', can_renew: false }))))
+    await open()
+    expect(wrapper!.findAll('a[href^="/account/tickets"]').map(link => link.attributes('href'))).toEqual([
+      '/account/tickets?new=1&subscription_id=1',
+      '/account/tickets?new=1&subscription_id=2',
+    ])
+    expect(fetchSubscriptionAccess).not.toHaveBeenCalled()
+    expect(createTicket).not.toHaveBeenCalled()
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+  })
+
+  it('shows the support entry only for positive safe integer IDs', async () => {
+    const ids = [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '2', 'invalid', Number.MAX_SAFE_INTEGER]
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.status === 'active'
+      ? page([]) : page(ids.map(id => ({ ...subscriptions[0], id, status: 'ended', can_renew: false }))))
+    await open()
+    const links = wrapper!.findAll('a[href^="/account/tickets"]')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.attributes('href')).toBe(`/account/tickets?new=1&subscription_id=${Number.MAX_SAFE_INTEGER}`)
+    expect(createTicket).not.toHaveBeenCalled()
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+  })
+
+  it('shows the last renewal notice in its own row without blocking access', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([
+      { ...subscriptions[0], automatic_renewal_state: 'insufficient_balance', automatic_renewal_message: '余额不足，本次未扣款', automatic_renewal_checked_at: '2026-10-20T00:00:00Z' },
+      subscriptions[1],
+    ]))
+    await open()
+    const rows = wrapper!.findAll('tbody tr')
+    expect(rows[0]!.text()).toContain('上次自动续费余额不足')
+    expect(rows[0]!.text()).toContain('最近检查')
+    expect(rows[1]!.text()).not.toContain('余额不足')
+    expect(fetchSubscriptionAccess).toHaveBeenCalledWith(1, expect.anything())
+  })
 
   it('resolves a deep-linked subscription outside both the preview and current list page', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId
@@ -233,6 +327,157 @@ describe('account subscription independent loading and access identity', () => {
     expect(wrapper!.text()).not.toContain('正在读取链接状态')
   })
 
+  it('refreshes exact selected quota and term outside the preview without waiting for optional reads', async () => {
+    await open('/account/subscription?subscription=2')
+    const slow = deferred<any>(), slowTemplates = deferred<any>(), slowProtocols = deferred<any>()
+    const updated = { ...subscriptions[1], plan_name: 'Updated selected plan', flow_used: 80, flow_total: 200, end_at: '2028-02-03T00:00:00Z' }
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId === 2 ? page([updated]) : slow.promise)
+    vi.mocked(fetchActiveSubscriptionTemplatesPage).mockReturnValue(slowTemplates.promise)
+    vi.mocked(fetchAccountProtocolLoads).mockReturnValue(slowProtocols.promise)
+    await button('刷新').trigger('click')
+    await flushPromises()
+    expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith({ subscriptionId: 2, status: 'active', offset: 0, limit: 1 }, expect.anything())
+    const panel = wrapper!.get('.access-panel')
+    expect(panel.text()).toContain('Updated selected plan')
+    expect(panel.get('.subscription-access-context').text()).toContain('120 B')
+    expect(panel.findAllComponents(TimeBadge).some((badge: VueWrapper<InstanceType<typeof TimeBadge>>) => badge.props('value') === updated.end_at)).toBe(true)
+    expect(panel.text()).toContain('fixture-2')
+    expect(router.currentRoute.value.query.subscription).toBe('2')
+    slow.resolve(page(subscriptions))
+    slowTemplates.resolve(page([]))
+    slowProtocols.resolve({ sampled_at: '', activity_window_seconds: 120, items: [] })
+    await flushPromises()
+    expect(wrapper!.get('.access-panel').text()).toContain('Updated selected plan')
+  })
+
+  it('rechecks the exact selected target after termination settles and never selects another active subscription', async () => {
+    await open('/account/subscription?subscription=1')
+    await button('核对退订').trigger('click')
+    await flushPromises()
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId === 1
+      ? page([]) : page([subscriptions[1]]))
+    const before = vi.mocked(fetchSubscriptionAccess).mock.calls.length
+    wrapper!.findComponent(SubscriptionTermination).vm.$emit('settled')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('所选订阅不存在或已失效')
+    expect(wrapper!.find('.access-panel').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('fixture-1')
+    expect(wrapper!.text()).not.toContain('fixture-2')
+    expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(before)
+    expect(router.currentRoute.value.query.subscription).toBe('1')
+  })
+
+  it.each([403, 404])('clears a previously selected target after authoritative %s without a hidden fallback', async status => {
+    await open('/account/subscription?subscription=2')
+    const reads = vi.mocked(fetchSubscriptionAccess).mock.calls.length
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => {
+      if (params?.subscriptionId === 2) throw { response: { status } }
+      return page(subscriptions)
+    })
+    await button('刷新').trigger('click')
+    await flushPromises()
+    expect(wrapper!.find('.access-panel').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('fixture-2')
+    expect(wrapper!.text()).not.toContain('fixture-1')
+    expect(router.currentRoute.value.query.subscription).toBe('2')
+    expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(reads)
+  })
+
+  it('retains known selected quota and link on network failure with a stale notice and disabled credential writes', async () => {
+    await open('/account/subscription?subscription=2')
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => {
+      if (params?.subscriptionId === 2) throw { code: 'ERR_NETWORK' }
+      return page([{ ...subscriptions[1], flow_used: 99 }])
+    })
+    await button('刷新').trigger('click')
+    await flushPromises()
+    expect(wrapper!.get('.access-panel').text()).toContain('订阅详情尚未更新')
+    expect(wrapper!.get('.subscription-access-context').text()).toContain(formatBytes(90))
+    expect(wrapper!.get('.access-panel').text()).toContain('fixture-2')
+    expect(button('复制链接').exists()).toBe(true)
+    expect(button('轮换此链接').attributes('disabled')).toBeDefined()
+    expect(button('吊销此链接').attributes('disabled')).toBeDefined()
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+  })
+
+  it('ignores a delayed selected metadata refresh after navigating to another subscription', async () => {
+    await open('/account/subscription?subscription=1')
+    const late = deferred<any>()
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId === 1 ? late.promise : page(subscriptions))
+    await button('刷新').trigger('click')
+    await flushPromises()
+    const signal = vi.mocked(fetchAccountSubscriptionsPage).mock.calls.slice().reverse().find(([params]) => params?.subscriptionId === 1)?.[1]?.signal
+    await router.push('/account/subscription?subscription=2')
+    await flushPromises()
+    late.resolve(page([{ ...subscriptions[0], plan_name: 'Late old quota', flow_total: 999 }]))
+    await flushPromises()
+    expect(signal?.aborted).toBe(true)
+    expect(wrapper!.get('.access-panel').text()).toContain('fixture-2')
+    expect(wrapper!.get('.access-panel').text()).not.toContain('Late old quota')
+    expect(router.currentRoute.value.query.subscription).toBe('2')
+  })
+
+  it('discards the previous account context and ignores its delayed quota response without replaying mutations', async () => {
+    await open('/account/subscription?subscription=1')
+    const app = useAppStore(pinia)
+    const late = deferred<any>()
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId ? late.promise : page(subscriptions))
+    await button('刷新').trigger('click')
+    await flushPromises()
+    const oldRead = vi.mocked(fetchAccountSubscriptionsPage).mock.calls.slice().reverse().find(([params]) => params?.subscriptionId === 1)!
+    const reads = vi.mocked(fetchAccountSubscriptionsPage).mock.calls.length
+    app.user = { id: 9, email: 'other@example.test', isAdmin: false }
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId ? page([]) : page(subscriptions))
+    await flushPromises()
+    expect(oldRead[1]?.signal?.aborted).toBe(true)
+    expect(vi.mocked(fetchAccountSubscriptionsPage).mock.calls.slice(reads).some(([params]) => params?.subscriptionId === 1)).toBe(true)
+    late.resolve(page([{ ...subscriptions[0], plan_name: 'Previous account quota' }]))
+    await flushPromises()
+    expect(wrapper!.find('.access-panel').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('fixture-1')
+    expect(wrapper!.text()).not.toContain('Previous account quota')
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+  })
+
+  it('clears a selected context when the refreshed target explicitly ended despite an old active preview', async () => {
+    await open('/account/subscription?subscription=2')
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId === 2
+      ? page([{ ...subscriptions[1], status: 'ended' }]) : page(subscriptions))
+    await button('刷新').trigger('click')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('所选订阅不存在或已失效')
+    expect(wrapper!.find('.access-panel').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('fixture-1')
+    expect(wrapper!.text()).not.toContain('fixture-2')
+    expect(router.currentRoute.value.query.subscription).toBe('2')
+  })
+
+  it.each([1, 2])('refreshes only the changed automatic-renewal row %i and the managed target if identical', async id => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page(subscriptions.map(sub => ({ ...sub, automatic_renewal_state: 'insufficient_balance' }))))
+    await open('/account/subscription?subscription=1')
+    const row = wrapper!.findAll('tbody tr')[id - 1]!
+    await row.findAll('button').find(item => item.text().includes('余额自动续费'))!.trigger('click')
+    await flushPromises()
+    const calls = vi.mocked(fetchAccountSubscriptionsPage).mock.calls.length
+    const accessCalls = vi.mocked(fetchSubscriptionAccess).mock.calls.length
+    const statsCalls = vi.mocked(fetchAccountProtocolLoads).mock.calls.length
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => page([{ ...subscriptions[params?.subscriptionId === 2 ? 1 : 0], automatic_renewal_state: 'disabled' }]))
+    wrapper!.findComponent(SubscriptionAutomaticRenewal).vm.$emit('changed', id)
+    await flushPromises()
+    const refreshed = vi.mocked(fetchAccountSubscriptionsPage).mock.calls.slice(calls)
+    expect(refreshed.length).toBe(id === 1 ? 2 : 1)
+    expect(refreshed.every(([params]) => params?.subscriptionId === id && params.limit === 1)).toBe(true)
+    const afterRows = wrapper!.findAll('tbody tr')
+    expect(afterRows[id - 1]!.text()).not.toContain('上次自动续费余额不足')
+    expect(afterRows[2 - id]!.text()).toContain('上次自动续费余额不足')
+    expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(accessCalls + (id === 1 ? 1 : 0))
+    expect(fetchAccountProtocolLoads).toHaveBeenCalledTimes(statsCalls)
+    expect(router.currentRoute.value.query.subscription).toBe('1')
+    expect(wrapper!.get('.access-panel').text()).toContain('fixture-1')
+  })
+
   it('aborts pending reads on unmount without fetching a link or navigating later', async () => {
     const pending = deferred<any>()
     vi.mocked(fetchAccountSubscriptionsPage).mockReturnValue(pending.promise)
@@ -255,9 +500,9 @@ describe('account subscription independent loading and access identity', () => {
   vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
   vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
   vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: exhausted.id })
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }, { path: '/account/tickets', component: { template: '<div />' } }] })
   await router.push('/account/subscription'); await router.isReady()
-  const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
+  const wrapper = mount(AccountSubscription, { global: { plugins: [createPinia(), router] } })
   await flushPromises()
   expect(wrapper.text()).toContain('本周期流量已用完')
   expect(wrapper.text()).toContain('下次重置')
@@ -273,9 +518,9 @@ it('offers renewal recovery on a stopped service without offering link managemen
   vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.status === 'active' ? page([]) : page([{ ...subscriptions[0], status: 'expired', ended_at: '2026-09-27T00:00:00Z', end_reason: 'expired', renewal_until: '2026-10-04T00:00:00Z', can_renew: true }]))
   vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
   vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }, { path: '/account/tickets', component: { template: '<div />' } }] })
   await router.push('/account/subscription'); await router.isReady()
-  const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
+  const wrapper = mount(AccountSubscription, { global: { plugins: [createPinia(), router] } })
   await flushPromises()
   expect(wrapper.find('a[href="/account/plans?operation=renew&subscription=1"]').text()).toBe('续费恢复')
   expect(wrapper.text()).toContain('续费保留至')
@@ -290,9 +535,9 @@ it('keeps an exhausted purchase-only record without promising a reset or renewal
   vi.mocked(fetchActiveSubscriptionTemplatesPage).mockResolvedValue(page([]))
   vi.mocked(fetchAccountProtocolLoads).mockResolvedValue({ items: [], sampled_at: '', activity_window_seconds: 120 })
   vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: exhausted.id })
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/subscription', component: AccountSubscription }, { path: '/account/plans', component: { template: '<div />' } }, { path: '/account/tickets', component: { template: '<div />' } }] })
   await router.push('/account/subscription'); await router.isReady()
-  const wrapper = mount(AccountSubscription, { global: { plugins: [router] } })
+  const wrapper = mount(AccountSubscription, { global: { plugins: [createPinia(), router] } })
   await flushPromises()
   expect(wrapper.text()).toContain('Plan 1')
   expect(wrapper.text()).toContain('此订阅流量已用完，可前往套餐中心购买新的订阅。')

@@ -79,6 +79,12 @@ func SettingInputSchemaFor(config Setting) SettingInputSchema {
 	}
 
 	switch config.ConfigKey {
+	case "traffic_report_diagnostics":
+		maxBytes := 1024
+		schema = SettingInputSchema{Control: "json", MaxBytes: &maxBytes, Placeholder: `null 或 {"until":"RFC3339到期时间","reason":"采集原因"}`}
+	case "subscription_renewal_grace_days":
+		minimum, maximum, step := int64(0), int64(3650), int64(1)
+		schema = SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
 	case "site_name":
 		maxBytes := 80
 		schema = SettingInputSchema{Control: "text", Required: true, MaxBytes: &maxBytes, Placeholder: "zboard"}

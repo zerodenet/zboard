@@ -1,0 +1,25 @@
+# Actual MySQL test profiles
+
+Normal pull requests run `core`. Development and release acceptance run `full`, which executes both `core` and `extended`. This divides responsibilities and cost; it does not mark an unexecuted profile as passed or waive a failing test. The earlier `ff3b147` handler-package 900.016-second timeout remains a failure. Its last displayed test had run for only one second and is not evidence of the cause. No throughput or new-head validation is inferred from this selection change.
+
+`scripts/mysql_extended_tests.json` lists only exact extended test identities, scale parameters and individual reasons. All other discovered MySQL tests, including new packages, default to core. The current extended list contains 12 tests: seven source/history/native-proof scale experiments, one 240-job p95 experiment and four cross-backend or exhaustive copy matrices. Their assertions remain unchanged. Complete migration and missing-authority tests, normal FIFO/money examples, lock-price/mixed funding/refunds/whole termination, cash/automatic/manual races, late payment, unknown delivery results, ordinary retention/archive/replay, native signed discount delivery, finite reservation and automatic staging, core/plugin admission, expired execution fences and runtime drain remain core. Single-row oversized evidence checks remain core. Basic copy, actual interrupted preparation, receipt rollback, baseline-proof forgery, isolation checks and same-server rejection remain core.
+
+The runner obtains actual inventory using Go's JSON `-list MySQL ./...` output, rather than a static package allowlist. It additionally lists the whole jobstore package because its generic fixture selects real MySQL when the DSN is set. This preserves its existing DSN-selected coverage. It also includes MySQL tests outside the previous six-package CI list (currently meteringstore). Inventory listing compiles test binaries; it is not execution of their assertions. The policy rejects stale/duplicate/unreasoned extended entries, missing mandatory packages, cross-package regex collisions and incomplete partitions. Positive fully anchored Go RE2 expressions are generated from actual names. No negative lookahead or growing exclusion list is used.
+
+Business packages, jobstore and platform-copy tests run as separate sequential groups. The copy group remains last because it uses MySQL's server-wide source read lock. Each command keeps `-p 2`, `-count=1` and `-timeout 15m`; package timeouts, p95 assertions and other business thresholds are unchanged. Extended failures do not get retries or extra time. Full acceptance continues independent groups after a failure to retain diagnostics, then exits nonzero. A profile passes only when every selected top-level test is observed passing with no failed/missing/unexpected/skipped tests or subtests. A DSN is required for execution; SQLite fallback or an environment skip is not actual MySQL evidence.
+
+Run against an isolated MySQL 8.4 instance with random fixture databases:
+
+```sh
+export ZBOARD_TEST_MYSQL_DSN='root:REPLACE@tcp(127.0.0.1:3306)/?parseTime=true&loc=UTC'
+python3 scripts/mysql_profiles.py --profile core --output-dir /tmp/mysql-core-UNIQUE
+python3 scripts/mysql_profiles.py --profile extended --output-dir /tmp/mysql-extended-UNIQUE
+# Required complete development/release matrix: both profiles, including all jobstore and copy tests.
+python3 scripts/mysql_profiles.py --profile full --output-dir /tmp/mysql-full-UNIQUE
+```
+
+`--plan-only` lists/compiles actual tests and records their partition and exact commands but does not run assertions. It records `planned_not_executed`, never `passed`. Use a new output directory each time; existing evidence is never overwritten. Each run preserves original JSONL, source SHA-256 fingerprints (including local test changes), HEAD, complete dynamic inventory, exact partition, generated commands, elapsed times and final receipt. Receipts contain no DSN/environment dump. Database fixtures themselves retain their existing creation/cleanup behavior; this runner does not delete persistent databases, volumes, logs or caches.
+
+The default CI uploads its core evidence even on failure. `mysql-full-acceptance` is an explicit `workflow_dispatch` workflow that runs the full matrix and uploads its evidence. GitHub ordinarily requires a dispatch workflow to exist on the default branch before it is dispatchable; merely adding it to this PR does not prove dispatch works or that acceptance ran. Until available, the same local `--profile full` entry is executable against the isolated cloud test instance. Neither adding this workflow nor a successful core CI replaces required exact-head full MySQL, SQLite, concurrency, upgrade, capacity, external-sandbox or production acceptance records. Production deployment and migrations remain outside this PR's execution authorization.
+
+执行器将Go的JSON标准输出与下载/编译stderr分文件保存，避免新环境下载依赖时把合法诊断误判为损坏JSON。执行前后同时绑定HEAD及全部backend Go/SQL/模块/归属/OpenAPI和分层脚本指纹；生产源码或测试源码变化均不能报通过。策略行为测试当前9项实际通过；动态Go清单和实库运行另有独立回执，不能用静态360项清单代替。

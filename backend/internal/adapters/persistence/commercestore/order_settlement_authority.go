@@ -9,6 +9,9 @@ import (
 )
 
 func lockSettlementUsers(tx *gorm.DB, buyer, actor uint) (model.User, error) {
+	return lockSettlementUsersMode(tx, buyer, actor, false)
+}
+func lockSettlementUsersMode(tx *gorm.DB, buyer, actor uint, exclusiveActor bool) (model.User, error) {
 	if actor == 0 {
 		return model.User{}, commerce.ErrOrderPermission
 	}
@@ -23,7 +26,7 @@ func lockSettlementUsers(tx *gorm.DB, buyer, actor uint) (model.User, error) {
 	var administrator model.User
 	for _, id := range ids {
 		strength := "SHARE"
-		if id == buyer {
+		if id == buyer || exclusiveActor && id == actor {
 			strength = "UPDATE"
 		}
 		var user model.User

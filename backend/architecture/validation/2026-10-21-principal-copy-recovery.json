@@ -1,0 +1,248 @@
+{
+  "evidence_version": 1,
+  "validated_utc": "2026-10-21T01:07:43.183263+00:00",
+  "baseline_commit": "a9aae1621ce04e303de248747903f3637c1c61b4",
+  "status": "TARGETED_VALIDATION_PASS_WITH_EXPECTED_OLD_ASSERTION_FAILURES",
+  "candidate_files_sha256": {
+    "backend/internal/adapters/persistence/platformstore/principal_lookup_copy_test.go": "1190abfdfd932c5e3725f056abb51ef59479217386b8a21e387bc2fa4b3938cd",
+    "backend/internal/datastore/database_copy.go": "d8314e7b1a7a9baf177fc02bf14b4ee75ad46a756f66e9b44ce66e801b8034f4",
+    "backend/internal/datastore/principal_lookup_copy_test.go": "bfb0ea9d3cabb5e82711fe3c793510a77c9c74f5a28a6a30208941e04fb0acac"
+  },
+  "patch_sha256": "6488376e73a22adf8c203a39738fb6240efabb9be8553e3e5e149ee08d4edfca",
+  "runner_sha256": "f0c2264beb8d6c39776230dd8d32f12d6c3d02c51f37f69497300608476a3900",
+  "environment": {
+    "go": "1.26.8",
+    "GOMAXPROCS": 1,
+    "go_parallel_packages": 1,
+    "mysql": "isolated MySQL8.4 test instance",
+    "default_go_test_timeout": "unchanged"
+  },
+  "production_contract": {
+    "eligible_table": "protocol_credentials",
+    "trigger": "Rows.Columns physically lacks any of principal_digest,secret_principal_digest,principal_lookup_version",
+    "target_value": "principal_lookup_version=int64(0) in original INSERT map, preserving physical version-column casing if present",
+    "source_queries_added": 0,
+    "source_writes_added": 0,
+    "new_schema_or_migration": false,
+    "new_marker": false,
+    "batch_size": 200,
+    "complete_three_column_source": "preserve every value, including v1/v2 and legal empty digests; do not infer old complete wrongv1"
+  },
+  "normal_public_matrix": {
+    "SQLite_to_SQLite": 5,
+    "MySQL_to_SQLite": 5,
+    "SQLite_to_MySQL": 5,
+    "MySQL_to_MySQL_new_coverage": false,
+    "cases_per_direction": [
+      "complete_v1_and_legal_empty_digest",
+      "missing_secret_digest",
+      "missing_version",
+      "missing_both_digests",
+      "owned_completion_failure_and_retry"
+    ]
+  },
+  "internal_matrix": "SQLite201rows/200+1INSERTs:5coverage cases, plus1missing-target-version INSERT rollback case",
+  "old_control": {
+    "overlay": "exact baseline database_copy.go only, with new tests retained for compile compatibility; not original byte-identical parent binary",
+    "expected_assertion": "copied lookup coverage=1, want0",
+    "leaf_count": 3,
+    "scope": "public missing_secret_digest only; SQLite1leaf, crossdriver2leaves; no compile/setup/unrelated leaf failure"
+  },
+  "race": {
+    "drivers": "SQLite only",
+    "count": 3,
+    "scope": [
+      "internal201row five-case contract",
+      "public missing_secret_digest",
+      "ownedcompletion rollback"
+    ],
+    "all_15_public_fixtures_under_race": false
+  },
+  "steps": [
+    {
+      "name": "old-public-sqlite",
+      "state": "EXPECTED_ASSERTION_FAIL",
+      "wall_seconds": 5.760480544002348,
+      "package_results": [
+        {
+          "Action": "fail",
+          "Elapsed": 0.442,
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
+        }
+      ],
+      "leaves": [
+        "TestMigrationCopierPrincipalLookupCoverage/missing_secret_digest"
+      ],
+      "failed_leaves": [
+        "TestMigrationCopierPrincipalLookupCoverage/missing_secret_digest"
+      ],
+      "count": 1,
+      "race": false,
+      "mysql": false,
+      "log_sha256": "349beebd380b5459a2b25fae0c0ecb137bcef343ca1250cc4abf9e5f2e5e920e"
+    },
+    {
+      "name": "old-public-cross-driver",
+      "state": "EXPECTED_ASSERTION_FAIL",
+      "wall_seconds": 9.212978720999672,
+      "package_results": [
+        {
+          "Action": "fail",
+          "Elapsed": 8.628,
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
+        }
+      ],
+      "leaves": [
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_secret_digest",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_secret_digest"
+      ],
+      "failed_leaves": [
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_secret_digest",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_secret_digest"
+      ],
+      "count": 1,
+      "race": false,
+      "mysql": true,
+      "log_sha256": "a30234a28df774aa337afe11e78d796905b4fbbdbf073d659dfb21c774a861fb"
+    },
+    {
+      "name": "fixed-internal-sqlite",
+      "state": "PASS",
+      "wall_seconds": 12.442135028999473,
+      "package_results": [
+        {
+          "Action": "pass",
+          "Elapsed": 0.059,
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore"
+        }
+      ],
+      "leaves": [
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/both_digests_missing",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/complete_preserves_v0_v1_v2_and_empty_digest",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/missing_principal_digest_mixed_version_key",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/missing_secret_digest",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/missing_version_explicit_unknown",
+        "TestCopyPrincipalLookupRejectsMissingTargetVersionWithoutSourceWrites"
+      ],
+      "failed_leaves": [],
+      "count": 1,
+      "race": false,
+      "mysql": false,
+      "log_sha256": "d16ea2ff4c4cf63f05dd80e480fa5d18d180f7bd97928f04ae96823f1763100d"
+    },
+    {
+      "name": "fixed-public-sqlite",
+      "state": "PASS",
+      "wall_seconds": 4.440907238000364,
+      "package_results": [
+        {
+          "Action": "pass",
+          "Elapsed": 2.2359999999999998,
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
+        }
+      ],
+      "leaves": [
+        "TestMigrationCopierPrincipalLookupCompletionRollback",
+        "TestMigrationCopierPrincipalLookupCoverage/complete_v1_and_legal_empty_digest",
+        "TestMigrationCopierPrincipalLookupCoverage/missing_both_digests",
+        "TestMigrationCopierPrincipalLookupCoverage/missing_secret_digest",
+        "TestMigrationCopierPrincipalLookupCoverage/missing_version"
+      ],
+      "failed_leaves": [],
+      "count": 1,
+      "race": false,
+      "mysql": false,
+      "log_sha256": "9a2e10d1323ea74ca0064de08ff7c3696543b0f62888c59525baac703c5e9956"
+    },
+    {
+      "name": "fixed-public-cross-driver",
+      "state": "PASS",
+      "wall_seconds": 43.188586413998564,
+      "package_results": [
+        {
+          "Action": "pass",
+          "Elapsed": 42.578,
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
+        }
+      ],
+      "leaves": [
+        "TestMySQLMigrationCopierPrincipalLookupCompletionRollback/false",
+        "TestMySQLMigrationCopierPrincipalLookupCompletionRollback/true",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/false/complete_v1_and_legal_empty_digest",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_both_digests",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_secret_digest",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/false/missing_version",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/true/complete_v1_and_legal_empty_digest",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_both_digests",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_secret_digest",
+        "TestMySQLMigrationCopierPrincipalLookupCoverage/true/missing_version"
+      ],
+      "failed_leaves": [],
+      "count": 1,
+      "race": false,
+      "mysql": true,
+      "log_sha256": "1c43dc3d7f950514d9c6c6fe09b176fc33c5b2845c7d55276e38642a908ccf99"
+    },
+    {
+      "name": "fixed-focused-race-internal",
+      "state": "PASS",
+      "wall_seconds": 19.972546241999225,
+      "package_results": [
+        {
+          "Action": "pass",
+          "Elapsed": 3.196,
+          "Package": "github.com/zerodenet/zboard/backend/internal/datastore"
+        }
+      ],
+      "leaves": [
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/both_digests_missing",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/complete_preserves_v0_v1_v2_and_empty_digest",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/missing_principal_digest_mixed_version_key",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/missing_secret_digest",
+        "TestCopyPrincipalLookupPreservesSourceAndInvalidatesOnlyKnownMissing/missing_version_explicit_unknown"
+      ],
+      "failed_leaves": [],
+      "count": 3,
+      "race": true,
+      "mysql": false,
+      "log_sha256": "0ed1d6488893747d178d075b982cbcb501eda67b647968b8221caeebbe686c8c"
+    },
+    {
+      "name": "fixed-focused-race-public",
+      "state": "PASS",
+      "wall_seconds": 77.63418210999953,
+      "package_results": [
+        {
+          "Action": "pass",
+          "Elapsed": 74.958,
+          "Package": "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
+        }
+      ],
+      "leaves": [
+        "TestMigrationCopierPrincipalLookupCompletionRollback",
+        "TestMigrationCopierPrincipalLookupCoverage/missing_secret_digest"
+      ],
+      "failed_leaves": [],
+      "count": 3,
+      "race": true,
+      "mysql": false,
+      "log_sha256": "0468805c06dbc5fe544723e692f69145f9f6f58ef763dd7914d740dea80a2d23"
+    }
+  ],
+  "published_migrations": {
+    "sql_asset_count": 148,
+    "unchanged_against_baseline_head_and_final": true,
+    "inventory_receipt_sha256": "3993d680813ccbf79badeff335c13e8d436ac07db4d6e3e3993468d19bf24373"
+  },
+  "source_sha256_unchanged_before_after": true,
+  "limits": [
+    "No full backend, original3-command MySQL gate, newCI, capacity or benchmark executed for this candidate. Root will validate integrated newsource.",
+    "No repair of alreadymaterialized complete wrongv1 and no emptydigest corruption heuristic.",
+    "Source actualcolumns/rawvalues compared before/after; canonical snapshot asserts current ProtocolCredential model fields, not unknownextraSQL columns.",
+    "Original NormalizeMigrationSecrets Task.content normalization and source task/run bookkeeping remain. The entire existing copy pipeline is not globally source-write-free.",
+    "Crossdriver tests are SQLite\u2194MySQL; no new MySQL\u2192MySQL case.",
+    "No OScrash/diskfailure proof; completion failure is an in-transaction callback failure with persisted rollback and retry.",
+    "Original topology/quiescence, targetownership/TX/receipt/FKrestoration and permissions are retained; no new arbitrarytableprefix support."
+  ],
+  "rollback": "No schema rollback required. Revert candidate source/tests to baseline; copied version0 rows remain compatible with existing lazy principal-index rebuilding. Reverting the fix reopens unsafe future known-partial copies; do not present that as repaired."
+}

@@ -3,6 +3,7 @@ package entitlements
 import "time"
 
 type Subscription struct {
+	EntitlementEpoch        uint64 `json:"-"`
 	KernelPolicyRevision    uint64 `json:"-"`
 	KernelPolicyFingerprint string `json:"-"`
 
@@ -10,6 +11,7 @@ type Subscription struct {
 	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion"`
 	EndedAt               *time.Time `json:"ended_at,omitempty"`
 	EndReason             string     `json:"end_reason,omitempty"`
+	RetirementRetryAt     *time.Time `json:"-"`
 
 	ID                uint       `json:"id"`
 	UserID            uint       `json:"user_id"`

@@ -13,7 +13,7 @@ import (
 )
 
 func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	for _, timezone := range []string{"UTC", "Asia/Shanghai", "Asia/Kathmandu", "Australia/Lord_Howe", "America/New_York"} {
 		t.Run(timezone, func(t *testing.T) {
 			location, err := time.LoadLocation(timezone)
@@ -40,6 +40,7 @@ func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T)
 			}); err != nil {
 				t.Fatal(err)
 			}
+			drainUsageProjections(t, h.db)
 			out, err := h.services.TrafficTrends(nil).Read(context.Background(), credential.UserID, q)
 			if err != nil || len(out.Snapshot.Points) != q.Days {
 				t.Fatalf("calendar: %+v: %v", out, err)

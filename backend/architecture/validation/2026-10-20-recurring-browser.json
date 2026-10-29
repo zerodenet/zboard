@@ -1,0 +1,65 @@
+{
+  "source": "4e1a78d517f2ce049170bf71e2be89e8b44839bb",
+  "scope": "P5 opt-in real Chromium / real built app / selected actual HTTP handlers / signed native discount fixture / isolated SQLite",
+  "result": "pass",
+  "seconds": 6.53,
+  "toolchain": {
+    "Go": "1.26.8",
+    "Python": "3.12.14",
+    "Playwright": "1.62.0",
+    "Chromium": "154.0.8037.57",
+    "installs_performed": false
+  },
+  "files": {
+    "backend/internal/handler/automatic_recurring_browser_test.go": "9c30ffff840147ef518d6ae6af49df68419203c5fb07bf2b00f227fcb42b5310",
+    "scripts/acceptance-recurring-browser.py": "97587fb6967c06503e0eedb7ff2f3e3912fdff525469ba3842bb34c0b5fe3501"
+  },
+  "binding": {
+    "source_manifest_sha256": "fa367ef658d9031b07192b715ff8b87df9d4e3eb1d34df2fbda0fa43ff3990e3",
+    "backend_tracked_files": 1883,
+    "additional_acceptance_files": 2,
+    "frontend_source_files": 529,
+    "current_built_dist_files": 188,
+    "all_hashes_match_fixed_source": true,
+    "test_binary_sha256": "4206d1d41481876ff3e023457d2bf8f938de1c0a311be8b7f38f96f3698d23ec",
+    "private_artifact_manifest_sha256": "abf1111bc597beec057761ceb6543b2d36e73b932d9ea84fcaa86ed6fe244cea"
+  },
+  "commands": {
+    "compile": "GOMAXPROCS=1 go test -c -p 1 -o <private-evidence>/handler.test ./internal/handler",
+    "run": "From backend/internal/handler: ZBOARD_RECURRING_BROWSER=1 ZBOARD_RECURRING_BROWSER_EVIDENCE_DIR=<fresh-absolute-0700-dir> ZBOARD_RECURRING_BROWSER_WEB_DIR=<current-built-dist-copy> ZBOARD_RECURRING_BROWSER_SCRIPT=<absolute-script> <private-evidence>/handler.test -test.run '^TestAutomaticRecurringChromiumAcceptance$' -test.timeout=4m -test.v"
+  },
+  "checks": {
+    "browser_checks_passed": 21,
+    "explicit_consent_PUTs": 4,
+    "api_failures": 0,
+    "external_requests": 0,
+    "base_minor": 12000,
+    "discount_minor": 2000,
+    "debit_minor": 10000,
+    "currency": "CNY",
+    "wallet_before_auto_minor": 40000,
+    "wallet_after_auto_minor": 30000,
+    "wallet_after_provider_outage_and_withdrawal_minor": 30000,
+    "replay_debits": 0,
+    "provider_outage_created_orders_or_funding": false,
+    "approval_preserved_during_outage": true,
+    "withdrawn_worker_actions": 0
+  },
+  "history": {
+    "old_9109284_success_seconds": 7.56,
+    "initial_wrong_cwd_failure_preserved": true,
+    "old_success_used_as_current_acceptance": false,
+    "current_run_failures": []
+  },
+  "evidence": "Private 0700 directory retains screenshots/auth/logs/source and artifact manifests; no authentication or raw browser artifacts checked into repository",
+  "migration": "None; fixture uses current migrations and trusted test payment facts. Only end_at/next_attempt_at shortened for the test, not financial/approval history.",
+  "limitations": [
+    "Selected real handlers on loopback, not full production router/middleware acceptance",
+    "SQLite and signed local test native package, not actual external payment provider or MySQL browser acceptance",
+    "No natural-term passage or capacity claim",
+    "Native executable is transient under existing helper; source, test binary and per-run signer retained but no separately retained native binary hash",
+    "Freshness guard rejection paths reviewed but not separately fault-injected",
+    "Final-source full backend/MySQL/CI remains required",
+    "No production migration or deployment"
+  ]
+}

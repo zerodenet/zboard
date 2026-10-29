@@ -174,11 +174,11 @@ func (h *handlers) publishNodeConfigWithOwnerLocked(ctx context.Context, nodeID,
 	if err := h.services.NodeCredentialReconciliation(h.credentialCipher, true).ReconcileNode(ctx, node.ID); err != nil {
 		return fail(fmt.Errorf("reconcile node subscription credentials: %w", err), "")
 	}
-	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfigWithOptionsContext(ctx, node, credential.Raw, probe.Version, suppressMieruFallback)
+	runtimeConfig, configSHA, targets, err := h.compileNodeRuntimeConfigWithCredentialTargets(ctx, node, credential.Raw, probe.Version, suppressMieruFallback)
 	if err != nil {
 		return fail(err, "")
 	}
-	deploymentState, err = state.SetDesired(ctx, deploymentState, configSHA)
+	deploymentState, err = state.SetDesiredWithTargets(ctx, deploymentState, configSHA, targets)
 	if err != nil {
 		return fail(err, "")
 	}

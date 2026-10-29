@@ -1,0 +1,109 @@
+{
+  "stage": "P4 hourly projection durable intent",
+  "status": "SQLite and isolated MySQL targeted pass; exact-commit full validation pending",
+  "base_commit": "cf1c8be311b9b6bb6f8d103da3233705208db53c",
+  "behavior": [
+    "Authoritative settlement commits exact pending intent with ledger, quota and cursors; hourly and daily deltas commit independently with checkpoint removal.",
+    "Legacy pending rows preserve already completed synchronous hourly evidence; all new facts, including endpoint zero, enqueue hourly work.",
+    "Scope/time pending probes match actual complete UTC hour aggregation and per-calendar-day precise partial-hour edges.",
+    "MySQL READ COMMITTED worker row locks avoid an auxiliary upsert holding the core intent insert gap.",
+    "Rebuild and cross-driver transfer exclude exact unprojected hourly fact IDs without clearing pending evidence."
+  ],
+  "migration": {
+    "version": "0054_hourly_usage_projection.up.sql",
+    "new_fields": ["hourly_pending", "user_id", "subscription_id", "node_id", "record_at"],
+    "indexes": 5,
+    "legacy_default_hourly_pending": false,
+    "record_at_semantics": "Actual projected UTC hour bucket; original timestamp remains TrafficRecord.At.",
+    "cutover": "Stop old writers; remove SQLite synchronous hourly triggers; preserve existing aggregates and daily-only pending work.",
+    "recovery": "Resume unmarked interrupted DDL without deleting intents; refuse marked missing recovery fields; rebuild only confirmed facts, including missing or empty replacement derived table.",
+    "rollback": "Stop intake/workers and drain all intents. Explicit maintenance refuses missing migration evidence or unrecovered derived history, then restores SQLite legacy triggers. Down SQL preserves intents."
+  },
+  "tests": [
+    {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/adapters/persistence/meteringstore ./internal/datastore ./internal/handler -run 'TestHourlyProjection|TestSQLiteHourly|TestUsageProjection|TestAccountingHourlyProjection|TestHourlyRebuild' -count=1 -timeout 4m",
+      "result": "pass",
+      "database": "SQLite",
+      "seconds": {"meteringstore": 0.763, "datastore": 0.857, "handler": 0.424},
+      "log": "/tmp/zboard-hourly-final-sqlite-tests.log"
+    },
+    {
+      "command": "ZBOARD_TEST_MYSQL_DSN='<isolated test server DSN>' GOMAXPROCS=1 go test -p 1 ./internal/datastore ./internal/handler -run '^TestMySQL(HourlyProjection|SlowHourlyProjection|UsageProjection|HourlyRetirement|TrafficHourlyDatabaseTransfer|TrafficSummaryReads|TrafficBreakdownReads)' -count=1 -timeout 5m",
+      "result": "pass",
+      "database": "MySQL 8.4 isolated random databases",
+      "seconds": {"datastore": 16.127, "handler": 48.444},
+      "log": "/tmp/zboard-hourly-final-mysql-tests.log",
+      "coverage": ["Competing workers and checkpoint failure", "Hourly failure preserves core quota commit", "Slow hourly bucket does not lock core intent insert gap", "Partial DDL, missing and empty derived table recovery", "Lost marked scope refused", "SQLite to MySQL, MySQL to SQLite and MySQL to MySQL transfer", "Kolkata and Kathmandu partial-hour calendar edges"]
+    },
+    {
+      "command": "ZBOARD_TEST_MYSQL_DSN='<isolated test server DSN>' GOMAXPROCS=1 go test -p 1 ./internal/datastore ./internal/handler -run '^TestMySQLHourly(Migration|Upgrade|ProjectionSchema)' -count=1 -timeout 5m",
+      "result": "pass",
+      "database": "MySQL 8.4 isolated random databases",
+      "seconds": {"datastore": 32.167, "handler": 6.044},
+      "log": "/tmp/zboard-hourly-mysql-recovery-regression.log"
+    },
+    {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/adapters/persistence/meteringstore ./internal/adapters/persistence/observabilitystore ./internal/datastore ./internal/handler -run 'TestUsageProjection|TestHourlyProjection|TestSQLiteHourly|TestAccountingHourlyProjection|TestHourlyRebuild|TestTrafficSummary|TestTrafficBreakdown|TestTrafficTrends|TestTrafficNode|TestTrafficCalendar|TestTrafficReporting|TestDashboard' -count=1 -timeout 5m",
+      "result": "pass",
+      "database": "SQLite; MySQL-only cases not selected",
+      "seconds": {"meteringstore": 2.543, "observabilitystore": 0.634, "datastore": 1.552, "handler": 3.787},
+      "log": "/tmp/zboard-hourly-final-regression.log"
+    }
+  ],
+  "storage_sample": {
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/datastore -run '^TestSQLiteHourlyProjectionPendingStorageSample$' -v -count=1",
+    "result": "pass",
+    "seconds": 0.133,
+    "facts": 1000,
+    "users": 64,
+    "subscriptions": 128,
+    "nodes": 16,
+    "endpoints": 8,
+    "sqlite_allocated_pending_table_and_index_bytes": {"0053": 65536, "0054": 319488},
+    "log": "/tmp/zboard-hourly-storage-sample.log",
+    "excludes": ["Ledger storage", "WAL", "Hourly and daily buckets", "MySQL storage", "Sustained workload"]
+  },
+  "environment": {
+    "date": "2026-10-20",
+    "scope": "Cloud integration workspace only",
+    "go": "1.26.8",
+    "gomaxprocs": 1,
+    "cgroup_cpu_max": "400000 100000",
+    "cgroup_memory_max_bytes": 17179869184
+  },
+  "ci_failure_and_fixture_followup": {
+    "original_commit": "53a056d32633dcbda9b243553d85a88fe9fc2090",
+    "ci_run": 39369974199,
+    "ci_job": 118455402109,
+    "original_handler_seconds": 224.517,
+    "original_result": "fail: two existing historical fixture tests omitted explicit hourly materialization after 0054 trigger cutover",
+    "tests": ["TestTrafficProductionTrendRouteReusesFactsAndSeparatesTimezoneChanges", "TestTrafficUsagePageReferencesAreBoundedIndependentAndAccountScoped"],
+    "clean_exact_commit_reproduction": {
+      "result": "same two failures",
+      "handler_seconds": 0.348,
+      "log": "/tmp/zboard-53a-hourly-ci-repro.log"
+    },
+    "fix": "Two explicit rebuildFixtureHourly calls after direct settled historical seed insertion; no production change and no original assertion changed.",
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^TestTraffic(ProductionTrendRouteReusesFactsAndSeparatesTimezoneChanges|UsagePageReferencesAreBoundedIndependentAndAccountScoped)$' -count=1 -timeout 3m",
+    "exact_commit_plus_only_two_fixture_edits": {
+      "result": "pass",
+      "handler_seconds": 0.359,
+      "log": "/tmp/zboard-53a-hourly-ci-fixture-fixed.log",
+      "temporary_patch": "/tmp/zboard-53a-hourly-ci-fixture-fix.patch",
+      "verification_checkout_restored_clean": true
+    },
+    "matched_main_and_verification_test_file_sha256": {
+      "traffic_calendar_snapshot_test.go": "28bdf583d52379e2287a624248803dafea99f75e67a0364f915031aace3837aa",
+      "traffic_usage_query_test.go": "d731dd62a8a0f251ab26f8117a9a9793f8b35fb2960bea18c8b6f94fec86d7db"
+    },
+    "shared_workspace_result": "Initial setup blocked by a concurrent P3 import-cycle intermediate state; owner fixed cycle, rerun waits for its test slot. No main/full-CI pass claimed."
+  },
+  "limits": [
+    "No production migration, deployment or rollback executed.",
+    "Online/coverage projections are not fully isolated; authoritative raw/cursor/dedup state is not archived.",
+    "SQLite still serializes physical writers.",
+    "Hourly/daily microbenchmark recipe updated, but no new timing or improvement ratio claimed.",
+    "No core HTTP p95, sustained ingestion, queue lag, quota-to-revocation, overuse or autoscaling proof.",
+    "Latest rollback precondition hardening verified on SQLite; complete exact-commit checks remain integration responsibility."
+  ]
+}

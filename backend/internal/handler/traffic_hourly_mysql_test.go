@@ -12,10 +12,11 @@ import (
 )
 
 func TestMySQLHourlyRetirementAndAuditFailureRemainAtomic(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.projectZeroNodeEvents(context.Background(), accountingBenchmarkEvents(credential, 0, 1)); err != nil {
 		t.Fatal(err)
 	}
+	drainUsageProjections(t, h.db)
 	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Updates(map[string]any{"lifecycle": "fixed", "ends_on_quota_exhaustion": true, "flow_total": 30}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +24,7 @@ func TestMySQLHourlyRetirementAndAuditFailureRemainAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	expire := func() error {
-		_, err := h.services.CredentialExpiry().ExpireDue(context.Background(), time.Now().UTC(), 10)
+		_, err := h.services.CredentialExpiry(h.credentialCipher).ExpireDue(context.Background(), time.Now().UTC(), 10)
 		return err
 	}
 	if err := expire(); err == nil {
@@ -48,10 +49,10 @@ func TestMySQLHourlyRetirementAndAuditFailureRemainAtomic(t *testing.T) {
 	if err := expire(); err != nil {
 		t.Fatal(err)
 	}
-	assert(0)
+	assert(30) // Finalization retains immutable billing and historical read models.
 	var count int64
-	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("subscription retained: %d %v", count, err)
+	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("historical subscription lost: %d %v", count, err)
 	}
 	var order model.Order
 	if err := h.db.Where("subscription_ended_at IS NOT NULL AND status = 'paid'").First(&order).Error; err != nil || order.SubscriptionFinalFlowUsed != 30 {
@@ -107,6 +108,15 @@ func TestMySQLTrafficHourlyDatabaseTransferRebuildsLedgerProjection(t *testing.T
 	if err := copy(nil); err != nil {
 		t.Fatal(err)
 	}
+	var pending int64
+	if err := target.db.Table("metering_usage_projection_pending").Count(&pending).Error; err != nil || pending != 1 {
+		t.Fatal("transfer lost pending checkpoint", pending, err)
+	}
+	var projected int64
+	if err := target.db.Table("traffic_usage_hourly").Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 0 {
+		t.Fatal("transfer pre-applied pending hourly usage", projected, err)
+	}
+	drainUsageProjections(t, target.db)
 	assert(30)
 	var restored model.NodeRetirement
 	if err := target.db.First(&restored, "node_id = ?", retirement.NodeID).Error; err != nil {

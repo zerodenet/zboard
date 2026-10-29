@@ -1,0 +1,134 @@
+{
+  "phase": "P2 manual recurring discount checkout",
+  "starting_head": "30c6208",
+  "backend": {
+    "evidence": "V2 recurring, V1 hash unchanged, strict paid continuous manual renewal only",
+    "package_test_command": "GOMAXPROCS=1 go test -p 1 ./internal/capabilities/commerce ./internal/adapters/persistence/commercestore -count=1",
+    "package_seconds": [
+      0.009,
+      0.599
+    ],
+    "package_vet_exit": 0,
+    "sqlite_v1_legacy_command": "explicit V1 locked-base, unknown discount refusal and SQLite purchase snapshot regressions",
+    "sqlite_v1_legacy_package_seconds": 0.903,
+    "native_command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run ^TestCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals$ -count=1",
+    "native_exit": 0,
+    "native_package_seconds": 2.357,
+    "compile_command": "go test -p 1 ./internal/handler -run ^$",
+    "compile_exit": 0,
+    "compile_package_seconds": 0.017,
+    "mysql": "Two actual InnoDB/native tests included, not yet executed; database slot still held by e9 full/copy tests",
+    "http_conflicts": [
+      "409 subscription_quote_changed",
+      "409 discount_confirmation_required"
+    ],
+    "http_error_test_exit": 0,
+    "http_error_test_package_seconds": 0.375
+  },
+  "frontend": {
+    "task": "P2 frontend recurring agreement confirmation and inherited renewal",
+    "head": "ddf962438f99ea4e2511a652cd4a1e15735f0b06",
+    "time_utc": "2026-10-20T18:37:31.514259+00:00",
+    "files": {
+      "frontend/src/api/commerceDiscounts.ts": "23c97f69cf6c564a58e3ee8c98ec38761bced41d1028ccf967c9a5e13ba70289",
+      "frontend/src/api/commerceDiscounts.test.ts": "91ba0128cf44a037579b322d7488ed89daf4b81c706694bb8ba416a010989046",
+      "frontend/src/plugins/checkout.test.ts": "9118cb825e654ac1315210422c8f64e0d0a11a22f59e4843739ad015e07d8d54",
+      "frontend/src/views/account/AccountPlans.vue": "da1e407719ad9d23e3352a0d02e6f545d24fa1e35e2889734b9b3d7d6eef7a78",
+      "frontend/src/views/account/AccountPlans.test.ts": "31c3600e6a5295dae7eaefe37a2c9d56651786fefbc4412b1fd832d2e78c99cb"
+    },
+    "validation": {
+      "narrow": {
+        "command": "PATH=/workspace/toolchains/node-v22.23.0-linux-x64/bin:/workspace/toolchains/pnpm/node_modules/.bin:$PATH pnpm --dir frontend test --no-file-parallelism src/api/commerceDiscounts.test.ts src/views/account/AccountPlans.test.ts src/plugins/checkout.test.ts",
+        "result": "PASS",
+        "files_passed": 3,
+        "tests_passed": 89,
+        "tests_skipped": 0,
+        "duration_seconds": 6.35,
+        "log": ".codex-local-artifacts/recovery-validation/p2-recurring-narrow-final.log"
+      },
+      "diff_check": "PASS",
+      "full_frontend": {
+        "command": "PATH=/workspace/toolchains/node-v22.23.0-linux-x64/bin:/workspace/toolchains/pnpm/node_modules/.bin:$PATH NODE_OPTIONS=--max-old-space-size=4096 pnpm --dir frontend test --no-file-parallelism --exclude src/theme/designTokens.test.ts --exclude src/views/commercePurchaseExperience.test.ts --exclude src/utils/adminRowActionsAudit.test.ts --exclude src/utils/catalogScalePolicy.test.ts --exclude src/utils/formPolicy.test.ts --exclude src/utils/frontendArchitecturePolicy.test.ts",
+        "result": "PASS",
+        "exit_code": 0,
+        "files_passed": 199,
+        "files_skipped": 2,
+        "tests_passed": 1069,
+        "tests_skipped": 8,
+        "duration_seconds": 160.55,
+        "log": ".codex-local-artifacts/recovery-validation/p2-recurring-ci.log",
+        "warnings": "Vue/Router and intentionally failing mocked plugin diagnostics preserved in log; no failed test"
+      },
+      "build": {
+        "command": "PATH=/workspace/toolchains/node-v22.23.0-linux-x64/bin:/workspace/toolchains/pnpm/node_modules/.bin:$PATH pnpm --dir frontend build",
+        "result": "PASS",
+        "exit_code": 0,
+        "stages": [
+          "vue-tsc --noEmit",
+          "vite build"
+        ],
+        "vite_build_seconds": 12.0,
+        "log": ".codex-local-artifacts/recovery-validation/p2-recurring-build.log"
+      },
+      "source_hashes_match_frozen_narrow": true
+    },
+    "behavior": [
+      "Discovery allows quote_required and legacy initial_only; no discovery-scope inference",
+      "Actual available initial_only/recurring new quotes validated; recurring explanation locks renewal base, not discount amount",
+      "Renewal validates inherited recurring quote independent of catalog price/currency; no provider chooser/browser discount reference",
+      "Persisted confirmation includes actual discount scope, expiry and financial facts even if renewal request omits discount",
+      "Expired or failed refreshed quote cannot create or use catalog fallback",
+      "Unknown intent reload, including expired original quote, restores original request and key with original confirmation",
+      "Exact new creation 409 subscription_quote_changed and discount_confirmation_required remain unknown and retained"
+    ],
+    "restrictions": [
+      "P4/backend freeze unchanged",
+      "No commit/push",
+      "No runner/exclusion/skip changes",
+      "Full suite then build run serially after parent scheduling authorization",
+      "No live validation processes remain"
+    ],
+    "final_validation_time_utc": "2026-10-20T18:43:38.013252+00:00"
+  },
+  "openapi": {
+    "valid": true,
+    "warnings": 282,
+    "log": "recurring-openapi.log"
+  },
+  "no_new_schema_migration": true,
+  "no_other_repository_modified": true,
+  "limits": [
+    "Automatic recurring debit not yet integrated",
+    "Replacement/other operations discount not supported",
+    "Unknown history cannot reconstruct an agreement",
+    "Limited-use redemption external reserve/commit/release unavailable",
+    "New full backend/MySQL/CI and live browser acceptance pending"
+  ],
+  "private_logs_sha256": {
+    "recurring-package-tests.log": "3d32aba182d201b91ca10177a1e3158a07ec8a8a6f8121165cc3174d70d9551a",
+    "recurring-v1-lock-price-sqlite.log": "0baa923f769b78bbf2c511057266fb2f9a2b0790aa506cf664a27e024cd9dfcf",
+    "recurring-vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "recurring-native-sqlite.log": "9bf2566f8bf4004b42e3b5be95492c322d9ed590f7336de2e26b33d65997ad08",
+    "recurring-native-final-compile.log": "69cb33d1fc9160ae00ac3c7c20c4342fc0df3bc1928ddf715213da8e176df492",
+    "p2-recurring-narrow-final.log": "52521dd2154054a16547e9679c0639f25e2b05eca1e5dacf46770d331d6afbcc",
+    "recurring-openapi.log": "de836e12be6b8ef9b72885796543eb15c9d24ebf32534afeb59ff8cc315dd458",
+    "p2-recurring-ci.log": "deff5c5dcb6e6128b6135bfd9221c18ab7b74acaf793508809bb12ee0c273f97",
+    "p2-recurring-build.log": "e723dac4e80276e336e33ec38f25240b8298b9f64460df270e2bf2bcbd53609c"
+  },
+  "subsequent_actual_mysql_targeted_validation": {
+    "source_head": "30c6208db631ccd035fc321a40551289be098645",
+    "working_tree": "frozen P2 recurring plus committed P4; source manifest pending clean commit",
+    "command": "go test -p 1 ./internal/datastore ./internal/handler -run ^TestMySQL(ObservationRetentionIndexMigrationAndRecovery|FairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvaluation|ObservationRetentionPointLocksAllowFreshReceiveAndSettlement|CommerceRecurringDiscountNativeHTTPWalletAndManualRenewals|RecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote)$ -count=1 -timeout 5m",
+    "exit_code": 0,
+    "seconds": 34.133,
+    "mysql": "isolated MySQL 8.4; random fixture schemas; no core/copy concurrent suite",
+    "private_log_sha256": "9584d61bb30a791effa19d370cb3825cceef5152cbdd3bcf0e365a7931479e52",
+    "datastore_seconds": 7.775,
+    "handler_seconds": 23.996
+  },
+  "root_final_handler_datastore_vet_exit": 0,
+  "root_final_full_commerce_store_package_seconds": [
+    0.008,
+    0.646
+  ]
+}

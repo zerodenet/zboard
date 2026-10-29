@@ -7,7 +7,9 @@ import (
 
 const RenewalGracePeriod = 7 * 24 * time.Hour
 
-var ErrRenewalWindow = errors.New("订阅已结束且不支持续费，或已超过 7 天续费保留期，请新购套餐。")
+var ErrGrantTargetRequired = errors.New("历史订单缺少可核对的独立订阅目标，请通过工单核对")
+
+var ErrRenewalWindow = errors.New("订阅已结束且不支持续费，或已超过续费保留期，请新购套餐。")
 
 // Exhausting a timed cycle does not require a reset purchase before changing
 // plans. The paid change retains consumption; terminal single-use services
@@ -16,6 +18,18 @@ func CanChangeAt(sub Subscription, now time.Time) bool {
 	return sub.EndedAt == nil && sub.EndAt.After(now) && !IsPerpetualEnd(sub.EndAt) &&
 		(!sub.EndsOnQuotaExhaustion || sub.FlowUsed < sub.FlowTotal) &&
 		(sub.Status == "active" || (sub.Status == "expired" && sub.FlowTotal > 0 && sub.FlowUsed >= sub.FlowTotal))
+}
+
+// CanReplaceAt purchases a fresh term after commerce settles the old rights.
+// A perpetual total-quota service can be settled by remaining quota, while the
+// legacy keep-the-old-end-date change continues to require a timed service.
+func CanReplaceAt(sub Subscription, now time.Time) bool {
+	if !IsPerpetualEnd(sub.EndAt) {
+		return CanChangeAt(sub, now)
+	}
+	return sub.EndedAt == nil && sub.EndAt.After(now) && sub.Status == "active" &&
+		(sub.ResetPolicy == 0 || sub.ResetPolicy == 5) && sub.NextResetAt == nil &&
+		sub.FlowTotal > 0 && sub.FlowUsed >= 0 && sub.FlowUsed < sub.FlowTotal
 }
 
 // Persist the terminal instant with accounting, so worker delays cannot extend
@@ -32,7 +46,17 @@ func RecordQuotaExhaustion(sub Subscription, now time.Time) Subscription {
 	return sub
 }
 
-func RenewalDeadline(sub Subscription, now time.Time) *time.Time {
+func RenewalDeadline(sub Subscription, now time.Time, configuredGrace ...time.Duration) *time.Time {
+	grace := RenewalGracePeriod
+	if len(configuredGrace) > 0 {
+		grace = configuredGrace[0]
+	}
+	if grace < 0 {
+		return nil
+	}
+	if sub.Status == "canceled" || sub.Status == "ended" || sub.EndReason == "canceled" {
+		return nil
+	}
 	if sub.Lifecycle != "renewable" && sub.Lifecycle != "" {
 		return nil
 	}
@@ -43,18 +67,21 @@ func RenewalDeadline(sub Subscription, now time.Time) *time.Time {
 	if ended == nil {
 		return nil
 	}
-	deadline := ended.Add(RenewalGracePeriod)
+	deadline := ended.Add(grace)
 	return &deadline
 }
 
-func CanRenewAt(sub Subscription, now time.Time) bool {
+func CanRenewAt(sub Subscription, now time.Time, configuredGrace ...time.Duration) bool {
+	if len(configuredGrace) > 0 && configuredGrace[0] < 0 {
+		return false
+	}
 	if sub.Status != "active" && sub.Status != "expired" {
 		return false
 	}
 	if sub.Lifecycle != "renewable" && sub.Lifecycle != "" {
 		return false
 	}
-	if deadline := RenewalDeadline(sub, now); deadline != nil {
+	if deadline := RenewalDeadline(sub, now, configuredGrace...); deadline != nil {
 		return deadline.After(now)
 	}
 	return sub.EndAt.After(now)

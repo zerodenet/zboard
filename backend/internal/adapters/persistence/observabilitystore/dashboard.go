@@ -2,6 +2,7 @@ package observabilitystore
 
 import (
 	"context"
+	"database/sql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"time"
 
@@ -141,11 +142,30 @@ CROSS JOIN
 }
 
 func (s Dashboard) LoadDashboard(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket) (observability.DashboardSnapshot, error) {
-	return s.loadDashboard(ctx, period, now, buckets, "")
+	return s.loadDashboardSnapshot(ctx, period, now, buckets, "")
 }
 
 func (s Dashboard) LoadDashboardView(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (observability.DashboardSnapshot, error) {
-	return s.loadDashboard(ctx, period, now, buckets, view)
+	return s.loadDashboardSnapshot(ctx, period, now, buckets, view)
+}
+
+func (s Dashboard) loadDashboardSnapshot(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (out observability.DashboardSnapshot, err error) {
+	// Current business health and revenue-only charts do not wait for auxiliary
+	// traffic statistics. Reads which do use hourly data share its readiness
+	// check and aggregates in one snapshot, including during worker commits.
+	if view == "current" || view == "trend" {
+		return s.loadDashboard(ctx, period, now, buckets, view)
+	}
+	err = s.readDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, window := range [][2]time.Time{{period.From, period.To}, {period.PreviousFrom, period.PreviousTo}} {
+			if err := meteringstore.EnsureHourlyUsageReady(tx, meteringstore.TrafficScope{}, window[0], window[1]); err != nil {
+				return err
+			}
+		}
+		out, err = (Dashboard{DB: tx, ReadDB: tx}).loadDashboard(ctx, period, now, buckets, view)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return
 }
 
 func (s Dashboard) loadDashboard(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (observability.DashboardSnapshot, error) {
@@ -276,11 +296,15 @@ func (s Dashboard) loadDashboard(ctx context.Context, period observability.Dashb
 		Subscriptions:  observability.DashboardSubscriptionHealth{ExpiringWithin24Hours: subscriptions.ExpiringWithin24Hours, ExpiringWithin3Days: subscriptions.ExpiringWithin3Days, ExpiringWithin7Days: subscriptions.ExpiringWithin7Days, QuotaExhausted: subscriptions.QuotaExhausted},
 		Attention:      observability.DashboardAttention{OfflineNodes: offline, UnresolvedDeployments: operational.UnresolvedDeployments, PendingTickets: operational.PendingTickets},
 		Infrastructure: observability.DashboardInfrastructure{NodesTotal: operational.NodesTotal, NodesEnabled: operational.NodesEnabled, ConnectorOnline: operational.ConnectorOnline, SSHVerified: operational.SSHVerified, TrafficReady: operational.TrafficReady, ProtocolEndpoints: operational.ProtocolEndpoints, ActiveProtocolEndpoints: operational.ActiveProtocolEndpoints, PublishedPlans: operational.PublishedPlans, UnresolvedDeployments: operational.UnresolvedDeployments},
-		Coverage:       observability.DashboardCoverage{PrincipalFlows: operational.ObservedScopes > 0}, Trend: trend,
+		// Existing per-principal lifecycle snapshots do not certify a full
+		// registry snapshot, coverage of all nodes, or observation freshness.
+		// In particular a persisted zero is not proof of zero live connections.
+		Coverage: observability.DashboardCoverage{PrincipalFlows: false, PrincipalFlowsState: "unknown", PrincipalFlowsReason: "no_principal_observations"}, Trend: trend,
 	}
-	if result.Coverage.PrincipalFlows {
+	if operational.ObservedScopes > 0 {
 		activeSubscriptions, activeFlows := operational.ActiveSubscriptions, operational.ActiveFlows
-		result.Service.ActiveSubscriptions, result.Service.ActiveFlows = &activeSubscriptions, &activeFlows
+		result.Service.ObservedActiveSubscriptions, result.Service.ObservedActiveFlows = &activeSubscriptions, &activeFlows
+		result.Coverage.PrincipalFlowsReason = "snapshot_coverage_unverified"
 	}
 	return result, nil
 }

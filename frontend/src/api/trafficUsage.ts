@@ -1,5 +1,4 @@
-import { API_BASE, getAuthToken, normalizePageResult, type PageResult } from './client'
-import { normalizeApiErrorPayload } from '../utils/apiError'
+import { authenticatedAPI, normalizePageResult, type PageResult } from './client'
 import type { EntityReference } from './readModels'
 import { appendQueryID, type QueryID } from './queryID'
 import { requirePageResponse } from './pageResponse'
@@ -93,15 +92,13 @@ export interface TrafficUsageQuery {
 }
 
 async function requestData<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const token = getAuthToken()
-  const response = await fetch(`${API_BASE}${path}`, {
-    signal,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const normalized = normalizeApiErrorPayload(payload)
-    throw new Error(normalized?.message || `流量数据请求失败（HTTP ${response.status}）。`)
+  let payload: any
+  try {
+    const response = await authenticatedAPI.get(path, { signal })
+    payload = response.data
+  } catch (cause: any) {
+    if (cause?.response) cause.message = cause.response.data?.message || `流量数据请求失败（HTTP ${cause.response.status}）。`
+    throw cause
   }
   if (!payload || typeof payload !== 'object' || !('data' in payload)) {
     throw new Error('流量数据响应缺少 data。')

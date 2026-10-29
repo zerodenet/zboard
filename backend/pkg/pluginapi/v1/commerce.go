@@ -12,9 +12,12 @@ const OrderPaymentSlot = "account.orders.payment"
 // The context is host-owned. ActorId is an order-bound opaque authority supplied
 // only to the native action; it may be persisted for background reconciliation.
 type CheckoutContext struct {
-	OrderID           uint   `json:"order_id"`
-	TradeNo           string `json:"trade_no"`
-	AccountID         uint   `json:"account_id"`
+	OrderID   uint   `json:"order_id"`
+	TradeNo   string `json:"trade_no"`
+	AccountID uint   `json:"account_id"`
+	// PayableAmount is the frozen amount this channel may collect. For mixed
+	// funding it excludes the reserved wallet contribution; never replace it
+	// with a SKU price or the full order total returned by an order-list query.
 	PayableAmount     int64  `json:"payable_amount"`
 	Currency          string `json:"currency"`
 	CurrencyPrecision int    `json:"currency_precision"`

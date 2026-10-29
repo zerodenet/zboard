@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
@@ -34,15 +35,47 @@ type trafficTrendAggregateRow = metering.TrafficTrendAggregate
 type trafficTrendPoint = metering.TrafficTrendPoint
 
 type trafficTrendResponse struct {
-	From                  string              `json:"from"`
-	To                    string              `json:"to"`
-	Points                []trafficTrendPoint `json:"points"`
-	RecordCount           int64               `json:"record_count"`
-	ConnectionSampleCount int64               `json:"connection_sample_count"`
-	PeakConnections       *int64              `json:"peak_connections"`
-	Truncated             bool                `json:"truncated"`
-	Subscriptions         []entityReference   `json:"subscriptions"`
-	AsOf                  time.Time           `json:"as_of"`
+	ProjectionPending     bool                       `json:"projection_pending"`
+	Scope                 metering.TrafficTrendScope `json:"scope"`
+	From                  string                     `json:"from"`
+	To                    string                     `json:"to"`
+	Points                []trafficTrendPoint        `json:"points"`
+	RecordCount           int64                      `json:"record_count"`
+	ConnectionSampleCount int64                      `json:"connection_sample_count"`
+	PeakConnections       *int64                     `json:"peak_connections"`
+	Truncated             bool                       `json:"truncated"`
+	Subscriptions         []entityReference          `json:"subscriptions"`
+	AsOf                  time.Time                  `json:"as_of"`
+}
+
+// Preserve all complete response values and their established Go types. Pending
+// statistics have a distinct wire shape: no numeric zero or zero timestamp can
+// masquerade as a measured snapshot. Principal wrappers must pass it through.
+func (r trafficTrendResponse) MarshalJSON() ([]byte, error) {
+	type complete trafficTrendResponse
+	if !r.ProjectionPending {
+		return json.Marshal(complete(r))
+	}
+	return json.Marshal(struct {
+		ProjectionPending     bool                       `json:"projection_pending"`
+		Scope                 metering.TrafficTrendScope `json:"scope"`
+		From                  string                     `json:"from"`
+		To                    string                     `json:"to"`
+		Points                []trafficTrendPoint        `json:"points"`
+		RecordCount           *int64                     `json:"record_count"`
+		ConnectionSampleCount *int64                     `json:"connection_sample_count"`
+		PeakConnections       *int64                     `json:"peak_connections"`
+		Truncated             *bool                      `json:"truncated"`
+		Subscriptions         []entityReference          `json:"subscriptions"`
+		AsOf                  *time.Time                 `json:"as_of"`
+	}{ProjectionPending: true, Scope: r.Scope, From: r.From, To: r.To})
+}
+
+func trafficTrendIsPending(data json.RawMessage) bool {
+	var state struct {
+		ProjectionPending bool `json:"projection_pending"`
+	}
+	return json.Unmarshal(data, &state) == nil && state.ProjectionPending
 }
 
 type requestedAuditTarget struct {

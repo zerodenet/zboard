@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/migrations"
@@ -45,8 +46,14 @@ func reconcileMySQLTrafficHourly(db *gorm.DB) error {
 		}
 		defer func() { err = errors.Join(err, restoreMigrationSession(conn, "DO RELEASE_LOCK(?)", name)) }()
 		var applied int64
-		if err := session.Model(&schemaMigration{}).Where("version = ?", trafficHourlyApplicationVersion).Count(&applied).Error; err != nil || applied > 0 {
+		if err := session.Model(&schemaMigration{}).Where("version = ?", trafficHourlyApplicationVersion).Count(&applied).Error; err != nil {
 			return err
+		}
+		if applied > 0 {
+			needed, err := hourlyTableNeedsRecovery(session)
+			if err != nil || !needed {
+				return err
+			}
 		}
 		if err := session.Exec(statements[0]).Error; err != nil {
 			return err
@@ -85,18 +92,72 @@ func reconcileMySQLTrafficHourly(db *gorm.DB) error {
 	})
 }
 
-// RebuildMySQLTrafficHourly participates in a caller-owned transaction. Transfers
-// copy the authoritative ledger, then rebuild this projection before committing.
-// SQLite transfers are maintained by their transaction-local ledger triggers.
+// MySQL can commit CREATE TABLE and crash before the transactional backfill.
+// An empty derived table with confirmed source facts still needs recovery even
+// when older migration records exist. No reliable pending row is reset here.
+func hourlyTableNeedsRecovery(db *gorm.DB) (bool, error) {
+	if !db.Migrator().HasTable("traffic_usage_hourly") {
+		return true, nil
+	}
+	var bucket struct{ N int }
+	read := db.Table("traffic_usage_hourly").Select("1 AS n").Limit(1).Scan(&bucket)
+	if read.Error != nil {
+		return false, read.Error
+	}
+	if read.RowsAffected > 0 {
+		return false, nil
+	}
+	query := db.Table("traffic_records").Select("id").Limit(1)
+	if db.Migrator().HasColumn(usageProjectionTable, "hourly_pending") {
+		query = query.Where("NOT EXISTS (SELECT 1 FROM metering_usage_projection_pending p WHERE p.traffic_record_id = traffic_records.id AND p.hourly_pending = 1)")
+	}
+	var source struct{ ID uint }
+	read = query.Scan(&source)
+	return read.RowsAffected > 0, read.Error
+}
+
+// RebuildMySQLTrafficHourly is retained for existing copy callers. After 0054 it
+// also rebuilds SQLite, whose synchronous hourly triggers have been removed.
 func RebuildMySQLTrafficHourly(tx *gorm.DB) error {
+	return RebuildTrafficHourly(tx)
+}
+
+// RebuildTrafficHourly participates in a caller-owned transaction. Pending
+// hourly facts are excluded: their exact deltas still belong to the independent
+// worker. Rebuilding them early and then consuming their intents would double
+// project already settled usage. The pending rows are never cleared here.
+func RebuildTrafficHourly(tx *gorm.DB) error {
 	if IsSQLite(tx) {
-		return nil
+		if !tx.Migrator().HasColumn(usageProjectionTable, "hourly_pending") {
+			return nil
+		}
+		payload, err := migrations.Files.ReadFile("sqlite/0024_traffic_usage_hourly.sql")
+		if err != nil {
+			return err
+		}
+		statements, err := splitMigrationStatements(string(payload))
+		if err != nil {
+			return err
+		}
+		for _, statement := range statements[:len(statements)-1] {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Exec("DELETE FROM traffic_usage_hourly").Error; err != nil {
+			return err
+		}
+		insert := strings.Replace(statements[len(statements)-1], "FROM traffic_records GROUP BY", "FROM traffic_records WHERE NOT EXISTS (SELECT 1 FROM metering_usage_projection_pending p WHERE p.traffic_record_id = traffic_records.id AND p.hourly_pending = 1) GROUP BY", 1)
+		return tx.Exec(insert).Error
 	}
 	statements, err := mysqlTrafficHourlyStatements()
 	if err != nil {
 		return err
 	}
 	for _, statement := range statements[1:] {
+		if tx.Migrator().HasColumn(usageProjectionTable, "hourly_pending") {
+			statement = strings.Replace(statement, "FROM traffic_records\nGROUP BY", "FROM traffic_records WHERE NOT EXISTS (SELECT 1 FROM metering_usage_projection_pending p WHERE p.traffic_record_id = traffic_records.id AND p.hourly_pending = 1)\nGROUP BY", 1)
+		}
 		if err := tx.Exec(statement).Error; err != nil {
 			return fmt.Errorf("rebuild traffic hourly: %w", err)
 		}

@@ -1,0 +1,424 @@
+{
+  "head": "3c44aa0dd375e532251036aaa08bb2bf686dafe4",
+  "files_sha256": {
+    "plugin_operation_schema.go": "264d5217a1021c92f47d697e7c0234a2a53f89fe4467b74c412ff9e07a8f4962",
+    "publication_connection_schema.go": "e469a1e38f649c0e134b0581de397a06b6bf7bf893b009d59ede76f0c187c4ef",
+    "mysql_model_columns.go": "d08896344f7cda6afebb7c204599fd5d805ae7cf53b9346edc12abcb03ea7bad",
+    "mysql_model_columns_test.go": "cc76933a174df93bc0f0da9b9be73a07c58fcd579450c235540c920e8310ad49",
+    "audit_column_batch_schema_test.go": "b8769fd810ef7f8e515ae10276a748efac9a930d3d5c48997511c8b15c632e00"
+  },
+  "original_callsites_sha256": {
+    "plugin_operation_schema.go": "747e6064abcaac9854e6fdfc1311bffadff2c29708873b6623cb259f81972111",
+    "publication_connection_schema.go": "cba367addb6d0b351ac17d7a41e651e08b616775329dcc09f295a4a309632d90"
+  },
+  "original_overlay_semantics": "Only the two original production callsites are overlaid. The new helper/test files remain for compilation; this is not a byte-identical parent binary. No helper/fake unit test was run against old callsites.",
+  "published_before": {
+    "backend/migrations/0002_plugins.up.sql": "e2a95cb07c84756c4b2c4869699ff28ab72371787e5a7b616ed2f0ff7787284b",
+    "backend/migrations/0045_publication_connection_phase.up.sql": "9f6849c19dde290bc8d3348b929c553596e07cf8d824838e23e6f54eec35a52e"
+  },
+  "published_after": {
+    "backend/migrations/0002_plugins.up.sql": "e2a95cb07c84756c4b2c4869699ff28ab72371787e5a7b616ed2f0ff7787284b",
+    "backend/migrations/0045_publication_connection_phase.up.sql": "9f6849c19dde290bc8d3348b929c553596e07cf8d824838e23e6f54eec35a52e"
+  },
+  "actual_counters": {
+    "original-callsites-mysql": [
+      {
+        "label": "fresh actual RunMigrations",
+        "session": 21534,
+        "delta": 69,
+        "target": "map[node_config_publishes:2 plugin_operations:4]",
+        "all": "map[node_config_publishes:2 plugin_operations:4]"
+      },
+      {
+        "label": "all missing owned recovery",
+        "session": 21534,
+        "delta": 6,
+        "target": "map[node_config_publishes:2 plugin_operations:4]",
+        "all": "map[node_config_publishes:2 plugin_operations:4]"
+      },
+      {
+        "label": "complete repeat",
+        "session": 21534,
+        "delta": 0,
+        "target": "map[]",
+        "all": "map[]"
+      },
+      {
+        "label": "partial actual RunMigrations",
+        "session": 21534,
+        "delta": 3,
+        "target": "map[node_config_publishes:1 plugin_operations:2]",
+        "all": "map[node_config_publishes:1 plugin_operations:2]"
+      },
+      {
+        "label": "DDL complete receipt missing",
+        "session": 21534,
+        "delta": 0,
+        "target": "map[]",
+        "all": "map[]"
+      },
+      {
+        "label": "failed ALTER retry",
+        "session": 21534,
+        "delta": 1,
+        "target": "map[node_config_publishes:1]",
+        "all": "map[node_config_publishes:1]"
+      }
+    ],
+    "fixed-mysql": [
+      {
+        "label": "fresh actual RunMigrations",
+        "session": 21537,
+        "delta": 65,
+        "target": "map[node_config_publishes:1 plugin_operations:1]",
+        "all": "map[node_config_publishes:1 plugin_operations:1]"
+      },
+      {
+        "label": "all missing owned recovery",
+        "session": 21537,
+        "delta": 2,
+        "target": "map[node_config_publishes:1 plugin_operations:1]",
+        "all": "map[node_config_publishes:1 plugin_operations:1]"
+      },
+      {
+        "label": "complete repeat",
+        "session": 21537,
+        "delta": 0,
+        "target": "map[]",
+        "all": "map[]"
+      },
+      {
+        "label": "partial actual RunMigrations",
+        "session": 21537,
+        "delta": 2,
+        "target": "map[node_config_publishes:1 plugin_operations:1]",
+        "all": "map[node_config_publishes:1 plugin_operations:1]"
+      },
+      {
+        "label": "DDL complete receipt missing",
+        "session": 21537,
+        "delta": 0,
+        "target": "map[]",
+        "all": "map[]"
+      },
+      {
+        "label": "failed ALTER retry",
+        "session": 21537,
+        "delta": 1,
+        "target": "map[node_config_publishes:1]",
+        "all": "map[node_config_publishes:1]"
+      }
+    ]
+  },
+  "original_expected_failure_lines": [
+    "audit_column_batch_schema_test.go:31: fresh actual RunMigrations: observed target ADD ALTER per table=map[node_config_publishes:2 plugin_operations:4], want plugin=1 phase=1 (all exact-table ALTER=map[node_config_publishes:2 plugin_operations:4])",
+    "audit_column_batch_schema_test.go:31: all missing owned recovery: observed target ADD ALTER per table=map[node_config_publishes:2 plugin_operations:4], want plugin=1 phase=1 (all exact-table ALTER=map[node_config_publishes:2 plugin_operations:4])",
+    "audit_column_batch_schema_test.go:31: all missing owned recovery: actual Com_alter_table delta=6, want 2",
+    "audit_column_batch_schema_test.go:31: partial actual RunMigrations: observed target ADD ALTER per table=map[node_config_publishes:1 plugin_operations:2], want plugin=1 phase=1 (all exact-table ALTER=map[node_config_publishes:1 plugin_operations:2])"
+  ],
+  "test_corrections_preserved": [
+    {
+      "log": "pure.log",
+      "reason": "Initial SQLite assertion incorrectly expected fresh plugin=0. SQLite databaseModels excludes PluginOperation: original sqlite/0002 creates the old plugin audit shape, so existing audit reconciliation adds4; publication is current-model AutoMigrate and adds0. The same original-callsite SQLite matrix passes after correcting the assertion. Also ColumnTypes inferred TEXT/DATETIME lengths differently before/after inserting rows; replaced only SQLite contract reads with exact PRAGMA table_info declared type/null/default/PK."
+    },
+    {
+      "log": "pure-fixed-test.log",
+      "reason": "A table-name substring also counted SQLite __temp renames as owned ADDs. Replaced classification with exact-table targeted ADDs; retained every related GORM Raw table/temp CREATE/ALTER/DROP count and SQL SHA separately. Failure gate similarly narrowed to the intended phase ADD."
+    }
+  ],
+  "observation_scope": {
+    "gorm_raw": "Target additive ALTERs and GORM-observed related table/temp CREATE/ALTER/DROP SQL hashes, including all SQLite rebuild/rename work inside each measured call. Published SQL executed through direct sql.DB.Exec is not captured by this callback.",
+    "session_counter": "Real Com_alter_table total delta, before/after identical connection ID, single retained connection. Isolated repair calls enforce all actual ALTERs exactly; fresh/partial public RunMigrations additionally report their complete session total.",
+    "whole_Prepare_actual": "The unchanged complete application.PrepareDatabaseSchema benchmark actually measured75\u219271 ALTER,15\u219215 CREATE_INDEX,2068\u21922047 SELECT in all3old/fixed pairs. This supersedes the earlier targeted-only not-yet-measured status."
+  },
+  "resource_policy": {
+    "GOMAXPROCS": 1,
+    "go_p": 1,
+    "original_fixture_account_schema_flags_unchanged": true,
+    "credentials": "Existing private runner literal AST-read and child env only; never printed or copied into evidence.",
+    "mysql_settings_privileges": "No global or schema-account privilege changes; only existing fixture creates/drops its disposable schema and account."
+  },
+  "measurement_limitations": [
+    "Six sequential fresh-schema samples: three old/fixed pairs, n=3 each. No confidence or stable latency/CI-margin claim. Pair2 fixed is slower.",
+    "Unchanged whole benchmark: SELECT/op includes its original trailing connection-ID probe. No extra SQL, stage/driver instrumentation, DSN/flag changes, global/permission changes, schema reuse or caches.",
+    "Original baseline overlays only two original callsites and retains the new helper/test files for test compilation; these new helper/test files do not execute in that benchmark. This is not a byte-identical parent test binary.",
+    "GOMAXPROCS=1 and -p1, same existing server/fixture code, new random schema/account for every sample. Original pool initialization/provisioning/cleanup and counter probes remain outside the original Prepare timer. Hash/provenance reads and Go compile time are outside that timer.",
+    "Root declared exclusive load window; no OS/MySQL global tuning or forced cache coldness. Alternating original/fixed order and wall-clock intervals are recorded; six samples do not establish the cause of prior CI timeouts."
+  ],
+  "not_executed": [
+    "full backend suite on candidate",
+    "candidate full15mMySQL CI gate",
+    "capacity/load on candidate"
+  ],
+  "benchmark_file_sha256": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+  "fixture_file_sha256": "ddcb062fc3184903ed3f49c2c2585d2724a0fbd284c7ef035fdb90be98d15252",
+  "all_benchmark_sample_input_hashes_identical": true,
+  "all_embedded_migration_files_before_after_identical": true,
+  "status": "Reviewed five-file candidate: targeted SQLite/MySQL, race3 and original whole Prepare A/B pass; full/new CI/capacity pending",
+  "private_receipt_sha256": "2ee112199cf1d5c33893a213823c8fcff332a9fe8201c6391cfb4d2e019a2bee",
+  "validated_patch_sha256": "73369cb5aca1de832d7d0edb07410dd425c12b53149595bd87c80c986f32486b",
+  "phases": {
+    "pure": {
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-v",
+        "-run",
+        "^(TestMySQLModelColumnBatch.*|TestSQLiteAuditColumnBatchPreservesRecovery|TestPluginOperationAuditSchemaUpgradeRetainsOldOperations)$",
+        "./internal/datastore"
+      ],
+      "returncode": 1,
+      "wall_seconds": 17.398896239999885,
+      "package_seconds": [
+        "0.748"
+      ],
+      "log_sha256": "8bded38e3340d95181b24de306b904bec65db821201bf81b467fee6b565bd83a"
+    },
+    "pure-fixed-test": {
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-v",
+        "-run",
+        "^(TestMySQLModelColumnBatch.*|TestSQLiteAuditColumnBatchPreservesRecovery|TestPluginOperationAuditSchemaUpgradeRetainsOldOperations)$",
+        "./internal/datastore"
+      ],
+      "returncode": 1,
+      "wall_seconds": 2.6004578079991916,
+      "package_seconds": [
+        "1.113"
+      ],
+      "log_sha256": "69ddac9c72f5fba6337a817e455854ab5952cfea3c63b2becf26a35887ab6386"
+    },
+    "pure-fixed-attribution": {
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-v",
+        "-run",
+        "^(TestMySQLModelColumnBatch.*|TestSQLiteAuditColumnBatchPreservesRecovery|TestPluginOperationAuditSchemaUpgradeRetainsOldOperations)$",
+        "./internal/datastore"
+      ],
+      "returncode": 0,
+      "wall_seconds": 2.991462969999702,
+      "package_seconds": [
+        "1.375"
+      ],
+      "log_sha256": "b0bf3335d43f91495f1dc0c5f4d0669260286de2e89975f376a8974e046f84c0"
+    },
+    "pure-final-matrix": {
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-v",
+        "-run",
+        "^(TestMySQLModelColumnBatch.*|TestSQLiteAuditColumnBatchPreservesRecovery|TestPluginOperationAuditSchemaUpgradeRetainsOldOperations)$",
+        "./internal/datastore"
+      ],
+      "returncode": 0,
+      "wall_seconds": 2.9130317320014,
+      "package_seconds": [
+        "1.294"
+      ],
+      "log_sha256": "9664ef65eba035d94d87a3221472faa501337c0e4d8a20aae9edd727e3b44ee7"
+    },
+    "original-callsites-sqlite": {
+      "command": [
+        "go",
+        "test",
+        "-overlay=/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/audit-column-batch-draft/validation/original-callsites-clone-overlay.json",
+        "-p",
+        "1",
+        "-count=1",
+        "-v",
+        "-run",
+        "^TestSQLiteAuditColumnBatchPreservesRecovery$",
+        "./internal/datastore"
+      ],
+      "returncode": 0,
+      "wall_seconds": 6.280218739000702,
+      "package_seconds": [
+        "0.650"
+      ],
+      "log_sha256": "0517901457c82a5a78d9e2e97c295db6e580b7ecd9f20e4f79b436e1836a5954"
+    },
+    "original-callsites-mysql": {
+      "command": [
+        "go",
+        "test",
+        "-overlay=/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/audit-column-batch-draft/validation/original-callsites-clone-overlay.json",
+        "-p",
+        "1",
+        "-count=1",
+        "-v",
+        "-run",
+        "^TestMySQLAuditColumnBatchPreservesRecovery$",
+        "./internal/datastore"
+      ],
+      "returncode": 1,
+      "wall_seconds": 5.965366458000062,
+      "package_seconds": [
+        "5.002"
+      ],
+      "log_sha256": "595d8819067ad244081b58887021d2be83ef6136cd172e3612fa04c1d50493d3"
+    },
+    "fixed-mysql": {
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-count=1",
+        "-v",
+        "-run",
+        "^TestMySQLAuditColumnBatchPreservesRecovery$",
+        "./internal/datastore"
+      ],
+      "returncode": 0,
+      "wall_seconds": 5.609246504998737,
+      "package_seconds": [
+        "4.567"
+      ],
+      "log_sha256": "286cf1b368e082a5b1689c9ebd11230b3e0bd1971e0205817fc075cddfe042dc"
+    }
+  },
+  "race": {
+    "command": [
+      "go",
+      "test",
+      "-p",
+      "1",
+      "-v",
+      "-race",
+      "-count=3",
+      "-run",
+      "^(TestMySQLModelColumnBatch.*|TestSQLiteAuditColumnBatchPreservesRecovery|TestPluginOperationAuditSchemaUpgradeRetainsOldOperations)$",
+      "./internal/datastore"
+    ],
+    "returncode": 0,
+    "wall_seconds": 121.31449069299924,
+    "log_sha256": "4ce6a4bef2032ab5bbd01a3f045e88f2b213ebcc72a019cf16558ac2e972203a"
+  },
+  "benchmark_samples": [
+    {
+      "sequence": 1,
+      "pair": 1,
+      "variant": "original",
+      "mode": "bench-1-original",
+      "start_utc": "2026-10-20T23:03:44.382899+00:00",
+      "end_utc": "2026-10-20T23:03:49.689810+00:00",
+      "session_id": 21540,
+      "prepare_operations": 1,
+      "ALTER/op": 75,
+      "CREATE_INDEX/op": 15,
+      "SELECT/op": 2068,
+      "s/prepare_reported": 3.769,
+      "ns/op_reported": 3769068119,
+      "wall_seconds": 5.309290950001014,
+      "raw_metric_line": "BenchmarkMySQLSchemaPreparation \t       1\t3769068119 ns/op\t        75.00 ALTER/op\t        15.00 CREATE_INDEX/op\t      2068 SELECT/op\t         3.769 s/prepare",
+      "rawlog_sha256": "5741c5efa5e2ae9ecaed27457820ee0010d7b806262227a294e9fea92e6c57b2"
+    },
+    {
+      "sequence": 2,
+      "pair": 1,
+      "variant": "fixed",
+      "mode": "bench-1-fixed",
+      "start_utc": "2026-10-20T23:03:49.742251+00:00",
+      "end_utc": "2026-10-20T23:03:54.904121+00:00",
+      "session_id": 21543,
+      "prepare_operations": 1,
+      "ALTER/op": 71,
+      "CREATE_INDEX/op": 15,
+      "SELECT/op": 2047,
+      "s/prepare_reported": 3.628,
+      "ns/op_reported": 3628240530,
+      "wall_seconds": 5.164159109001048,
+      "raw_metric_line": "BenchmarkMySQLSchemaPreparation \t       1\t3628240530 ns/op\t        71.00 ALTER/op\t        15.00 CREATE_INDEX/op\t      2047 SELECT/op\t         3.628 s/prepare",
+      "rawlog_sha256": "360f60b5e3317779830f282f4c4ebf605e7534b410d1a0c6801538f532c774fc"
+    },
+    {
+      "sequence": 3,
+      "pair": 2,
+      "variant": "original",
+      "mode": "bench-2-original",
+      "start_utc": "2026-10-20T23:03:54.954390+00:00",
+      "end_utc": "2026-10-20T23:04:00.163718+00:00",
+      "session_id": 21546,
+      "prepare_operations": 1,
+      "ALTER/op": 75,
+      "CREATE_INDEX/op": 15,
+      "SELECT/op": 2068,
+      "s/prepare_reported": 3.754,
+      "ns/op_reported": 3754138956,
+      "wall_seconds": 5.2117771150005865,
+      "raw_metric_line": "BenchmarkMySQLSchemaPreparation \t       1\t3754138956 ns/op\t        75.00 ALTER/op\t        15.00 CREATE_INDEX/op\t      2068 SELECT/op\t         3.754 s/prepare",
+      "rawlog_sha256": "d3a20639b58eff59aa32f085a5e99db8a11cd7c850e3725e3584f317460e0383"
+    },
+    {
+      "sequence": 4,
+      "pair": 2,
+      "variant": "fixed",
+      "mode": "bench-2-fixed",
+      "start_utc": "2026-10-20T23:04:00.210510+00:00",
+      "end_utc": "2026-10-20T23:04:05.412815+00:00",
+      "session_id": 21549,
+      "prepare_operations": 1,
+      "ALTER/op": 71,
+      "CREATE_INDEX/op": 15,
+      "SELECT/op": 2047,
+      "s/prepare_reported": 3.803,
+      "ns/op_reported": 3802575201,
+      "wall_seconds": 5.204756340997847,
+      "raw_metric_line": "BenchmarkMySQLSchemaPreparation \t       1\t3802575201 ns/op\t        71.00 ALTER/op\t        15.00 CREATE_INDEX/op\t      2047 SELECT/op\t         3.803 s/prepare",
+      "rawlog_sha256": "7774c1a832e3999c676a5ae7de92dee7aeb1612ee8a8e02d749bd6db7b6f8003"
+    },
+    {
+      "sequence": 5,
+      "pair": 3,
+      "variant": "original",
+      "mode": "bench-3-original",
+      "start_utc": "2026-10-20T23:04:05.461989+00:00",
+      "end_utc": "2026-10-20T23:04:10.836675+00:00",
+      "session_id": 21552,
+      "prepare_operations": 1,
+      "ALTER/op": 75,
+      "CREATE_INDEX/op": 15,
+      "SELECT/op": 2068,
+      "s/prepare_reported": 3.866,
+      "ns/op_reported": 3865891909,
+      "wall_seconds": 5.376843240999733,
+      "raw_metric_line": "BenchmarkMySQLSchemaPreparation \t       1\t3865891909 ns/op\t        75.00 ALTER/op\t        15.00 CREATE_INDEX/op\t      2068 SELECT/op\t         3.866 s/prepare",
+      "rawlog_sha256": "a6135ba066c813ac1a4a3a00a7055bc5c0a3744c7e6982df1496f133bcf841ee"
+    },
+    {
+      "sequence": 6,
+      "pair": 3,
+      "variant": "fixed",
+      "mode": "bench-3-fixed",
+      "start_utc": "2026-10-20T23:04:10.888536+00:00",
+      "end_utc": "2026-10-20T23:04:15.878501+00:00",
+      "session_id": 21555,
+      "prepare_operations": 1,
+      "ALTER/op": 71,
+      "CREATE_INDEX/op": 15,
+      "SELECT/op": 2047,
+      "s/prepare_reported": 3.554,
+      "ns/op_reported": 3553872276,
+      "wall_seconds": 4.991970909999509,
+      "raw_metric_line": "BenchmarkMySQLSchemaPreparation \t       1\t3553872276 ns/op\t        71.00 ALTER/op\t        15.00 CREATE_INDEX/op\t      2047 SELECT/op\t         3.554 s/prepare",
+      "rawlog_sha256": "7bb347e1eedda78313375e46e60bdfd1481002b991f1b4a4b2a4dde44272175c"
+    }
+  ]
+}

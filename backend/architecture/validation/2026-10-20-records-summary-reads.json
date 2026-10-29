@@ -1,0 +1,419 @@
+{
+  "task": "Explicit typed raw traffic record summary pagination; preserve complete Read and immutable evidence",
+  "time_utc": "2026-10-20T21:41:38.033323+00:00",
+  "result": "PASS_FROZEN",
+  "baseline_parent": "98c597d6cfc57b8a39b2db55869da047cfd1b648",
+  "head_at_tests_and_benchmark": "c72254bf2bef9a410432876894c8922766eba8ae",
+  "head_after": "c72254bf2bef9a410432876894c8922766eba8ae",
+  "delivered_files": {
+    "backend/internal/adapters/persistence/meteringstore/records.go": "7836cf2aa56c298157f10fed10ad9382f4748b060819cfdc4d75df5b1aa0ed12",
+    "backend/internal/capabilities/metering/records.go": "fdcc65f95e0fb1c81751ef6472451791b127d974699784211f07a43b2e237437",
+    "backend/internal/capabilities/metering/records_summary_test.go": "ce15cde20ea35e975f49c2e070aaa3fbc8bcdd94bfa5b1af6e2de313f0530bdd",
+    "backend/internal/handler/handlers.go": "9c484dc80974aa4bdbf3bed0393b74cae1e58f646f46137ca12930713a9bc592",
+    "backend/internal/handler/traffic_records_summary_test.go": "01e2dcd3c6fd66305b833b9673e5c4e5726e738eff86af93b7176b4d5e20830a"
+  },
+  "patch": "/workspace/zboard/.codex-local-artifacts/recovery-validation/records-summary-draft/records-summary-final.patch",
+  "patch_sha256": "8c87d6e9ce02f74699b4f001b84b38ed7c7d2c08b3ca2b8bec6e1f8d85c07bcc",
+  "implementation": {
+    "new_contract": "Records.ReadSummaryPage -> RecordsSummaryPage containing typed TrafficRecordSummary; requires Paged=true",
+    "existing_contract": "Records.Read returns full TrafficRecord with and without Paged, unchanged",
+    "transport": "only paged raw HTTP chooses explicit summary; unpaged and host Usage unchanged",
+    "shared": "same capability validation, primary authorization, actor scoping, filters, repeatable-read/read-only snapshot, statistics, offset/cursor paths and read-DB fallback",
+    "columns": [
+      "id",
+      "user_id",
+      "subscription_id",
+      "node_id",
+      "protocol_endpoint_id",
+      "raw_bytes",
+      "upload_bytes",
+      "download_bytes",
+      "protocol_multiplier_milli",
+      "used_bytes",
+      "record_at"
+    ],
+    "unchanged": [
+      "Meta writes and rounding evidence",
+      "CreatedAt/current-cycle authority",
+      "report/nonce dedup",
+      "FlowUsage and epochs",
+      "schema/migrations/indexes",
+      "NodeSeries",
+      "worker",
+      "accounting/authorization rules"
+    ]
+  },
+  "validation": {
+    "final_narrow": {
+      "selected_tests": 7,
+      "capability_seconds": 0.003,
+      "handler_seconds": 0.916,
+      "log": "fixed-sqlite-capability-attempt3.log"
+    },
+    "final_race": {
+      "selected_tests": 7,
+      "capability_seconds": 1.012,
+      "handler_seconds": 25.396,
+      "log": "fixed-race-attempt2.log"
+    },
+    "actual_mysql": {
+      "selected_tests": 1,
+      "prepare": "one original newMySQLPublishHandlers fixture for the complete shared-helper scope; no reduced Prepare or disabled FK",
+      "seconds": 4.293,
+      "log": "actual-mysql-attempt2.log",
+      "command_receipt": "actual-mysql-command-attempt2.json"
+    },
+    "all_attempts": [
+      {
+        "log": "old-wide-overlay.log",
+        "result": "EXPECTED_FAIL",
+        "package_or_test_summary": [
+          "--- FAIL: TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (0.17s)",
+          "FAIL\tgithub.com/zerodenet/zboard/backend/internal/handler\t0.183s"
+        ]
+      },
+      {
+        "log": "fixed-sqlite-capability.log",
+        "result": "FAIL",
+        "package_or_test_summary": [
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/metering\t0.002s",
+          "--- FAIL: TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (0.22s)",
+          "FAIL\tgithub.com/zerodenet/zboard/backend/internal/handler\t1.029s"
+        ]
+      },
+      {
+        "log": "fixed-sqlite-capability-attempt2.log",
+        "result": "PASS",
+        "package_or_test_summary": [
+          "--- PASS: TestRecordsSummaryRequiresExplicitMethodAndSharedValidation (0.00s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/metering\t0.003s",
+          "--- PASS: TestTrafficRecordSummaryOmitsRawReportPayload (0.00s)",
+          "--- PASS: TestTrafficRecordsCapabilityScopeCursorAndRevocation (0.19s)",
+          "--- PASS: TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (0.23s)",
+          "--- PASS: TestTrafficRecordsCountsAndSumsInOneScan (0.19s)",
+          "--- PASS: TestTrafficResetCatchupPreservesCurrentCycleUsageAndAddon (0.22s)",
+          "--- PASS: TestZeroEventWindowReducesLedgerWritesPreservingRoundingCoverageAndReplay (0.27s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t1.109s"
+        ]
+      },
+      {
+        "log": "fixed-race.log",
+        "result": "PASS",
+        "package_or_test_summary": [
+          "--- PASS: TestRecordsSummaryRequiresExplicitMethodAndSharedValidation (0.00s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/metering\t1.010s",
+          "--- PASS: TestTrafficRecordSummaryOmitsRawReportPayload (0.00s)",
+          "--- PASS: TestTrafficRecordsCapabilityScopeCursorAndRevocation (4.86s)",
+          "--- PASS: TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (5.00s)",
+          "--- PASS: TestTrafficRecordsCountsAndSumsInOneScan (4.86s)",
+          "--- PASS: TestTrafficResetCatchupPreservesCurrentCycleUsageAndAddon (4.63s)",
+          "--- PASS: TestZeroEventWindowReducesLedgerWritesPreservingRoundingCoverageAndReplay (5.16s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t25.576s"
+        ]
+      },
+      {
+        "log": "actual-mysql.log",
+        "result": "FAIL",
+        "package_or_test_summary": [
+          "--- FAIL: TestMySQLTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (4.59s)",
+          "FAIL\tgithub.com/zerodenet/zboard/backend/internal/handler\t4.602s"
+        ]
+      },
+      {
+        "log": "fixed-sqlite-capability-attempt3.log",
+        "result": "PASS",
+        "package_or_test_summary": [
+          "--- PASS: TestRecordsSummaryRequiresExplicitMethodAndSharedValidation (0.00s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/metering\t0.003s",
+          "--- PASS: TestTrafficRecordSummaryOmitsRawReportPayload (0.00s)",
+          "--- PASS: TestTrafficRecordsCapabilityScopeCursorAndRevocation (0.18s)",
+          "--- PASS: TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (0.20s)",
+          "--- PASS: TestTrafficRecordsCountsAndSumsInOneScan (0.17s)",
+          "--- PASS: TestTrafficResetCatchupPreservesCurrentCycleUsageAndAddon (0.17s)",
+          "--- PASS: TestZeroEventWindowReducesLedgerWritesPreservingRoundingCoverageAndReplay (0.19s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t0.916s"
+        ]
+      },
+      {
+        "log": "fixed-race-attempt2.log",
+        "result": "PASS",
+        "package_or_test_summary": [
+          "--- PASS: TestRecordsSummaryRequiresExplicitMethodAndSharedValidation (0.00s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/capabilities/metering\t1.012s",
+          "--- PASS: TestTrafficRecordSummaryOmitsRawReportPayload (0.00s)",
+          "--- PASS: TestTrafficRecordsCapabilityScopeCursorAndRevocation (4.84s)",
+          "--- PASS: TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (5.06s)",
+          "--- PASS: TestTrafficRecordsCountsAndSumsInOneScan (4.67s)",
+          "--- PASS: TestTrafficResetCatchupPreservesCurrentCycleUsageAndAddon (4.81s)",
+          "--- PASS: TestZeroEventWindowReducesLedgerWritesPreservingRoundingCoverageAndReplay (4.95s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t25.396s"
+        ]
+      },
+      {
+        "log": "actual-mysql-attempt2.log",
+        "result": "PASS",
+        "package_or_test_summary": [
+          "--- PASS: TestMySQLTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract (4.28s)",
+          "ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t4.293s"
+        ]
+      },
+      {
+        "log": "benchmark-compile.log",
+        "result": "PASS",
+        "package_or_test_summary": []
+      },
+      {
+        "log": "large-meta-benchmark.log",
+        "result": "PASS",
+        "package_or_test_summary": []
+      }
+    ]
+  },
+  "failure_history": [
+    {
+      "log": "old-wide-overlay.log",
+      "kind": "expected behavioral regression proof",
+      "details": "new typed API retained for compilation; removed only summary Select(columns) to reproduce old wide-page loading; assertion failed on empty selected columns and loaded Meta/epoch/CreatedAt; overlay restored before fixed tests"
+    },
+    {
+      "log": "fixed-sqlite-capability.log",
+      "kind": "new test comparison correction",
+      "details": "in-memory and SQL-decoded time.Location representations differ; fixed assertion strictly verifies Time.Equal for all three timestamps and then compares every remaining field bit-for-bit; no production fix"
+    },
+    {
+      "log": "actual-mysql.log",
+      "kind": "new test fixture correction",
+      "details": "real FK rejected missing node7 parent; created actual Node7 and ProtocolEndpoint9 in shared helper; retained real Prepare/FK and all assertions, reran narrow/race/MySQL"
+    }
+  ],
+  "benchmark": {
+    "mode": "bounded SQLite raw-page read/conversion; one frozen compiled test binary with ignored private Go overlay",
+    "timed_pages": "five samples of 100 pages for each path",
+    "limit": 200,
+    "fixture_rows": 203,
+    "in_scope_rows": 201,
+    "metadata_bytes_per_fact": 32768,
+    "old_path": "full Records.Read + intermediate model copy + original HTTP trafficRecordSummaries conversion",
+    "new_path": "explicit Records.ReadSummaryPage",
+    "same": "scope/window/limit200/aggregate/first-page ordered cursor semantics; current authorization and snapshot; fixture setup and validation outside timer",
+    "preflight": "old/new summary JSON byte-identical; 200 rows returned, total201, settled used2211, HasMore=true; source 203 rows / used2233 / Meta total 203*32768 and min/max32768 unchanged outside timer",
+    "SQL": "3 SELECT/page including primary authorization; 0 DML/page, both paths and all ten samples",
+    "results": {
+      "old_full_read_and_http_summary": {
+        "samples": [
+          {
+            "timed_pages": 100,
+            "ns_per_page": 52515570,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 7296612,
+            "allocations_per_page": 10241
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 57599490,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 7296855,
+            "allocations_per_page": 10242
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 51760972,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 7296596,
+            "allocations_per_page": 10241
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 52253081,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 7296471,
+            "allocations_per_page": 10240
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 49436851,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 7296378,
+            "allocations_per_page": 10240
+          }
+        ],
+        "median_ns_per_page": 52253081,
+        "range_ms_per_page": [
+          49.436851,
+          57.59949
+        ],
+        "median_bytes_per_page": 7296596,
+        "median_allocations_per_page": 10241
+      },
+      "new_explicit_summary_page": {
+        "samples": [
+          {
+            "timed_pages": 100,
+            "ns_per_page": 1969403,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 517518,
+            "allocations_per_page": 4572
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 1870132,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 517438,
+            "allocations_per_page": 4572
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 1874173,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 517263,
+            "allocations_per_page": 4571
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 1943033,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 517262,
+            "allocations_per_page": 4571
+          },
+          {
+            "timed_pages": 100,
+            "ns_per_page": 1942201,
+            "dml_per_page": 0.0,
+            "select_per_page": 3.0,
+            "bytes_per_page": 517262,
+            "allocations_per_page": 4571
+          }
+        ],
+        "median_ns_per_page": 1942201,
+        "range_ms_per_page": [
+          1.870132,
+          1.969403
+        ],
+        "median_bytes_per_page": 517263,
+        "median_allocations_per_page": 4571
+      }
+    },
+    "excludes": [
+      "JSON serialization and outer HTTP authentication",
+      "core quota/accounting writer",
+      "capacity/load",
+      "MySQL performance conclusions"
+    ],
+    "log": "large-meta-benchmark.log",
+    "binary_sha256": "8649b13f9ef71ededeb2624ce09838f2343a023868ea0be3f21d9ff365e5936d"
+  },
+  "source_binding": {
+    "before": "/workspace/zboard/.codex-local-artifacts/recovery-validation/records-summary-validation/benchmark-source-before.json",
+    "before_sha256": "a7468211e2f803e39bf8a2afe4cf6e343c29ce161f570717a1da0559bf7d5e0d",
+    "after": "/workspace/zboard/.codex-local-artifacts/recovery-validation/records-summary-validation/benchmark-source-after.json",
+    "after_sha256": "f06f0749b47768cc639b60f6061a87f2adfe9bf8e1186beb5422a6cd41d649ff",
+    "backend_tracked_count": 1898,
+    "backend_untracked_count": 2,
+    "all_recorded_hashes_stable": true
+  },
+  "commands": {
+    "environment": {
+      "GOMAXPROCS": "1",
+      "GOPATH": "/workspace/toolchains/gopath",
+      "GOCACHE": "/workspace/toolchains/cache/go-build",
+      "PATH_prefix": "/workspace/toolchains/go/bin",
+      "mysql_dsn": "AST literal from existing ignored run-final-source-checks.py; passed only to child, omitted from receipt"
+    },
+    "narrow": "go test -p 1 ./internal/capabilities/metering ./internal/handler -run <seven exact names recorded in logs/receipt> -count=1 -v",
+    "race": "same selected tests with -race -p 1",
+    "benchmark_compile": {
+      "cwd": "/workspace/zboard/backend",
+      "argv": [
+        "go",
+        "test",
+        "-c",
+        "-p",
+        "1",
+        "-overlay",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/records-summary-validation/benchmark-overlay.json",
+        "-o",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/records-summary-validation/records-benchmark.test",
+        "./internal/handler"
+      ]
+    },
+    "benchmark_run": {
+      "cwd": "/workspace/zboard/backend/internal/handler",
+      "argv": [
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/records-summary-validation/records-benchmark.test",
+        "-test.run",
+        "^$",
+        "-test.bench",
+        "^BenchmarkTrafficRecordsRawSummaryLargeMeta$",
+        "-test.benchtime=100x",
+        "-test.count=5",
+        "-test.benchmem",
+        "-test.cpu=1",
+        "-test.timeout=4m"
+      ]
+    },
+    "selected_tests": [
+      "TestRecordsSummaryRequiresExplicitMethodAndSharedValidation",
+      "TestTrafficRecordsSummaryKeepsFullEvidenceAndRawPageContract",
+      "TestTrafficRecordsCapabilityScopeCursorAndRevocation",
+      "TestTrafficRecordsCountsAndSumsInOneScan",
+      "TestTrafficRecordSummaryOmitsRawReportPayload",
+      "TestZeroEventWindowReducesLedgerWritesPreservingRoundingCoverageAndReplay",
+      "TestTrafficResetCatchupPreservesCurrentCycleUsageAndAddon"
+    ]
+  },
+  "remaining_validation": "root final fixed-source whole-Go/original MySQL/copy suites; no full CI claim from these narrow tests",
+  "no_install": true,
+  "no_commit_or_push": true,
+  "no_active_own_go_browser_or_benchmark_processes": true,
+  "frozen": true,
+  "evidence_file_sha256": {
+    "actual-mysql-command.json": "10a2f2796b94f29b01054ff0aeef12d77488650412628a234a5bf4eea4bdb85b",
+    "fixed-sqlite-capability.log": "826e4aad2df06d16f30a06a376524b522501e0d9359cffb8ffd97d9bf90a26f8",
+    "fixed-race-attempt2.log": "34878d3cd16dc779d64d756f8e82831dc5961dc7cfd5dccfda5ad28bd0527160",
+    "benchmark-compile.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "benchmark-binary-binding.json": "9835bad9730bac0d5b98891229522a3302ee9d4cbdc7a0d29d9177b2d7bb021f",
+    "benchmark-source-after.json": "f06f0749b47768cc639b60f6061a87f2adfe9bf8e1186beb5422a6cd41d649ff",
+    "records-benchmark.test": "8649b13f9ef71ededeb2624ce09838f2343a023868ea0be3f21d9ff365e5936d",
+    "benchmark-source-before.json": "a7468211e2f803e39bf8a2afe4cf6e343c29ce161f570717a1da0559bf7d5e0d",
+    "fixed-sqlite-capability-attempt2.log": "7e3daa5be3dc497df7fabb82af80dbe5decfbdf097e4bca6508112c6e20a4b11",
+    "actual-mysql.log": "7a6171c58dd8a235e4cd079cf8c2bb23090fc6808b07ea6dff3dab9f4f790fbe",
+    "actual-mysql-command-attempt2.json": "29e1ba6c31edbdd5c9bb42ae4cf3ebeb46a6d83baf05a62400e261a38aac3a70",
+    "benchmark-overlay.json": "1909017f51e6413afcc3ce9ef3ecf241e1071dca390d4ad78b88d37e61d98d2c",
+    "actual-mysql-attempt2.log": "60e35695184ef438a637ed2241f26e87dea184e9b3c352cad30b374ed2d51c3e",
+    "benchmark-results.json": "c3371d404d56e98da4856f5b90572003b286ab303fed6c253f97f85de44dc327",
+    "fixed-race.log": "ddb4c61836da45c3e2fa52fb52349a19f6db4efc6fecc07d38cc95c161688526",
+    "raw_summary_benchmark_test.go": "c9b9cf85ecc164d3d06278dacfe1aa6765e27f813834c11b8df1464179aebbd9",
+    "source-before-validation.json": "65f5a6e5202ead5595fc0346cf58e54966ca9effaadb324cc10408633f752e31",
+    "large-meta-benchmark.log": "10e0bbc5b838d69441fdeba890483bb367b76a3ee27806c09f765699aef94915",
+    "fixed-sqlite-capability-attempt3.log": "d614e051b0429f0eecc28d109c0cc4401c2b5dfdf4066e8192f4e6451f8b4033",
+    "old-wide-overlay.log": "5a04f8c062cf30d6c98eb3d1f10d2543e59dd478128cbc8fe617735d1991e791",
+    "overlay-description.json": "22ee282facf4b81b39db75d5a7debcf44fe7d09dfc775351343184f1a9f9f75a"
+  },
+  "reproducible_benchmark": {
+    "tracked_file": "backend/internal/handler/traffic_records_summary_benchmark_test.go",
+    "sha256": "cab70c090ce1eddcdbddb41337fa3eeed6ee168218b0c769ca133e3cecb18ca6",
+    "measured_overlay_sha256": "c9b9cf85ecc164d3d06278dacfe1aa6765e27f813834c11b8df1464179aebbd9",
+    "difference": "Only the first explanatory comment changed from private overlay wording to a tracked benchmark; implementation byte-identical. The measured source binding remains c72254b plus five files and private overlay, not a final-commit CI claim.",
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^$' -bench '^BenchmarkTrafficRecordsRawSummaryLargeMeta$' -benchtime=100x -count=5 -benchmem -cpu=1 -timeout 4m"
+  },
+  "private_receipt_sha256": "1e3b7626963079dab260267c3de2b0049acb1f6681578f01dbeeddd3918263c1",
+  "authority_audit": {
+    "model": "TrafficRecord",
+    "retain": [
+      "NodeID+ReportID and NodeID+Nonce dedup identities",
+      "EntitlementEpoch + CreatedAt + UsedBytes current-cycle recovery",
+      "Meta accounting_samples/first_sequence/rounding_numerator per-sample rounding proof",
+      "FlowUsage cumulative identities and checkpoints independent of Meta"
+    ],
+    "example": "1000 samples of3 raw bytes at1500milli settle5000 with per-sample rounding, not4500 from combined bytes. No Meta or source row archival in this slice."
+  }
+}

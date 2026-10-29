@@ -70,7 +70,7 @@ const resolveMeta = (to: RouteLocationNormalized) => {
 
 const roleLanding = (store: ReturnType<typeof useAppStore>) => store.isAdmin ? '/admin/dashboard' : '/account'
 
-installAuthSessionNavigation(router, () => useAppStore(pinia).clear())
+installAuthSessionNavigation(router, () => useAppStore(pinia).clear(), () => useAppStore(pinia).suspendSession())
 
 router.beforeEach((to, from) => {
   if (from.matched.length && to.fullPath !== from.fullPath) startNavigationProgress()
@@ -78,6 +78,7 @@ router.beforeEach((to, from) => {
 
 router.beforeEach(async (to) => {
   const store = useAppStore(pinia)
+  if (store.reauthRequired) return false
   try {
     await store.loadSetupStatus()
   } catch (_) {

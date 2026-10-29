@@ -83,15 +83,27 @@ func TestSubscriptionMutationsValidateAdminReplayAndAtomicCredentialEffects(t *t
 		t.Fatalf("publication missing: %d %v", count, err)
 	}
 	cancel := entitlements.SubscriptionMutationInput{SubscriptionID: sub.ID, Kind: entitlements.SubscriptionCancel, Reason: "support cancellation", IdempotencyKey: "cancel-55", Origin: "plugin:example.operator"}
-	canceled, err := service.Apply(context.Background(), admin.ID, cancel)
-	if err != nil || canceled.Status != "canceled" {
-		t.Fatalf("cancel: %+v %v", canceled, err)
+	if _, err := service.Apply(context.Background(), admin.ID, cancel); !errors.Is(err, entitlements.ErrSubscriptionMutationUnavailable) {
+		t.Fatalf("legacy adapter remained a second cancellation writer: %v", err)
 	}
-	if err := db.First(&credential, credential.ID).Error; err != nil || credential.Status != "revoked" || credential.RevokedAt == nil {
-		t.Fatalf("credential not revoked: %+v %v", credential, err)
+	if err := db.First(&credential, credential.ID).Error; err != nil || credential.Status != "active" || credential.RevokedAt != nil {
+		t.Fatalf("rejected legacy write changed credential: %+v %v", credential, err)
 	}
-	if err := db.First(&sub, sub.ID).Error; err != nil || sub.Status != "canceled" {
-		t.Fatalf("subscription not canceled: %+v %v", sub, err)
+	if err := db.First(&sub, sub.ID).Error; err != nil || sub.Status != "active" {
+		t.Fatalf("rejected legacy write changed subscription: %+v %v", sub, err)
+	}
+	// Historical status-only receipts remain replayable; complete new lifecycle
+	// behavior is tested through the application bridge on SQLite and MySQL.
+	history := model.SubscriptionMutation{SubscriptionID: sub.ID, ActorID: admin.ID, Kind: cancel.Kind, Reason: cancel.Reason, Origin: cancel.Origin, IdempotencyKey: cancel.IdempotencyKey, RequestHash: subscriptionMutationHash(cancel), Status: "canceled", EndAt: sub.EndAt, CreatedAt: now}
+	if err := db.Create(&history).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&sub).Update("status", "canceled").Error; err != nil {
+		t.Fatal(err)
+	}
+	replay, err := service.Apply(context.Background(), admin.ID, cancel)
+	if err != nil || replay.MutationID != history.ID || replay.Status != "canceled" {
+		t.Fatalf("historical cancellation replay %+v %v", replay, err)
 	}
 	if _, err := service.Apply(context.Background(), admin.ID, extend); err != nil {
 		t.Fatalf("prior receipt disappeared after cancel: %v", err)

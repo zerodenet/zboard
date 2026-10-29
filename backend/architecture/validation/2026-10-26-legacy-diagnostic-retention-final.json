@@ -1,0 +1,512 @@
+{
+  "status": "exact_head_full_local_dual_database_ci_and_original_capacity_passed",
+  "recorded_utc": "2026-10-26T05:38:11.050733+00:00",
+  "source": "7eb0fa95db654ad6fd6f4bab3141bd9e13dd3394",
+  "branch": "codex/core-convergence",
+  "draft_pr": "https://github.com/zerodenet/zboard/pull/78",
+  "backend": {
+    "source": "7eb0fa95db654ad6fd6f4bab3141bd9e13dd3394",
+    "checkout": "/workspace/zboard",
+    "phase": "backend",
+    "started_utc": "2026-10-26T05:01:31.481428+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "1"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 1 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 26.968,
+        "log": "full-go-7eb0fa9-final.log",
+        "log_sha256": "79cb3bb579b3e25334a30ee173da2da02da249d466d8c29e2cd01145425c2ac3"
+      },
+      {
+        "name": "vet",
+        "command": "go vet -p 1 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 20.029,
+        "log": "vet-7eb0fa9-final.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "build",
+        "command": "go build ./cmd/zboard",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1.997,
+        "log": "build-7eb0fa9-final.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "pure-go-sqlite",
+        "command": "go test -p 1 ./internal/datastore -run SQLite -count=1",
+        "environment_additions": {
+          "CGO_ENABLED": "0"
+        },
+        "exit_code": 0,
+        "wall_seconds": 26.964,
+        "log": "pure-go-sqlite-7eb0fa9-final.log",
+        "log_sha256": "51fbd3220e4abf7fcfb265cce0dbb8d31b4ae81eefa6871cfc09558d844019bc"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-26T05:02:47.440451+00:00"
+  },
+  "mysql": {
+    "source": "7eb0fa95db654ad6fd6f4bab3141bd9e13dd3394",
+    "checkout": "/workspace/zboard",
+    "phase": "mysql",
+    "started_utc": "2026-10-26T05:03:10.907802+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "1"
+    },
+    "checks": [
+      {
+        "name": "mysql-core",
+        "command": "go test -p 1 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1033.991,
+        "log": "mysql-core-7eb0fa9-final.log",
+        "log_sha256": "1a4d8fb219256fa8279cc049a60e71f6c631599ae7c791d18718e6a5cb49de46"
+      },
+      {
+        "name": "mysql-jobstore",
+        "command": "go test -p 1 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 125.558,
+        "log": "mysql-jobstore-7eb0fa9-final.log",
+        "log_sha256": "125aa2c4112c0a7327e7e40a6816e9ef9802e8b9d2cdeedeed5d3311d640bb00"
+      },
+      {
+        "name": "mysql-copy",
+        "command": "go test -p 1 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 232.92,
+        "log": "mysql-copy-7eb0fa9-final.log",
+        "log_sha256": "fa102d14f0300b077ee138087b00483523e5fa395f65d10479c39053487b23b6"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-26T05:26:23.377582+00:00"
+  },
+  "go_cache_hits_in_full_go": 45,
+  "source_specific_ci": {
+    "run_id": 40272050339,
+    "head": "7eb0fa95db654ad6fd6f4bab3141bd9e13dd3394",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "frontend",
+        "id": 121406763743,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/zerodenet/zboard/actions/runs/40272050339/job/121406763743"
+      },
+      {
+        "name": "backend",
+        "id": 121406763957,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/zerodenet/zboard/actions/runs/40272050339/job/121406763957"
+      },
+      {
+        "name": "mysql",
+        "id": 121406763967,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/zerodenet/zboard/actions/runs/40272050339/job/121406763967"
+      },
+      {
+        "name": "zrs-compiler",
+        "id": 121406763970,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/zerodenet/zboard/actions/runs/40272050339/job/121406763970"
+      },
+      {
+        "name": "contract",
+        "id": 121406764067,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/zerodenet/zboard/actions/runs/40272050339/job/121406764067"
+      },
+      {
+        "name": "compose",
+        "id": 121406764171,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/zerodenet/zboard/actions/runs/40272050339/job/121406764171"
+      }
+    ],
+    "previous_run": {
+      "id": 40271277686,
+      "head": "4a04db1d3b1f93afed64b356a3ab8e06cae3e33f",
+      "conclusion": "failure",
+      "jobs": [
+        {
+          "name": "zrs-compiler",
+          "id": 121404422885,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "frontend",
+          "id": 121404422948,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "compose",
+          "id": 121404422994,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "mysql",
+          "id": 121404423041,
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "backend",
+          "id": 121404423047,
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "contract",
+          "id": 121404423113,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  },
+  "ci_mysql_log_sha256": "7a3c9269975ae13f6a7df35783ae4593978d5b3e784a8034264a92518ba9d2f5",
+  "previous_ci_mysql_timeout_log_sha256": "e9835c825e60b186eb9cfb3377718794a0596cf02adc004263d3fed40a932fe5",
+  "previous_ci_backend_failure_log_sha256": "f3cfc51110787fc32822a2c205ec5167c9c9081d60b7232ae2dc78397ff085f8",
+  "capacity": {
+    "terminal": {
+      "head": "7eb0fa95db654ad6fd6f4bab3141bd9e13dd3394",
+      "started_utc": "2026-10-26T05:29:54.313609+00:00",
+      "free_before": 3797057536,
+      "estimated_host_build_headroom_bytes": 1073741824,
+      "physical_spool_reserve_profile_expected_bytes": 268435456,
+      "original_after_reserve_gate_bytes": 1677721600,
+      "status": "completed",
+      "original_runner_unmodified": true,
+      "finished_utc": "2026-10-26T05:33:13.285988+00:00",
+      "exit_code": 0,
+      "wall_seconds": 198.933,
+      "free_after": 2743570432,
+      "observer_log_sha256": "42087855e74fc0da8aefaa95d24fdd1ddd3583e310886e03f6c6649c65bafdf4",
+      "new_evidence": [
+        "/workspace/zboard/.codex-local-artifacts/acceptance/mixed-20261026T052954Z-8lCVr5"
+      ],
+      "existing_resources_preserved": true,
+      "working_tree_clean": true
+    },
+    "acceptance": {
+      "passed": true,
+      "failures": [],
+      "latencies": [
+        {
+          "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 1,
+          "p95_ms": 16,
+          "p99_ms": 55,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/subscriptions/1",
+          "budget_ms": 250,
+          "count": 157,
+          "errors": 0,
+          "p50_ms": 2,
+          "p95_ms": 25,
+          "p99_ms": 44,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 158,
+          "errors": 0,
+          "p50_ms": 9,
+          "p95_ms": 21,
+          "p99_ms": 49,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 157,
+          "errors": 0,
+          "p50_ms": 2,
+          "p95_ms": 17,
+          "p99_ms": 31,
+          "passed": true
+        },
+        {
+          "path": "/api/zero/events",
+          "budget_ms": 250,
+          "count": 1274,
+          "errors": 0,
+          "p50_ms": 11,
+          "p95_ms": 22,
+          "p99_ms": 36,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/trends",
+          "budget_ms": 1000,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 1,
+          "p95_ms": 22,
+          "p99_ms": 43,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+          "budget_ms": 1000,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 3,
+          "p95_ms": 14,
+          "p99_ms": 28,
+          "passed": true
+        }
+      ],
+      "sampled_peak_working_set_mib": 39.61,
+      "resource_samples": 15,
+      "minimum_disk_free_bytes": 2561187840,
+      "spool_pressure_levels": [
+        "normal"
+      ],
+      "runtime_diagnostics": {
+        "samples": 7,
+        "last_consumer": {
+          "batches": 43,
+          "processed_envelopes": 1254,
+          "projected_flow_samples": 855,
+          "coalesced_flow_updates": 399,
+          "failures": 0,
+          "processing_seconds": 1.439132146,
+          "missing_receive_time": 0,
+          "latency_samples": 1254,
+          "latency_bucket_ms": 100,
+          "p95_upper_ms": 2000,
+          "maximum_ms": 2118
+        },
+        "maximum_sampled_pending_events": 39,
+        "database_wait_deltas": {
+          "accounting_db": {
+            "wait_count": 1971,
+            "wait_seconds": 2.639738123
+          },
+          "traffic_read_db": {
+            "wait_count": 0,
+            "wait_seconds": 0
+          }
+        }
+      },
+      "drain_seconds": 5,
+      "note": "Client-observed HTTP latency includes Docker loopback transport; this short run does not prove 24h stability."
+    },
+    "binding": {
+      "passed": true,
+      "expected_revision": "7eb0fa95db654ad6fd6f4bab3141bd9e13dd3394",
+      "started_at": "2026-10-26T05:29:54.470907+00:00",
+      "finished_at": "2026-10-26T05:33:13.278892+00:00",
+      "parameters": {
+        "NODES": "2",
+        "SUBSCRIPTIONS": "20",
+        "HISTORY_RECORDS": "2000",
+        "DURATION_SECONDS": "60",
+        "EVENT_RATE": "20",
+        "READERS": "4"
+      },
+      "original_runner_exit": 0,
+      "original_acceptance_passed": true,
+      "hash_binding": {
+        "checkout_commit_unchanged": true,
+        "checkout_still_clean": true,
+        "source_before_after_equal": true,
+        "source-sha256.txt_matches_observer": true,
+        "source-after-build-sha256.txt_matches_observer": true,
+        "zboard_binary_before_after_equal": true,
+        "acceptance_binary_before_after_equal": true,
+        "acceptance-load.py_copy_matches_source": true,
+        "acceptance-report.py_copy_matches_source": true
+      },
+      "rss_observations": {
+        "container_id": "f9250de8e896965818c9759ce6f43d0c61b4b36bacf75596f00acce1ad2d53b9",
+        "samples": 22,
+        "errors": [
+          "CalledProcessError"
+        ],
+        "available": true,
+        "first_rss_kib": 56372,
+        "last_rss_kib": 61280,
+        "sampled_peak_rss_kib": 65092
+      },
+      "sqlite_space": {
+        "available": true,
+        "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+        "page_size": 4096,
+        "page_count": 1960,
+        "freelist_pages": 0,
+        "allocated_bytes": 8028160,
+        "objects": {
+          "index": {
+            "bytes": 4677632,
+            "pages": 1142
+          },
+          "internal": {
+            "bytes": 131072,
+            "pages": 32
+          },
+          "table": {
+            "bytes": 3219456,
+            "pages": 786
+          }
+        }
+      },
+      "original_evidence_directory": "/workspace/zboard/.codex-local-artifacts/acceptance/mixed-20261026T052954Z-8lCVr5",
+      "note": "Supplemental RSS/dbstat do not replace or relax any original gate. One short single-process run; no worker scaling or capacity ceiling claim."
+    },
+    "storage_preflight": {
+      "at": "2026-10-26T05:32:05.101221217Z",
+      "disk_free_bytes": 2565861376,
+      "files": {
+        "events/.emergency-reserve": 268435456,
+        "events/.owner.lock": 0,
+        "fixture.json": 2898,
+        "zboard.db": 4997120,
+        "zboard.db-shm": 32768,
+        "zboard.db-wal": 4486712,
+        "zboard.json": 579
+      }
+    },
+    "artifact_sha256": {
+      "acceptance-result.json": "98aeb2be1cf43ff39ed10dbc31b590c976cbf6683ea8f3efcc60901054469f12",
+      "storage-preflight.json": "850dd3378618ddbe70db1e8cf21929bf01242135f406c6f196e146bee0f1adcd",
+      "container-stats.jsonl": "8d778b6487507f7fb355fe462b27c2706064ce6887885f4a358bc4882b7a38d0",
+      "storage.jsonl": "e5ea10872016b9da2a79cb00e2804133f7d731028d882d255bcf4dc8012ebe58",
+      "server.log": "57f006c5b37e809d01f968448998fc115d666e6080c771775cdc53f05a611b26"
+    },
+    "original_runners_unchanged": {
+      "scripts/acceptance-mixed.sh": "e526b44d5a81e306f34a4b069e40fdd29b908c55f4bc45a070ef558722a259f6",
+      "scripts/acceptance-load.py": "3a8d946d14e96b3262f7ee831c4da0dcd96f31d31a1fe2ce2b8525a90e00af12",
+      "scripts/acceptance-report.py": "d8c9e0ab163a29a62fb296ddb30e5c22b6efe68cab3d1f94bfc7395082d06021"
+    },
+    "scope": "Original short1CPU/1GiBSQLite profile only. Physical reserve256MiB; estimated1GiB host build headroom is not an additional reserve. RSS sample error retained, valid samples not continuous peak. HTTP ACK latency is not settlement."
+  },
+  "cache_maintenance": {
+    "docker": {
+      "command": [
+        "docker",
+        "builder",
+        "prune",
+        "--force",
+        "--filter",
+        "until=1h"
+      ],
+      "outcome": "completed",
+      "exit_code": 0,
+      "free_bytes_before": 1092030464,
+      "free_bytes_after": 2132652032,
+      "released_filesystem_bytes": 1040621568,
+      "source_unchanged": true,
+      "inventory_unchanged": true,
+      "started_utc": "2026-10-26T05:29:02.260439+00:00",
+      "finished_utc": "2026-10-26T05:29:02.982419+00:00",
+      "cache_entries_before": 24,
+      "cache_entries_after": 6,
+      "raw_receipt_sha256": "288de838387dd69e07184f735979ac84f7ef198ace3c31665ab184f1566a3066"
+    },
+    "go": {
+      "utc": "2026-10-26T05:29:07.508911+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "process_scan_valid": true,
+      "ps_columns": [
+        "pid",
+        "state",
+        "comm",
+        "args"
+      ],
+      "workloads_before_env_probe": [],
+      "workloads_after_env_probe": [],
+      "free_before": 2132647936,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 3797061632
+    }
+  },
+  "paired_preparation_measurement_only": {
+    "started_utc": "2026-10-26T05:27:09.221126+00:00",
+    "source": "7eb0fa95db654ad6fd6f4bab3141bd9e13dd3394",
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/handler",
+      "-run",
+      "^TestMySQLBusinessPreparationPairedOct26$",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "probe_sha256": "601140184fc37009ecca72abd7ac0d19c5f7f8305e2cd8f7b363ec25d697c005",
+    "status": "completed",
+    "finished_utc": "2026-10-26T05:27:43.411999+00:00",
+    "exit_code": 0,
+    "wall_seconds": 34.189,
+    "probe_removed": true,
+    "working_tree_clean": true,
+    "log_sha256": "de4d2ce595d1de90f4afe6e60f84f37e2e562e57a9f056698b80fbe0331818de",
+    "measurements": [
+      "mysql_business_oct26_paired_probe_test.go:21: P7_TEMPLATE_WARM_MS 4115.782",
+      "mysql_business_oct26_paired_probe_test.go:63: P7_PAIRED {\"mode\":\"original\",\"pair\":0,\"prepare_ms\":3333.994,\"verify_ms\":148.434,\"whole_subtest_ms\":3898.166}",
+      "mysql_business_oct26_paired_probe_test.go:63: P7_PAIRED {\"mode\":\"snapshot\",\"pair\":0,\"prepare_ms\":1127.377,\"verify_ms\":202.005,\"whole_subtest_ms\":1802.42}",
+      "mysql_business_oct26_paired_probe_test.go:63: P7_PAIRED {\"mode\":\"snapshot\",\"pair\":1,\"prepare_ms\":1046.366,\"verify_ms\":158.892,\"whole_subtest_ms\":1619.287}",
+      "mysql_business_oct26_paired_probe_test.go:63: P7_PAIRED {\"mode\":\"original\",\"pair\":1,\"prepare_ms\":3631.138,\"verify_ms\":147.112,\"whole_subtest_ms\":4195.841}",
+      "mysql_business_oct26_paired_probe_test.go:63: P7_PAIRED {\"mode\":\"original\",\"pair\":2,\"prepare_ms\":3521.352,\"verify_ms\":136.286,\"whole_subtest_ms\":4047.534}",
+      "mysql_business_oct26_paired_probe_test.go:63: P7_PAIRED {\"mode\":\"snapshot\",\"pair\":2,\"prepare_ms\":940.786,\"verify_ms\":155.027,\"whole_subtest_ms\":1455.998}"
+    ]
+  },
+  "failure_history": [
+    "Original112/157 HTTP503 retained in earlier evidence.",
+    "4a04db1 full-go471.600s and CI backend failed exact migration list omission; only explicit0062 up/down entries corrected.",
+    "4a04db1 CI handler900.016s timeout; current test5s is not proven cause. Other package/redo symptoms do not prove unique cause. 7eb success does not erase that failure."
+  ],
+  "not_executed": [
+    "Sustained24h/capacity ceiling or MySQL mixed load",
+    "Quota exhaustion to confirmed remote disconnect and observable overuse in this profile",
+    "Standalone workers/local autoscaling/benefit and plugin busy resource guarantees",
+    "Old baseline7c production-like business upgrade and full rollback matrix",
+    "Real browser/external payment/coupon/kernel/production acceptance"
+  ],
+  "overall_P0_P7_complete": false,
+  "next_candidates": "Private audited opt-in diagnostic collection/cap and31 pure-business fixture constructor preparations; neither applied or verified as of this receipt."
+}

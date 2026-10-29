@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -47,6 +48,9 @@ func TestTrafficCalendarProjectionPreservesEveryLocalDayAndScope(t *testing.T) {
 						}
 					}
 				}
+			}
+			if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
+				t.Fatal(err)
 			}
 			for _, scope := range []TrafficScope{{}, {UserID: 1}, {SubscriptionID: 1}, {NodeID: 1}, {ProtocolEndpointID: 1}, {UserID: 1, NodeID: 2}} {
 				q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID = scope.UserID, scope.SubscriptionID, scope.NodeID, scope.ProtocolEndpointID

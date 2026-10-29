@@ -1,3 +1,4 @@
+vi.mock('../composables/useReauthenticationDraft', () => ({ useReauthenticationDraft: () => ({ message: { value: '' }, restore: vi.fn() }) }))
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Providers from './Providers.vue'

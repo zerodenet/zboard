@@ -1,0 +1,641 @@
+{
+  "code_commit": "ad9dfeedcd987bf2ec5fff0e13b3a81655edad14",
+  "branch": "codex/core-convergence",
+  "pr": 78,
+  "updated_utc": "2026-10-23T04:25:11.494831+00:00",
+  "status": "Code commit independently passed full local backend, actual local MySQL, targeted race/count3 and all six own CI jobs. Overall P2-P7 incomplete.",
+  "backend": {
+    "source": "ad9dfeedcd987bf2ec5fff0e13b3a81655edad14",
+    "checkout": "/workspace/zboard",
+    "phase": "backend",
+    "started_utc": "2026-10-23T03:39:02.535414+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "2"
+    },
+    "checks": [
+      {
+        "name": "full-go",
+        "command": "go test -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 349.981,
+        "log": "full-go-ad9dfee-final.log"
+      },
+      {
+        "name": "vet",
+        "command": "go vet -p 2 ./...",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 11.256,
+        "log": "vet-ad9dfee-final.log"
+      },
+      {
+        "name": "build",
+        "command": "go build ./cmd/zboard",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 1.986,
+        "log": "build-ad9dfee-final.log"
+      },
+      {
+        "name": "pure-go-sqlite",
+        "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+        "environment_additions": {
+          "CGO_ENABLED": "0"
+        },
+        "exit_code": 0,
+        "wall_seconds": 37.428,
+        "log": "pure-go-sqlite-ad9dfee-final.log"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T03:45:43.188514+00:00"
+  },
+  "mysql": {
+    "source": "ad9dfeedcd987bf2ec5fff0e13b3a81655edad14",
+    "checkout": "/workspace/zboard",
+    "phase": "mysql",
+    "started_utc": "2026-10-23T03:46:19.060945+00:00",
+    "environment": {
+      "GOMAXPROCS": "2",
+      "parallel_packages": "2"
+    },
+    "checks": [
+      {
+        "name": "mysql-core",
+        "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 831.597,
+        "log": "mysql-core-ad9dfee-final.log"
+      },
+      {
+        "name": "mysql-jobstore",
+        "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 127.804,
+        "log": "mysql-jobstore-ad9dfee-final.log"
+      },
+      {
+        "name": "mysql-copy",
+        "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+        "environment_additions": {},
+        "exit_code": 0,
+        "wall_seconds": 222.615,
+        "log": "mysql-copy-ad9dfee-final.log"
+      }
+    ],
+    "pending": [],
+    "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+    "finished_utc": "2026-10-23T04:06:01.077656+00:00"
+  },
+  "race": {
+    "source": "ad9dfeedcd987bf2ec5fff0e13b3a81655edad14",
+    "sources": {
+      "backend/internal/adapters/persistence/commercestore/administrative_termination.go": "63635ef438a94145010ec95e45606f41acefd308b787d8ae55a562f063822fca",
+      "backend/internal/adapters/persistence/commercestore/consumption_refunds.go": "c4517203983d7321a4190b232565a6e8925127393f4a5c5967690ff8a8dfc382",
+      "backend/internal/adapters/persistence/commercestore/entitlement_value.go": "07b548d283998ce520f86d8063c4f45a973dbd642ca220555292e9a5d31cf7f0",
+      "backend/internal/adapters/persistence/commercestore/subscription_termination.go": "4ed963cc276775baa5f67f0d9dec05d9b3bd1ffbfd04a1d1115bdd11a87bfe31",
+      "backend/internal/capabilities/commerce/administrative_refund.go": "b69e7f8dec1c5f8d666f439198c369d487057483c61544614a86cfc30d0a69c9",
+      "backend/internal/capabilities/commerce/administrative_refund_test.go": "92daa2adb0e8d7c47b9b7f098d4a8ec2a9da74aa9117ef2be7a77e8ba8860079",
+      "backend/internal/capabilities/commerce/subscription_termination.go": "51bb9414e907d6bf322b9e0e6f0a5b76903f79b969b79db515f72c4564b7e204",
+      "backend/internal/capabilities/commerce/subscription_value.go": "2838292039278852ab49f537c1958a34065a11f9d661abe3f682ece631c958e1",
+      "backend/internal/capabilities/commerce/value_perpetual.go": "cfe618ec7ff05a29cf696c934a09f263308e17522d28685ec7b96527c0c48c0e",
+      "backend/internal/capabilities/commerce/value_perpetual_exhaustion_test.go": "63e1fa89beb53b19eb056643d85f4513f33c967af32a711fa4f919c40661faa3",
+      "backend/internal/capabilities/commerce/value_perpetual_fifo_test.go": "5aba181c5656b93ff67d75178b9f4e40d9927c4edf0431d9066de21a6c350699",
+      "backend/internal/capabilities/entitlements/add_quota_boundaries_test.go": "e6741a6e03e40fdbebb994ac5eb4b0196be6737cc29cf4f0196706fab50e2ca8",
+      "backend/internal/capabilities/entitlements/grant.go": "8d3a6e1b8fd387a04c472ef19bdbd556b8260ebfa40e0400b413ce152f716b2a",
+      "backend/internal/handler/administrative_termination_test.go": "e85453bf2716c0e6efb92e0e595e1267d26cb5a8af572d6d58480238bf025f11",
+      "backend/internal/handler/consumption_refunds.go": "211f484cdb9507fe62cb44b64da406205fa87c856f255bb67cb712d30c1cacca",
+      "backend/internal/handler/perpetual_fifo_exhaustion_test.go": "1cbea6fcbc9619f9350cd051d9cc2ada2ca2271063463c5aab23093b6923f432",
+      "backend/internal/handler/perpetual_fifo_test.go": "2706b4492d4b30a8a53e3d276a68dfb04188ba2f0d220e3f3a0e3a2b57e48459",
+      "backend/internal/handler/subscription_value.go": "fdfe6e7db97f3d1450635776647b70724683432c60b5fe71dcc68ff7996a3a25",
+      "backend/internal/server/router.go": "338f67c6d71c4d8e3e9e733d23316e1f8eff05cfff56216b696e62918d470ed1",
+      "backend/tools/capabilityinventory/main.go": "a3e1896b4ece18cfdb6ad425487339a429d624b3c21b31af7f791665baac234e",
+      "frontend/src/api/subscriptionValue.ts": "ebbc72c09743e7d81bf9f79d8d06f422ff77896ea220428cac2b7c507a42d49d",
+      "frontend/src/components/AdminConsumptionRefund.test.ts": "9f9f84ce1da0b7acb351dc1a87aafeb0b4607ad05dd87471e1f8beed42a93b91",
+      "frontend/src/components/AdminConsumptionRefund.vue": "3a6c31eabe6a7a8ccd2f2711c45cd7aa43add2c09e5e10862dead31a43a71a65",
+      "frontend/src/components/SubscriptionTermination.test.ts": "33cf2620f7ae67002a7e6f39813540367882c3b4f3fc1e8e286c360c66e62697",
+      "frontend/src/components/SubscriptionTermination.vue": "430316d6a184b7df084fdf4a12610b1674a6424b68c2008925a40e5877fef53e",
+      "frontend/src/views/Subscriptions.vue": "2f12be802895b3210068226dc1720f1bfa9298b04816fabab9a21fded805a20e"
+    },
+    "started_utc": "2026-10-23T04:09:12.025377+00:00",
+    "checks": [
+      {
+        "name": "sqlite-race-final",
+        "command": "go test -race -p 2 ./internal/capabilities/commerce ./internal/capabilities/entitlements ./internal/handler -run PerpetualFIFO|WholeUnsubscribeApproved|AdministrativeRefund|AdministrativeWholeTermination|AdministrativeTerminationHTTP|AdditionalQuotaCannot|SubscriptionTerminationFailuresAndConcurrency|SubscriptionTerminationRacesVerifiedRenewal -count=3 -v -timeout 10m",
+        "actual_mysql": false,
+        "exit_code": 0,
+        "wall_seconds": 299.664,
+        "log": "sqlite-race-final.log"
+      },
+      {
+        "name": "mysql-race-final",
+        "command": "go test -race -p 2 ./internal/handler -run ^TestMySQL(PerpetualFIFO|AdministrativeWholeTermination|WholeUnsubscribeApproved|SubscriptionTerminationFailuresAndConcurrency|SubscriptionTerminationRacesVerifiedRenewal) -count=3 -v -timeout 10m",
+        "actual_mysql": true,
+        "exit_code": 0,
+        "wall_seconds": 96.184,
+        "log": "mysql-race-final.log"
+      }
+    ],
+    "pending": [],
+    "source_unchanged": true,
+    "finished_utc": "2026-10-23T04:15:47.876378+00:00"
+  },
+  "ci": {
+    "source": "ad9dfeedcd987bf2ec5fff0e13b3a81655edad14",
+    "run_id": 39894136277,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39894136277",
+    "jobs": [
+      {
+        "id": 120220494803,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39894136277,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Run actions/setup-go@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Verify module files are tidy",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Format",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Test",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Verify plugin SDK submodule",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Test offline node cleanup",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Verify pure-Go SQLite path",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "Vet",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11
+          },
+          {
+            "name": "Post Run actions/setup-go@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 22
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 23
+          }
+        ]
+      },
+      {
+        "id": 120220494960,
+        "name": "contract",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39894136277,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Pull redocly/cli:1.34.3",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Check OpenAPI contract",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          }
+        ]
+      },
+      {
+        "id": 120220495022,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39894136277,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Run pnpm/action-setup@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Install",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Normalize package permissions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Test",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Typecheck and build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14
+          },
+          {
+            "name": "Post Run pnpm/action-setup@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17
+          }
+        ]
+      },
+      {
+        "id": 120220495025,
+        "name": "zrs-compiler",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39894136277,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Run dtolnay/rust-toolchain@1.88.0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Format",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Test",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Build release binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13
+          }
+        ]
+      },
+      {
+        "id": 120220495061,
+        "name": "compose",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39894136277,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Prepare host directories",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Exercise nested bind permissions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Verify uploads survive container replacement",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Validate Compose configurations",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Verify upload mounts in every deployment layout",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Verify managed rule mount contract",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17
+          }
+        ]
+      },
+      {
+        "id": 120220495102,
+        "name": "mysql",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39894136277,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Initialize containers",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Run actions/setup-go@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Test actual MySQL migrations and transactions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Post Run actions/setup-go@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "Stop containers",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11
+          }
+        ]
+      }
+    ]
+  },
+  "local_logs_sha256": {
+    "full-go-ad9dfee-final.log": "56ace802bb9769ed16958aae3bdd2c0c924b43816db4aceb9166e1d806275e64",
+    "vet-ad9dfee-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build-ad9dfee-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pure-go-sqlite-ad9dfee-final.log": "466038b8dcbccc1cf584185ebbdb29f7b2e86a078438f22b9f340783b0aedfea",
+    "mysql-core-ad9dfee-final.log": "bfb853573f4d53f97abb3671128adcbbe19e521f8d91965341c022574833036c",
+    "mysql-jobstore-ad9dfee-final.log": "523bcacd63ccbef03f647e34ee15680cc0eaf151171b234d8e21dfbd35faa45c",
+    "mysql-copy-ad9dfee-final.log": "83a9d65fc25fe22af1ff1c3c0ce8d1724333942898cb2b3d7d551f8f9c0d9ff3",
+    "oct23-fifo-exhaustion/sqlite-race-final.log": "67a51c043372259de3bde8a3d6cd2a836b50fe742565edceac38c0c66a2a2e9b",
+    "oct23-fifo-exhaustion/mysql-race-final.log": "9d1a979ec0637dba886479ff07d4178cac9e0f9a64c55bb65f2ff57b3d7c204e"
+  },
+  "ci_logs_sha256": {
+    "ci-ad9dfee-frontend.log": "eceea9c233073080b12c0d3caf1268bef2dd8872a2d170427751e6c3e0bf3411",
+    "ci-ad9dfee-mysql.log": "01130424c199696f20ffede3b4e5bcf98808640068a7c5fdc0c9d7ec7f7fe297",
+    "ci-ad9dfee-backend.log": "c248036170db270358664bb7091fd3236911d983a7101668de36cb6378afaaff",
+    "ci-49dc9f6-backend.log": "4c2979da8bfa930c9bbf526c1355ce483745a1713e1759bde11e9a5fae534baa",
+    "ci-49dc9f6-mysql.log": "495e7f341c674ba6fe630bf9ddd07043eae5f823bba57ad5bdd8b0ceaadb0f5b",
+    "ci-49dc9f6-frontend.log": "f152e958a02af9d1851e6eabce3f72f125a5681d643a55a75c31df01974dd6d7"
+  },
+  "approved_cache_clean_results": [
+    {
+      "action": "official Go build-cache clean",
+      "target": "/workspace/toolchains/cache/go-build",
+      "started_utc": "2026-10-23T03:38:15.522366+00:00",
+      "before_free_bytes": 19640320,
+      "before_cache_bytes": 1576367036,
+      "command": "GOCACHE=/workspace/toolchains/cache/go-build /workspace/toolchains/go/bin/go clean -cache",
+      "exit_code": 0,
+      "wall_seconds": 0.311,
+      "output": "",
+      "after_free_bytes": 1642835968,
+      "after_cache_bytes": 228
+    },
+    {
+      "action": "same official Go build-cache clean before race compilation",
+      "target": "/workspace/toolchains/cache/go-build",
+      "started_utc": "2026-10-23T04:07:15.307904+00:00",
+      "before_free_bytes": 735088640,
+      "before_cache_bytes": 763940103,
+      "command": "GOCACHE=/workspace/toolchains/cache/go-build /workspace/toolchains/go/bin/go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "wall_seconds": 0.143,
+      "after_free_bytes": 1530544128,
+      "after_cache_bytes": 228
+    }
+  ],
+  "capacity": {
+    "executed": false,
+    "original_gate_bytes_after_physical_reserve": 1677721600,
+    "physical_reserve_bytes": 536870912,
+    "current_docker_data_df": "Filesystem       1B-blocks        Used Available Use% Mounted on\noverlay        33770192896 31047798784 987631616  97% /var/lib/mysql\noverlay        33770192896 31047798784 987631616  97% /\n",
+    "storage_request": "At least 2GiB additional free storage in same environment requested; no resizing tool exposed and no provisioning confirmed.",
+    "other_cleanup": false
+  },
+  "sql_asset_count_unchanged": 154,
+  "limitations": [
+    "No credible historical value evidence, >1000 sources or pending reset still blocks independent administrator zero termination",
+    "Other sale-operation discounts and external finite coupon-consumption contract incomplete",
+    "Reliable native offline authorization lease unsupported/unverified; no kernel or agent changes",
+    "P4 authoritative retention/late replay and total growth incomplete",
+    "P6 worker/scaling benefit, resource protection and capacity incomplete",
+    "P7 complete baseline upgrade/capacity/external and production acceptance incomplete"
+  ],
+  "notes": [
+    "Local no-DSN MySQL opt-in skips are distinct from actual MySQL commands with zero skips.",
+    "Frontend code is identical to49dc; local full suite1144pass/8existing skip and build passed there; code commitad also has its own full frontend CI.",
+    "First FIFO/administrator fixture and normalized-role build failures plus exhausted FIFO old-code failure retained.",
+    "This report documents tests of code commitad; following documentation commit must have its own exact-head CI before acceptance."
+  ]
+}

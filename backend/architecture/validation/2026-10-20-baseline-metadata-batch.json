@@ -1,0 +1,156 @@
+{
+  "scope": "Only local metadata fetch inside validatePreReleaseBaselineSchema; table inventory query unchanged, one filtered column metadata query and original ordered strict type/missing checks, then one filtered index metadata query and original ordered presence checks. No metadata reused across DDL or preparation.",
+  "files": {
+    "internal/datastore/migrations.go": "6dfe4918dbd91feaa5e2672da8e93886851f0f6b8ec912aa9245d328feaca52d",
+    "internal/datastore/baseline_metadata_test.go": "b579f9e4b000725297c52715ade226bd3226007bfd147186a35e776c7330afe4",
+    "internal/datastore/baseline_metadata_mysql_test.go": "5bb851eccd3bb38e2cc0b7452bcc38dac8ad53b62fad26c9eacf382ef0f17fd7",
+    "internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14"
+  },
+  "old_migrations_go_sha256": "2805fb76b6e6f49c25e6f13bce486f1875ab53d355ce87f1c2a3969f48943ac5",
+  "benchmark_source_unchanged": true,
+  "published_sql_changed": false,
+  "environment": {
+    "Go": "1.26.8",
+    "GOMAXPROCS": "1",
+    "package_parallelism": "-p 1",
+    "database": "existing isolated MySQL 8.4 instance; random schema with disposable schema-only account, no altered global settings",
+    "DSN": "existing AST-loaded literal passed only through child environment; not printed or copied",
+    "quiet_window": "parent paused Go/MySQL/Chromium/capacity; all commands sequential"
+  },
+  "checks": [
+    {
+      "command": "go test -p 1 ./internal/datastore -run ^TestBaselineMetadata -count=1 -v",
+      "result": "PASS",
+      "package_seconds": 0.009,
+      "log": "fixed-unit.log"
+    },
+    {
+      "command": "go test -p 1 -overlay before-overlay.json ./internal/datastore -run ^TestMySQLBaselineMetadataBatchRetainsLegacyValidationAndGuards$ -count=1 -timeout 3m -v",
+      "result": "expected FAIL only isolated real validator SELECT count",
+      "package_seconds": 7.234,
+      "log": "before-mysql.log",
+      "observed": "same connection 18527; Com_select2097→2127 less one trailing connection-ID probe =29 validator SELECTs, ALTER0. All missing/type/index/casing/legacy/full preparation/history/data guards completed without further failures."
+    },
+    {
+      "command": "go test -p 1 ./internal/datastore -run ^(TestBaselineMetadata.*|TestMySQLBaselineMetadataBatchRetainsLegacyValidationAndGuards|TestMigrationInventoryRetainsBaselineAndAddsPlugins|TestRenewalEffectColumnsEvolveAfterLegacyBaselineValidation|TestCommerceOrderSnapshotColumnInventory|TestValidateMigrationInventoryRequiresInitialBaseline|TestEveryEmbeddedUpMigrationParses|TestSplitMigrationStatements.*)$ -count=1 -timeout 3m -v",
+      "result": "PASS",
+      "package_seconds": 6.309,
+      "log": "fixed-target.log",
+      "observed": "same connection18530; isolated validator SELECT3, ALTER0"
+    },
+    {
+      "command": "go test -race -p 1 ./internal/datastore -run ^TestBaselineMetadata -count=3 -v",
+      "result": "PASS",
+      "package_seconds": 1.047,
+      "log": "fixed-race.log"
+    },
+    {
+      "command": "go test -p 1 [-overlay before-overlay.json for old source only] ./internal/datastore -run ^$ -bench ^BenchmarkMySQLSchemaPreparation$ -benchtime=1x -count=3 -v",
+      "result": "PASS both sources; same measurement code and one complete real application.PrepareDatabaseSchema per sample",
+      "logs": [
+        "before-prepare-benchmark.log",
+        "fixed-prepare-benchmark.log"
+      ]
+    },
+    {
+      "command": "gofmt; git diff --check; sha256sum -c benchmark-source.before.sha256; git diff --name-only -- migrations",
+      "result": "PASS; published assets unchanged"
+    }
+  ],
+  "behavior": "Real MySQL fixture first calls complete application.PrepareDatabaseSchema, then test-only bridge measures actual validator alone. Missing plans.revision, signed instead of unsigned type, and missing required audit index rejected with old domain diagnostics. Case-only column spelling accepted, older shape without later renewal_effect fields accepted and full preparation recovers it. Unknown legacy chain and unversioned populated schema still rejected. Marker row and exact migration history preserved. Small database/sql connector tests reverse/case-varied metadata order and original validation order; column/index Query, Scan and Rows.Err faults remain errors with phase context/%w and release the only connection. No exported production API, no new dependency.",
+  "isolated_validator": {
+    "old_selects": 29,
+    "fixed_selects": 3,
+    "alter_statements": 0,
+    "counter_probe_adjustment": "Subtract one trailing SELECT CONNECTION_ID(); SHOW SESSION STATUS does not increment Com_select."
+  },
+  "benchmark": {
+    "samples": {
+      "before": {
+        "raw": [
+          {
+            "ns_per_prepare": 4058855140.0,
+            "alter_statements": 75.0,
+            "create_index_statements": 15.0,
+            "session_selects_including_trailing_id_probe": 2094.0,
+            "connection_id": 18533
+          },
+          {
+            "ns_per_prepare": 3627617215.0,
+            "alter_statements": 75.0,
+            "create_index_statements": 15.0,
+            "session_selects_including_trailing_id_probe": 2094.0,
+            "connection_id": 18536
+          },
+          {
+            "ns_per_prepare": 3537164822.0,
+            "alter_statements": 75.0,
+            "create_index_statements": 15.0,
+            "session_selects_including_trailing_id_probe": 2094.0,
+            "connection_id": 18539
+          }
+        ],
+        "seconds": {
+          "min": 3.537164822,
+          "median": 3.627617215,
+          "max": 4.05885514
+        }
+      },
+      "fixed": {
+        "raw": [
+          {
+            "ns_per_prepare": 3715602625.0,
+            "alter_statements": 75.0,
+            "create_index_statements": 15.0,
+            "session_selects_including_trailing_id_probe": 2068.0,
+            "connection_id": 18542
+          },
+          {
+            "ns_per_prepare": 3718620584.0,
+            "alter_statements": 75.0,
+            "create_index_statements": 15.0,
+            "session_selects_including_trailing_id_probe": 2068.0,
+            "connection_id": 18545
+          },
+          {
+            "ns_per_prepare": 3850362147.0,
+            "alter_statements": 75.0,
+            "create_index_statements": 15.0,
+            "session_selects_including_trailing_id_probe": 2068.0,
+            "connection_id": 18548
+          }
+        ],
+        "seconds": {
+          "min": 3.715602625,
+          "median": 3.718620584,
+          "max": 3.850362147
+        }
+      }
+    },
+    "observed": "Complete preparation session SELECT2094→2068 including trailing ID probe; ALTER75 and CREATE_INDEX15 unchanged. This is a whole-boundary counter, distinct from the independently measured validator29→3.",
+    "latency_conclusion": "Three old samples median3.627617215s, three fixed samples median3.718620584s. No startup latency improvement observed; no claim of explaining/fixing the earlier CI timeout.",
+    "limitations": [
+      "Old samples ran as one group before fixed group; three samples per source, no statistical confidence claim.",
+      "Compilation, fixture creation/cleanup and status queries excluded from timer.",
+      "Original source full backend, 15-minute MySQL core/copy, capacity profile and CI must still run on final source. Prior green58f/08fc receipts do not substitute for new source."
+    ]
+  },
+  "not_run": [
+    "new-source complete backend/vet/build/pureGo checks",
+    "original 15-minute real MySQL core suite plus sequential copy suite",
+    "new-source original capacity profile",
+    "new CI"
+  ],
+  "commit_or_push": false,
+  "baseline": "98c597d6cfc57b8a39b2db55869da047cfd1b648",
+  "phase": "P7 schema preparation; final-source acceptance pending",
+  "private_receipt_sha256": "ebd5a85aa87e79ce3ba48c08edb74d8d1eab51f60e29fc7aa9884c13acddb33e",
+  "ci_observation": {
+    "00f85fb": {
+      "run": 39497770328,
+      "result": "mysql handler timed out at900.017s; five other jobs passed; later jobstore/copy commands unexecuted",
+      "source": "00f85fb9aa619d405882216b1a5f765bbeae32c8",
+      "substitutes_for_new_source": false
+    }
+  }
+}
