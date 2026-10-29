@@ -32,6 +32,12 @@ func TestConvergenceOldVersionFixture(t *testing.T) {
 		f = newOrderFixture(t)
 	}
 	endpoint := attachOrderPublishEndpoint(t, f)
+	// Name this newly-created old fixture before any payment or freeze. The
+	// current-version recurring fixture later creates its own order-publish node;
+	// existing upgraded assets and the shared helper must remain untouched.
+	if err := f.h.db.Model(&model.Node{}).Where("id = ?", endpoint.NodeID).Update("name", "old-upgrade-order-publish").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := f.h.db.Model(&f.planRecord).Update("traffic_bytes", 1000000).Error; err != nil {
 		t.Fatal(err)
 	}

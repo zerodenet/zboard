@@ -64,7 +64,7 @@ func TestConvergenceCurrentAuthoritySeed(t *testing.T) {
 			t.Fatal("old upgrade invented new business authority", table, n, err)
 		}
 	}
-	for _, required := range []string{"0066_automatic_renewal_pending_orders.up.sql", "0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql", "0070_principal_statistics.up.sql", "0071_flow_start_statistics.up.sql"} {
+	for _, required := range []string{"0066_automatic_renewal_pending_orders.up.sql", "0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql", "0070_principal_statistics.up.sql", "0071_flow_start_statistics.up.sql", "0072_subscription_retirement_retry.up.sql"} {
 		var version int64
 		if err := db.Table("schema_migrations").Where("version = ?", required).Count(&version).Error; err != nil || version != 1 {
 			t.Fatal("real current authority migration required", required, version, err)
