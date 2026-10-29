@@ -11,6 +11,12 @@ import (
 )
 
 const NodeRetirementHandler = "node_retirement"
+const NodeRetirementRevision = "1"
+
+type NodeRetirementRunInput struct {
+	Revision string `json:"revision"`
+	NodeID   uint   `json:"node_id"`
+}
 
 type RetirementBlocked struct{ Reason string }
 
@@ -59,10 +65,8 @@ type NodeRetirement struct {
 }
 
 func (s NodeRetirement) Execute(ctx context.Context, run jobs.Run) error {
-	var input struct {
-		NodeID uint `json:"node_id"`
-	}
-	if run.Owner != "system" || run.Handler != NodeRetirementHandler || json.Unmarshal([]byte(run.Payload), &input) != nil || input.NodeID == 0 {
+	var input NodeRetirementRunInput
+	if run.Owner != "system" || run.Handler != NodeRetirementHandler || json.Unmarshal([]byte(run.Payload), &input) != nil || input.Revision != NodeRetirementRevision || input.NodeID == 0 {
 		return jobs.ErrInvalid
 	}
 	item, err := s.Repository.Read(ctx, input.NodeID)

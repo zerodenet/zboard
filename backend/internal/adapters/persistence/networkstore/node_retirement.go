@@ -167,7 +167,7 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 		row.Attempt++
 		row.State = "queued"
 		row.LastError = ""
-		payload, _ := json.Marshal(map[string]uint{"node_id": id})
+		payload, _ := json.Marshal(network.NodeRetirementRunInput{Revision: network.NodeRetirementRevision, NodeID: id})
 		resource := network.NodeCleanupResource(node.SSHHost, node.SSHPort)
 		if node.SSHHost == "" || mode == "detach" {
 			resource = fmt.Sprintf("node-retirement:%d", id)
