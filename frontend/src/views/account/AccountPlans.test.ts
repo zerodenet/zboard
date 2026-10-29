@@ -10,6 +10,7 @@ import TablePager from '../../components/TablePager.vue'
 import AccountPlans from './AccountPlans.vue'
 import UiSelect from '../../components/UiSelect.vue'
 import { fetchDiscountProviders } from '../../api/commerceDiscounts'
+import { safeReauthenticationRoute } from '../../utils/reauthenticationDrafts'
 
 const actor = reactive({ id: 1 })
 vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: actor }) }))
@@ -95,6 +96,141 @@ describe('account catalog bounded reads and route isolation', () => {
     await open('/account/plans?plan=1&step=checkout')
     await selectDiscount(); await click('核对优惠')
   }
+  it('binds a newly opened intent over an older pointer and recovers it after OAuth trims route state without another POST', async () => {
+    vi.mocked(fetchPlanCatalogSKUs).mockResolvedValue(page([sku(1)]))
+    const older = 'a'.repeat(32), active = 'zboard-checkout-active:1:purchase:1:0'
+    localStorage.setItem(active, older)
+    localStorage.setItem(`zboard-checkout:1:${older}`, JSON.stringify({ key: 'old-request-key', request: { skuId: 1, orderType: 'new' }, orderId: 19 }))
+    // An explicit new route is independent of the older recovery pointer.
+    const latest = 'b'.repeat(32)
+    const late = deferred<{ id: number }>()
+    vi.mocked(createOrder).mockReturnValue(late.promise)
+    await open(`/account/plans?operation=purchase&plan=1&sku=1&step=checkout&checkout_intent=${latest}`)
+    expect(localStorage.getItem(active)).toBe(latest)
+    expect(wrapper!.text()).not.toContain('恢复上次订单')
+    await click('创建订单并选择付款方式')
+    const original = vi.mocked(createOrder).mock.calls[0]
+    const draft = JSON.parse(localStorage.getItem(`zboard-checkout:1:${latest}`)!)
+    expect(draft.key).toBe(original![1]!.idempotencyKey)
+    const safe = safeReauthenticationRoute(router.currentRoute.value.fullPath)
+    expect(safe).not.toContain('checkout_intent')
+    expect(safe).not.toContain('step=')
+    wrapper!.unmount(); wrapper = undefined
+    await open(safe)
+    expect(createOrder).toHaveBeenCalledOnce()
+    wrapper!.findComponent(CommercePlanDetail).vm.$emit('continue')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('恢复上次订单')
+    expect(localStorage.getItem(active)).toBe(latest)
+    const restore = wrapper!.findAll('button').find(button => button.text() === '恢复上次订单')!
+    await restore.trigger('click'); await restore.trigger('click'); await flushPromises()
+    expect(createOrder).toHaveBeenCalledOnce()
+    expect(paymentAction).not.toHaveBeenCalled()
+    late.resolve({ id: 71 }); await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/account/orders/71')
+    expect(JSON.parse(localStorage.getItem(`zboard-checkout:1:${latest}`)!)).toEqual({ ...draft, orderId: 71 })
+    expect(JSON.parse(localStorage.getItem(`zboard-checkout:1:${older}`)!).orderId).toBe(19)
+  })
+
+  it('preserves the original renewal fingerprint and key after a sanitized authentication return and explicit recovery', async () => {
+    vi.mocked(fetchPlanCatalogSKUs).mockResolvedValue(page([sku(1)]))
+    const older = 'c'.repeat(32), latest = 'd'.repeat(32), active = 'zboard-checkout-active:1:renew:1:1'
+    localStorage.setItem(active, older)
+    vi.mocked(previewOrder).mockResolvedValue({ order_type: 'renewal', amount_cents: 1500, credit_amount: 0, payable_amount: 1500, currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 0, quote_fingerprint: 'confirmed-original-renewal' })
+    vi.mocked(createOrder).mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ id: 71 })
+    await open(`/account/plans?operation=renew&subscription=1&plan=1&sku=1&step=checkout&checkout_intent=${latest}`)
+    await click('创建订单并选择付款方式')
+    const original = vi.mocked(createOrder).mock.calls[0]
+    expect(original![1]!.quoteFingerprint).toBe('confirmed-original-renewal')
+    const previews = vi.mocked(previewOrder).mock.calls.length
+    const safe = safeReauthenticationRoute(router.currentRoute.value.fullPath)
+    wrapper!.unmount(); wrapper = undefined
+    await open(safe)
+    wrapper!.findComponent(CommercePlanDetail).vm.$emit('continue')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('恢复将沿用原订单内容和原确认金额')
+    expect(wrapper!.get('.purchase-checkout__summary').text()).toContain('15.00')
+    expect(previewOrder).toHaveBeenCalledTimes(previews)
+    expect(createOrder).toHaveBeenCalledOnce()
+    await click('恢复上次订单')
+    expect(vi.mocked(createOrder).mock.calls[1]).toEqual(original)
+    expect(localStorage.getItem(active)).toBe(latest)
+    expect(router.currentRoute.value.query).not.toHaveProperty('quote_fingerprint')
+  })
+
+  it('keeps a pending active intent when continuing from details instead of replacing its recovery pointer', async () => {
+    vi.mocked(fetchPlanCatalogSKUs).mockResolvedValue(page([sku(1)]))
+    const intent = 'e'.repeat(32), active = 'zboard-checkout-active:1:purchase:1:0'
+    localStorage.setItem(active, intent)
+    localStorage.setItem(`zboard-checkout:1:${intent}`, JSON.stringify({ key: 'pending-original-key', request: { skuId: 1, orderType: 'new' } }))
+    await open('/account/plans?operation=purchase&plan=1&sku=1')
+    wrapper!.findComponent(CommercePlanDetail).vm.$emit('continue')
+    await flushPromises()
+    expect(localStorage.getItem(active)).toBe(intent)
+    expect(wrapper!.text()).toContain('恢复上次订单')
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(paymentAction).not.toHaveBeenCalled()
+  })
+
+  it('isolates route-intent recovery pointers across accounts and subscription targets', async () => {
+    vi.mocked(fetchPlanCatalogSKUs).mockResolvedValue(page([sku(1)]))
+    const intent = 'f'.repeat(32), other = '1'.repeat(32), targetOne = '2'.repeat(32)
+    localStorage.setItem('zboard-checkout-active:1:renew:1:1', targetOne)
+    localStorage.setItem('zboard-checkout-active:2:renew:1:2', other)
+    localStorage.setItem(`zboard-checkout:2:${other}`, JSON.stringify({ key: 'second-account-key', request: { skuId: 1, orderType: 'renewal', targetSubscriptionId: 2, quoteFingerprint: 'second-account-original' } }))
+    await open(`/account/plans?operation=renew&subscription=2&plan=2&sku=1&step=checkout&checkout_intent=${intent}`)
+    expect(localStorage.getItem('zboard-checkout-active:1:renew:1:2')).toBe(intent)
+    expect(localStorage.getItem('zboard-checkout-active:1:renew:1:1')).toBe(targetOne)
+    actor.id = 2; await flushPromises()
+    expect(localStorage.getItem('zboard-checkout-active:2:renew:1:2')).toBe(other)
+    expect(localStorage.getItem(`zboard-checkout:2:${intent}`)).toBeNull()
+    expect(wrapper!.text()).toContain('恢复上次订单')
+    expect(createOrder).not.toHaveBeenCalled()
+    await click('恢复上次订单')
+    expect(createOrder).toHaveBeenCalledWith(1, { orderType: 'renewal', targetSubscriptionId: 2, quoteFingerprint: 'second-account-original', idempotencyKey: 'second-account-key' })
+  })
+
+  it('blocks creation if the route intent cannot be preserved as the scoped recovery pointer', async () => {
+    vi.mocked(fetchPlanCatalogSKUs).mockResolvedValue(page([sku(1)]))
+    const intent = '3'.repeat(32), active = 'zboard-checkout-active:1:purchase:1:0'
+    // happy-dom binds Storage methods on the instance after first use. Inject
+    // into the actual receiver and assert that the write really hit the fault.
+    const original = localStorage.setItem.bind(localStorage)
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+      if (key === active) throw new Error('fixture storage full')
+      return original(key, value)
+    })
+    try {
+      await open(`/account/plans?operation=purchase&plan=1&sku=1&step=checkout&checkout_intent=${intent}`)
+      expect(write).toHaveBeenCalledWith(active, intent)
+      expect(wrapper!.text()).toContain('订单恢复记录无法保存')
+      expect(wrapper!.findAll('button').find(button => button.text() === '创建订单并选择付款方式')!.attributes('disabled')).toBeDefined()
+      expect(createOrder).not.toHaveBeenCalled()
+      expect(localStorage.getItem(`zboard-checkout:1:${intent}`)).toBeNull()
+    } finally { write.mockRestore() }
+  })
+
+  it('allows a later independent purchase after the previous intent already resolved to a known order', async () => {
+    vi.mocked(fetchPlanCatalogSKUs).mockResolvedValue(page([sku(1)]))
+    const older = '4'.repeat(32), active = 'zboard-checkout-active:1:purchase:1:0'
+    const resolved = { key: 'resolved-old-key', request: { skuId: 1, orderType: 'new' }, orderId: 19 }
+    localStorage.setItem(active, older)
+    localStorage.setItem(`zboard-checkout:1:${older}`, JSON.stringify(resolved))
+    await open('/account/plans?operation=purchase&plan=1&sku=1')
+    wrapper!.findComponent(CommercePlanDetail).vm.$emit('continue')
+    await flushPromises()
+    const current = router.currentRoute.value.query.checkout_intent
+    expect(current).toMatch(/^[a-f0-9]{32}$/)
+    expect(current).not.toBe(older)
+    expect(localStorage.getItem(active)).toBe(current)
+    expect(JSON.parse(localStorage.getItem(`zboard-checkout:1:${older}`)!)).toEqual(resolved)
+    expect(wrapper!.text()).not.toContain('恢复上次订单')
+    expect(createOrder).not.toHaveBeenCalled()
+    await click('创建订单并选择付款方式')
+    expect(createOrder).toHaveBeenCalledOnce()
+    expect(vi.mocked(createOrder).mock.calls[0]![1]!.idempotencyKey).not.toBe(resolved.key)
+  })
+
   it('keeps normal purchase available when the independent discount directory fails', async () => {
     vi.mocked(fetchDiscountProviders).mockRejectedValue(new Error('offline'))
     await open('/account/plans?plan=1&step=checkout')

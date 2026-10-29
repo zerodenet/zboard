@@ -52,6 +52,7 @@ import PageAlert from './PageAlert.vue'
 import TimeBadge from './TimeBadge.vue'
 
 const props = defineProps<{ subscriptionId: number; planId: number }>()
+const emit = defineEmits<{ changed: [subscriptionId: number] }>()
 const app = useAppStore(), actor = computed(() => app.user?.id || 0)
 const view = ref<AutomaticRenewalView | null>(null), offer = ref<AutomaticRenewalOffer | null>(null)
 const sku = ref(0), rows = ref<PlanSKU[]>([]), selected = ref<PlanSKU | null>(null)
@@ -69,7 +70,7 @@ watch(offer, value => {
   }
   schedule()
 }, { flush: 'sync' })
-onScopeDispose(() => clearTimeout(offerExpiryTimer))
+onScopeDispose(() => { generation++; offerRequest++; pageRequest++; clearTimeout(offerExpiryTimer) })
 const skuOptions = computed(() => {
   const items = selected.value && !rows.value.some(row => row.id === selected.value?.id) ? [selected.value, ...rows.value] : rows.value
   return items.map(row => ({ value: row.id, label: `${row.name} · 每${row.billing_value}${periodLabel(row.billing_unit)}` }))
@@ -133,6 +134,7 @@ async function save(enabled: boolean) {
     const next = checked(await setAutomaticRenewal(id, request))
     if (version !== generation) return
     view.value = next; offer.value = null
+    emit('changed', id)
   } catch (cause) {
     if (version !== generation) return
     offer.value = null

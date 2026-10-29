@@ -106,6 +106,9 @@
             <StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge>
           </header>
           <div class="panel-body kernel-body">
+            <PageAlert tone="info" title="失联停服能力当前未提供">
+              当前面板尚未接入可核验的授权租约、续期和到期执行能力，因此没有全局或节点失联停服设置。Connector 投递确认和普通心跳不会被当作授权续期。节点失联期间，面板无法确认远端已执行新的停用；恢复通信后才能继续交付和核验。
+            </PageAlert>
             <RemoteReadStatus label="内核状态" :phase="kernelResource.phase.value" :error="kernelResource.error.value" :last-success-at="kernelResource.lastSuccessAt.value" @retry="loadKernel(selectedNodeID)" />
             <RemoteReadStatus label="任务进度" :phase="operationResource.phase.value" :error="operationResource.error.value" :last-success-at="operationResource.lastSuccessAt.value" @retry="startKernelPolling(kernelPollScope.nodeID, kernelPollScope.taskID)" />
             <div class="kernel-facts">
@@ -183,7 +186,7 @@
             <thead>
               <tr>
                 <th class="table-primary-column">协议服务</th>
-                <th>状态</th>
+                <th>业务启用 / 交付</th>
                 <th data-column-priority="2">对外入口</th>
                 <th>计费倍率</th>
                 <th class="table-action-column"><span class="sr-only">操作</span></th>
@@ -194,7 +197,7 @@
                 <td class="table-primary-column">
                   <div class="cell-title"><strong>{{ endpoint.name }}</strong><span>{{ endpoint.protocol }} · #{{ endpoint.id }}</span></div>
                 </td>
-                <td><StatusBadge :tone="endpoint.is_active ? 'success' : 'neutral'" :icon="endpoint.is_active ? 'check' : 'minus'">{{ endpoint.is_active ? '运行中' : '已停用' }}</StatusBadge></td>
+                <td><NodeProtocolState :is-active="endpoint.is_active" :publication="endpoint.publication" :latest-deployment="endpoint.latest_deployment" /></td>
                 <td data-column-priority="2"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /></td>
                 <td><MultiplierInput v-model="multiplierDrafts[endpoint.id]" :aria-label="`${endpoint.name} 的计费倍率`" /></td>
                 <td class="table-action-column">
@@ -314,6 +317,7 @@ import SortableHeader from '../components/SortableHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import StatusOverviewItem from '../components/StatusOverviewItem.vue'
 import NodeCounterObservation from '../components/NodeCounterObservation.vue'
+import NodeProtocolState from '../components/NodeProtocolState.vue'
 import NodeObservationQueue from '../components/NodeObservationQueue.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'

@@ -1,6 +1,4 @@
-import axios from 'axios'
-import { normalizeApiErrorPayload } from '../utils/apiError'
-import { API_BASE, getAuthToken } from './client'
+import { authenticatedAPI as readModelApi } from './client'
 import { appendQueryID, type QueryID } from './queryID'
 
 export type EntityKind = 'user' | 'subscription' | 'node' | 'protocol_endpoint' | 'plan' | 'plan_sku' | 'order' | string
@@ -98,27 +96,8 @@ export interface AdminEntityReferenceQuery {
   signal?: AbortSignal
 }
 
-const readModelApi = axios.create({
-  baseURL: API_BASE,
-  timeout: 8000,
-})
-
-readModelApi.interceptors.request.use(config => {
-  const token = getAuthToken()
-  if (token) {
-    config.headers = config.headers || {}
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-readModelApi.interceptors.response.use(
-  response => response,
-  cause => {
-    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
-    return Promise.reject(cause)
-  },
-)
+// Keep chart reads bounded without creating a separate authentication policy.
+const readModelTimeout = 8000
 
 function unwrap<T>(response: any): T {
   return response.data?.data as T
@@ -172,7 +151,7 @@ export async function fetchTrafficTrends(query: TrafficTrendQuery): Promise<Traf
   appendQueryID(params, 'node_id', query.nodeId)
   appendQueryID(params, 'protocol_endpoint_id', query.protocolEndpointId)
   const path = query.admin ? '/admin/traffic/trends' : '/traffic/trends'
-  const data = unwrap<TrafficTrendResult>(await readModelApi.get(`${path}?${params}`, { signal: query.signal }))
+  const data = unwrap<TrafficTrendResult>(await readModelApi.get(`${path}?${params}`, { timeout: readModelTimeout, signal: query.signal }))
   // A new-protocol 200 is not necessarily a complete statistics snapshot.
   if (data && data.projection_pending !== undefined) {
     const scope = data.scope
@@ -214,5 +193,5 @@ export async function fetchAdminEntityReferences(query: AdminEntityReferenceQuer
     params.append('targets', target)
   }
   const suffix = params.toString()
-  return unwrap<EntityReferenceResponse>(await readModelApi.get(`/admin/entity-references${suffix ? `?${suffix}` : ''}`, { signal: query.signal }))
+  return unwrap<EntityReferenceResponse>(await readModelApi.get(`/admin/entity-references${suffix ? `?${suffix}` : ''}`, { timeout: readModelTimeout, signal: query.signal }))
 }

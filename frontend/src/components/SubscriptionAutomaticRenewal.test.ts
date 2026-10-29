@@ -156,3 +156,32 @@ it('keeps disabled pending cleanup distinct from another debit and isolates acco
  expect(setAutomaticRenewal).not.toHaveBeenCalled()
  wrapper.unmount()
 })
+
+it('emits one affected subscription only after a confirmed save, never after read-only refresh or failed save', async () => {
+  const wrapper = open(); await flushPromises()
+  expect(wrapper.emitted('changed')).toBeUndefined()
+  await click(wrapper, '确认此规格并开启余额自动续费')
+  expect(wrapper.emitted('changed')).toEqual([[7]])
+  await click(wrapper, '核对当前状态')
+  expect(wrapper.emitted('changed')).toEqual([[7]])
+  vi.mocked(setAutomaticRenewal).mockRejectedValueOnce(new Error('unconfirmed save'))
+  await click(wrapper, '确认此规格并开启余额自动续费')
+  expect(wrapper.emitted('changed')).toEqual([[7]])
+  wrapper.unmount()
+})
+
+it('does not emit an old subscription or account save after context changes or unmount', async () => {
+  for (const change of ['account', 'subscription', 'unmount'] as const) {
+    let resolve!: (value: any) => void
+    vi.mocked(fetchAutomaticRenewal).mockResolvedValue(initial)
+    vi.mocked(setAutomaticRenewal).mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const wrapper = open(); await flushPromises()
+    await click(wrapper, '确认此规格并开启余额自动续费')
+    if (change === 'account') { state.app.user.id += 1; await flushPromises() }
+    else if (change === 'subscription') await wrapper.setProps({ subscriptionId: 8 })
+    else wrapper.unmount()
+    resolve(enabled); await flushPromises()
+    expect(wrapper.emitted('changed')).toBeUndefined()
+    if (change !== 'unmount') wrapper.unmount()
+  }
+})

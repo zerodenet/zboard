@@ -35,8 +35,9 @@ export function safeReauthenticationRoute(value: string) {
     const pageKeys = url.pathname === '/admin/nodes'
       ? new Set(['lifecycle', 'connector', 'sort', 'direction', 'density', 'protocol_page', 'protocol_limit'])
       : url.pathname === '/admin/node-groups' ? new Set(['enabled'])
-        : url.pathname === '/admin/subscription-templates' ? new Set(['template']) : new Set<string>()
-    const enumValues: Record<string, readonly string[]> = { lifecycle: ['active', 'maintenance', 'retired'], connector: ['online', 'offline'], sort: ['id', 'name', 'region', 'last_seen_at'], direction: ['asc', 'desc'], density: ['compact', 'comfortable'], enabled: ['true', 'false'] }
+        : url.pathname === '/admin/subscription-templates' ? new Set(['template'])
+          : url.pathname === '/admin/fair-use' ? new Set(['range']) : new Set<string>()
+    const enumValues: Record<string, readonly string[]> = { lifecycle: ['active', 'maintenance', 'retired'], connector: ['online', 'offline'], sort: ['id', 'name', 'region', 'last_seen_at'], direction: ['asc', 'desc'], density: ['compact', 'comfortable'], enabled: ['true', 'false'], range: ['1d', '3d', '7d', '15d'] }
     for (const key of [...url.searchParams.keys()]) {
       if (queryKeys.has(key)) continue
       const values = url.searchParams.getAll(key)

@@ -10,6 +10,7 @@ import PluginConfigDialog from './PluginConfigDialog.vue'
 import UiFileUpload from '../components/UiFileUpload.vue'
 import type { Plugin } from '../api/plugins'
 const mocks = vi.hoisted(() => ({ list: vi.fn(), config: vi.fn(), operations: vi.fn(), import: vi.fn(), preview: vi.fn(), save: vi.fn(), action: vi.fn(), confirm: vi.fn(), migrations: vi.fn() }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 vi.mock('../api/plugins', async importOriginal => ({ ...await importOriginal<typeof import('../api/plugins')>(), fetchPlugins: mocks.list, fetchPluginConfig: mocks.config, fetchPluginOperations: mocks.operations, importPlugin: mocks.import, previewPlugin: mocks.preview, savePluginConfig: mocks.save, pluginAction: mocks.action, fetchPluginMigrations: mocks.migrations }))
 vi.mock('../utils/feedback', async importOriginal => ({ ...await importOriginal<typeof import('../utils/feedback')>(), confirmAction: mocks.confirm }))
 const plugin = (id = 'zboard.oauth'): Plugin => ({

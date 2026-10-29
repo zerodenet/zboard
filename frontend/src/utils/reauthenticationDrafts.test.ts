@@ -68,3 +68,9 @@ it('preserves template editor position only for a safe ID or new on its own page
   for (const value of ['-1', '0', '9007199254740992', 'abc', 'new&template=19']) expect(safeReauthenticationRoute('/admin/subscription-templates?template=' + value)).toBe('/admin/subscription-templates')
   expect(safeReauthenticationRoute('/account/tickets?template=19')).toBe('/account/tickets')
 })
+
+it('preserves only the bounded observation range on the fair-use page', () => {
+  for (const value of ['1d', '3d', '7d', '15d']) expect(safeReauthenticationRoute('/admin/fair-use?range=' + value + '&subscription=7&token=secret')).toBe('/admin/fair-use?range=' + value + '&subscription=7')
+  for (const value of ['30d', '-1', '7d&range=15d']) expect(safeReauthenticationRoute('/admin/fair-use?range=' + value)).toBe('/admin/fair-use')
+  expect(safeReauthenticationRoute('/account/subscription?range=7d')).toBe('/account/subscription')
+})

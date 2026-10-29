@@ -1,10 +1,20 @@
 <template>
   <section class="standard-page">
     <PageHeader title="系统维护" description="统一控制整站维护、数据库迁移与切换后的恢复步骤。" eyebrow="Operations" :show-section-navigation="false">
-      <template #actions><PageRefreshButton :loading="loading" label="刷新维护状态" @click="load" /></template>
+      <template #actions><PageRefreshButton :loading="loading" label="刷新维护状态" @click="reload" /></template>
     </PageHeader>
     <TransientFeedback :success="success" :error="error" />
+    <PageAlert v-if="draftRecovery.message.value" tone="info" title="维护文案草稿">{{ draftRecovery.message.value }}
+      <template #actions><UiButton variant="ghost" @click="retryDraftRecovery">重新检查草稿恢复</UiButton></template>
+    </PageAlert>
+    <PageAlert v-if="recoveryConflict" tone="warning" title="维护文案草稿基于旧版本">标题与说明已保留，但当前配置版本或原值已变化，不能直接覆盖。请重新载入服务器文案后再编辑。
+      <template #actions><UiButton variant="secondary" @click="reload">重新载入服务器文案</UiButton></template>
+    </PageAlert>
+    <PageAlert v-if="datasourceEdited" tone="warning" title="目标连接信息仅保留在当前页面">已编辑目标连接信息时，第三方登录跳转会被阻止以保留本页。可使用页内重新认证，或明确放弃目标连接草稿。目标连接、维护开关、预检及迁移确认不会随文案草稿恢复。
+      <template #actions><UiButton variant="secondary" @click="discardConnectionDraft">放弃目标连接草稿</UiButton></template>
+    </PageAlert>
 
+    <p class="muted">第三方重新登录仅恢复维护标题与说明；维护开关、目标连接、预检及迁移确认需重新核对。</p>
     <SettingsPageLayout>
       <UiSection title="整站维护开关" description="开启后普通用户、节点上报与业务接口统一返回维护状态；管理员控制台、健康检查和状态接口继续可用。">
         <template #meta><StatusBadge :tone="maintenance.enabled ? 'warning' : 'success'">{{ maintenance.enabled ? '维护中' : '正常服务' }}</StatusBadge></template>
@@ -14,7 +24,7 @@
             <FormField v-slot="{ controlAttrs }" label="维护页标题" name="maintenance-title"><UiInput v-model.trim="maintenance.title" v-bind="controlAttrs" maxlength="160" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="维护说明" name="maintenance-message"><UiTextarea v-model="maintenance.message" v-bind="controlAttrs" maxlength="4000" rows="4" /></FormField>
           </div>
-          <div class="form-actions"><UiButton type="button" :loading="saving" @click="saveMaintenance">保存维护设置</UiButton></div>
+          <div class="form-actions"><UiButton type="button" :loading="saving" :disabled="recoveryConflict || !recoveryReady || recovering" @click="saveMaintenance">保存维护设置</UiButton></div>
         </div>
       </UiSection>
 
@@ -44,7 +54,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { fetchDatabaseMigrationStatus, fetchSystemConfigs, preflightDatabaseMigration, startDatabaseMigration, updateMaintenanceSettings, type DatabaseMigrationStatus, type MaintenanceState, type SystemConfig } from '../api/client'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -54,46 +65,139 @@ import TransientFeedback from '../components/TransientFeedback.vue'
 import DatabaseMigrationDatasource from '../components/DatabaseMigrationDatasource.vue'
 import { useAppStore } from '../stores/app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { clearReauthenticationDrafts } from '../utils/reauthenticationDrafts'
+import { maintenanceConfigBaseline, maintenanceRecoveryDraft, maintenanceRecoveryKeys, sameMaintenanceBaseline, type MaintenanceRecoveryBaseline } from '../utils/maintenanceReauthenticationDraft'
+import { confirmAction } from '../utils/feedback'
 
 const app = useAppStore()
+const route = useRoute()
 const loading = ref(false), saving = ref(false), preflighting = ref(false), starting = ref(false)
 const success = ref(''), error = ref('')
-const configs = ref<SystemConfig[]>([])
 const maintenance = reactive<MaintenanceState>({ enabled: false, title: '系统维护中', message: '系统正在维护，请稍后再试。', migration_in_progress: false, migration_cutover_pending: false })
 const migration = reactive<DatabaseMigrationStatus>({ source_driver: 'mysql', maintenance })
 const targetDriver = ref<'mysql' | 'sqlite'>('sqlite')
 const targetDatasource = ref('')
 const confirmed = ref(false)
 const preflight = ref<null | { target: string; tables: number }>(null)
-let timer = 0
+let timer = 0, resourceSequence = 0
+let disposed = false
+const recoveryReady = ref(false), recovering = ref(false), recoveryConflict = ref(false)
+const datasourceEdited = ref(false)
+const serverBaseline = ref<MaintenanceRecoveryBaseline | null>(null)
+const recoveryOrigin = ref<MaintenanceRecoveryBaseline | null>(null)
+const textBaseline = ref({ title: maintenance.title, message: maintenance.message })
+const textDirty = computed(() => maintenance.title !== textBaseline.value.title || maintenance.message !== textBaseline.value.message)
+watch(targetDatasource, () => { datasourceEdited.value = true }, { flush: 'sync' })
+const draftRecovery = useReauthenticationDraft({
+  scope: 'admin.maintenance.text', permission: 'admin', ready: () => recoveryReady.value,
+  read: () => {
+    // A marker, never a DSN, makes shared full-page capture fail and leaves the
+    // mounted page intact. Execution selections are never a recovery payload.
+    if (datasourceEdited.value) return { blocked: true }
+    if (!textDirty.value && !recoveryOrigin.value && !recoveryConflict.value) return null
+    const original = recoveryOrigin.value || (!recoveryConflict.value && serverBaseline.value)
+    return original ? { title: maintenance.title, message: maintenance.message, baseline: original } : { blocked: true }
+  },
+  sanitize: maintenanceRecoveryDraft,
+  restore: async (value, context) => {
+    const sequence = ++resourceSequence
+    const localTitle = maintenance.title, localMessage = maintenance.message
+    recovering.value = true
+    try {
+      const [status, values] = await Promise.all([fetchDatabaseMigrationStatus(), fetchSystemConfigs()])
+      if (!context.isCurrent() || sequence !== resourceSequence || maintenance.title !== localTitle || maintenance.message !== localMessage) return false
+      applyResources(status, values, false)
+      recoveryOrigin.value = value.baseline
+      recoveryConflict.value = !serverBaseline.value || !sameMaintenanceBaseline(value.baseline, serverBaseline.value)
+      maintenance.title = value.title; maintenance.message = value.message
+    } finally { if (sequence === resourceSequence) recovering.value = false }
+  },
+})
+
+function currentRequest() {
+  const token = app.token, actor = app.user?.id, epoch = app.sessionEpoch, path = route.fullPath
+  return () => !disposed && Boolean(token) && token === app.token && actor === app.user?.id && epoch === app.sessionEpoch && path === route.fullPath && !app.reauthRequired
+}
+function applyResources(status: DatabaseMigrationStatus, values: SystemConfig[], keepText: boolean) {
+  const title = maintenance.title, message = maintenance.message
+  const original = recoveryOrigin.value || serverBaseline.value
+  Object.assign(migration, status); Object.assign(maintenance, status.maintenance)
+  serverBaseline.value = maintenanceConfigBaseline(values) || null
+  textBaseline.value = { title: status.maintenance.title, message: status.maintenance.message }
+  targetDriver.value = status.source_driver === 'mysql' ? 'sqlite' : 'mysql'
+  if (keepText) {
+    maintenance.title = title; maintenance.message = message
+    recoveryOrigin.value = original
+    recoveryConflict.value = !original || !serverBaseline.value || !sameMaintenanceBaseline(original, serverBaseline.value)
+  } else {
+    recoveryOrigin.value = null; recoveryConflict.value = false
+  }
+}
 const taskRunning = computed(() => migration.task?.status === 0 || migration.task?.status === 1)
 const taskLabel = computed(() => taskRunning.value ? '迁移运行中' : migration.task?.status === 2 ? '迁移完成待切换' : migration.task?.status === 3 ? '迁移失败' : '未执行')
 const taskTone = computed(() => taskRunning.value ? 'warning' : migration.task?.status === 2 ? 'success' : migration.task?.status === 3 ? 'danger' : 'neutral')
 const targetOptions = computed(() => [{ label: migration.source_driver === 'mysql' ? 'SQLite' : 'MySQL', value: migration.source_driver === 'mysql' ? 'sqlite' : 'mysql' }])
 
-function config(key: string) { return configs.value.find(item => item.config_key === key) }
-async function load() {
+async function load(discardText = false) {
+  if (recovering.value) return
+  const sequence = ++resourceSequence, isCurrent = currentRequest()
+  recoveryReady.value = false
   loading.value = true; error.value = ''
   try {
     const [status, values] = await Promise.all([fetchDatabaseMigrationStatus(), fetchSystemConfigs()])
-    Object.assign(migration, status); Object.assign(maintenance, status.maintenance); configs.value = values
-    targetDriver.value = status.source_driver === 'mysql' ? 'sqlite' : 'mysql'
+    if (!isCurrent() || sequence !== resourceSequence) return
     await app.loadSystemStatus(true)
-  } catch (cause) { error.value = normalizeApiErrorMessage(cause, '维护状态加载失败。') }
-  finally { loading.value = false }
+    if (!isCurrent() || sequence !== resourceSequence) return
+    applyResources(status, values, !discardText && (textDirty.value || Boolean(recoveryOrigin.value) || recoveryConflict.value))
+    recoveryReady.value = true
+  } catch (cause: any) {
+    if (!isCurrent() || sequence !== resourceSequence) return
+    if (cause?.response?.status === 403) clearReauthenticationDrafts()
+    error.value = normalizeApiErrorMessage(cause, '维护状态加载失败。')
+  } finally { if (sequence === resourceSequence) loading.value = false }
 }
+async function reload() {
+  if ((textDirty.value || recoveryConflict.value) && !await confirmAction({ title: '重新载入维护文案？', message: '未保存的标题与说明将被服务器当前文案替换。', confirmText: '重新载入', tone: 'danger' })) return
+  await load(true)
+}
+async function retryDraftRecovery() { await load(); await draftRecovery.restore() }
 async function saveMaintenance() {
+  if (saving.value || recovering.value || !recoveryReady.value || recoveryConflict.value || !app.token || app.reauthRequired) return
+  const isCurrent = currentRequest(), original = recoveryOrigin.value || serverBaseline.value
+  if (!original) { error.value = '维护配置依据尚未完整加载，请重新载入后再保存。'; return }
+  const submitted = { ...maintenance }
   saving.value = true; error.value = ''; success.value = ''
   try {
-	const expected_revisions: Record<string, number> = {}
-	for (const key of ['maintenance_title', 'maintenance_message', 'maintenance_enabled']) {
-	  const item = config(key); if (!item) throw new Error(`缺少系统配置 ${key}`)
-	  expected_revisions[key] = item.revision
-	}
-	await updateMaintenanceSettings({ ...maintenance, expected_revisions })
-    success.value = '维护设置已保存。'; await load()
-  } catch (cause) { error.value = normalizeApiErrorMessage(cause, cause instanceof Error ? cause.message : '维护设置保存失败。') }
-  finally { saving.value = false }
+    const [status, values] = await Promise.all([fetchDatabaseMigrationStatus(), fetchSystemConfigs()])
+    if (!isCurrent()) return
+    const current = maintenanceConfigBaseline(values)
+    if (!current || !sameMaintenanceBaseline(original, current)) {
+      recoveryOrigin.value = original; recoveryConflict.value = true
+      error.value = '维护配置已变化，标题与说明已保留，请重新载入服务器文案后再编辑。'; return
+    }
+    if (maintenance.title !== submitted.title || maintenance.message !== submitted.message || maintenance.enabled !== submitted.enabled) {
+      error.value = '核对期间内容已修改，请再次确认后保存。'; return
+    }
+    const expected_revisions: Record<string, number> = {}
+    for (const key of maintenanceRecoveryKeys) expected_revisions[key] = original[key].revision
+    await updateMaintenanceSettings({ ...submitted, migration_in_progress: status.maintenance.migration_in_progress, migration_cutover_pending: status.maintenance.migration_cutover_pending, expected_revisions })
+    if (!isCurrent()) return
+    success.value = '维护设置已保存。'
+    // Do not replace text edited while the explicit write was in flight.
+    if (maintenance.title === submitted.title && maintenance.message === submitted.message) await load(true)
+  } catch (cause: any) {
+    if (!isCurrent()) return
+    if (cause?.response?.status === 409) { recoveryOrigin.value = original; recoveryConflict.value = true }
+    if (cause?.response?.status === 403) clearReauthenticationDrafts()
+    error.value = normalizeApiErrorMessage(cause, '维护设置保存失败。')
+  } finally { saving.value = false }
+}
+async function discardConnectionDraft() {
+  const actor = app.user?.id, epoch = app.sessionEpoch, path = route.fullPath
+  if (!await confirmAction({ title: '放弃目标连接草稿？', message: '目标连接信息将清除，预检及迁移确认同时失效；维护文案会保留，不会启动任何操作。', confirmText: '放弃连接草稿', tone: 'danger' })) return
+  if (disposed || actor !== app.user?.id || epoch !== app.sessionEpoch || path !== route.fullPath) return
+  targetDatasource.value = ''; datasourceEdited.value = false; preflight.value = null; confirmed.value = false
 }
 async function runPreflight() {
   preflighting.value = true; preflight.value = null; error.value = ''; confirmed.value = false
@@ -105,12 +209,12 @@ async function startMigration() {
   starting.value = true; error.value = ''
   try {
     await startDatabaseMigration({ target_driver: targetDriver.value, target_datasource: targetDatasource.value, confirm: true })
-    targetDatasource.value = ''; preflight.value = null; confirmed.value = false; success.value = '迁移任务已启动，整站维护模式已开启。'; await load()
+    targetDatasource.value = ''; datasourceEdited.value = false; preflight.value = null; confirmed.value = false; success.value = '迁移任务已启动，整站维护模式已开启。'; await load()
   } catch (cause) { error.value = normalizeApiErrorMessage(cause, '数据库迁移启动失败。') }
   finally { starting.value = false }
 }
 onMounted(() => { void load(); timer = window.setInterval(() => { if (taskRunning.value) void load() }, 5000) })
-onBeforeUnmount(() => window.clearInterval(timer))
+onBeforeUnmount(() => { disposed = true; resourceSequence++; window.clearInterval(timer) })
 </script>
 
 <style scoped>

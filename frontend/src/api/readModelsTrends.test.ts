@@ -2,10 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchTrafficTrends } from './readModels'
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
-vi.mock('./client', () => ({ API_BASE: '/api/v1', getAuthToken: () => '' }))
-vi.mock('axios', () => ({ default: { create: () => ({
-  get, interceptors: { request: { use: vi.fn() }, response: { use: vi.fn() } },
-}) } }))
+// Response-contract unit tests use the shared API boundary; transport/session
+// behavior is exercised with real Axios adapters in protectedClientsSession.test.ts.
+vi.mock('./client', () => ({ authenticatedAPI: { get } }))
 
 const query = { admin: true, userId: 2, subscriptionId: 3, nodeId: 4, protocolEndpointId: 5, from: '2026-09-01', to: '2026-09-02' }
 const scope = { administrative: true, user_id: 2, subscription_id: 3, node_id: 4, protocol_endpoint_id: 5, time_zone: 'UTC' }

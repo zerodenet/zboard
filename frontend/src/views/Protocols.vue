@@ -283,7 +283,7 @@
               当前草稿携带的节点组版本已过期。重新加载关联不会覆盖协议参数，但会以最新关联作为新的比较基线。
               <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="membershipReloading" @click="reloadNodeGroupMemberships"><UiIcon name="refresh" />重新加载关联</UiButton></template>
             </PageAlert>
-            <FormField v-slot="{ controlAttrs }" label="运行状态" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并发布该运行实例</span></div></FormField>
+            <FormField v-slot="{ controlAttrs }" label="业务启用" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并推进配置交付；实际执行结果需核验</span></div></FormField>
             <FormField label="关联节点组" name="protocol-node-groups" :error="editorErrors.fields.node_group_membership_changes" full>
               <NodeGroupMembershipEditor v-model="form.node_group_memberships" :can-add="Boolean(form.is_active)" />
             </FormField>

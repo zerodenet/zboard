@@ -135,12 +135,13 @@
             <div><dt>商品</dt><dd>{{ checkoutPlanName }}</dd></div>
             <div><dt>规格</dt><dd>{{ checkoutSKUName }}</dd></div>
           </dl>
+          <PageAlert v-if="checkoutRecoveryError" tone="danger" title="订单恢复记录无法保存">{{ checkoutRecoveryError }}</PageAlert>
           <PageAlert v-if="checkoutError" tone="danger" title="无法创建订单">{{ checkoutError }}</PageAlert>
           <PageAlert v-if="!checkoutAttempt && !attemptError && quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="loadQuote">重新报价</UiButton></PageAlert>
           <p v-if="!checkoutAttempt && renewalDiscountExpired" role="status">继承的优惠报价已过期，请重新报价后确认。</p>
           <p v-if="!checkoutAttempt && !attemptError && !quoteError && needsQuote && !quote" role="status">请核对本次报价后确认订单。<UiButton variant="secondary" :disabled="quoteLoading" @click="loadQuote">重新报价</UiButton></p>
-          <CheckoutPayment v-show="!checkoutAttempt" name="account.checkout.payment" :key="checkoutIntent" embedded handoff-to-funding :actor-id="app.user.id" :currency="checkoutCurrency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote) || Boolean(attemptError) || (discountRequired && (!discountQuote || discountLoading || Boolean(discountError) || Boolean(discountProvidersError)))" @paid="router.push('/account/orders')" @created="id => router.push(`/account/orders/${id}`)" />
-          <UiButton v-if="checkoutAttempt" :disabled="creating || Boolean(attemptError)" :loading="creating" @click="restoreOrder">恢复上次订单</UiButton>
+          <CheckoutPayment v-show="!checkoutAttempt" name="account.checkout.payment" :key="checkoutIntent" embedded handoff-to-funding :actor-id="app.user.id" :currency="checkoutCurrency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote) || Boolean(attemptError || checkoutRecoveryError) || (discountRequired && (!discountQuote || discountLoading || Boolean(discountError) || Boolean(discountProvidersError)))" @paid="router.push('/account/orders')" @created="id => router.push(`/account/orders/${id}`)" />
+          <UiButton v-if="checkoutAttempt" :disabled="creating || Boolean(attemptError || checkoutRecoveryError)" :loading="creating" @click="restoreOrder">恢复上次订单</UiButton>
           <p>订单及付款进度可在“我的订单”中查看。</p>
         </aside>
       </div>
@@ -364,7 +365,15 @@ const operationOptions = [
 const orderTypeByOperation = { purchase: 'new', renew: 'renewal', change: 'upgrade', addon: 'traffic_pack', reset: 'traffic_reset' }
 const route = useRoute(), router = useRouter()
 const app = useAppStore()
-const checkoutIntent = computed(() => String(route.query.checkout_intent || restoreCheckoutIntent(localStorage, `zboard-checkout-active:${app.user.id}:${operation.value}:${selectedSKU.value?.id || 0}:${targetSubscriptionID.value}`)))
+const routeIntentActor = ref(app.user.id)
+const checkoutRecoveryError = ref('')
+watch(() => route.query.checkout_intent, () => { routeIntentActor.value = app.user.id }, { flush: 'sync' })
+const checkoutActiveScope = computed(() => `zboard-checkout-active:${app.user.id}:${operation.value}:${selectedSKU.value?.id || 0}:${targetSubscriptionID.value}`)
+const checkoutIntent = computed(() => {
+  const intent = route.query.checkout_intent
+  return routeIntentActor.value === app.user.id && typeof intent === 'string' && /^[a-f0-9]{32}$/.test(intent)
+    ? intent : restoreCheckoutIntent(localStorage, checkoutActiveScope.value)
+})
 const operation = ref<PurchaseOperation>('purchase')
 const targetSubscriptionID = ref(0)
 const planOffset = ref(0), planLimit = ref(9)
@@ -425,6 +434,19 @@ const savedTargetSubscriptionID = computed(() => {
   return Number.isSafeInteger(id) && id! > 0 ? id : undefined
 })
 const attemptError = ref('')
+function rememberCheckoutIntent() {
+  checkoutRecoveryError.value = ''
+  // Bind only after the selected SKU/operation/target have actually resolved.
+  // This contains no quote, payment authorization or write-replay instruction.
+  if (!app.user.id || !selectedSKU.value || !selectedPlan.value) return
+  try {
+    const intent = checkoutIntent.value
+    if (localStorage.getItem(checkoutActiveScope.value) !== intent) localStorage.setItem(checkoutActiveScope.value, intent)
+  } catch {
+    checkoutRecoveryError.value = '无法保存当前账户的订单恢复指针，请核对浏览器存储后再创建；不会自动重放订单。'
+  }
+}
+
 function refreshCheckoutAttempt() {
   try { checkoutAttempt.value = readCheckoutOrderDraft<CheckoutRequest>(localStorage, checkoutScope.value); attemptError.value = '' }
   catch (cause: any) { checkoutAttempt.value = null; attemptError.value = cause.message }
@@ -631,7 +653,18 @@ async function changeSKUPage(value: { offset: number; limit: number }) {
   if (await detail.changePage(value)) await detailURL()
 }
 async function retryDetail() { if (await detail.retry()) await detailURL() }
-async function openCheckout() { if (selectedSKU.value && (!needsQuote.value || quote.value)) { await detailURL('checkout'); await router.replace({ query: { ...route.query, checkout_intent: newCheckoutIntent() } }) } }
+async function openCheckout() {
+  if (selectedSKU.value && (checkoutAttempt.value || attemptError.value || !needsQuote.value || quote.value)) {
+    await detailURL('checkout')
+    refreshCheckoutAttempt()
+    // OAuth return strips step/opaque intent. Re-entering checkout must expose
+    // an unresolved creation attempt, never orphan it behind a new random intent.
+    // A known orderId already has its orders entry; it must not prevent a later
+    // explicit purchase of the same SKU from creating an independent intent.
+    if (checkoutAttempt.value && !checkoutAttempt.value.orderId || attemptError.value) return
+    await router.replace({ query: { ...route.query, checkout_intent: newCheckoutIntent() } })
+  }
+}
 function backToDetail() { return detailURL() }
 
 // Route transitions have their own generation: a late target lookup cannot
@@ -683,6 +716,7 @@ async function applyRoute(force = false) {
     if (!force && selectedPlan.value?.id === planID && (!skuID || detailSKUs.value.some(item => item.id === skuID))) {
       if (skuID) selectedSKUID.value = skuID
     } else if (!await detail.open(planID, operation.value, skuID) || current !== generation) return
+    rememberCheckoutIntent()
     checkoutOpen.value = step === 'checkout' && Boolean(selectedSKU.value)
     return
   }
@@ -697,6 +731,8 @@ watch(() => route.fullPath, () => { void applyRoute() }, { immediate: true })
 
 async function ensureOrder(): Promise<number> {
   const requestScope = checkoutScope.value
+  rememberCheckoutIntent()
+  if (checkoutRecoveryError.value) throw new Error(checkoutRecoveryError.value)
   const sameScope = () => checkoutScope.value === requestScope
   refreshCheckoutAttempt()
   if (attemptError.value) throw new Error(attemptError.value)

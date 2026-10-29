@@ -4,6 +4,7 @@
       <template #actions><RouterLink to="/account/security">返回账户安全</RouterLink><PageRefreshButton :loading="loading" :disabled="creating || revoking" @click="load(offset)" /></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" />
+    <PageAlert v-if="integrationDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ integrationDraftRecovery.message.value }}<UiButton type="button" variant="ghost" @click="integrationDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <UiSection v-if="issuedToken" title="凭据已创建" description="原文仅显示这一次，请复制并保存在客户端的安全配置中。">
       <div class="credential-result">
         <FormField v-slot="{ controlAttrs }" label="集成凭据" name="issued-integration-token" full>
@@ -65,6 +66,8 @@ import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import PageAlert from '../../components/PageAlert.vue'
 import { useFormErrors } from '../../composables/useFormState'
 import { collectFieldErrors } from '../../utils/validation'
+import { useReauthenticationDraft } from '../../composables/useReauthenticationDraft'
+import { useAppStore } from '../../stores/app'
 const name = ref(''), days = ref(30), issuedToken = ref(''), issuedID = ref(0)
 const items = ref<IntegrationCredential[]>([]), offset = ref(0), hasNext = ref(false), pageSize = 20
 const loading = ref(false), creating = ref(false), revoking = ref(false), message = ref(''), error = ref(''), revokeError = ref('')
@@ -75,22 +78,49 @@ watch(days, () => formErrors.clear('days'))
 const directoryURL = new URL(`${API_BASE}/integrations/capabilities`, window.location.origin).href
 const invokeURL = `${directoryURL}/metering.usage.query/invoke`
 let alive = true
+const draftApp = useAppStore(), draftOwner = draftApp.user.id
+const currentDraftOwner = () => alive && draftApp.user.id === draftOwner && Boolean(draftApp.token) && !draftApp.reauthRequired
+function integrationDraft(value: unknown): { name: string; days: number } | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return
+  const item = value as Record<string, unknown>
+  if (typeof item.name !== 'string' || new TextEncoder().encode(item.name).byteLength > 480 || typeof item.days !== 'number' || ![30, 90, 365].includes(item.days)) return
+  return { name: item.name, days: item.days }
+}
+const integrationDraftRecovery = useReauthenticationDraft({
+  scope: 'account.integrations.create', permission: 'account',
+  ready: () => !loading.value && !creating.value && !revoking.value && !issuedToken.value,
+  read: () => !creating.value && !revoking.value && !issuedToken.value && (name.value || days.value !== 30) ? { name: name.value, days: days.value } : null,
+  sanitize: integrationDraft,
+  restore: (value, { isCurrent }) => {
+    if (!isCurrent() || !currentDraftOwner() || creating.value || revoking.value || issuedToken.value) return false
+    // A new local edit takes precedence over an older stored draft.
+    if (name.value || days.value !== 30) return false
+    name.value = value.name; days.value = value.days
+  },
+})
+watch(() => draftApp.user.id, actor => {
+  if (actor === draftOwner) return
+  name.value = ''; days.value = 30; issuedToken.value = ''; issuedID.value = 0
+  selected.value = null; items.value = []; offset.value = 0; hasNext.value = false
+  message.value = ''; error.value = ''; revokeError.value = ''
+}, { flush: 'sync' })
 async function load(next = offset.value) {
   if (loading.value) return
   loading.value = true; error.value = ''
-  try { const rows = await listIntegrationCredentials(next, pageSize + 1); if (!alive) return; items.value = rows.slice(0, pageSize); hasNext.value = rows.length > pageSize; offset.value = next }
-  catch { if (alive) error.value = '凭据读取失败，请重试。' }
+  try { const rows = await listIntegrationCredentials(next, pageSize + 1); if (!alive || !currentDraftOwner()) return; items.value = rows.slice(0, pageSize); hasNext.value = rows.length > pageSize; offset.value = next }
+  catch { if (alive && currentDraftOwner()) error.value = '凭据读取失败，请重试。' }
   finally { loading.value = false }
 }
 async function create() {
-  if (loading.value || creating.value || issuedToken.value) return
+  if (!currentDraftOwner() || loading.value || creating.value || issuedToken.value) return
   if (!await formErrors.applyValidation(collectFieldErrors({
     name: !name.value.trim() && '请输入用途名称。',
     days: ![30, 90, 365].includes(days.value) && '请选择有效期。',
   }), formElement)) return
+  if (!currentDraftOwner()) return
   creating.value = true; error.value = ''; message.value = ''
-  try { const result = await issueIntegrationCredential(name.value.trim(), days.value); if (!alive) return; issuedToken.value = result.token; issuedID.value = result.credential.id; name.value = ''; await load(0) }
-  catch (cause) { if (alive) await formErrors.applyApiError(cause, '创建失败，请检查名称、有效期和有效凭据数量后重试。', formElement, { expires_at: 'days' }) }
+  try { const result = await issueIntegrationCredential(name.value.trim(), days.value); if (!alive || !currentDraftOwner()) return; issuedToken.value = result.token; issuedID.value = result.credential.id; name.value = ''; await load(0) }
+  catch (cause) { if (alive && currentDraftOwner()) await formErrors.applyApiError(cause, '创建失败，请检查名称、有效期和有效凭据数量后重试。', formElement, { expires_at: 'days' }) }
   finally { creating.value = false }
 }
 async function copyToken() {
@@ -98,11 +128,11 @@ async function copyToken() {
   catch { error.value = '无法自动复制，请选中上方凭据手动复制。' }
 }
 async function revoke() {
-  if (!selected.value || revoking.value) return
+  if (!currentDraftOwner() || !selected.value || revoking.value) return
   const id = selected.value.id
   revoking.value = true; revokeError.value = ''
-  try { await revokeIntegrationCredential(id); if (!alive) return; if (issuedID.value === id) issuedToken.value = ''; selected.value = null; message.value = '凭据已撤销。'; await load(offset.value) }
-  catch { if (alive) revokeError.value = '撤销失败，请重试。' }
+  try { await revokeIntegrationCredential(id); if (!alive || !currentDraftOwner()) return; if (issuedID.value === id) issuedToken.value = ''; selected.value = null; message.value = '凭据已撤销。'; await load(offset.value) }
+  catch { if (alive && currentDraftOwner()) revokeError.value = '撤销失败，请重试。' }
   finally { revoking.value = false }
 }
 function isActive(item: IntegrationCredential) { return !item.revoked_at && !!item.expires_at && new Date(item.expires_at).getTime() > Date.now() }

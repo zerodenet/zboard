@@ -13,7 +13,6 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
-	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
