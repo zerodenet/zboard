@@ -32,6 +32,15 @@ def write(path, data):
         output.write("\n")
     path.chmod(0o600)
 
+def failure_diagnostics(path):
+    """Report source positions only; leave arbitrary SQL/payloads in the log."""
+    locations = set()
+    with path.open(errors="replace") as stream:
+        for line in stream:
+            for match in re.finditer(r"\b([A-Za-z0-9_]+(?:_test)?\.go):(\d+)(?::\d+)?:", line):
+                locations.add((match[1], int(match[2])))
+    return [{"file": name, "line": number} for name, number in sorted(locations)[:20]]
+
 def existing_parent(path):
     value = path.resolve()
     while not value.exists():
@@ -168,7 +177,10 @@ def main():
         entry.update(exit_code=result.returncode, wall_seconds=round(time.monotonic()-start, 3), log_sha256=digest(out / (label+".log")), finished_utc=now())
         metadata["commands"].append(entry)
         write(out / (label + "-command.json"), entry)
-        if result.returncode: raise RuntimeError(label + " failed; preserve original log")
+        if result.returncode:
+            for location in failure_diagnostics(out / (label + ".log")):
+                print(json.dumps({"failed_probe": label, "source": location}), flush=True)
+            raise RuntimeError(label + " failed; preserve original log")
     processes = []
     try:
         for label, revision, template in (("old", BASELINE, names[0]), ("current", args.revision, names[1])):

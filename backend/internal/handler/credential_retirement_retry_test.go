@@ -151,7 +151,7 @@ func assertRetirementFreshPriority(t *testing.T, f orderFixture) {
 	// Retry rows are explicit historical subscription metadata, not paid orders.
 	rows := make([]model.Subscription, 200)
 	for n := range rows {
-		rows[n] = model.Subscription{UserID: 1, PlanID: f.planRecord.ID, PlanSKUID: f.skuRecord.ID, Lifecycle: "fixed", Status: "active", StartAt: now.Add(-2 * time.Hour), EndAt: now.Add(-time.Hour), FlowTotal: 100, RetirementRetryAt: &past}
+		rows[n] = model.Subscription{UserID: 1, PlanID: f.planRecord.ID, PlanSKUID: f.skuRecord.ID, NodeGroupID: f.planRecord.NodeGroupID, Lifecycle: "fixed", Status: "active", StartAt: now.Add(-2 * time.Hour), EndAt: now.Add(-time.Hour), FlowTotal: 100, RetirementRetryAt: &past, Config: "{}"}
 	}
 	if err := f.h.db.CreateInBatches(&rows, 100).Error; err != nil {
 		t.Fatal(err)

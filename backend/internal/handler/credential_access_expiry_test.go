@@ -69,22 +69,30 @@ func assertAccessExpiryBudgetPage(t *testing.T, f orderFixture) {
 	}
 	//199 old subscription/credential metadata rows are explicitly not paid facts.
 	// Together with the real lower root they fill the first200 routing identities.
-	for n := 0; n < 199; n++ {
-		legacy := model.Subscription{UserID: bad.UserID, PlanID: bad.PlanID, PlanSKUID: bad.PlanSKUID, NodeGroupID: bad.NodeGroupID,
-			Lifecycle: "fixed", Status: "active", StartAt: bad.StartAt, EndAt: bad.EndAt, FlowTotal: bad.FlowTotal}
-		if err := f.h.db.Create(&legacy).Error; err != nil {
-			t.Fatal(err)
+	legacy := make([]model.Subscription, 199)
+	for n := range legacy {
+		legacy[n] = model.Subscription{UserID: bad.UserID, PlanID: bad.PlanID, PlanSKUID: bad.PlanSKUID, NodeGroupID: bad.NodeGroupID,
+			Lifecycle: "fixed", Status: "active", StartAt: bad.StartAt, EndAt: bad.EndAt, FlowTotal: bad.FlowTotal, Config: "{}"}
+	}
+	// This is unpaid routing metadata, not the financial/expiry operation under
+	// test. Batch only its setup in one transaction, retaining all199 identities.
+	if err := f.h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.CreateInBatches(&legacy, 100).Error; err != nil {
+			return err
 		}
-		plain := fmt.Sprintf("legacy-expiry-routing-%d", legacy.ID)
-		secret, err := f.h.credentialCipher.Encrypt(plain)
-		if err != nil {
-			t.Fatal(err)
+		credentials := make([]model.ProtocolCredential, len(legacy))
+		for n, sub := range legacy {
+			plain := fmt.Sprintf("legacy-expiry-routing-%d", sub.ID)
+			secret, err := f.h.credentialCipher.Encrypt(plain)
+			if err != nil {
+				return err
+			}
+			credentials[n] = model.ProtocolCredential{SubscriptionID: sub.ID, UserID: sub.UserID, NodeID: credential.NodeID, ProtocolEndpointID: credential.ProtocolEndpointID,
+				CredentialID: plain, PrincipalKey: plain, Secret: secret, Status: "active", ExpiresAt: sub.EndAt}
 		}
-		row := model.ProtocolCredential{SubscriptionID: legacy.ID, UserID: legacy.UserID, NodeID: credential.NodeID, ProtocolEndpointID: credential.ProtocolEndpointID,
-			CredentialID: plain, PrincipalKey: plain, Secret: secret, Status: "active", ExpiresAt: legacy.EndAt}
-		if err := f.h.db.Create(&row).Error; err != nil {
-			t.Fatal(err)
-		}
+		return tx.CreateInBatches(&credentials, 100).Error
+	}); err != nil {
+		t.Fatal("create all199 unpaid routing subscription/credential identities", err)
 	}
 	healthy := accessExpiryPaidRoot(t, f, "access-expiry-higher-paid")
 	rows := make([]model.Order, 1001)

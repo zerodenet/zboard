@@ -23,6 +23,22 @@ finally:
 
 
 class UpgradeOwnershipHandoffTest(unittest.TestCase):
+    def test_failure_diagnostics_report_positions_without_payload_or_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "failed.log"
+            path.write_text("    convergence_current_authority_probe_test.go:123: SELECT secret_token FROM users WHERE password='private'\n"
+                            "    automatic_recurring_discount_test.go:72: root:private@tcp(127.0.0.1:3306)/\n"
+                            "    convergence_current_authority_probe_test.go:123: another payload\n")
+            self.assertEqual(upgrade.failure_diagnostics(path), [
+                {"file": "automatic_recurring_discount_test.go", "line": 72},
+                {"file": "convergence_current_authority_probe_test.go", "line": 123}])
+
+    def test_failure_diagnostics_are_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "failed.log"
+            path.write_text("".join(f"probe_test.go:{n}: private payload\n" for n in range(1, 100)))
+            self.assertEqual(len(upgrade.failure_diagnostics(path)), 20)
+
     def release(self, outcome):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

@@ -145,6 +145,34 @@ class MySQLProfilesTest(unittest.TestCase):
         self.assertNotIn('private-payload', rendered)
 
 
+    def test_fixture_constraint_error_classes_do_not_expose_sql(self):
+        package = 'example/backend/handler'
+        for number, label in [(1452, 'database_foreign_key_reference'), (3140, 'database_invalid_json')]:
+            with self.subTest(error=number):
+                events = [
+                    {'Action': 'output', 'Package': package, 'Test': 'TestMySQLFixture',
+                     'Output': f'    fixture_test.go:45: Error {number}: private SQL arguments and credentials\n'},
+                    {'Action': 'fail', 'Package': package, 'Test': 'TestMySQLFixture'}]
+                summary = profiles.result_summary(events, {('./handler', 'TestMySQLFixture')}, 'example/backend')
+                rendered = '\n'.join(profiles.execution_failure_diagnostics(events, summary))
+                self.assertIn(label, rendered)
+                self.assertIn('fixture_test.go:45', rendered)
+                self.assertNotIn('private SQL', rendered)
+                self.assertNotIn('credentials', rendered)
+
+    def test_failure_durations_distinguish_completed_cost_from_active_test(self):
+        package = 'example/backend/handler'
+        events = [{'Action': 'pass', 'Package': package, 'Test': 'TestMySQLPrepared', 'Elapsed': 42.5},
+                  {'Action': 'output', 'Package': package, 'Test': 'TestMySQLPrepared', 'Output': 'private payload'},
+                  {'Action': 'run', 'Package': package, 'Test': 'TestMySQLActive'}]
+        expected = {('./handler', 'TestMySQLPrepared'), ('./handler', 'TestMySQLActive')}
+        summary = profiles.result_summary(events, expected, 'example/backend')
+        rendered = '\n'.join(profiles.execution_failure_diagnostics(events, summary))
+        self.assertIn('Completed test duration:', rendered)
+        self.assertIn('42.5', rendered)
+        self.assertIn('not a cause attribution', rendered)
+        self.assertNotIn('private payload', rendered)
+
     def test_download_diagnostics_do_not_corrupt_json_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder); log = root / 'run.jsonl'; commands = []

@@ -153,6 +153,8 @@ def execution_failure_diagnostics(events, summary):
         'subscription quota cycle reset is pending': 'quota_reset_pending',
         'subscription value quote changed': 'value_quote_changed',
         'Error 1406': 'storage_value_too_long',
+        'Error 1452': 'database_foreign_key_reference',
+        'Error 3140': 'database_invalid_json',
         'Error 1213': 'database_deadlock',
         'Error 1205': 'database_lock_wait_timeout',
         'Error 3572': 'database_nowait_lock',
@@ -181,6 +183,18 @@ def execution_failure_diagnostics(events, summary):
         lines.extend(json.dumps(item, ensure_ascii=True)[:400] for item in sorted(active)[:12])
     if summary.get('missing'):
         lines.append('Missing terminal tests: ' + json.dumps(summary['missing'][:8], ensure_ascii=True)[:800])
+    # Completed durations distinguish cumulative preparation/test cost from
+    # the goroutine active at timeout, without publishing SQL or raw payloads.
+    timings = []
+    for event in events:
+        elapsed = event.get('Elapsed')
+        if (event.get('Action') == 'pass' and event.get('Test') and
+                '/' not in event['Test'] and isinstance(elapsed, (int, float)) and
+                not isinstance(elapsed, bool) and 2 <= elapsed < 100000):
+            timings.append((elapsed, event.get('Package', ''), event['Test']))
+    for elapsed, package, test in sorted(timings, reverse=True)[:10]:
+        lines.append('Completed test duration: ' + json.dumps(
+            [package, test, elapsed], ensure_ascii=True)[:500])
     return lines
 
 
