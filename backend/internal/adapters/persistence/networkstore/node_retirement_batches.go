@@ -88,7 +88,9 @@ func (s NodeRetirement) removalBatch(ctx context.Context, id uint, runID, stage 
 			return jobs.ErrInvalid
 		}
 		var ids []uint
-		if err := query.Model(value).Clauses(clause.Locking{Strength: "UPDATE"}).Order("id").Limit(retirementBatchSize).Pluck("id", &ids).Error; err != nil {
+		// Follow the foreign-key index, including when several endpoints own
+		// records. PK-only ordering can rescan the ledger head for every batch.
+		if err := query.Model(value).Clauses(clause.Locking{Strength: "UPDATE"}).Order(column).Order("id").Limit(retirementBatchSize).Pluck("id", &ids).Error; err != nil {
 			return err
 		}
 		if len(ids) == 0 {

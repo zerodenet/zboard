@@ -48,6 +48,7 @@ func retirementBatchesResume(t *testing.T, total int) {
 		&model.Subscription{ID: 1, UserID: 1, PlanID: 1, PlanSKUID: 1, NodeGroupID: 1, Config: "{}", StartAt: now, EndAt: now.Add(time.Hour)},
 		&model.Node{ID: 2, Name: "surviving", Config: "{}"},
 		&model.ProtocolEndpoint{ID: 2, NodeID: 2, Name: "surviving", RuntimeKey: "surviving", Protocol: "vless", OptionalConfig: "{}", Tags: "[]"},
+		&model.ProtocolEndpoint{ID: 3, NodeID: 1, Name: "retiring-extra", RuntimeKey: "retiring-extra", Protocol: "vless", OptionalConfig: "{}", Tags: "[]"},
 		&model.ProtocolCredential{ID: 1, NodeID: 1, ProtocolEndpointID: 1, SubscriptionID: 1, UserID: 1, CredentialID: "retiring", PrincipalKey: "retiring", ExpiresAt: now.Add(time.Hour)},
 		&model.ProtocolCredential{ID: 2, NodeID: 2, ProtocolEndpointID: 2, SubscriptionID: 1, UserID: 1, CredentialID: "surviving", PrincipalKey: "surviving", ExpiresAt: now.Add(time.Hour)},
 	} {
@@ -65,6 +66,9 @@ func retirementBatchesResume(t *testing.T, total int) {
 		key := fmt.Sprintf("flow-%d", i)
 		flows[i] = model.FlowUsage{NodeID: node, ProtocolEndpointID: node, ProtocolCredentialID: node, SubscriptionID: 1, FlowID: key, PrincipalKey: key, LastEventID: key, LastSeenAt: now}
 		ledger[i] = model.TrafficRecord{NodeID: node, ProtocolEndpointID: node, SubscriptionID: 1, UserID: 1, ReportID: key, Nonce: key, FlowID: key, UsedBytes: 7, RawBytes: 5, UploadBytes: 3, DownloadBytes: 2, At: now, CreatedAt: now, UpdatedAt: now}
+		if i < total && i%2 == 1 {
+			ledger[i].ProtocolEndpointID = 3
+		}
 	}
 	for _, rows := range []any{&flows, &ledger} {
 		if err := db.CreateInBatches(rows, 100).Error; err != nil {
