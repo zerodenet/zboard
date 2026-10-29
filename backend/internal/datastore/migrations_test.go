@@ -140,6 +140,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0067_node_observation_retirement_budget.up.sql",
 		"0068_coverage_runtime_identity.up.sql",
 		"0069_principal_runtime_identity.up.sql",
+		"0070_principal_statistics.up.sql",
+		"0071_flow_start_statistics.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -214,6 +216,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0067_node_observation_retirement_budget.down.sql",
 		"0068_coverage_runtime_identity.down.sql",
 		"0069_principal_runtime_identity.down.sql",
+		"0070_principal_statistics.down.sql",
+		"0071_flow_start_statistics.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

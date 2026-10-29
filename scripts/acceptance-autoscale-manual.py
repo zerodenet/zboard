@@ -135,6 +135,45 @@ def benefit_receipt(path, revision, root):
                 note="observed median difference is not a statistical or production guarantee")
 
 
+def internal_scope_verdict(runs, source_unchanged, binaries_unchanged, prerequisite_revalidated):
+    """A narrow internal verdict, never external kernel/payment acceptance."""
+    expected = {(pair, scenario, auto) for pair in range(3) for scenario in SCENARIOS for auto in (False, True)}
+    seen, evidence = set(), set()
+    failed, incomplete = [], []
+    if source_unchanged is not True or binaries_unchanged is not True:
+        failed.append("exact source or executed binary changed")
+    if prerequisite_revalidated is not True:
+        incomplete.append("same-revision raw equal-budget benefit prerequisite was not revalidated")
+    for run in runs:
+        key = (run.get("pair"), run.get("scenario"), run.get("auto"))
+        if type(run.get("pair")) is not int or type(run.get("auto")) is not bool or key not in expected or key in seen:
+            failed.append("duplicate or unsupported scenario identity")
+        seen.add(key)
+        path = run.get("evidence")
+        if not isinstance(path, str) or not path or str(Path(path).resolve()) in evidence:
+            failed.append("scenario raw evidence was missing or reused")
+        else:
+            evidence.add(str(Path(path).resolve()))
+        result = run.get("result", {})
+        if result.get("status") in ("failed", "failed_or_not_executed") or result.get("failures"):
+            failed.append("a scenario failed its original acceptance gates")
+        elif (result.get("status") != "passed_internal_scope" or result.get("incomplete") != []
+              or result.get("original_gate_report", {}).get("passed") is not True):
+            incomplete.append("a scenario has missing/inconclusive original observations")
+    complete = len(runs) == len(expected) and seen == expected
+    if not complete:
+        incomplete.append("exactly three complete pairs of all five scenarios and both modes are required")
+    passed = complete and not failed and not incomplete
+    return dict(status="failed" if failed else "passed_internal_scope" if passed else "inconclusive",
+                scope="p6_internal_only", complete=complete, run_count=len(runs), required_run_count=len(expected),
+                all_scenarios_passed=passed, source_unchanged=source_unchanged is True,
+                binaries_unchanged=binaries_unchanged is True,
+                benefit_prerequisite_revalidated=prerequisite_revalidated is True,
+                benefit_verified=passed, failures=failed, incomplete=incomplete,
+                external_quota_stop="not_verified",
+                note="Internal fault/resource gates and a recomputed equal-budget median gain only; kernel/payment/production remain separate.")
+
+
 def mib(text):
     match = re.fullmatch(r"([0-9.]+)([A-Za-z]+)", text.strip())
     factors = {"B": 1 / 1048576, "KiB": 1 / 1024, "MiB": 1, "GiB": 1024,
@@ -625,7 +664,7 @@ def main():
         for name, package in (("zboard", "./cmd/zboard"), ("acceptance", "./tools/acceptance"), ("acceptance-p6", "./tools/acceptance-p6"), ("p6busy", "./internal/plugins/testdata/p6busy")):
             with (output / (name + "-build.log")).open("x") as stream:
                 subprocess.run([args.go_bin, "build", "-p", "1", "-o", str(output / name), package], cwd=root / "backend", env=env, stdout=stream, stderr=subprocess.STDOUT, check=True)
-        if source_manifest(root) != sources:
+        if require_source(root, args.revision) != sources:
             raise ValueError("source changed while preparing; no experiment admitted")
         prepared.update(prepared=True, binaries={name: sha(output / name) for name in ("zboard", "acceptance", "acceptance-p6", "p6busy")})
         save(output / "build.json", prepared)
@@ -695,12 +734,27 @@ def main():
                      runs=results, complete=False, benefit_verified=False, external_quota_stop="not_executed"))
                 if result["status"] in ("failed", "failed_or_not_executed"):
                     raise SystemExit("experiment failed; no retries/cleanup, evidence: " + str(output))
-    save(output / "comparison.json", dict(revision=args.revision, parameters=PARAMETERS, additional_total_resource_budget=COMPARISON, runs=results,
-         complete=True, source_unchanged=source_manifest(root) == sources, benefit_verified=False,
-         note="Compare observed p95/drain/receive-settlement latency and combined RSS/CPU. Worker starts are not a benefit verdict. Kernel stop acceptance remains external."))
-    unchanged = source_manifest(root) == sources
-    print(json.dumps(dict(status="measurements_preserved" if unchanged else "source_changed", evidence=str(output), benefit_verified=False)))
-    if not unchanged:
+    try:
+        unchanged = require_source(root, args.revision) == sources
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        unchanged = False
+    expected_binaries = {"zboard", "acceptance", "acceptance-p6", "p6busy"}
+    try:
+        binaries_unchanged = set(built["binaries"]) == expected_binaries and all(sha(output / name) == digest for name, digest in built["binaries"].items())
+    except (OSError, KeyError, TypeError):
+        binaries_unchanged = False
+    try:
+        prerequisite = benefit_receipt(args.confirmed_benefit_receipt.resolve(), args.revision, root)
+        prerequisite_revalidated = prerequisite == benefit
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError):
+        prerequisite_revalidated = False
+    verdict = internal_scope_verdict(results, unchanged, binaries_unchanged, prerequisite_revalidated)
+    report = dict(revision=args.revision, parameters=PARAMETERS, additional_total_resource_budget=COMPARISON, runs=results,
+                  benefit_prerequisite=benefit, **verdict)
+    report_path = output / "comparison.json"
+    save(report_path, report)
+    print(json.dumps(dict(revision=args.revision, evidence=str(output), comparison_report=str(report_path), comparison_sha256=sha(report_path), **verdict)))
+    if verdict["status"] == "failed":
         raise SystemExit(1)
 
 

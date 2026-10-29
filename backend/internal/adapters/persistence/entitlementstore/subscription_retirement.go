@@ -38,16 +38,29 @@ func endSubscription(tx *gorm.DB, sub *model.Subscription, now time.Time) error 
 	// Settlement owns the affected orders before it owns the subscription. Read
 	// their identities, then update by primary key: an OR-based UPDATE can scan
 	// and lock unrelated orders in MySQL, reversing that established lock order.
-	var orderIDs []uint
-	if err := tx.Model(&model.Order{}).Where("(subscription_id = ? OR target_subscription_id = ?) AND subscription_ended_at IS NULL", sub.ID, sub.ID).
-		Order("id").Pluck("id", &orderIDs).Error; err != nil {
-		return err
+	var after uint
+	count := 0
+	for {
+		var orderIDs []uint
+		if err := tx.Model(&model.Order{}).Where("(subscription_id = ? OR target_subscription_id = ?) AND subscription_ended_at IS NULL AND id > ?", sub.ID, sub.ID, after).
+			Order("id ASC").Limit(entitlements.LifecycleOrderPageSize).Pluck("id", &orderIDs).Error; err != nil {
+			return err
+		}
+		if len(orderIDs) == 0 {
+			return nil
+		}
+		for _, id := range orderIDs {
+			if id <= after || count >= entitlements.LifecycleOrderIdentityByteLimit/8 {
+				return entitlements.ErrCredentialExpiryScopeBudget
+			}
+			after = id
+			count++
+		}
+		if err := tx.Model(&model.Order{}).Where("id IN ?", orderIDs).
+			Updates(map[string]any{"subscription_ended_at": ended, "subscription_end_reason": reason, "subscription_final_flow_total": total, "subscription_final_flow_used": used}).Error; err != nil {
+			return err
+		}
 	}
-	if len(orderIDs) == 0 {
-		return nil
-	}
-	return tx.Model(&model.Order{}).Where("id IN ?", orderIDs).
-		Updates(map[string]any{"subscription_ended_at": ended, "subscription_end_reason": reason, "subscription_final_flow_total": total, "subscription_final_flow_used": used}).Error
 }
 
 // Retire a business instance without deleting identities needed for late

@@ -12,7 +12,7 @@ func TestProjectionActivityUsesCurrentCrossProcessAttemptAndIgnoresOtherWork(t *
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	a.now = func() time.Time { return now }
 	b.now = a.now
-	handlers := [2]string{"usage_projection", "node_observation"}
+	handlers := []string{"usage_projection", "node_observation"}
 	foreign, err := a.Submit(t.Context(), jobs.Submission{Owner: "plugin:outside", Key: "outside", Handler: "outside", Resource: "outside", Payload: `{}`})
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestProjectionActivityUnknownAndCorruptAttemptNeverGrantsCapacity(t *testin
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	a.now = func() time.Time { return now }
 	b.now = a.now
-	handlers := [2]string{"usage_projection", "node_observation"}
+	handlers := []string{"usage_projection", "node_observation"}
 	run, err := a.Submit(t.Context(), jobs.Submission{Owner: "system", Key: "uncertain", Handler: handlers[1], Resource: "core:" + handlers[1], Payload: `{}`})
 	if err != nil {
 		t.Fatal(err)

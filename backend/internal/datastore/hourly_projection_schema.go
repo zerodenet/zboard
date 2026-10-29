@@ -163,6 +163,12 @@ func PrepareHourlyProjectionRollback(db *gorm.DB) error {
 	if err := preflightHourlyProjectionSchema(db); err != nil {
 		return err
 	}
+	if err := ValidateFlowStartStatisticsBinaryRollback(db); err != nil {
+		return err
+	}
+	if err := ValidatePrincipalStatisticsBinaryRollback(db); err != nil {
+		return err
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		var version struct{ Version string }
 		marked := tx.Table("schema_migrations").Select("version").Where("version = ?", hourlyProjectionSchemaVersion).Limit(1).Scan(&version)

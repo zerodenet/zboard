@@ -2,6 +2,8 @@ package handler
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"gorm.io/gorm"
 	"strings"
 	"testing"
 	"time"
@@ -65,11 +67,19 @@ func TestTrafficProductionTrendUsesBoundedPrincipalScopeProjection(t *testing.T)
 			NodeID: 1, CoreInstanceID: "core-a", EventID: fmt.Sprintf("scope-%d", index),
 			Source: "lifecycle", ObservedAt: row.at, CreatedAt: row.at,
 		}
-		if err := f.h.db.Create(&observation).Error; err != nil {
+		if err := f.h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&observation).Error; err != nil {
+				return err
+			}
+			return meteringstore.EnqueuePrincipalStatistics(tx, observation)
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
+	if _, err := (meteringstore.PrincipalStatistics{DB: f.h.db}).Drain(t.Context(), 200); err != nil {
+		t.Fatal(err)
+	}
 	f.capture()
 	var response trafficTrendResponse
 	f.get(t, "/api/v1/traffic/trends?from=2026-09-01&to=2026-09-01", false, f.h.TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler, &response)
@@ -84,7 +94,10 @@ func TestTrafficProductionTrendUsesBoundedPrincipalScopeProjection(t *testing.T)
 		if strings.Contains(query, "principal_flow_observations") {
 			t.Fatalf("production trend read scanned raw Principal history: %s", query)
 		}
-		if strings.Contains(query, "principal_flow_scope_observations") {
+		if strings.Contains(query, "principal_flow_scope_observations") && !strings.Contains(query, "MAX(id)") {
+			t.Fatalf("trend scanned raw scope history: %s", query)
+		}
+		if strings.Contains(query, "principal_statistics_hourly") && strings.Contains(query, "principal_statistics_samples") {
 			foundScopeProjection = true
 		}
 	}

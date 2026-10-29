@@ -92,7 +92,15 @@ func WithCopyDestination(ctx context.Context, db *gorm.DB, fn func(*gorm.DB) err
 			if err != nil {
 				return err
 			}
-			return fn(prepared)
+			statistics, err := capturePrincipalStatisticsCopyProof(prepared)
+			if err != nil {
+				return err
+			}
+			flowStatistics, err := captureFlowStartStatisticsCopyProof(statistics)
+			if err != nil {
+				return err
+			}
+			return fn(flowStatistics)
 		})
 	})
 }

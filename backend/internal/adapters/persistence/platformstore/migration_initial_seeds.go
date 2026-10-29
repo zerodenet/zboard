@@ -62,6 +62,28 @@ func validateInitialMigrationSeeds(db *gorm.DB) error {
 			return reject()
 		}
 	}
+	var statistics []model.PrincipalStatisticsState
+	if err := db.Clauses(clause.Locking{Strength: "SHARE"}).Limit(2).Find(&statistics).Error; err != nil {
+		return err
+	}
+	if len(statistics) != 1 {
+		return reject()
+	}
+	state := statistics[0]
+	if state.ID != 1 || state.LegacyUpperID != 0 || state.LegacyAfterID != 0 || state.LegacyExpectedRows != 0 || state.LegacyProjectedRows != 0 || state.ProjectedHead != 0 || state.Revision != 1 || state.CreatedAt.IsZero() || !state.CreatedAt.Equal(state.UpdatedAt) {
+		return reject()
+	}
+	var flowStates []model.FlowStartStatisticsState
+	if err := db.Clauses(clause.Locking{Strength: "SHARE"}).Limit(2).Find(&flowStates).Error; err != nil {
+		return err
+	}
+	if len(flowStates) != 1 {
+		return reject()
+	}
+	flowState := flowStates[0]
+	if flowState.ID != 1 || flowState.LegacyUpperID != 0 || flowState.LegacyAfterID != 0 || flowState.LegacyExpectedRows != 0 || flowState.LegacyProjectedRows != 0 || flowState.ProjectedHead != 0 || flowState.Revision != 1 || flowState.CreatedAt.IsZero() || !flowState.CreatedAt.Equal(flowState.UpdatedAt) {
+		return reject()
+	}
 	var observationBudget []model.NodeObservationMaterialBudget
 	if err := db.Clauses(clause.Locking{Strength: "SHARE"}).Limit(2).Find(&observationBudget).Error; err != nil {
 		return err

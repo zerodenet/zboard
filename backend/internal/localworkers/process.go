@@ -17,15 +17,17 @@ import (
 // It has no shell or HTTP input. A replaced/changed binary refuses new launches
 // until the main service is restarted against that deployment.
 type CommandLauncher struct {
-	Executable   string
-	ConfigFile   string
-	DrainTimeout time.Duration
-	MemoryBytes  uint64
-	Stdout       io.Writer
-	Stderr       io.Writer
-	Ownership    *Ownership
-	identity     os.FileInfo
-	digest       [32]byte
+	Executable     string
+	ConfigFile     string
+	DrainTimeout   time.Duration
+	MemoryBytes    uint64
+	Stdout         io.Writer
+	Stderr         io.Writer
+	Ownership      *Ownership
+	identity       os.FileInfo
+	digest         [32]byte
+	configIdentity os.FileInfo
+	configDigest   [32]byte
 }
 
 func NewCommandLauncher(executable, configFile string, drain time.Duration, memory uint64) (*CommandLauncher, error) {
@@ -36,7 +38,11 @@ func NewCommandLauncher(executable, configFile string, drain time.Duration, memo
 	if err != nil {
 		return nil, err
 	}
-	return &CommandLauncher{Executable: executable, ConfigFile: configFile, DrainTimeout: drain, MemoryBytes: memory, Stdout: os.Stdout, Stderr: os.Stderr, identity: info, digest: digest}, nil
+	configInfo, configHash, err := configurationDigest(configFile)
+	if err != nil {
+		return nil, err
+	}
+	return &CommandLauncher{Executable: executable, ConfigFile: configFile, DrainTimeout: drain, MemoryBytes: memory, Stdout: os.Stdout, Stderr: os.Stderr, identity: info, digest: digest, configIdentity: configInfo, configDigest: configHash}, nil
 }
 
 func executableDigest(path string) (os.FileInfo, [32]byte, error) {
@@ -69,6 +75,13 @@ func (l *CommandLauncher) Start(ctx context.Context) (Process, error) {
 	info, digest, err := executableDigest(l.Executable)
 	if err != nil || !os.SameFile(l.identity, info) || digest != l.digest {
 		return nil, errors.New("local projection executable no longer matches the parent deployment")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	configInfo, configHash, err := configurationDigest(l.ConfigFile)
+	if err != nil || !os.SameFile(l.configIdentity, configInfo) || configHash != l.configDigest {
+		return nil, errors.New("local projection configuration no longer matches the parent deployment")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -107,6 +120,34 @@ func (l *CommandLauncher) Start(ctx context.Context) (Process, error) {
 		return nil, errors.New("local projection worker failed to start")
 	}
 	return p, nil
+}
+
+// configurationDigest retains only metadata and SHA256, never YAML, passwords
+// or DSNs. This catches a changed path/content before launch; the later child
+// opening -f is not an atomic sealed snapshot. Operators must keep a deployment
+// configuration immutable while its parent and managed workers run.
+func configurationDigest(path string) (os.FileInfo, [32]byte, error) {
+	var digest [32]byte
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, digest, errors.New("local projection configuration unavailable")
+	}
+	defer file.Close()
+	before, err := file.Stat()
+	const limit int64 = 4 << 20
+	if err != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > limit {
+		return nil, digest, errors.New("local projection configuration must be a bounded regular file")
+	}
+	hash := sha256.New()
+	if n, err := io.Copy(hash, io.LimitReader(file, limit+1)); err != nil || n != before.Size() {
+		return nil, digest, errors.New("local projection configuration read failed")
+	}
+	after, err := file.Stat()
+	if err != nil || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return nil, digest, errors.New("local projection configuration changed during read")
+	}
+	copy(digest[:], hash.Sum(nil))
+	return after, digest, nil
 }
 
 type commandProcess struct {

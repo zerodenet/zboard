@@ -2,12 +2,12 @@ package meteringstore
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"strings"
 )
 
 type PrincipalTrends struct{ DB, ReadDB *gorm.DB }
@@ -48,19 +48,17 @@ func (s PrincipalTrends) Read(ctx context.Context, actor uint, q metering.Princi
 		if id == 0 {
 			return nil
 		}
-		parts := make([]string, 0, len(q.Buckets))
-		args := make([]interface{}, 0, 3*len(q.Buckets))
-		for _, bucket := range q.Buckets {
-			parts = append(parts, "WHEN observed_at >= ? AND observed_at < ? THEN ?")
-			args = append(args, bucket.StartUTC, bucket.EndUTC, bucket.Key)
-		}
-		expression := "CASE " + strings.Join(parts, " ") + " ELSE NULL END"
 		read := tx
 		if s.ReadDB != nil && s.ReadDB != s.DB {
-			read = s.ReadDB.WithContext(ctx)
+			return s.ReadDB.WithContext(ctx).Transaction(func(snapshot *gorm.DB) error {
+				var err error
+				rows, err = readPrincipalStatistics(snapshot, scope, id, q.Buckets)
+				return err
+			}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 		}
-		return read.Table("principal_flow_scope_observations").Select(expression+" AS day, MAX(active_flows) AS peak, COUNT(*) AS sample_count", args...).Where("scope_type = ? AND scope_id = ? AND observed_at >= ? AND observed_at < ?", scope, id, q.Buckets[0].StartUTC, q.Buckets[len(q.Buckets)-1].EndUTC).Group("day").Order("day ASC").Scan(&rows).Error
-	})
+		rows, err = readPrincipalStatistics(read, scope, id, q.Buckets)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package meteringstore
 import "time"
 
 type FlowStartRecord struct {
+	StatisticsRegistered bool      `gorm:"column:statistics_registered"`
 	ID                   uint64    `gorm:"column:id;primaryKey"`
 	NodeID               uint      `gorm:"column:node_id"`
 	CoreInstanceID       string    `gorm:"column:core_instance_id"`

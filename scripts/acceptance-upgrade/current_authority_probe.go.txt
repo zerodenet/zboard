@@ -64,7 +64,7 @@ func TestConvergenceCurrentAuthoritySeed(t *testing.T) {
 			t.Fatal("old upgrade invented new business authority", table, n, err)
 		}
 	}
-	for _, required := range []string{"0066_automatic_renewal_pending_orders.up.sql", "0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql"} {
+	for _, required := range []string{"0066_automatic_renewal_pending_orders.up.sql", "0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql", "0070_principal_statistics.up.sql", "0071_flow_start_statistics.up.sql"} {
 		var version int64
 		if err := db.Table("schema_migrations").Where("version = ?", required).Count(&version).Error; err != nil || version != 1 {
 			t.Fatal("real current authority migration required", required, version, err)
@@ -206,6 +206,8 @@ func TestConvergenceCurrentAuthoritySeed(t *testing.T) {
 	receipt.RuntimeFlow, receipt.RuntimeBoundaries, receipt.RuntimeEvents, receipt.RuntimeObservations = runtimeFlow, runtimeBoundaries, runtimeEvents, runtimeObservations
 	assertCurrentRuntimeAuthority(t, db, receipt)
 	receipt.ObservationCheckpoint, receipt.ObservationClock = checkpoint, archiveClock
+	drainCurrentPrincipalStatistics(t, db)
+	drainCurrentFlowStatistics(t, db)
 	receipt.Frozen = freezeCurrentAuthority(t, db)
 	writeCurrentAuthorityJSON(t, filepath.Join(dir, "current-authority.json"), receipt)
 	h.CloseBackgroundJobs()
@@ -627,7 +629,7 @@ func assertCurrentFinancialAuthority(t *testing.T, db *gorm.DB, expected []upgra
 }
 func freezeCurrentAuthority(t *testing.T, db *gorm.DB) []upgradeFrozenTable {
 	t.Helper()
-	tables := []struct{ name, key string }{{"orders", "id"}, {"subscriptions", "id"}, {"protocol_credentials", "id"}, {"traffic_records", "id"}, {"quota_events", "id"}, {"node_config_publishes", "node_id"}, {"subscription_mutations", "id"}, {"wallet_entries", "id"}, {"wallet_accounts", "user_id,currency"}, {"order_value_budgets", "order_id"}, {"subscription_value_settlements", "id"}, {"subscription_value_settlement_sources", "settlement_id,order_id"}, {"closed_entitlements", "subscription_id,epoch"}, {"consumption_refunds", "id"}, {"order_fundings", "order_id"}, {"payment_attempts", "id"}, {"payment_receipts", "id"}, {"order_discount_redemptions", "order_id"}, {"subscription_automatic_renewals", "subscription_id"}, {"traffic_record_meta_archives", "traffic_record_id"}, {"metering_report_receipts", "node_id,report_id"}, {"flow_usages", "id"}, {"metering_usage_projection_pending", "traffic_record_id"}, {"node_observation_intents", "id"}, {"node_observation_parts", "intent_id,ordinal"}, {"node_observation_states", "node_id,asset_tag"}, {"node_observation_material_budget", "id"}, {"node_observation_retirements", "intent_id"}, {"node_observation_retirement_parts", "intent_id,ordinal"}, {"subscription_flow_start_events", "id"}, {"fair_use_node_coverage", "node_id"}, {"principal_flow_node_generations", "node_id"}, {"principal_flow_observations", "id"}, {"principal_flow_currents", "node_id,principal_key"}, {"principal_flow_scope_observations", "id"}, {"principal_flow_scope_currents", "scope_type,scope_id"}, {"audit_logs", "id"}, {"schema_migrations", "version"}}
+	tables := []struct{ name, key string }{{"orders", "id"}, {"subscriptions", "id"}, {"protocol_credentials", "id"}, {"traffic_records", "id"}, {"quota_events", "id"}, {"node_config_publishes", "node_id"}, {"subscription_mutations", "id"}, {"wallet_entries", "id"}, {"wallet_accounts", "user_id,currency"}, {"order_value_budgets", "order_id"}, {"subscription_value_settlements", "id"}, {"subscription_value_settlement_sources", "settlement_id,order_id"}, {"closed_entitlements", "subscription_id,epoch"}, {"consumption_refunds", "id"}, {"order_fundings", "order_id"}, {"payment_attempts", "id"}, {"payment_receipts", "id"}, {"order_discount_redemptions", "order_id"}, {"subscription_automatic_renewals", "subscription_id"}, {"traffic_record_meta_archives", "traffic_record_id"}, {"metering_report_receipts", "node_id,report_id"}, {"flow_usages", "id"}, {"metering_usage_projection_pending", "traffic_record_id"}, {"node_observation_intents", "id"}, {"node_observation_parts", "intent_id,ordinal"}, {"node_observation_states", "node_id,asset_tag"}, {"node_observation_material_budget", "id"}, {"node_observation_retirements", "intent_id"}, {"node_observation_retirement_parts", "intent_id,ordinal"}, {"subscription_flow_start_events", "id"}, {"fair_use_node_coverage", "node_id"}, {"principal_flow_node_generations", "node_id"}, {"principal_flow_observations", "id"}, {"principal_flow_currents", "node_id,principal_key"}, {"principal_flow_scope_observations", "id"}, {"principal_flow_scope_currents", "scope_type,scope_id"}, {"flow_start_statistics_state", "id"}, {"flow_start_statistics_pending", "source_id"}, {"flow_start_statistics_points", "source_id"}, {"flow_start_statistics_minutes", "subscription_id,node_id,basis,minute_at"}, {"principal_statistics_state", "id"}, {"principal_statistics_pending", "observation_id"}, {"principal_statistics_samples", "observation_id"}, {"principal_statistics_hourly", "scope_type,scope_id,hour_at"}, {"audit_logs", "id"}, {"schema_migrations", "version"}}
 	var out []upgradeFrozenTable
 	for _, table := range tables {
 		keys := strings.Split(table.key, ",")
@@ -760,4 +762,53 @@ func replayCurrentRuntimeAuthority(t *testing.T, h *handlers, r currentAuthority
 			t.Fatal("restored long observation replay", err)
 		}
 	}
+}
+
+// Explicit bounded production job runs: no timer/background goroutine can race
+// the frozen backup. A nonempty receipt/hourly matrix is part of the full hash.
+func drainCurrentPrincipalStatistics(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	worker := meteringstore.PrincipalStatistics{DB: db}
+	for i := 0; i < 64; i++ {
+		pending, err := worker.HasPending(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !pending {
+			var n int64
+			if err := db.Table("principal_statistics_samples").Count(&n).Error; err != nil || n == 0 {
+				t.Fatal("missing real principal statistics", n, err)
+			}
+			return
+		}
+		if _, err := worker.Drain(t.Context(), 200); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("bounded principal statistics fixture did not drain; preserve all evidence")
+}
+
+// Run the real fifth independent worker with a fixed bound before freezing.
+func drainCurrentFlowStatistics(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	worker := meteringstore.FlowStatistics{DB: db}
+	for i := 0; i < 64; i++ {
+		pending, err := worker.HasPending(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !pending {
+			for _, table := range []string{"flow_start_statistics_points", "flow_start_statistics_minutes"} {
+				var n int64
+				if err := db.Table(table).Count(&n).Error; err != nil || n == 0 {
+					t.Fatal("missing real flow-start statistics", table, n, err)
+				}
+			}
+			return
+		}
+		if _, err := worker.Drain(t.Context(), 200); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("bounded flow-start statistics fixture did not drain; preserve evidence")
 }

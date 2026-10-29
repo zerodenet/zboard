@@ -43,10 +43,10 @@ func assertLegacyObservationBudgetCopy(t *testing.T, mysql bool) {
 	if actual == 0 {
 		t.Fatal("missing real retained bytes")
 	}
-	if err := source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql"}).Error; err != nil {
+	if err := source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0067_node_observation_retirement_budget.up.sql", "0068_coverage_runtime_identity.up.sql", "0069_principal_runtime_identity.up.sql", "0070_principal_statistics.up.sql"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"node_observation_retirement_parts", "node_observation_retirements", "node_observation_material_budget"} {
+	for _, table := range []string{"node_observation_retirement_parts", "node_observation_retirements", "node_observation_material_budget", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly", "principal_statistics_state"} {
 		if err := source.Migrator().DropTable(table); err != nil {
 			t.Fatal(err)
 		}

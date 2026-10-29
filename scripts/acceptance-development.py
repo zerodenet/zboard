@@ -21,7 +21,8 @@ EXCLUDES = ('src/theme/designTokens.test.ts', 'src/views/commercePurchaseExperie
 FUNCTIONAL = ('backend-tidy', 'backend-module-consistency', 'backend-test', 'backend-vet', 'backend-build', 'sqlite-purego',
               'sdk-tidy', 'sdk-module-consistency', 'sdk-test', 'sdk-vet',
               'frontend-install', 'frontend-test', 'frontend-build', 'mysql-full')
-MANUAL = ('p7-upgrade', 'capacity-original', 'worker-prepare', 'worker-comparison', 'autoscale-prepare', 'autoscale')
+PRINCIPAL_STATISTICS = ('principal-statistics-build', 'principal-statistics-sqlite', 'principal-statistics-mysql')
+MANUAL = ('p7-upgrade', 'capacity-original', 'worker-prepare', 'worker-comparison', 'autoscale-prepare', 'autoscale') + PRINCIPAL_STATISTICS
 
 
 def save(path, value):
@@ -169,6 +170,84 @@ def literal_revision_pins(source):
     return constants.get('REVISIONS', ())
 
 
+def principal_statistics_verdict(stdout, artifact_parent, prior_children, driver, head, helper_sha256):
+    """Fail closed on plan-only, old source, the other DB or reused artifacts."""
+    if stdout.get('status') != 'passed' or stdout.get('executed') is not True or stdout.get('driver') != driver:
+        raise ValueError('principal statistics child did not execute this database successfully')
+    if stdout.get('source_head') != head or stdout.get('source_unchanged') is not True or stdout.get('helper_sha256') != helper_sha256:
+        raise ValueError('principal statistics child source/helper differs')
+    for name in ('source_sha256_before', 'source_sha256_after'):
+        if not re.fullmatch(r'[0-9a-f]{64}', str(stdout.get(name, ''))):
+            raise ValueError('principal statistics child lacks source binding')
+    if stdout['source_sha256_before'] != stdout['source_sha256_after']:
+        raise ValueError('principal statistics child changed source')
+    if type(stdout.get('sources')) is not int or not 1000 <= stdout['sources'] <= 100000 or type(stdout.get('windows')) is not int or not 32 <= stdout['windows'] <= 64 or stdout.get('timezone') != 'Asia/Kathmandu':
+        raise ValueError('principal statistics original source/window/timezone coverage missing')
+    if not isinstance(stdout.get('artifact_dir'), str) or not isinstance(stdout.get('summary_path'), str):
+        raise ValueError('principal statistics artifact metadata must contain paths')
+    artifact_path = Path(stdout.get('artifact_dir', ''))
+    summary_path = Path(stdout.get('summary_path', ''))
+    if not artifact_path.is_absolute() or not summary_path.is_absolute() or artifact_path.is_symlink() or summary_path.is_symlink():
+        raise ValueError('principal statistics artifact paths must be owned absolute paths')
+    artifact = artifact_path.resolve()
+    parent = artifact_parent.resolve()
+    summary = summary_path.resolve()
+    if artifact.parent != parent or artifact in prior_children or summary != artifact / 'summary.json' or not summary.is_file() or summary.is_symlink():
+        raise ValueError('principal statistics child has no new owned summary')
+    if not 1 <= summary.stat().st_size <= 8 * 1024 * 1024:
+        raise ValueError('principal statistics retained summary exceeds evidence bound')
+    actual = json.loads(summary.read_text())
+    if actual != stdout:
+        raise ValueError('principal statistics stdout and retained summary differ')
+    return {'summary_path': str(summary), 'summary_sha256': hashlib.sha256(summary.read_bytes()).hexdigest(),
+            'artifact_dir': str(artifact), 'driver': driver, 'source_head': head, 'helper_sha256': helper_sha256,
+            'source_unchanged': True, 'executed': True, 'sources': actual['sources'], 'windows': actual['windows'], 'timezone': actual['timezone']}
+
+
+def autoscale_internal_result(measured, revision):
+    if measured.get('status') != 'passed_internal_scope':
+        return 'inconclusive' if measured.get('status') in ('inconclusive', 'measurements_preserved') and measured.get('benefit_verified') is False else 'failed'
+    required = ('complete', 'all_scenarios_passed', 'source_unchanged', 'binaries_unchanged', 'benefit_prerequisite_revalidated', 'benefit_verified')
+    if measured.get('revision') != revision or measured.get('scope') != 'p6_internal_only' or any(measured.get(key) is not True for key in required):
+        return 'failed'
+    if type(measured.get('run_count')) is not int or measured['run_count'] != 30 or type(measured.get('required_run_count')) is not int or measured['required_run_count'] != 30 or measured.get('external_quota_stop') != 'not_verified' or measured.get('failures') != [] or measured.get('incomplete') != []:
+        return 'failed'
+    report_path = measured.get('comparison_report')
+    if not isinstance(report_path, str) or not Path(report_path).is_absolute():
+        return 'failed'
+    try:
+        report = Path(report_path)
+        if not 1 <= report.stat().st_size <= 32 * 1024 * 1024 or hashlib.sha256(report.read_bytes()).hexdigest() != measured.get('comparison_sha256'):
+            return 'failed'
+        actual = json.loads(report.read_text())
+        # The retained complete scenario matrix, not merely stdout booleans,
+        # must agree with the narrow result before this wrapper can aggregate it.
+        for key in ('revision', 'status', 'scope', 'complete', 'run_count', 'required_run_count', *required, 'external_quota_stop', 'failures', 'incomplete'):
+            if type(actual.get(key)) is not type(measured.get(key)) or actual.get(key) != measured.get(key):
+                return 'failed'
+        runs = actual.get('runs', [])
+        expected = {(pair, scenario, auto) for pair in range(3) for scenario in ('normal', 'backlog', 'crash', 'dbslow', 'pluginbusy') for auto in (False, True)}
+        seen, paths = set(), set()
+        if len(runs) != 30:
+            return 'failed'
+        for run in runs:
+            key = (run.get('pair'), run.get('scenario'), run.get('auto'))
+            path = run.get('evidence')
+            result = run.get('result', {})
+            if type(run.get('pair')) is not int or type(run.get('auto')) is not bool or key not in expected or key in seen or not isinstance(path, str) or not path or str(Path(path).resolve()) in paths:
+                return 'failed'
+            if result.get('status') != 'passed_internal_scope' or result.get('failures') != [] or result.get('incomplete') != [] or result.get('original_gate_report', {}).get('passed') is not True:
+                return 'failed'
+            seen.add(key); paths.add(str(Path(path).resolve()))
+        return 'passed' if seen == expected else 'failed'
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 'failed'
+
+
+def principal_statistics_selected(sqlite_only):
+    return PRINCIPAL_STATISTICS[:2] if sqlite_only else PRINCIPAL_STATISTICS
+
+
 def requested_stages(args):
     names = set(FUNCTIONAL)
     if args.sqlite_only:
@@ -185,6 +264,8 @@ def requested_stages(args):
                             (args.execute_autoscale, ('autoscale-prepare', 'autoscale'))):
         if enabled:
             names.update(stages)
+    if getattr(args, 'execute_principal_statistics', False):
+        names.update(principal_statistics_selected(args.sqlite_only))
     return names
 
 
@@ -214,6 +295,8 @@ def main(argv=None):
     parser.add_argument('--worker-budget-profile', choices=('original-1.5cpu', 'autoscale-4cpu'), default='original-1.5cpu')
     parser.add_argument('--worker-benefit-metric', choices=('core_p95_ms', 'drain_seconds', 'received_to_settlement_p95_ms'))
     parser.add_argument('--execute-autoscale', action='store_true')
+    parser.add_argument('--execute-principal-statistics', action='store_true', help='explicit source-bound P4 growth/retention/replay manual stage')
+    parser.add_argument('--principal-mysql-data-root', type=Path, help='existing isolated MySQL actual data filesystem; child retains its 512MiB minimum gate')
     parser.add_argument('--confirmed-benefit-receipt', type=Path)
     parser.add_argument('--quiet-window', action='store_true', help='explicit quiet window for manual P7/load/worker stages')
     args = parser.parse_args(argv)
@@ -225,8 +308,9 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=False)
     env = os.environ.copy()
     dsn = env.pop('ZBOARD_TEST_MYSQL_DSN', '')
+    principal_dsn = env.pop('ZBOARD_ACCEPTANCE_MYSQL_DSN', '')
     env.update(GOTOOLCHAIN='local', GOMAXPROCS='2', PYTHONDONTWRITEBYTECODE='1', COREPACK_ENABLE_NETWORK='0')
-    private_secrets = secrets_for(dsn)
+    private_secrets = sorted(set(secrets_for(dsn) + secrets_for(principal_dsn)), key=len, reverse=True)
     stages = {name: {'status': 'not_executed', 'reason': 'not reached'} for name in FUNCTIONAL + MANUAL}
     receipt = {'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'stages': stages,
                'scope': 'sqlite_only' if args.sqlite_only else 'functional_with_actual_mysql', 'versions': {}}
@@ -255,7 +339,7 @@ def main(argv=None):
         stream_errors = []
         def copy_stream(pipe, stream):
             try:
-                active_secrets = private_secrets if (overrides or {}).get('ZBOARD_TEST_MYSQL_DSN') else []
+                active_secrets = private_secrets if ((overrides or {}).get('ZBOARD_TEST_MYSQL_DSN') or (overrides or {}).get('ZBOARD_ACCEPTANCE_MYSQL_DSN')) else []
                 copy_redacted(pipe, stream, active_secrets)
             except OSError as exc:
                 stream_errors.append(type(exc).__name__)
@@ -309,8 +393,10 @@ def main(argv=None):
             return skip(name, 'manual stage requires its explicit --execute option')
         if not args.quiet_window:
             return skip(name, 'explicit --quiet-window required; original child workload/resource checks remain authoritative')
-        if not go_ok or not shutil.which('docker'):
-            return skip(name, 'pinned Go and existing Docker are required; neither is installed automatically')
+        if not go_ok:
+            return skip(name, 'pinned Go is required; no toolchain is installed automatically')
+        if name not in PRINCIPAL_STATISTICS and not shutil.which('docker'):
+            return skip(name, 'existing Docker is required for this original child; it is not installed automatically')
         if not mysql_ok and name == 'p7-upgrade':
             return skip(name, 'both-database upgrade requires isolated MySQL 8.4 preflight')
         if before != source_binding(root) or git(root, 'status', '--porcelain').strip():
@@ -384,6 +470,57 @@ def main(argv=None):
                     stages['mysql-full'].update(status='failed', reason='nested full matrix receipt not executed/passed')
         else:
             skip('mysql-full', 'explicit SQLite-only scope or isolated MySQL 8.4/pinned Go unavailable; no SQLite substitute')
+        if manual_ready('principal-statistics-build', args.execute_principal_statistics):
+            helper_source = backend / 'tools/acceptance-principal-statistics/main.go'
+            helper = out / 'principal-statistics-helper'
+            artifact_parent = out / 'principal-statistics-artifacts'
+            if not helper_source.is_file():
+                skip('principal-statistics-build', 'P4 principal statistics execution CLI is not integrated')
+            elif run('principal-statistics-build', ['go', 'build', '-p', '2', '-o', helper, './tools/acceptance-principal-statistics'], backend):
+                if not helper.is_file() or helper.is_symlink() or before != source_binding(root):
+                    stages['principal-statistics-build'].update(status='failed', reason='helper build lacks exact unchanged source/binary evidence')
+                else:
+                    helper_hash = hashlib.sha256(helper.read_bytes()).hexdigest()
+                    stages['principal-statistics-build'].update(helper_path=str(helper), helper_sha256=helper_hash,
+                        source_head=before['head'], source_binding_sha256=hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest())
+                    artifact_parent.mkdir(mode=0o700)
+                    for driver in ('sqlite', 'mysql'):
+                        name = 'principal-statistics-' + driver
+                        if driver == 'mysql':
+                            if args.sqlite_only:
+                                skip(name, 'explicit SQLite-only scope; no MySQL growth/retention/replay acceptance')
+                                continue
+                            if not args.principal_mysql_data_root or not args.principal_mysql_data_root.is_dir():
+                                skip(name, 'existing isolated MySQL actual data filesystem is required')
+                                continue
+                            try:
+                                host, port = mysql_target(principal_dsn, args.isolated_mysql)
+                                version = mysql_version(host, port)
+                                receipt['versions']['principal_statistics_mysql'] = {'status': 'matched', 'version': version, 'host': host, 'port': port}
+                            except (OSError, ValueError):
+                                skip(name, 'ZBOARD_ACCEPTANCE_MYSQL_DSN must attest an isolated numeric-loopback MySQL8.4 instance with no database')
+                                continue
+                        if before != source_binding(root) or hashlib.sha256(helper.read_bytes()).hexdigest() != helper_hash:
+                            skip(name, 'source/helper changed; no stale binary execution')
+                            continue
+                        prior_children = {path.resolve() for path in artifact_parent.iterdir()}
+                        command = [helper, '-driver', driver, '-artifact-root', artifact_parent, '-sources', '1024', '-windows', '32', '-timezone', 'Asia/Kathmandu', '-min-free-bytes', str(512 * 1024 * 1024), '-execute']
+                        overrides = {}
+                        if driver == 'mysql':
+                            command += ['-isolated-mysql', '-mysql-data-root', args.principal_mysql_data_root.resolve()]
+                            overrides['ZBOARD_ACCEPTANCE_MYSQL_DSN'] = principal_dsn
+                        if run(name, command, overrides=overrides):
+                            try:
+                                evidence = principal_statistics_verdict(last_json(Path(stages[name]['stdout'])), artifact_parent, prior_children, driver, before['head'], helper_hash)
+                                if before != source_binding(root) or hashlib.sha256(helper.read_bytes()).hexdigest() != helper_hash:
+                                    raise ValueError('source/helper changed during P4 execution')
+                                stages[name]['principal_statistics_receipt'] = evidence
+                            except (OSError, ValueError):
+                                stages[name].update(status='failed', reason='child execution summary is absent, plan-only, stale, incomplete or not source/helper bound')
+                        flush()
+        for name in PRINCIPAL_STATISTICS[1:]:
+            if stages[name]['status'] == 'not_executed' and stages[name]['reason'] == 'not reached':
+                skip(name, 'principal statistics helper was not requested, ready or successfully built; no automatic retry')
         if manual_ready('p7-upgrade', args.execute_p7):
             if not args.mysql_container:
                 skip('p7-upgrade', 'existing isolated MySQL container name required for mapping and backup verification')
@@ -451,13 +588,11 @@ def main(argv=None):
                     if not built:
                         skip('autoscale', 'prepare returned no build receipt; inspect authoritative harness output')
                     else:
-                        if run('autoscale', common + ['--execute', built, '--confirmed-benefit-receipt', Path(selected_benefit_receipt).resolve()]):
+                        if run('autoscale', common + ['--execute', built, '--confirmed-benefit-receipt', Path(selected_benefit_receipt).resolve(), '--pairs', '3']):
                             measured = last_json(Path(stages['autoscale']['stdout']))
                             stages['autoscale']['child_summary'] = measured
-                            if measured.get('status') == 'measurements_preserved' and measured.get('benefit_verified') is False:
-                                stages['autoscale'].update(status='inconclusive', reason='measurements preserved; scaling benefit is not a passing verdict')
-                            else:
-                                stages['autoscale'].update(status='failed', reason='unrecognized autoscale verdict; no successful P6 verdict inferred')
+                            verdict = autoscale_internal_result(measured, before['head'])
+                            stages['autoscale'].update(status=verdict, reason='strict source-bound internal P6 verdict; external kernel/payment/production remain unverified')
     except KeyboardInterrupt:
         receipt['interrupted'] = True
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:

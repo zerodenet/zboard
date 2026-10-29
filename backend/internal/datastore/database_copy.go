@@ -12,6 +12,12 @@ import (
 // and foreign-key ordering. Missing legacy source tables may be absent; an
 // existing source table must never be silently dropped from the destination.
 func CopyApplicationData(source, target *gorm.DB) error {
+	if err := preflightFlowStartStatisticsCopy(source); err != nil {
+		return err
+	}
+	if err := preflightPrincipalStatisticsCopy(source); err != nil {
+		return err
+	}
 	if err := preflightPrincipalRuntimeCopy(source); err != nil {
 		return err
 	}
@@ -68,6 +74,16 @@ func CopyApplicationData(source, target *gorm.DB) error {
 			return fmt.Errorf("migration destination is missing source table %s", table)
 		}
 	}
+	if sourceTables["principal_flow_scope_observations"] || sourceTables["principal_statistics_state"] {
+		if err := requirePrincipalStatisticsDestination(target); err != nil {
+			return err
+		}
+	}
+	if sourceTables["subscription_flow_start_events"] || sourceTables["flow_start_statistics_state"] {
+		if err := requireFlowStartStatisticsDestination(target); err != nil {
+			return err
+		}
+	}
 	if err := requirePrincipalRuntimeDestination(target, sourceTables); err != nil {
 		return err
 	}
@@ -86,6 +102,12 @@ func CopyApplicationData(source, target *gorm.DB) error {
 		}
 	}
 	if err := initializeCopiedObservationBudget(target, sourceTables["node_observation_material_budget"], sourceTables["node_observation_parts"] || sourceTables["node_observation_intents"]); err != nil {
+		return err
+	}
+	if err := initializeCopiedPrincipalStatistics(target, sourceTables["principal_statistics_state"], sourceTables["principal_flow_scope_observations"]); err != nil {
+		return err
+	}
+	if err := initializeCopiedFlowStartStatistics(target, sourceTables["flow_start_statistics_state"], sourceTables["subscription_flow_start_events"]); err != nil {
 		return err
 	}
 	// A prepared target has already recorded0060 before source data arrives.
@@ -168,6 +190,12 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 			} else {
 				record[column] = values[index]
 			}
+		}
+		if err := validateFlowStartStatisticsCopyTime(source, target, table, record); err != nil {
+			return err
+		}
+		if err := validatePrincipalStatisticsCopyTime(source, target, table, record); err != nil {
+			return err
 		}
 		if resetPrincipalLookup {
 			// Target INSERT belongs to the caller's existing copy transaction.

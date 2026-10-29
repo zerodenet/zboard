@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"github.com/zerodenet/zboard/backend/internal/testsupport/mysqlseeds"
 	"gorm.io/gorm"
 )
 
@@ -454,12 +455,17 @@ func captureBusinessSeeds(db *gorm.DB, table string) (columns []string, data [][
 	if err != nil {
 		return nil, nil, err
 	}
+	if mysqlseeds.SingletonColumns(table) != nil {
+		if err := mysqlseeds.ValidateColumns(table, columns); err != nil {
+			return nil, nil, err
+		}
+	}
 	types, err := rows.ColumnTypes()
 	if err != nil {
 		return nil, nil, err
 	}
 	for rows.Next() {
-		if !businessSeedTables[table] {
+		if !businessSeedTables[table] && mysqlseeds.SingletonColumns(table) == nil {
 			return nil, nil, fmt.Errorf("business template contains non-initialization rows in %s", table)
 		}
 		values := make([]any, len(columns))
@@ -487,6 +493,11 @@ func captureBusinessSeeds(db *gorm.DB, table string) (columns []string, data [][
 	}
 	if err = rows.Err(); err != nil {
 		return nil, nil, err
+	}
+	if mysqlseeds.SingletonColumns(table) != nil {
+		if err := mysqlseeds.Validate(table, columns, data); err != nil {
+			return nil, nil, err
+		}
 	}
 	keys := make(map[int]string, len(data))
 	for i, row := range data {

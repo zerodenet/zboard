@@ -292,10 +292,16 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 			return projectionError("dependency read completion: "+table, e)
 		}
 	}
+	if err := ValidatePreparedFlowStartStatisticsSchema(ctx, db); err != nil {
+		return projectionError("flow-start statistics dependencies", err)
+	}
+	if err := ValidatePreparedPrincipalStatisticsSchema(ctx, db); err != nil {
+		return projectionError("principal statistics dependencies", err)
+	}
 	return nil
 }
 func projectionDependencyTables() []string {
-	return []string{"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "system_configs", "node_observation_intents", "node_observation_parts", "node_observation_states", "node_observation_material_budget", "node_observation_retirements", "node_observation_retirement_parts"}
+	return []string{"flow_start_statistics_state", "flow_start_statistics_pending", "flow_start_statistics_points", "flow_start_statistics_minutes", "subscription_flow_start_events", "principal_statistics_state", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly", "principal_flow_scope_observations", "job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "system_configs", "node_observation_intents", "node_observation_parts", "node_observation_states", "node_observation_material_budget", "node_observation_retirements", "node_observation_retirement_parts"}
 }
 
 type projectionColumn struct {

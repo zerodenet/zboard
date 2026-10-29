@@ -11,6 +11,7 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func TestSQLitePreparedProjectionRetirementAuthorityReadOnly(t *testing.T) {
@@ -155,16 +156,35 @@ func assertPreparedRetirementAuthority(t *testing.T, mysql bool) {
 	t.Run("verification_table_read_permission", func(t *testing.T) {
 		const name = "test:prepared_retirement_permission"
 		denied := errors.New("verification table select unavailable")
+		seen := false
 		if err := read.Callback().Row().Before("gorm:row").Register(name, func(tx *gorm.DB) {
-			if tx.Statement.Table == "node_observation_retirement_parts" && strings.Contains(tx.Statement.SQL.String(), "1 = 0") {
-				tx.AddError(denied)
+			if tx.Statement.Table != "node_observation_retirement_parts" {
+				return
+			}
+			// RowQuery builds Statement.SQL only after this hook. Inspect the already
+			// registered WHERE expression and refuse before QueryContext can open rows.
+			where, ok := tx.Statement.Clauses["WHERE"].Expression.(clause.Where)
+			if !ok {
+				return
+			}
+			for _, expression := range where.Exprs {
+				if expression, ok := expression.(clause.Expr); ok && expression.SQL == "1 = 0" && len(expression.Vars) == 0 {
+					seen = true
+					tx.AddError(denied)
+					return
+				}
 			}
 		}); err != nil {
 			t.Fatal(err)
 		}
+		defer func() {
+			if err := read.Callback().Row().Remove(name); err != nil {
+				t.Error(err)
+			}
+		}()
 		err := check(t, datastore.ErrProjectionNotPrepared)
-		if e := read.Callback().Row().Remove(name); e != nil {
-			t.Fatal(e)
+		if !seen {
+			t.Fatal("zero-row verification permission probe was not reached")
 		}
 		if !errors.Is(err, denied) {
 			t.Fatal("actual SELECT permission failure lost", err)

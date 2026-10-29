@@ -103,6 +103,16 @@ func assertPrincipalRuntimeUpgrade(t *testing.T, mysql bool) {
 
 func principalRuntimeLegacyDDL(t *testing.T, db *gorm.DB, mysql bool) {
 	t.Helper()
+	// A pre0069 source cannot retain future0070 authority; only this isolated
+	// test's empty future initialization is removed to reconstruct old schema.
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", principalStatisticsMigration).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range principalStatisticsTables {
+		if err := db.Migrator().DropTable(table); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", principalRuntimeVersion).Error; err != nil {
 		t.Fatal(err)
 	}

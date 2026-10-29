@@ -20,7 +20,7 @@ type backgroundJobs struct {
 	loops        map[string]*scheduledJob
 }
 
-var jobNames = map[string]string{"discount_redemptions": "优惠预留确认与恢复", "traffic_diagnostic_retention": "流量诊断材料保留", "node_observation_material_retention": "节点观察材料保留", application.NodeObservationJobID: application.NodeObservationJobName, application.UsageProjectionJobID: application.UsageProjectionJobName, "automatic_renewal": "余额自动续费", "wallet_reservations": "余额预留到期释放", "subscription_alerts": "订阅告警扫描", "credential_expiry": "订阅到期处理", "traffic_reset": "订阅流量重置", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "历史记录清理", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
+var jobNames = map[string]string{application.FlowStartStatisticsJobID: "连接开始事件统计投影", application.PrincipalStatisticsJobID: "连接统计投影", application.PrincipalScopeRetentionJobID: "连接统计原始材料保留", "discount_redemptions": "优惠预留确认与恢复", "traffic_diagnostic_retention": "流量诊断材料保留", "node_observation_material_retention": "节点观察材料保留", application.NodeObservationJobID: application.NodeObservationJobName, application.UsageProjectionJobID: application.UsageProjectionJobName, "automatic_renewal": "余额自动续费", "wallet_reservations": "余额预留到期释放", "subscription_alerts": "订阅告警扫描", "credential_expiry": "订阅到期处理", "traffic_reset": "订阅流量重置", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "历史记录清理", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
 
 func (h *handlers) backgroundJobs() *backgroundJobs {
 	h.jobRuntimeOnce.Do(func() {

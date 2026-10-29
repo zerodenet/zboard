@@ -49,6 +49,9 @@ func (s FlowCollection) Record(ctx context.Context, event metering.FlowStart) er
 				}
 			}
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return err
+		}
+		return enqueueFlowStatistics(tx, event.NodeID, event.EventID)
 	})
 }

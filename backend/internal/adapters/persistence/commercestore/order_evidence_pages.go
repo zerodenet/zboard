@@ -5,16 +5,17 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 const (
-	orderEvidencePageSize        = 200
+	orderEvidencePageSize        = entitlements.LifecycleOrderPageSize
 	orderEvidenceByteLimit int64 = 32 << 20
 	orderEvidenceRowLimit  int64 = 1 << 20
-	orderIdentityByteLimit       = 512 << 10
+	orderIdentityByteLimit       = entitlements.LifecycleOrderIdentityByteLimit
 	// Closing arbitrary pending/held attempts is different from reading paid
 	// provenance. Preserve its existing mutable-work bound independently.
 	mutableSubscriptionOrderLimit = 1000

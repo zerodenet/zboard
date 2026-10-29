@@ -27,7 +27,7 @@ func observationRetentionDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = pool.Close() })
-	if err := db.AutoMigrate(&FlowStartRecord{}, &EventRecord{}); err != nil {
+	if err := datastore.RunMigrations(db); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -49,15 +49,16 @@ func TestObservationRetentionSQLiteBatchBoundaryAndRepeat(t *testing.T) {
 	if err := db.CreateInBatches(&events, 100).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, at := range []time.Time{cutoff, cutoff.Add(time.Millisecond), now} {
+	for index, at := range []time.Time{cutoff, cutoff.Add(time.Millisecond), now} {
 		// Raw retention uses received_at, not the old event occurrence time.
-		if err := db.Create(&FlowStartRecord{ReceivedAt: at, OccurredAt: cutoff.Add(-time.Hour)}).Error; err != nil {
+		if err := db.Create(&FlowStartRecord{NodeID: 1, EventID: fmt.Sprint("boundary-", index), ReceivedAt: at, OccurredAt: cutoff.Add(-time.Hour)}).Error; err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Create(&EventRecord{OccurredAt: at, CreatedAt: cutoff.Add(-time.Hour)}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
+	projectRetentionFixture(t, db)
 	service := metering.ObservationRetention{Repository: ObservationRetention{DB: db}}
 	for i, want := range []int64{1000, 5, 0} {
 		out, err := service.Run(context.Background(), now)
@@ -76,19 +77,20 @@ func TestObservationRetentionSQLiteBatchBoundaryAndRepeat(t *testing.T) {
 func TestObservationRetentionSQLiteRechecksCutoffAfterUnlockedDiscovery(t *testing.T) {
 	db := observationRetentionDB(t)
 	cutoff := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-	rows := []FlowStartRecord{{ReceivedAt: cutoff.Add(-time.Hour)}, {ReceivedAt: cutoff.Add(-time.Hour)}}
+	rows := []FlowStartRecord{retentionFlow(cutoff.Add(-time.Hour), "first"), retentionFlow(cutoff.Add(-time.Hour), "second")}
 	if err := db.Create(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
+	projectRetentionFixture(t, db)
 	discovered, locked := 0, 0
 	if err := db.Callback().Query().After("gorm:query").Register("test:refresh_discovered_observation", func(tx *gorm.DB) {
-		if tx.Statement.Table != (FlowStartRecord{}).TableName() {
+		if tx.Statement.Table != (FlowStartRecord{}).TableName() && tx.Statement.Table != "flow_start_statistics_points" {
 			return
 		}
 		_, inTransaction := tx.Statement.ConnPool.(*sql.Tx)
 		_, hasLock := tx.Statement.Clauses["FOR"]
 		query := tx.Statement.SQL.String()
-		if strings.Contains(query, "received_at <") {
+		if tx.Statement.Table == "flow_start_statistics_points" && strings.Contains(query, "review_at") && strings.Contains(query, "received_at<") {
 			discovered++
 			if inTransaction || hasLock {
 				t.Error("candidate range read acquired a write transaction/lock")
@@ -96,7 +98,7 @@ func TestObservationRetentionSQLiteRechecksCutoffAfterUnlockedDiscovery(t *testi
 			if err := db.Exec("UPDATE subscription_flow_start_events SET received_at = ? WHERE id = ?", cutoff, rows[0].ID).Error; err != nil {
 				t.Error(err)
 			}
-		} else if strings.Contains(query, "id IN") {
+		} else if tx.Statement.Table == (FlowStartRecord{}).TableName() && strings.Contains(query, "id IN") {
 			locked++
 			if !inTransaction || !hasLock || strings.Contains(query, "received_at <") {
 				t.Error("revalidation is not an exact-primary-key locking read")
@@ -125,7 +127,8 @@ func TestObservationRetentionSQLiteRollbackAndInsertIndependence(t *testing.T) {
 				model = &EventRecord{}
 			}
 			for i := 0; i < 3; i++ {
-				var row any = &FlowStartRecord{ReceivedAt: cutoff.Add(-time.Hour)}
+				source := retentionFlow(cutoff.Add(-time.Hour), fmt.Sprint("rollback-", i))
+				var row any = &source
 				if table == (EventRecord{}).TableName() {
 					row = &EventRecord{OccurredAt: cutoff.Add(-time.Hour)}
 				}
@@ -133,14 +136,17 @@ func TestObservationRetentionSQLiteRollbackAndInsertIndependence(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			projectRetentionFixture(t, db)
 			if err := db.Exec("CREATE TRIGGER reject_observation_delete BEFORE DELETE ON " + table + " WHEN OLD.id = 2 BEGIN SELECT RAISE(ABORT, 'maintenance unavailable'); END").Error; err != nil {
 				t.Fatal(err)
 			}
 			deleteCalls := 0
-			if err := db.Callback().Delete().Before("gorm:delete").Register("test:observe_observation_deletes", func(tx *gorm.DB) { deleteCalls++ }); err != nil {
+			var deleteTables []string
+			if err := db.Callback().Delete().Before("gorm:delete").Register("test:observe_observation_deletes", func(tx *gorm.DB) { deleteCalls++; deleteTables = append(deleteTables, tx.Statement.Table) }); err != nil {
 				t.Fatal(err)
 			}
-			var received any = &FlowStartRecord{ReceivedAt: cutoff.Add(time.Hour)}
+			fresh := retentionFlow(cutoff.Add(time.Hour), "fresh")
+			var received any = &fresh
 			if table == (EventRecord{}).TableName() {
 				received = &EventRecord{OccurredAt: cutoff.Add(time.Hour)}
 			}
@@ -153,8 +159,25 @@ func TestObservationRetentionSQLiteRollbackAndInsertIndependence(t *testing.T) {
 				prune = store.PruneEvaluationEvents
 			}
 			count, err := prune(context.Background(), cutoff, 3)
-			if err == nil || count != 0 || deleteCalls != 1 {
+			wantDeletes := 1
+			if table == (FlowStartRecord{}).TableName() {
+				wantDeletes = 4
+			}
+			if err == nil || count != 0 || deleteCalls != wantDeletes {
 				t.Fatalf("failed maintenance acknowledged: %d %v calls=%d", count, err, deleteCalls)
+			}
+
+			if table == (FlowStartRecord{}).TableName() {
+				if len(deleteTables) != 4 || deleteTables[0] != "flow_start_statistics_minutes" || deleteTables[1] != "flow_start_statistics_minutes" || deleteTables[2] != "flow_start_statistics_points" || deleteTables[3] != (FlowStartRecord{}).TableName() {
+					t.Fatal("retention no longer verifies both transactional deletion paths", deleteTables)
+				}
+				var points, total int64
+				if err := db.Table("flow_start_statistics_points").Count(&points).Error; err != nil || points != 3 {
+					t.Fatal("failed raw delete lost points", points, err)
+				}
+				if err := db.Table("flow_start_statistics_minutes").Where("basis=?", "received").Select("COALESCE(SUM(event_count),0)").Scan(&total).Error; err != nil || total != 3 {
+					t.Fatal("failed raw delete changed aggregate", total, err)
+				}
 			}
 			var rows int64
 			if err := db.Model(model).Count(&rows).Error; err != nil || rows != 4 {
@@ -173,12 +196,14 @@ func TestObservationRetentionSQLiteIndependentTableProgress(t *testing.T) {
 	db := observationRetentionDB(t)
 	now := time.Now().UTC()
 	old := now.Add(-16 * 24 * time.Hour)
-	if err := db.Create(&FlowStartRecord{ReceivedAt: old}).Error; err != nil {
+	source := retentionFlow(old, "independent")
+	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&EventRecord{OccurredAt: old}).Error; err != nil {
 		t.Fatal(err)
 	}
+	projectRetentionFixture(t, db)
 	if err := db.Exec("CREATE TRIGGER reject_raw_retention BEFORE DELETE ON subscription_flow_start_events BEGIN SELECT RAISE(ABORT, 'raw unavailable'); END").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +214,15 @@ func TestObservationRetentionSQLiteIndependentTableProgress(t *testing.T) {
 }
 
 func TestObservationRetentionSQLiteDiscoveryUsesExistingRawTimeIndex(t *testing.T) {
-	db := observationRetentionDB(t)
+	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "legacy-observation-index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, _ := db.DB()
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := db.AutoMigrate(&FlowStartRecord{}, &EventRecord{}); err != nil {
+		t.Fatal(err)
+	}
 	// Reproduce the already-deployed indexes, without adding a production schema
 	// change or pretending the two composite event indexes cover global time.
 	for _, statement := range []string{
@@ -224,4 +257,24 @@ func TestObservationRetentionSQLiteDiscoveryUsesExistingRawTimeIndex(t *testing.
 	if !strings.Contains(eventPlan, "SCAN") || !strings.Contains(eventPlan, "TEMP B-TREE") {
 		t.Fatalf("event discovery scan limitation changed; review its bound: %s", eventPlan)
 	}
+}
+
+func retentionFlow(at time.Time, event string) FlowStartRecord {
+	return FlowStartRecord{NodeID: 1, EventID: event, ReceivedAt: at, OccurredAt: at, CreatedAt: at}
+}
+func projectRetentionFixture(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		ready, err := (FlowStatistics{DB: db}).HasPending(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ready {
+			return
+		}
+		if _, err := (FlowStatistics{DB: db}).Drain(t.Context(), 200); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("fixture projection did not finish in bounded batches")
 }

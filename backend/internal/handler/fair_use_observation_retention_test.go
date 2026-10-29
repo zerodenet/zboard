@@ -174,6 +174,7 @@ func assertObservationRetentionPreservesAccounting(t *testing.T, h *handlers, cr
 		t.Fatal("new authoritative settlement blocked by broken observation retention", err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 240, subStatusActive)
+	drainFlowStatisticsFixture(t, h.db)
 	before := snapshot()
 	result, err := h.services.FairUseObservationRetention.Run(ctx, maintenanceNow)
 	if err == nil || result.FlowStarts != 0 || result.EvaluationEvents != 0 || !strings.Contains(err.Error(), "flow-start") || !strings.Contains(err.Error(), "evaluation-event") {

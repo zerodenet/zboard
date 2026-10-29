@@ -2,6 +2,7 @@ package jobstore
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
@@ -17,9 +18,25 @@ type ProjectionActivity struct {
 	Longest time.Duration
 }
 
-func InspectProjectionActivity(ctx context.Context, db *gorm.DB, handlers [2]string, now time.Time) ProjectionActivity {
-	if handlers[0] == "" || handlers[1] == "" || handlers[0] == handlers[1] {
+// handlers is a fixed application inventory, bounded to the five currently
+// supported jobs. Invalid or duplicate inventory is unknown, never zero load.
+func InspectProjectionActivity(ctx context.Context, db *gorm.DB, handlers []string, now time.Time) ProjectionActivity {
+	if ctx == nil || db == nil || now.IsZero() || len(handlers) < 1 || len(handlers) > 5 {
 		return ProjectionActivity{}
+	}
+	var predicates []string
+	var args []any
+	for i, handler := range handlers {
+		if handler == "" || len(handler) > 195 {
+			return ProjectionActivity{}
+		}
+		for _, previous := range handlers[:i] {
+			if previous == handler {
+				return ProjectionActivity{}
+			}
+		}
+		predicates = append(predicates, "(r.handler = ? AND r.resource = ?)")
+		args = append(args, handler, "core:"+handler)
 	}
 	var rows []struct {
 		ID            string
@@ -37,9 +54,9 @@ func InspectProjectionActivity(ctx context.Context, db *gorm.DB, handlers [2]str
 		Select("r.id, r.token, r.worker, r.handler, r.state, a.run_id AS attempt_run, a.worker AS attempt_worker, a.state AS attempt_state, a.started_at, a.expires_at").
 		Joins("LEFT JOIN job_attempts AS a ON a.token = r.token").
 		Where("r.owner = ? AND r.state IN ?", "system", []jobs.State{jobs.Running, jobs.CancelRequested, jobs.Unknown}).
-		Where("(r.handler = ? AND r.resource = ?) OR (r.handler = ? AND r.resource = ?)", handlers[0], "core:"+handlers[0], handlers[1], "core:"+handlers[1]).
-		Limit(3).Find(&rows)
-	if query.Error != nil || len(rows) > 2 {
+		Where(strings.Join(predicates, " OR "), args...).
+		Limit(len(handlers) + 1).Find(&rows)
+	if query.Error != nil || len(rows) > len(handlers) {
 		return ProjectionActivity{}
 	}
 	out := ProjectionActivity{Known: true, Active: len(rows)}

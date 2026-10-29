@@ -183,6 +183,16 @@ type TrafficDiagnosticMaterial struct{}
 type TrafficDiagnosticMaterialOther struct{}
 type MeteringReportReceipt struct{}
 type MeteringReportReceiptOther struct{}
+type PrincipalStatisticsState struct{}
+type PrincipalStatisticsPending struct{}
+type PrincipalStatisticsSample struct{}
+type PrincipalStatisticsHourly struct{}
+type PrincipalStatisticsFuture struct{}
+type FlowStartStatisticsState struct{}
+type FlowStartStatisticsPending struct{}
+type FlowStartStatisticsPoint struct{}
+type FlowStartStatisticsMinute struct{}
+type FlowStartStatisticsFuture struct{}
 type TrafficMetaArchive struct{}
 type TrafficMetaArchiveOther struct{}
 type OrderDiscountRedemption struct{}
@@ -229,6 +239,22 @@ type InventedFutureModel struct{}
 	}
 	if owners["OrderDiscountRedemption"] != "commerce" || owners["OrderDiscountRedemptionOther"] != "unassigned" {
 		t.Fatal("discount recovery ownership must be exact", owners)
+	}
+	for _, name := range []string{"PrincipalStatisticsState", "PrincipalStatisticsPending", "PrincipalStatisticsSample", "PrincipalStatisticsHourly"} {
+		if owners[name] != "metering" {
+			t.Fatal("principal statistics exact owner", name, owners)
+		}
+	}
+	for _, name := range []string{"FlowStartStatisticsState", "FlowStartStatisticsPending", "FlowStartStatisticsPoint", "FlowStartStatisticsMinute"} {
+		if owners[name] != "metering" {
+			t.Fatal("flow statistics exact owner", name, owners)
+		}
+	}
+	if owners["FlowStartStatisticsFuture"] != "unassigned" {
+		t.Fatal("future flow statistics inherited owner", owners)
+	}
+	if owners["PrincipalStatisticsFuture"] != "unassigned" {
+		t.Fatal("future statistics owner inherited", owners)
 	}
 	if owners["TrafficMetaArchive"] != "metering" || owners["TrafficMetaArchiveOther"] != "unassigned" {
 		t.Fatal("native proof archive ownership must be exact", owners)

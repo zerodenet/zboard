@@ -119,7 +119,7 @@ func businessWithoutSeedClocks(source *mysqlBusinessSnapshot) *mysqlBusinessSnap
 			copy := append([]any(nil), row...)
 			for k, column := range table.Columns {
 				generated := table.Name == "schema_migrations" && column == "applied_at"
-				generated = generated || ((table.Name == "system_configs" || table.Name == "email_templates" || table.Name == "subscription_templates") && (column == "created_at" || column == "updated_at"))
+				generated = generated || ((table.Name == "system_configs" || table.Name == "email_templates" || table.Name == "subscription_templates" || table.Name == "principal_statistics_state" || table.Name == "flow_start_statistics_state") && (column == "created_at" || column == "updated_at"))
 				if generated {
 					copy[k] = "generated-by-this-preparation"
 				}

@@ -2,6 +2,7 @@ package meteringstore
 
 import (
 	"context"
+	"database/sql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"gorm.io/gorm"
 	"time"
@@ -19,23 +20,14 @@ func (s ObservationSeries) Read(ctx context.Context, actor, subscription uint, s
 		if err != nil {
 			return err
 		}
-		since := now.Add(-spec.Duration)
-		seconds := int64(spec.BucketDuration / time.Second)
-		expression := "FLOOR(TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', received_at) / ?)"
-		if tx.Dialector.Name() == "sqlite" {
-			expression = "CAST(CAST(strftime('%s', received_at) AS INTEGER) / ? AS INTEGER)"
-		}
-		var rows []metering.ObservationAggregate
-		if err := tx.Table("subscription_flow_start_events").Select(expression+" AS bucket_index, COUNT(*) AS connection_starts, COUNT(DISTINCT node_id) AS working_nodes", seconds).Where("subscription_id = ? AND received_at >= ? AND received_at <= ?", subscription, since, now).Group("bucket_index").Order("bucket_index ASC").Scan(&rows).Error; err != nil {
-			return err
-		}
-		var distinct int64
-		if err := tx.Model(&FlowStartRecord{}).Where("subscription_id = ? AND received_at >= ? AND received_at <= ?", subscription, since, now).Distinct("node_id").Count(&distinct).Error; err != nil {
+
+		rows, distinct, err := flowStatisticsSeries(tx, subscription, spec, now)
+		if err != nil {
 			return err
 		}
 		out, err = metering.ProjectObservationSeries(subscription, spec, now, coverage, rows, distinct)
 		return err
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return metering.ObservationSeries{}, err
 	}

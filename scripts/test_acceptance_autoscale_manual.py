@@ -111,6 +111,36 @@ class OfflineContract(unittest.TestCase):
             self.assertIsNone(result["native_batch_sql"]["cumulative_delta"])
             self.assertTrue(result["unknown"])
 
+class InternalVerdictContract(unittest.TestCase):
+    def runs(self):
+        # Synthetic rows test verdict refusal only, never capacity evidence.
+        return [dict(pair=pair, scenario=scenario, auto=auto,
+                     evidence=f'/synthetic/{pair}-{scenario}-{int(auto)}',
+                     result=dict(status='passed_internal_scope', failures=[], incomplete=[], original_gate_report=dict(passed=True)))
+                for pair in range(3) for scenario in p6.SCENARIOS for auto in (False, True)]
+
+    def test_all_thirty_original_gate_results_and_revalidated_gain_can_pass_internal_only(self):
+        result = p6.internal_scope_verdict(self.runs(), True, True, True)
+        self.assertEqual(result['status'], 'passed_internal_scope')
+        self.assertTrue(result['benefit_verified'])
+        self.assertEqual(result['scope'], 'p6_internal_only')
+        self.assertEqual(result['external_quota_stop'], 'not_verified')
+
+    def test_partial_unknown_or_failed_scenario_keeps_full_verdict_unpassed(self):
+        for kind in ('partial', 'inconclusive', 'gate-failed', 'duplicate', 'reused-evidence'):
+            with self.subTest(kind=kind):
+                rows = self.runs()
+                if kind == 'partial': rows.pop()
+                if kind == 'inconclusive': rows[0]['result'].update(status='inconclusive', incomplete=['unknown'])
+                if kind == 'gate-failed': rows[0]['result']['original_gate_report']['passed'] = False
+                if kind == 'duplicate': rows[-1] = rows[0]
+                if kind == 'reused-evidence': rows[-1]['evidence'] = rows[0]['evidence']
+                result = p6.internal_scope_verdict(rows, True, True, True)
+                self.assertNotEqual(result['status'], 'passed_internal_scope')
+                self.assertFalse(result['benefit_verified'])
+        for source, binary, benefit in ((False, True, True), (True, False, True), (True, True, False)):
+            self.assertFalse(p6.internal_scope_verdict(self.runs(), source, binary, benefit)['benefit_verified'])
+
 
 if __name__ == "__main__":
     unittest.main()

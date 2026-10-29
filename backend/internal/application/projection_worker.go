@@ -25,7 +25,7 @@ func RunProjectionWorker(ctx context.Context, db *gorm.DB, drainTimeout time.Dur
 	}
 	app := New(db, "")
 	defer app.Close()
-	for _, job := range []PeriodicJob{app.UsageProjectionJob(), app.NodeObservationJob()} {
+	for _, job := range []PeriodicJob{app.UsageProjectionJob(), app.NodeObservationJob(), app.PrincipalStatisticsJob(), app.PrincipalScopeRetentionJob(), app.FlowStartStatisticsJob()} {
 		if err := app.RegisterPeriodicJob(job); err != nil {
 			return err
 		}

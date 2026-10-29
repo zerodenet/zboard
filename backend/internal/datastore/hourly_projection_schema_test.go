@@ -3,6 +3,7 @@ package datastore
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -199,6 +200,34 @@ func TestSQLiteHourlyProjectionRollbackRestoresLegacyWriterOnlyAfterDrain(t *tes
 	if err := RunMigrations(db); err != nil {
 		t.Fatal(err)
 	}
+
+	// Only this isolated fixture reconstructs the original pre0070 schema. The
+	// current0071 receipt/source column independently blocks binary rollback.
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", flowStartStatisticsVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range flowStartStatisticsTables {
+		if err := db.Migrator().DropTable(table); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Migrator().DropIndex("subscription_flow_start_events", "idx_flow_start_statistics_registered"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropColumn("subscription_flow_start_events", "statistics_registered"); err != nil {
+		t.Fatal(err)
+	}
+	// This is intentionally the pre0070 rollback contract. Current0070 binaries
+	// require a full corresponding old backup; an empty current receipt is not
+	// compatible with old writers that cannot enqueue new projection sources.
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", principalStatisticsVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range principalStatisticsTables {
+		if err := db.Migrator().DropTable(table); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for i := 0; i < 2; i++ {
 		if err := PrepareHourlyProjectionRollback(db); err != nil {
 			t.Fatal(err)
@@ -262,5 +291,39 @@ func TestSQLiteHourlyProjectionRollbackRefusesIncompleteConfirmedState(t *testin
 				t.Fatal("rejected rollback changed writer ownership", triggers, err)
 			}
 		})
+	}
+}
+
+func TestSQLitePrincipalStatisticsEmptyReceiptBlocksBinaryRollbackWithoutWrites(t *testing.T) {
+	db, err := OpenWithDriver(DriverSQLite, filepath.Join(t.TempDir(), "principal-statistics-rollback.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, _ := db.DB()
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	var before []map[string]interface{}
+	if err := db.Table("principal_statistics_state").Find(&before).Error; err != nil {
+		t.Fatal(err)
+	}
+	var ddlBefore string
+	if err := db.Raw("SELECT group_concat(sql,';') FROM (SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name)").Scan(&ddlBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareHourlyProjectionRollback(db); err == nil {
+		t.Fatal("empty0070 accepted incompatible old writer")
+	}
+	var after []map[string]interface{}
+	if err := db.Table("principal_statistics_state").Find(&after).Error; err != nil {
+		t.Fatal(err)
+	}
+	var ddlAfter string
+	if err := db.Raw("SELECT group_concat(sql,';') FROM (SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name)").Scan(&ddlAfter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) || ddlBefore != ddlAfter {
+		t.Fatal("refused rollback mutated authority/DDL")
 	}
 }

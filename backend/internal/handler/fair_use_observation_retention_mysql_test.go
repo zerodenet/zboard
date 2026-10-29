@@ -18,6 +18,7 @@ func TestMySQLObservationRetentionPointLocksAllowFreshReceiveAndSettlement(t *te
 	if err := h.services.FairUseFlowCollection.Record(t.Context(), old); err != nil {
 		t.Fatal(err)
 	}
+	drainFlowStatisticsFixture(t, h.db)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	locked, release := make(chan struct{}), make(chan struct{})

@@ -10,6 +10,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/localworkers"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm"
 )
 
 type ProjectionResourceSampler interface {
@@ -113,7 +114,7 @@ func (s *Services) projectionCapacityObservation(ctx context.Context, now time.T
 	pressure := s.Jobs.DatabasePressure(now, options.Policy.Freshness)
 	o.DatabaseAt, o.DatabaseWrites, o.DatabaseLatency, o.DatabaseFailed = pressure.ObservedAt, pressure.Writes, pressure.MaxLatency, pressure.Failed
 	o.StorageLatency, o.StorageUnknown, o.StorageFailed = pressure.MaxStorageLatency, pressure.StorageUnknown, pressure.StorageFailed
-	activity := jobstore.InspectProjectionActivity(ctx, s.Identity.db, [2]string{UsageProjectionJobID, NodeObservationJobID}, now)
+	activity := jobstore.InspectProjectionActivity(ctx, s.Identity.db, []string{UsageProjectionJobID, NodeObservationJobID, PrincipalStatisticsJobID, PrincipalScopeRetentionJobID, FlowStartStatisticsJobID}, now)
 	o.ProjectionActivityKnown, o.ProjectionRuntime = activity.Known, activity.Longest
 	o.DatabaseCapacityKnown, o.DatabaseCapacityAvailable = jobstore.LocalWorkerConnectionCapacity(ctx, s.Identity.db)
 	var usage struct{ CreatedAt time.Time }
@@ -130,11 +131,24 @@ func (s *Services) projectionCapacityObservation(ctx context.Context, now time.T
 		return o
 	}
 	observationFound := query.RowsAffected != 0
+	// Inspect only indexed pending/checkpoint candidates. Retention is included
+	// in durable in-flight pressure above, but is not an independent scale-up
+	// trigger: its single checkpoint does not prove multi-process benefit.
+	statisticsFound, statisticsAt, err := projectionPrincipalStatisticsBacklog(ctx, s.Identity.db, now)
+	if err != nil {
+		o.DatabaseFailed = true
+		return o
+	}
+	flowFound, flowAt, err := projectionFlowStartStatisticsBacklog(ctx, s.Identity.db, now)
+	if err != nil {
+		o.DatabaseFailed = true
+		return o
+	}
 	o.QueueKnown = true
 	for _, candidate := range []struct {
 		found bool
 		at    time.Time
-	}{{usageFound, usage.CreatedAt}, {observationFound, observation.CreatedAt}} {
+	}{{usageFound, usage.CreatedAt}, {observationFound, observation.CreatedAt}, {statisticsFound, statisticsAt}, {flowFound, flowAt}} {
 		if !candidate.found {
 			continue
 		}
@@ -146,4 +160,99 @@ func (s *Services) projectionCapacityObservation(ctx context.Context, now time.T
 		o.OldestAge = max(o.OldestAge, now.Sub(candidate.at))
 	}
 	return o
+}
+
+// projectionPrincipalStatisticsBacklog reads at most one state, one next legacy
+// primary-key candidate and one pending primary-key candidate. It never counts
+// history, loads variable source bodies, or interprets missing coverage as zero.
+func projectionPrincipalStatisticsBacklog(ctx context.Context, db *gorm.DB, now time.Time) (bool, time.Time, error) {
+	var state struct {
+		ID                                                                                             uint64
+		LegacyUpperID, LegacyAfterID, LegacyExpectedRows, LegacyProjectedRows, ProjectedHead, Revision uint64
+		CreatedAt, UpdatedAt                                                                           time.Time
+	}
+	q := db.WithContext(ctx).Table("principal_statistics_state").
+		Select("id,legacy_upper_id,legacy_after_id,legacy_expected_rows,legacy_projected_rows,projected_head,revision,created_at,updated_at").Where("id = ?", 1).Limit(1).Find(&state)
+	if q.Error != nil {
+		return false, time.Time{}, q.Error
+	}
+	if q.RowsAffected != 1 || state.ID != 1 || state.Revision == 0 || state.LegacyAfterID > state.LegacyUpperID || state.LegacyProjectedRows > state.LegacyExpectedRows || state.ProjectedHead < state.LegacyAfterID || (state.LegacyUpperID == 0) != (state.LegacyExpectedRows == 0) || state.CreatedAt.IsZero() || state.UpdatedAt.Before(state.CreatedAt) || state.UpdatedAt.After(now) || (state.LegacyAfterID == state.LegacyUpperID && state.LegacyProjectedRows != state.LegacyExpectedRows) {
+		return false, time.Time{}, errors.New("principal statistics capacity coverage is unavailable")
+	}
+	found, oldest := false, time.Time{}
+	take := func(at time.Time) error {
+		if at.IsZero() || at.After(now) {
+			return errors.New("principal statistics queue time is unavailable")
+		}
+		if !found || at.Before(oldest) {
+			oldest = at
+		}
+		found = true
+		return nil
+	}
+	if state.LegacyAfterID < state.LegacyUpperID {
+		if state.LegacyProjectedRows >= state.LegacyExpectedRows {
+			return false, time.Time{}, errors.New("principal statistics legacy coverage is inconsistent")
+		}
+		var legacy struct{ CreatedAt time.Time }
+		q = db.WithContext(ctx).Table("principal_flow_scope_observations").Select("created_at").Where("id > ? AND id <= ?", state.LegacyAfterID, state.LegacyUpperID).Order("id").Limit(1).Find(&legacy)
+		if q.Error != nil {
+			return false, time.Time{}, q.Error
+		}
+		if q.RowsAffected != 1 {
+			return false, time.Time{}, errors.New("principal statistics legacy source candidate is missing")
+		}
+		if err := take(legacy.CreatedAt); err != nil {
+			return false, time.Time{}, err
+		}
+	}
+	var pending struct{ CreatedAt time.Time }
+	q = db.WithContext(ctx).Table("principal_statistics_pending").Select("created_at").Order("observation_id").Limit(1).Find(&pending)
+	if q.Error != nil {
+		return false, time.Time{}, q.Error
+	}
+	if q.RowsAffected != 0 {
+		if err := take(pending.CreatedAt); err != nil {
+			return false, time.Time{}, err
+		}
+	}
+	return found, oldest, nil
+}
+
+// Flow statistics keeps the original raw TTL. The registration bit, rather than
+// a historical MAX or full-table COUNT, discovers unprojected imports even when
+// an empty copied allocator reuses IDs below the completed legacy checkpoint.
+func projectionFlowStartStatisticsBacklog(ctx context.Context, db *gorm.DB, now time.Time) (bool, time.Time, error) {
+	var state model.FlowStartStatisticsState
+	q := db.WithContext(ctx).Select("id,legacy_upper_id,legacy_after_id,legacy_expected_rows,legacy_projected_rows,projected_head,revision,created_at,updated_at").Where("id=?", 1).Limit(1).Find(&state)
+	if q.Error != nil {
+		return false, time.Time{}, q.Error
+	}
+	if q.RowsAffected != 1 || state.ID != 1 || state.Revision == 0 || state.LegacyAfterID > state.LegacyUpperID || state.LegacyProjectedRows > state.LegacyExpectedRows || state.ProjectedHead < state.LegacyAfterID || (state.LegacyUpperID == 0) != (state.LegacyExpectedRows == 0) || (state.LegacyAfterID == state.LegacyUpperID && state.LegacyProjectedRows != state.LegacyExpectedRows) || state.CreatedAt.IsZero() || state.UpdatedAt.Before(state.CreatedAt) || state.UpdatedAt.After(now) {
+		return false, time.Time{}, errors.New("flow-start statistics capacity coverage unavailable")
+	}
+	var oldest time.Time
+	found := false
+	for _, source := range []struct{ table, where, order string }{{"subscription_flow_start_events", "statistics_registered = ?", "id"}, {"flow_start_statistics_pending", "", "source_id"}} {
+		var row struct{ CreatedAt time.Time }
+		query := db.WithContext(ctx).Table(source.table).Select("created_at").Order(source.order).Limit(1)
+		if source.where != "" {
+			query = query.Where(source.where, false)
+		}
+		q := query.Find(&row)
+		if q.Error != nil {
+			return false, time.Time{}, q.Error
+		}
+		if q.RowsAffected == 0 {
+			continue
+		}
+		if row.CreatedAt.IsZero() || row.CreatedAt.After(now) {
+			return false, time.Time{}, errors.New("flow-start statistics queue time unavailable")
+		}
+		if !found || row.CreatedAt.Before(oldest) {
+			oldest = row.CreatedAt
+		}
+		found = true
+	}
+	return found, oldest, nil
 }

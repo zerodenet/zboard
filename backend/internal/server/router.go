@@ -417,6 +417,7 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 	h.StartWalletReservationWorker()
 	h.StartAutomaticRenewalWorker()
 	h.StartUsageProjectionWorker()
+	h.StartPrincipalStatisticsWorker()
 	h.StartNodeObservationWorker()
 	h.StartNodeObservationMaterialRetentionWorker()
 	h.StartTrafficDiagnosticRetentionWorker()
