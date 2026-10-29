@@ -3,6 +3,7 @@ package commercestore
 import (
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -23,7 +24,7 @@ func CancelRetiredSubscriptionOrders(tx *gorm.DB, sub model.Subscription, now ti
 		return err
 	}
 	if len(ids) > 1000 {
-		return commerce.ErrFundingConflict
+		return entitlements.NewCredentialExpiryMutableBudgetError(commerce.ErrFundingConflict)
 	}
 	// Lifecycle scope already owns these current orders and the user. Point
 	// reads avoid acquiring another secondary-index range in reverse order.

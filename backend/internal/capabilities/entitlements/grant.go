@@ -132,6 +132,7 @@ func ApplyGrant(sub Subscription, request GrantRequest, policy GrantPolicy, now 
 		sub.FlowTotal += delta
 	}
 	sub.Status = "active"
+	sub.RetirementRetryAt = nil
 	if request.OrderType != "traffic_pack" && request.OrderType != "traffic_reset" {
 		sub.Lifecycle = "fixed"
 		if policy.IsRenewable {

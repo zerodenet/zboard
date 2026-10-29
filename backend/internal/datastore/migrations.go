@@ -341,6 +341,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileFlowStartStatisticsSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileSubscriptionRetirementRetrySchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -386,6 +389,12 @@ func runMigrations(db *gorm.DB) error {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied > 0 {
+			continue
+		}
+		if version == subscriptionRetirementRetryVersion {
+			if err := reconcileSubscriptionRetirementRetrySchema(db); err != nil {
+				return err
+			}
 			continue
 		}
 		if version == flowStartStatisticsVersion {

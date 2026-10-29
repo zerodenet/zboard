@@ -126,6 +126,24 @@ class MySQLProfilesTest(unittest.TestCase):
         self.assertFalse(summary['complete'])
         self.assertLessEqual(len(lines), 40)
 
+    def test_failure_sources_ignore_passing_test_logs_and_mask_error_values(self):
+        package = 'example/backend/handler'
+        events = [
+            {'Action': 'output', 'Package': package, 'Test': 'TestMySQLPassing',
+             'Output': '    passing_test.go:9: intentional passing log\n'},
+            {'Action': 'pass', 'Package': package, 'Test': 'TestMySQLPassing'},
+            {'Action': 'output', 'Package': package, 'Test': 'TestMySQLMoney',
+             'Output': '    money_test.go:33: subscription value evidence is incomplete or inconsistent private-payload\n'},
+            {'Action': 'fail', 'Package': package, 'Test': 'TestMySQLMoney'},
+        ]
+        expected = {('./handler', 'TestMySQLPassing'), ('./handler', 'TestMySQLMoney')}
+        summary = profiles.result_summary(events, expected, 'example/backend')
+        rendered = '\n'.join(profiles.execution_failure_diagnostics(events, summary))
+        self.assertIn('money_test.go:33', rendered)
+        self.assertIn('value_evidence_inconsistent', rendered)
+        self.assertNotIn('passing_test.go', rendered)
+        self.assertNotIn('private-payload', rendered)
+
 
     def test_download_diagnostics_do_not_corrupt_json_evidence(self):
         with tempfile.TemporaryDirectory() as folder:

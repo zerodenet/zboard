@@ -56,3 +56,38 @@ func (s CredentialExpiry) ExpireAccessDue(ctx context.Context, now time.Time, li
 	}
 	return repository.ExpireDueAccessCredentials(ctx, now.UTC(), limit)
 }
+
+// A mutable-order budget is distinguishable from a real funding inconsistency.
+// The underlying authority error remains visible to existing callers.
+type credentialExpiryMutableBudgetError struct{ cause error }
+
+func (e *credentialExpiryMutableBudgetError) Error() string {
+	return "credential retirement exceeds mutable-order budget: " + e.cause.Error()
+}
+func (e *credentialExpiryMutableBudgetError) Unwrap() error { return e.cause }
+func NewCredentialExpiryMutableBudgetError(cause error) error {
+	if cause == nil {
+		return ErrCredentialExpiryUnavailable
+	}
+	return &credentialExpiryMutableBudgetError{cause: cause}
+}
+
+// Only a single, explicit budget failure permits a scheduling deferral. In
+// particular a joined budget plus an unrelated database/funding failure is not
+// treated as a harmless oversized subscription.
+func CredentialExpiryBudgetReason(err error) string {
+	for err != nil {
+		if err == ErrCredentialExpiryScopeBudget {
+			return "order_identity_budget"
+		}
+		if _, ok := err.(*credentialExpiryMutableBudgetError); ok {
+			return "mutable_order_budget"
+		}
+		wrapped, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return ""
+		}
+		err = wrapped.Unwrap()
+	}
+	return ""
+}

@@ -110,7 +110,7 @@ func assertAccessExpiryBudgetPage(t *testing.T, f orderFixture) {
 	if err := f.h.db.First(&publicationBefore, "node_id=?", credential.NodeID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ExpireDueCredentials(t.Context(), now, 200); !errors.Is(err, commerce.ErrFundingConflict) {
+	if _, err := store.ExpireDueCredentials(t.Context(), now, 1); !errors.Is(err, commerce.ErrFundingConflict) {
 		t.Fatal("fixture did not reach the real1001 mutable budget", err)
 	}
 	var beforeSubs []model.Subscription
@@ -176,7 +176,11 @@ func assertAccessExpiryBudgetPage(t *testing.T, f orderFixture) {
 	if err := f.h.db.Model(&model.AuditLog{}).Where("action=? AND target=?", "subscription.access_expire_intent", fmt.Sprintf("subscription:%d", healthy.ID)).Count(&audit).Error; err != nil || audit != 1 {
 		t.Fatal("missing local-intent audit", audit, err)
 	}
-	if _, err := store.ExpireDueCredentials(t.Context(), now, 200); !errors.Is(err, commerce.ErrFundingConflict) {
+	// The financial guard itself remains strict even while a future retry keeps
+	// this oversized subscription out of the normal candidate page.
+	if err := f.h.db.Transaction(func(tx *gorm.DB) error {
+		return commercestore.CancelRetiredSubscriptionOrders(tx, bad, now)
+	}); !errors.Is(err, commerce.ErrFundingConflict) {
 		t.Fatal("financial guard was relaxed by access pass", err)
 	}
 }

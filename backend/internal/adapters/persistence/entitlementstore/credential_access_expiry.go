@@ -30,11 +30,8 @@ func (s CredentialExpiry) ExpireDueAccessCredentials(ctx context.Context, now ti
 	}
 	type candidate struct{ ID, SubscriptionID, UserID uint }
 	var candidates []candidate
-	if err := s.DB.WithContext(ctx).Table("protocol_credentials").
+	if err := dueAccessCredentials(s.DB.WithContext(ctx), now).
 		Select("protocol_credentials.id,protocol_credentials.subscription_id,subscriptions.user_id").
-		Joins("JOIN subscriptions ON subscriptions.id=protocol_credentials.subscription_id").
-		Where("protocol_credentials.status IN ? AND subscriptions.status IN ?", []string{"active", "prepared"}, []string{"active", "expired"}).
-		Where("subscriptions.end_at<=?", now).
 		Order("protocol_credentials.id ASC").Limit(limit).Find(&candidates).Error; err != nil {
 		return 0, err
 	}
@@ -86,4 +83,12 @@ func (s CredentialExpiry) ExpireDueAccessCredentials(ctx context.Context, now ti
 		changed += n
 	}
 	return changed, nil
+}
+
+// Access revocation deliberately ignores financial retry scheduling.
+func dueAccessCredentials(query *gorm.DB, now time.Time) *gorm.DB {
+	return query.Table("protocol_credentials").
+		Joins("JOIN subscriptions ON subscriptions.id=protocol_credentials.subscription_id").
+		Where("protocol_credentials.status IN ? AND subscriptions.status IN ?", []string{"active", "prepared"}, []string{"active", "expired"}).
+		Where("subscriptions.end_at<=?", now)
 }

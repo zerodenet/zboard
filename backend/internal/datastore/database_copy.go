@@ -74,6 +74,23 @@ func CopyApplicationData(source, target *gorm.DB) error {
 			return fmt.Errorf("migration destination is missing source table %s", table)
 		}
 	}
+	if sourceTables["subscriptions"] {
+		// Legacy sources may lack the operational retry column, including a
+		// recorded-but-lost schedule. NULL in the owned empty destination means
+		// retry immediately; it does not manufacture money or completed cleanup.
+		if err := validateSubscriptionRetirementRetryColumn(target); err != nil {
+			return err
+		}
+		columns, _, err := projectionColumns(source, "subscriptions")
+		if err != nil {
+			return err
+		}
+		if _, present := columns["retirement_retry_at"]; present {
+			if err := validateSubscriptionRetirementRetryColumn(source); err != nil {
+				return err
+			}
+		}
+	}
 	if sourceTables["principal_flow_scope_observations"] || sourceTables["principal_statistics_state"] {
 		if err := requirePrincipalStatisticsDestination(target); err != nil {
 			return err
@@ -142,6 +159,15 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 	if err != nil {
 		return fmt.Errorf("read source columns %s: %w", table, err)
 	}
+	missingRetirementRetry := table == "subscriptions"
+	if missingRetirementRetry {
+		for _, column := range columns {
+			if strings.EqualFold(column, "retirement_retry_at") {
+				missingRetirementRetry = false
+				break
+			}
+		}
+	}
 	types, err := rows.ColumnTypes()
 	if err != nil {
 		return fmt.Errorf("read source column types %s: %w", table, err)
@@ -201,6 +227,11 @@ func copyTableRows(source, target *gorm.DB, table string) error {
 			// Target INSERT belongs to the caller's existing copy transaction.
 			// A missing version uses the prepared target's standard column name.
 			record[lookupVersionColumn] = int64(0)
+		}
+		if missingRetirementRetry {
+			// Explicit NULL also avoids inheriting an unrelated target default.
+			// This is target-only operational eligibility, never copied money.
+			record["retirement_retry_at"] = nil
 		}
 		if legacyNodeAssets {
 			// No source column AND no0059receipt: establish target-only future labels,

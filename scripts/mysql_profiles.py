@@ -144,19 +144,38 @@ def execution_failure_diagnostics(events, summary):
     for failed in summary.get('failed', [])[:12]:
         lines.append('Failed test: ' + json.dumps(
             [failed.get('package'), failed.get('test') or '<package>'], ensure_ascii=True)[:400])
-    locations, active = set(), set()
+    failed_tests = {(item.get('package'), item.get('test'))
+                    for item in summary.get('failed', []) if item.get('test')}
+    locations, active, hints = set(), set(), set()
+    known_errors = {
+        'subscription value requires purchase/payment reconciliation': 'purchase_payment_reconciliation',
+        'subscription value evidence is incomplete or inconsistent': 'value_evidence_inconsistent',
+        'subscription quota cycle reset is pending': 'quota_reset_pending',
+        'subscription value quote changed': 'value_quote_changed',
+        'Error 1406': 'storage_value_too_long',
+        'Error 1213': 'database_deadlock',
+        'Error 1205': 'database_lock_wait_timeout',
+        'Error 3572': 'database_nowait_lock',
+    }
     for event in events:
         package, test = event.get('Package', ''), event.get('Test', '')
         if test and event.get('Action') == 'run':
             active.add((package, test))
         elif test and event.get('Action') in ('pass', 'fail', 'skip'):
             active.discard((package, test))
-        if event.get('Action') == 'output':
+        if event.get('Action') == 'output' and (package, test) in failed_tests:
             # Go's assertion position is useful without echoing a struct,
             # credentials, SQL arguments or arbitrary test output into logs.
             for match in re.finditer(r'(?m)^\s+([A-Za-z0-9_]+_test\.go):(\d+):', event.get('Output', '')):
                 locations.add(f'{match.group(1)}:{match.group(2)}')
+            for fragment, label in known_errors.items():
+                if fragment in event.get('Output', ''):
+                    hints.add((test, label))
     lines.extend('Assertion source: ' + location for location in sorted(locations)[:12])
+    # Fixed vocabulary only. These are observations within a failed test, not
+    # a root-cause assertion or permission to expose its arbitrary error values.
+    lines.extend('Observed error class: ' + json.dumps(item, ensure_ascii=True)[:400]
+                 for item in sorted(hints)[:12])
     if active:
         lines.append('Active at incomplete execution (not a cause attribution):')
         lines.extend(json.dumps(item, ensure_ascii=True)[:400] for item in sorted(active)[:12])

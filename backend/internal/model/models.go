@@ -93,6 +93,8 @@ type Subscription struct {
 	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion" gorm:"not null;default:false"`
 	EndedAt               *time.Time `json:"ended_at,omitempty" gorm:"index"`
 	EndReason             string     `json:"end_reason,omitempty" gorm:"size:20;not null;default:''"`
+	// Operational retry scheduling only; never payment or entitlement evidence.
+	RetirementRetryAt *time.Time `json:"-"`
 
 	ID                uint       `json:"id" gorm:"primaryKey"`
 	UserID            uint       `json:"user_id" gorm:"index"`

@@ -33,14 +33,14 @@ func timedPlanSyncFixture(t *testing.T, base orderFixture) (fullReplacementFixtu
 		t.Fatal(err)
 	}
 	if _, err := f.payments.Configure(t.Context(), 1, made.ID, commerce.FundingRequest{UseBalance: true}); err != nil {
-		t.Fatal(err)
+		t.Fatal("timed add-on funding configuration failed", err)
 	}
 	if _, err := f.payments.Pay(t.Context(), 1, made.ID); err != nil {
-		t.Fatal(err)
+		t.Fatal("timed add-on balance payment failed", err)
 	}
 	var paid model.Order
 	if err := f.db.First(&paid, made.ID).Error; err != nil {
-		t.Fatal(err)
+		t.Fatal("timed add-on paid order read failed", err)
 	}
 	var proof commerce.EntitlementValueSnapshot
 	if json.Unmarshal([]byte(paid.EntitlementValueSnapshot), &proof) != nil || proof.Mode != "timed_quota_addition" || !proof.PaymentVerified || proof.ActualPaidMinor != 2000 {

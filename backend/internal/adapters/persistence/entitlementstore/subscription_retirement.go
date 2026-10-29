@@ -15,7 +15,7 @@ func subscriptionLifecycleDue(query *gorm.DB, now time.Time, configuredGrace ...
 	if len(configuredGrace) > 0 {
 		grace = configuredGrace[0]
 	}
-	return query.Where(`status IN ('active', 'expired') AND (
+	return query.Where("(retirement_retry_at IS NULL OR retirement_retry_at <= ?)", now).Where(`status IN ('active', 'expired') AND (
   (ended_at IS NULL AND (end_at <= ? OR (ends_on_quota_exhaustion = ? AND flow_used >= flow_total)))
   OR (ended_at IS NOT NULL AND (lifecycle <> 'renewable' OR ended_at <= ?
     OR EXISTS (SELECT 1 FROM orders WHERE (orders.subscription_id = subscriptions.id OR orders.target_subscription_id = subscriptions.id) AND orders.subscription_ended_at IS NULL)
@@ -50,7 +50,10 @@ func endSubscription(tx *gorm.DB, sub *model.Subscription, now time.Time) error 
 			return nil
 		}
 		for _, id := range orderIDs {
-			if id <= after || count >= entitlements.LifecycleOrderIdentityByteLimit/8 {
+			if id <= after {
+				return fmt.Errorf("expiry order identity cursor did not advance")
+			}
+			if count >= entitlements.LifecycleOrderIdentityByteLimit/8 {
 				return entitlements.ErrCredentialExpiryScopeBudget
 			}
 			after = id
