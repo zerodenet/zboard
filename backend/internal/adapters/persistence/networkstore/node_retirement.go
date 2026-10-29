@@ -201,7 +201,7 @@ func retirementLease(tx *gorm.DB, id uint, runID string) (model.NodeRetirement, 
 		return row, err
 	}
 	var run jobstore.Record
-	if err := tx.First(&run, "id = ?", runID).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&run, "id = ?", runID).Error; err != nil {
 		return row, err
 	}
 	if run.State != "running" || run.ExpiresAt == nil || !run.ExpiresAt.After(time.Now()) {

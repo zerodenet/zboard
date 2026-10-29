@@ -1,10 +1,12 @@
 package networkstore
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,6 +105,11 @@ func retirementBatchesResume(t *testing.T, total int) {
 	if err := jobstore.New(other).WithLedgerLock(t.Context(), func(*gorm.DB) error { return nil }); err != nil {
 		t.Fatal("cleanup retained the admission lock", err)
 	}
+	cleaned := retirementBatchSize
+	if db.Dialector.Name() == "mysql" {
+		retirementBatchWhileAdmissionBusy(t, store, other, first.RunID)
+		cleaned += retirementBatchSize
+	}
 	injected := errors.New("audit unavailable")
 	if err := db.Callback().Create().Before("gorm:create").Register("reject_retirement_batch_audit", func(tx *gorm.DB) {
 		if tx.Statement.Table == "audit_logs" {
@@ -117,10 +124,16 @@ func retirementBatchesResume(t *testing.T, total int) {
 		t.Fatal("unaudited batch committed", err)
 	}
 	db.Model(&model.FlowUsage{}).Where("node_id = 1").Count(&remaining)
-	if remaining != int64(total-retirementBatchSize) {
+	if remaining != int64(total-cleaned) {
 		t.Fatal("failed batch escaped rollback", remaining)
 	}
-	if err := jobstore.New(db).Finish(t.Context(), claim, jobs.Failed); err != nil {
+	if _, err := jobstore.New(db).RecordCancellation(t.Context(), jobs.Reviewer{AccountID: 1}, jobs.Cancellation{RunID: first.RunID, Reason: "verify cleanup cancellation fence"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.removalBatch(t.Context(), 1, first.RunID, "flow_cursors"); !errors.Is(err, jobs.ErrLeaseLost) {
+		t.Fatal("canceled cleanup admitted another batch", err)
+	}
+	if err := jobstore.New(db).Finish(t.Context(), claim, jobs.Canceled); err != nil {
 		t.Fatal(err)
 	}
 	store = NodeRetirement{DB: other}
@@ -158,5 +171,49 @@ func retirementBatchesResume(t *testing.T, total int) {
 	db.Model(&model.FlowUsage{}).Where("node_id = 2").Count(&count)
 	if count != 1 {
 		t.Fatal("other node cursor deleted")
+	}
+}
+
+func retirementBatchWhileAdmissionBusy(t *testing.T, store NodeRetirement, other *gorm.DB, runID string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unlock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unlock()
+	held := make(chan error, 1)
+	go func() {
+		held <- jobstore.New(other).WithLedgerLock(ctx, func(*gorm.DB) error {
+			close(entered)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("admission lock was not acquired", ctx.Err())
+	}
+	finished := make(chan error, 1)
+	go func() {
+		_, err := store.removalBatch(ctx, 1, runID, "flow_cursors")
+		finished <- err
+	}()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("already-admitted cleanup waited behind unrelated admission")
+	}
+	unlock()
+	if err := <-held; err != nil {
+		t.Fatal(err)
 	}
 }

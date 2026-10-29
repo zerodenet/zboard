@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -35,7 +34,11 @@ func (s NodeRetirement) prepareRemoval(ctx context.Context, id uint, runID strin
 }
 
 func (s NodeRetirement) removalBatch(ctx context.Context, id uint, runID, stage string) (done bool, err error) {
-	err = jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
+	// This execution-only transaction does not change admission or submit work.
+	// The retirement and its current Run are locked until commit, fencing cancel,
+	// expiry and retry without taking the global job admission mutex. Never call
+	// a ledger/admission writer while these domain locks are held.
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row, err := retirementLease(tx, id, runID)
 		if err != nil {
 			return err

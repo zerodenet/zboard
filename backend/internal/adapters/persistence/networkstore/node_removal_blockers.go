@@ -30,14 +30,24 @@ func nodeRemovalBlockers(tx *gorm.DB, nodeID uint, endpointIDs []uint) (map[stri
 		targets = append(targets, strconv.FormatUint(uint64(id), 10))
 	}
 	queries["admin_tasks"] = tx.Table("tasks").Joins("JOIN task_items ON task_items.task_id = tasks.id").Where("tasks.status IN ? OR task_items.status = ?", []int16{0, 1}, 1).Where("(task_items.target_type = ? AND task_items.target_id = ?) OR (task_items.target_type = ? AND task_items.target_id IN ?)", "node", strconv.FormatUint(uint64(nodeID), 10), "protocol_endpoint", targets).Distinct("tasks.id")
-	concat := func(prefix string, model any) *gorm.DB {
-		expression := "(? || id)"
-		if tx.Dialector.Name() == "mysql" {
-			expression = "CONCAT(?, id)"
+	// Resolve the node-local keys before querying the global ledger. OR-ed IN
+	// subqueries make MySQL scan the entire job history despite job_resource.
+	resources := []string{fmt.Sprintf("node:%d", nodeID), fmt.Sprintf("node-publish:%d", nodeID)}
+	for _, source := range []struct {
+		value    any
+		prefixes []string
+	}{{&model.ManagedDNSRecord{}, []string{"dns:", "dns-inspection:"}}, {&model.ManagedCertificate{}, []string{"certificate:"}}} {
+		var ids []uint
+		if err := tx.Model(source.value).Where("node_id = ?", nodeID).Pluck("id", &ids).Error; err != nil {
+			return nil, err
 		}
-		return tx.Model(model).Select(expression, prefix).Where("node_id = ?", nodeID)
+		for _, id := range ids {
+			for _, prefix := range source.prefixes {
+				resources = append(resources, prefix+strconv.FormatUint(uint64(id), 10))
+			}
+		}
 	}
-	queries["unverified_jobs"] = tx.Model(&jobstore.Record{}).Where("owner = ? AND state NOT IN ?", "system", []jobs.State{jobs.Succeeded, jobs.Failed, jobs.Canceled}).Where("resource IN ? OR resource IN (?) OR resource IN (?) OR resource IN (?)", []string{fmt.Sprintf("node:%d", nodeID), fmt.Sprintf("node-publish:%d", nodeID)}, concat("dns:", &model.ManagedDNSRecord{}), concat("dns-inspection:", &model.ManagedDNSRecord{}), concat("certificate:", &model.ManagedCertificate{}))
+	queries["unverified_jobs"] = tx.Model(&jobstore.Record{}).Where("owner = ? AND state NOT IN ?", "system", []jobs.State{jobs.Succeeded, jobs.Failed, jobs.Canceled}).Where("resource IN ?", resources)
 	for name, q := range queries {
 		var count int64
 		if err := q.Count(&count).Error; err != nil {
