@@ -187,7 +187,7 @@ func TestMySQLHourlyProjectionSchemaResumesPartialDDLAndRefusesLostCoverage(t *t
 func TestMySQLHourlyProjectionCalendarGuardMatchesHalfQuarterHourEdges(t *testing.T) {
 	for _, timezone := range []string{"Asia/Kolkata", "Asia/Kathmandu"} {
 		t.Run(timezone, func(t *testing.T) {
-			h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+			h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 			location, err := time.LoadLocation(timezone)
 			if err != nil {
 				t.Fatal(err)

@@ -12,7 +12,7 @@ import (
 )
 
 func TestMySQLHourlyRetirementAndAuditFailureRemainAtomic(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	if err := h.projectZeroNodeEvents(context.Background(), accountingBenchmarkEvents(credential, 0, 1)); err != nil {
 		t.Fatal(err)
 	}

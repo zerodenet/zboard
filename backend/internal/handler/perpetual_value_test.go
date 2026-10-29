@@ -68,7 +68,7 @@ func TestPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe(t *testing.T) {
 }
 
 func TestMySQLPerpetualValuePurchaseMeteringAndIdempotentUnsubscribe(t *testing.T) {
-	assertPerpetualValueUnsubscribe(t, newMySQLOrderFixture)
+	assertPerpetualValueUnsubscribe(t, newMySQLBusinessOrderFixture)
 }
 
 func assertPerpetualValueUnsubscribe(t *testing.T, fixture func(*testing.T) orderFixture) {

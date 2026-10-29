@@ -14,6 +14,25 @@ spec.loader.exec_module(profiles)
 
 
 class MySQLProfilesTest(unittest.TestCase):
+    def test_inventory_preserves_all_mysql_names_and_exact_explicit_generic_matrices(self):
+        policy = self.policy()
+        policy['extended'].append({'package': './handler', 'test': 'TestCommerceAuthority',
+                                   'reason': 'Additional DSN variants', 'scale': 'Both existing factories'})
+        expression = profiles.inventory_expression(policy)
+        self.assertTrue(re.search(expression, 'TestMySQLNewAuthority'))
+        self.assertTrue(re.search(expression, 'TestSomethingWithMySQLInside'))
+        self.assertTrue(re.search(expression, 'TestCommerceAuthority'))
+        self.assertIsNone(re.search(expression, 'TestCommerceAuthorityExtra'))
+        self.assertIsNone(re.search(expression, 'TestOtherGeneric'))
+        parts = profiles.partition(self.inventory() | {('./handler', 'TestCommerceAuthority')}, policy)
+        self.assertEqual(parts['core'], {('./handler', 'TestMySQLMoney'), ('./newpackage', 'TestMySQLNewAuthorityRecovery')})
+
+    def test_inventory_rejects_regex_instead_of_silently_broadening_discovery(self):
+        policy = self.policy()
+        policy['extended'][0]['test'] = 'TestCommerce.*'
+        with self.assertRaises(ValueError): profiles.inventory_expression(policy)
+        self.assertEqual(profiles.inventory_expression(self.policy()), 'MySQL')
+
     def policy(self):
         return {'version': 1, 'extended': [{'package': './handler', 'test': 'TestMySQLScale',
                 'reason': 'Scale only', 'scale': '1200 captured sources'}]}

@@ -23,7 +23,7 @@ func TestPaymentIntegrationRequiresCurrentAdministrator(t *testing.T) {
 	assertPaymentIntegrationTrust(t, newOrderFixture(t))
 }
 func TestMySQLPaymentIntegrationRequiresCurrentAdministrator(t *testing.T) {
-	assertPaymentIntegrationTrust(t, newMySQLOrderFixture(t))
+	assertPaymentIntegrationTrust(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPaymentIntegrationTrust(t *testing.T, f orderFixture) {
 	t.Helper()

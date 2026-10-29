@@ -49,7 +49,7 @@ func TestConfiguredRecoveryQuoteListFulfillmentAndCleanup(t *testing.T) {
 	assertConfiguredRecovery(t, base)
 }
 func TestMySQLConfiguredRecoveryQuoteListFulfillmentAndCleanup(t *testing.T) {
-	assertConfiguredRecovery(t, newMySQLOrderFixture(t))
+	assertConfiguredRecovery(t, newMySQLBusinessOrderFixture(t))
 }
 func assertConfiguredRecovery(t *testing.T, base orderFixture) {
 	f := expiredRecoveryFixture(t, base)
@@ -102,7 +102,7 @@ func TestRecoveryWindowChangeKeepsLateCashWithoutRestoringService(t *testing.T) 
 	assertRecoveryLateCash(t, base)
 }
 func TestMySQLRecoveryWindowChangeKeepsLateCashWithoutRestoringService(t *testing.T) {
-	assertRecoveryLateCash(t, newMySQLOrderFixture(t))
+	assertRecoveryLateCash(t, newMySQLBusinessOrderFixture(t))
 }
 func assertRecoveryLateCash(t *testing.T, base orderFixture) {
 	f := expiredRecoveryFixture(t, base)
@@ -178,7 +178,7 @@ func TestRecoveryPolicyConfigurationRequiresAdministrator(t *testing.T) {
 }
 
 func TestMySQLRecoveryDeadlineRefreshesAfterPolicyLockWait(t *testing.T) {
-	f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))
+	f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))
 	setRecoveryPolicy(t, f, 14)
 	order, err := f.orders.Create(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.base.skuRecord.ID, TargetSubscriptionID: f.subscription})
 	if err != nil {
@@ -261,7 +261,7 @@ func TestLegacyUnboundRenewalCannotPickAnotherSubscription(t *testing.T) {
 	assertUnboundLegacyRenewal(t, base)
 }
 func TestMySQLLegacyUnboundRenewalCannotPickAnotherSubscription(t *testing.T) {
-	assertUnboundLegacyRenewal(t, newMySQLOrderFixture(t))
+	assertUnboundLegacyRenewal(t, newMySQLBusinessOrderFixture(t))
 }
 func assertUnboundLegacyRenewal(t *testing.T, base orderFixture) {
 	f := expiredRecoveryFixture(t, base)
@@ -300,7 +300,7 @@ func assertUnboundLegacyRenewal(t *testing.T, base orderFixture) {
 }
 
 func TestMySQLVerifiedCashWaitPastFundingExpiryBecomesWalletCredit(t *testing.T) {
-	f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))
+	f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))
 	setRecoveryPolicy(t, f, 14)
 	order, err := f.orders.Create(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.base.skuRecord.ID, TargetSubscriptionID: f.subscription})
 	if err != nil {

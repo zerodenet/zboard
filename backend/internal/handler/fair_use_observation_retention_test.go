@@ -99,7 +99,7 @@ func TestFairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvaluation
 }
 
 func TestMySQLFairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvaluation(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	assertObservationRetentionPreservesAccounting(t, h, credential)
 }
 

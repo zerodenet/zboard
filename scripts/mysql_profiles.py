@@ -91,6 +91,19 @@ def positive_regex(tests):
         raise ValueError('cannot run empty or non-exact test selection')
     return '^(' + '|'.join(sorted(tests)) + ')$'
 
+def inventory_expression(profile):
+    # Some existing matrix tests put the opt-in MySQL factory in a generic
+    # top-level test. Explicitly classified additions must be discovered too;
+    # a MySQL-only name filter would silently omit their real DSN variants.
+    extra = set()
+    for entry in profile.get('extended', []):
+        name = entry.get('test', '')
+        if not TEST_NAME.fullmatch(name):
+            raise ValueError('invalid exact inventory test identity')
+        if 'MySQL' not in name:
+            extra.add(name)
+    return 'MySQL' + ('|' + positive_regex(extra) if extra else '')
+
 
 def groups(selection, inventory):
     # Copy's server-wide source lock must never overlap financial race tests.
@@ -263,7 +276,7 @@ def main(argv=None):
         head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
         receipt['head'] = head
         inventory = set()
-        for label, expression, packages in [('mysql', 'MySQL', ['./...']), ('jobs', '^Test', [JOBSTORE])]:
+        for label, expression, packages in [('mysql', inventory_expression(profile), ['./...']), ('jobs', '^Test', [JOBSTORE])]:
             log = output / f'inventory-{label}.jsonl'
             command = ['go', 'test', '-json', '-p', '2', '-count=1', '-timeout', '15m', '-list', expression, *packages]
             if run_command(command, backend, log, receipt['commands']):
@@ -278,8 +291,8 @@ def main(argv=None):
                     './internal/adapters/persistence/networkstore', JOBSTORE, COPYSTORE}
         if not required <= {p for p, _ in inventory}:
             raise ValueError('inventory lost an existing mandatory MySQL package')
-        # Every name with MySQL anywhere is included across ./..., plus the
-        # complete generic jobstore suite whose fixtures select DB by DSN.
+        # Every MySQL name, explicit generic DSN matrix, and the complete
+        # generic jobstore suite is included. Partitions retain exact identities.
         partitions = partition(inventory, profile)
         write_json(output / 'inventory.json', sorted(inventory))
         write_json(output / 'partition.json', {k: sorted(v) for k, v in partitions.items()})

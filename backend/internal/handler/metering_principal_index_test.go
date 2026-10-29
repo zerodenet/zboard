@@ -18,7 +18,7 @@ func TestMeteringPrincipalIndexResumesHistoryAndRejectsAmbiguousOwnership(t *tes
 	assertMeteringPrincipalIndex(t, newOrderFixture(t))
 }
 func TestMySQLMeteringPrincipalIndexResumesHistoryAndRejectsAmbiguousOwnership(t *testing.T) {
-	assertMeteringPrincipalIndex(t, newMySQLOrderFixture(t))
+	assertMeteringPrincipalIndex(t, newMySQLBusinessOrderFixture(t))
 }
 func assertMeteringPrincipalIndex(t *testing.T, f orderFixture) {
 	h, target := accountingFixtureFromOrder(t, f)
