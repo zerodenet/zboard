@@ -271,49 +271,74 @@ func ProjectEntitlementValueContext(ctx context.Context, records []EntitlementVa
 	if entitlements.IsPerpetualEnd(current.EndAt) {
 		return projectPerpetualQuotaValue(ctx, records, current, currency, at)
 	}
+	result, _, err := projectTimedValueEvents(ctx, records, current, currency, at, nil, 0, false)
+	return result, err
+}
+
+func projectTimedValueEvents(ctx context.Context, records []EntitlementValueSnapshot, current EntitlementValueState, currency string, at time.Time, events []TimedPlanQuotaSyncEvent, epoch uint64, strict bool) (ValueProjection, *timedQuotaReplay, error) {
+	empty := ValueProjection{Sources: map[uint]int64{}}
 	frame := valueFrame{ctx: ctx, anchor: records[0].After.StartAt, end: records[0].After.EndAt}
+	var tracker *timedQuotaReplay
+	if strict {
+		tracker = &timedQuotaReplay{ctx: ctx, epoch: epoch, events: events, frame: &frame}
+	}
 	var last EntitlementValueSnapshot
 	for i, s := range records {
 		if err := ctx.Err(); err != nil {
-			return empty, err
+			return empty, nil, err
 		}
 		if s.Version != 1 || s.OrderID == 0 || s.QuotaEventID == 0 || s.QuotaEventAt.IsZero() || s.Currency != currency || !s.PaymentVerified || s.LegacyTransferUnproven || s.SubscriptionID != records[0].SubscriptionID || s.ActualPaidMinor < 0 || s.CapturedAt.IsZero() {
-			return empty, ErrValueEvidence
+			return empty, nil, ErrValueEvidence
 		}
 		if i > 0 && (s.QuotaEventID <= last.QuotaEventID || s.Before == nil || !s.Before.StartAt.Equal(last.After.StartAt) || !s.Before.EndAt.Equal(last.After.EndAt) || s.Before.PlanID != last.After.PlanID || s.Before.PlanSKUID != last.After.PlanSKUID || s.Before.ResetPolicy != last.After.ResetPolicy || s.Before.FlowUsed < last.After.FlowUsed) {
-			return empty, ErrValueEvidence
+			return empty, nil, ErrValueEvidence
 		}
 		eventAt := s.QuotaEventAt.UTC()
 		if i == 0 {
 			if (s.Mode != "new_term" && s.Mode != "recovery_term" && s.Mode != "replacement_term") || !s.TermStartAt.Equal(s.After.StartAt) || !s.TermEndAt.Equal(s.After.EndAt) {
-				return empty, ErrValueEvidence
+				return empty, nil, ErrValueEvidence
 			}
 			if err := appendValuePeriods(&frame, s); err != nil {
-				return empty, err
+				return empty, nil, err
+			}
+			if tracker != nil {
+				if err := tracker.seed(s); err != nil {
+					return empty, nil, err
+				}
 			}
 			last = s
 			continue
 		}
+		if tracker != nil {
+			if err := tracker.beforeGrant(records[:i], s); err != nil {
+				return empty, nil, err
+			}
+			var err error
+			eventAt, err = tracker.grantAt(s)
+			if err != nil {
+				return empty, nil, err
+			}
+		}
 		before, err := frame.project(*s.Before, eventAt)
 		if err != nil {
-			return empty, err
+			return empty, nil, err
 		}
 		switch s.Mode {
 		case "extended_term":
 			if s.Before.FlowUsed != s.After.FlowUsed || s.Before.FlowTotal != s.After.FlowTotal || s.Before.CycleStartUsed != s.After.CycleStartUsed || s.Before.ResetPolicy != s.After.ResetPolicy || !sameValueReset(s.Before.NextResetAt, s.After.NextResetAt) {
-				return empty, ErrValueEvidence
+				return empty, nil, ErrValueEvidence
 			}
 			priorFrame := frame
 			if !s.TermStartAt.Equal(s.Before.EndAt) || !s.TermEndAt.Equal(s.After.EndAt) || !s.After.EndAt.After(s.Before.EndAt) {
-				return empty, ErrValueEvidence
+				return empty, nil, ErrValueEvidence
 			}
 			if err := appendValuePeriods(&frame, s); err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			frame.end = s.After.EndAt
 			cycles, sources, err := frame.cycles(s.After.ResetPolicy)
 			if err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			for n, c := range cycles {
 				if eventAt.Before(c.StartAt) || !eventAt.Before(c.EndAt) {
@@ -325,18 +350,18 @@ func ProjectEntitlementValueContext(ctx context.Context, records []EntitlementVa
 					// current-cycle cash, then consume from this new instant.
 					// Remaining quota is not replenished by a time extension.
 					if before.CurrentMinor > math.MaxInt64-added {
-						return empty, ErrValueEvidence
+						return empty, nil, ErrValueEvidence
 					}
 					shares, err := currentProjectionSources(before, priorFrame, *s.Before, eventAt)
 					if err != nil {
-						return empty, err
+						return empty, nil, err
 					}
 					if err := addValueAmounts(shares, map[uint]int64{s.OrderID: added}); err != nil {
-						return empty, err
+						return empty, nil, err
 					}
 					totalQuota, err := quotaForValue(s.After)
 					if err != nil {
-						return empty, err
+						return empty, nil, err
 					}
 					remaining := max(int64(0), s.After.FlowTotal-s.After.FlowUsed)
 					frame.basis = &valueBasisEvidence{CycleStart: c.StartAt, TotalQuota: totalQuota, Sources: shares, TimeOnlyWhenExhausted: remaining == 0, Basis: RemainingValueBasis{At: eventAt, EndAt: c.EndAt, AmountMinor: before.CurrentMinor + added, UsedAtBasis: s.After.FlowUsed, QuotaBytes: remaining}}
@@ -353,58 +378,74 @@ func ProjectEntitlementValueContext(ctx context.Context, records []EntitlementVa
 				s.After.FlowUsed != s.Before.FlowUsed || s.After.CycleStartUsed != s.Before.CycleStartUsed ||
 				s.After.FlowTotal <= s.Before.FlowTotal || !s.TermEndAt.Equal(before.CurrentCycle.EndAt) ||
 				before.CurrentMinor > math.MaxInt64-s.ActualPaidMinor {
-				return empty, ErrValueEvidence
+				return empty, nil, ErrValueEvidence
 			}
 			shares, err := currentProjectionSources(before, frame, *s.Before, eventAt)
 			if err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			if err := addValueAmounts(shares, map[uint]int64{s.OrderID: s.ActualPaidMinor}); err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			quota, err := quotaForValue(s.After)
 			if err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			remaining := max(int64(0), s.After.FlowTotal-s.After.FlowUsed)
 			if remaining == 0 {
-				return empty, ErrValueEvidence
+				return empty, nil, ErrValueEvidence
 			}
 			frame.basis = &valueBasisEvidence{CycleStart: before.CurrentCycle.StartAt, TotalQuota: quota, Sources: shares,
 				Basis: RemainingValueBasis{At: eventAt, EndAt: before.CurrentCycle.EndAt, AmountMinor: before.CurrentMinor + s.ActualPaidMinor, UsedAtBasis: s.After.FlowUsed, QuotaBytes: remaining}}
 		case "paid_reset":
 			if s.AllocationModel != "reset_value_continuity_v1" || !s.Before.EndAt.Equal(s.After.EndAt) || s.Before.NextResetAt == nil || s.After.NextResetAt == nil || !s.Before.NextResetAt.Equal(*s.After.NextResetAt) || s.After.FlowUsed != s.Before.FlowUsed || s.After.CycleStartUsed != s.After.FlowUsed || before.CurrentMinor > math.MaxInt64-s.ActualPaidMinor {
-				return empty, ErrValueEvidence
+				return empty, nil, ErrValueEvidence
 			}
 			// Only current-cycle sources survive the reset. Future paid allocations
 			// remain separate and are never repriced or converted by the reset.
 			shares, err := currentProjectionSources(before, frame, *s.Before, eventAt)
 			if err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			if err := addValueAmounts(shares, map[uint]int64{s.OrderID: s.ActualPaidMinor}); err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			quota, err := quotaForValue(s.After)
 			if err != nil {
-				return empty, err
+				return empty, nil, err
 			}
 			frame.basis = &valueBasisEvidence{CycleStart: before.CurrentCycle.StartAt, TotalQuota: quota, Sources: shares, Basis: RemainingValueBasis{At: eventAt, EndAt: before.CurrentCycle.EndAt, AmountMinor: before.CurrentMinor + s.ActualPaidMinor, UsedAtBasis: s.After.FlowUsed, QuotaBytes: quota}}
 		default:
-			return empty, ErrValueEvidence
+			return empty, nil, ErrValueEvidence
+		}
+		if tracker != nil {
+			if err := tracker.acceptGrant(s); err != nil {
+				return empty, nil, err
+			}
 		}
 		last = s
 	}
+	if tracker != nil {
+		if err := tracker.finish(records, current, at); err != nil {
+			return empty, nil, err
+		}
+	}
 	if current.PlanID != last.After.PlanID || current.PlanSKUID != last.After.PlanSKUID || !current.StartAt.Equal(last.After.StartAt) || !current.EndAt.Equal(last.After.EndAt) || current.ResetPolicy != last.After.ResetPolicy || current.FlowUsed < last.After.FlowUsed {
-		return empty, ErrValueEvidence
+		return empty, nil, ErrValueEvidence
 	}
 	out, err := frame.project(current, at)
 	if err != nil {
-		return empty, err
+		return empty, nil, err
 	}
 	out.ValuationModel = "remaining_value_basis_v1"
 	out.RootOrderID = records[0].OrderID
-	return fingerprintValueProjection(ctx, records, current, out)
+	if tracker != nil && tracker.typedSeen {
+		out.ValuationModel = TimedPlanQuotaSyncAllocation
+		out, err = tracker.fingerprint(current, out)
+	} else {
+		out, err = fingerprintValueProjection(ctx, records, current, out)
+	}
+	return out, tracker, err
 }
 
 func fingerprintValueProjection(ctx context.Context, records []EntitlementValueSnapshot, current EntitlementValueState, out ValueProjection) (ValueProjection, error) {

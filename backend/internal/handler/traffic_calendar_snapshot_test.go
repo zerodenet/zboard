@@ -89,19 +89,56 @@ func TestTrafficProductionTrendUsesBoundedPrincipalScopeProjection(t *testing.T)
 	if len(response.Points) != 1 || response.Points[0].PeakConnections == nil || *response.Points[0].PeakConnections != 9 {
 		t.Fatalf("daily Principal peak was not returned: %+v", response.Points)
 	}
-	foundScopeProjection := false
-	for _, query := range f.log.queries {
-		if strings.Contains(query, "principal_flow_observations") {
-			t.Fatalf("production trend read scanned raw Principal history: %s", query)
+	assertProjectionQueries := func(wantEdges bool) {
+		t.Helper()
+		foundHourly, foundSamples := false, false
+		for _, query := range f.log.queries {
+			if strings.Contains(query, "principal_flow_observations") {
+				t.Fatalf("production trend read scanned raw Principal history: %s", query)
+			}
+			if strings.Contains(query, "principal_flow_scope_observations") && !strings.Contains(query, "MAX(id)") {
+				t.Fatalf("trend scanned raw scope history: %s", query)
+			}
+			foundHourly = foundHourly || strings.Contains(query, "principal_statistics_hourly")
+			foundSamples = foundSamples || strings.Contains(query, "principal_statistics_samples")
 		}
-		if strings.Contains(query, "principal_flow_scope_observations") && !strings.Contains(query, "MAX(id)") {
-			t.Fatalf("trend scanned raw scope history: %s", query)
-		}
-		if strings.Contains(query, "principal_statistics_hourly") && strings.Contains(query, "principal_statistics_samples") {
-			foundScopeProjection = true
+		if !foundHourly || foundSamples != wantEdges {
+			t.Fatalf("bounded projection sources: hourly=%t samples=%t wantEdges=%t: %v", foundHourly, foundSamples, wantEdges, f.log.queries)
 		}
 	}
-	if !foundScopeProjection {
-		t.Fatalf("production trend read did not query the bounded scope projection: %v", f.log.queries)
+	// An aligned UTC day needs only complete hours. Requiring sample edges here
+	// would reject the intended bounded query without testing any boundary.
+	assertProjectionQueries(false)
+	for index, row := range []struct {
+		active uint64
+		at     time.Time
+	}{
+		{90, time.Date(2026, 8, 31, 18, 14, 0, 0, time.UTC)},
+		{7, time.Date(2026, 8, 31, 18, 30, 0, 0, time.UTC)},
+		{12, time.Date(2026, 9, 1, 18, 14, 0, 0, time.UTC)},
+		{99, time.Date(2026, 9, 1, 18, 15, 0, 0, time.UTC)},
+	} {
+		observation := principalFlowScopeObservation{ScopeType: principalFlowScopeUser, ScopeID: 1, ActiveFlows: row.active, NodeID: 1, CoreInstanceID: "core-a", EventID: fmt.Sprintf("scope-edge-%d", index), Source: "lifecycle", ObservedAt: row.at, CreatedAt: row.at}
+		if err := f.h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&observation).Error; err != nil {
+				return err
+			}
+			return meteringstore.EnqueuePrincipalStatistics(tx, observation)
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
+	if _, err := (meteringstore.PrincipalStatistics{DB: f.h.db}).Drain(t.Context(), 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&config).Update("value", "Asia/Kathmandu").Error; err != nil {
+		t.Fatal(err)
+	}
+	f.capture()
+	var kathmandu trafficTrendResponse
+	f.get(t, "/api/v1/traffic/trends?from=2026-09-01&to=2026-09-01", false, f.h.TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler, &kathmandu)
+	if kathmandu.PeakConnections == nil || *kathmandu.PeakConnections != 12 || kathmandu.ConnectionSampleCount != 5 || len(kathmandu.Points) != 1 || kathmandu.Points[0].PeakConnections == nil || *kathmandu.Points[0].PeakConnections != 12 {
+		t.Fatalf("fractional calendar edges were omitted or included outside [start,end): %+v", kathmandu)
+	}
+	assertProjectionQueries(true)
 }

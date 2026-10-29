@@ -136,6 +136,35 @@ def result_summary(events, expected, module):
             'complete': not (skipped or failed or missing or extra) and passed == len(expected)}
 
 
+def execution_failure_diagnostics(events, summary):
+    """Bounded source identities only; raw SQL, assertions and payloads stay in artifacts."""
+    lines = [f"Incomplete MySQL group: passed={summary.get('passed', 0)} "
+             f"failed={len(summary.get('failed', []))} missing={len(summary.get('missing', []))} "
+             f"skipped={len(summary.get('skipped', []))}"]
+    for failed in summary.get('failed', [])[:12]:
+        lines.append('Failed test: ' + json.dumps(
+            [failed.get('package'), failed.get('test') or '<package>'], ensure_ascii=True)[:400])
+    locations, active = set(), set()
+    for event in events:
+        package, test = event.get('Package', ''), event.get('Test', '')
+        if test and event.get('Action') == 'run':
+            active.add((package, test))
+        elif test and event.get('Action') in ('pass', 'fail', 'skip'):
+            active.discard((package, test))
+        if event.get('Action') == 'output':
+            # Go's assertion position is useful without echoing a struct,
+            # credentials, SQL arguments or arbitrary test output into logs.
+            for match in re.finditer(r'(?m)^\s+([A-Za-z0-9_]+_test\.go):(\d+):', event.get('Output', '')):
+                locations.add(f'{match.group(1)}:{match.group(2)}')
+    lines.extend('Assertion source: ' + location for location in sorted(locations)[:12])
+    if active:
+        lines.append('Active at incomplete execution (not a cause attribution):')
+        lines.extend(json.dumps(item, ensure_ascii=True)[:400] for item in sorted(active)[:12])
+    if summary.get('missing'):
+        lines.append('Missing terminal tests: ' + json.dumps(summary['missing'][:8], ensure_ascii=True)[:800])
+    return lines
+
+
 def write_json(path, value):
     Path(path).write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
 
@@ -239,9 +268,14 @@ def main(argv=None):
             log = output / f'{item["profile"]}-{item["group"]}.jsonl'
             code = run_command(item['command'], backend, log, receipt['commands'])
             try:
-                summary = result_summary(read_events(log), {tuple(v) for v in item['expected']}, module)
+                events = read_events(log)
+                summary = result_summary(events, {tuple(v) for v in item['expected']}, module)
             except ValueError as exc:
                 summary = {'complete': False, 'error': str(exc)}
+                events = []
+            if code != 0 or not summary['complete']:
+                for diagnostic in execution_failure_diagnostics(events, summary):
+                    print(f'{item["profile"]}-{item["group"]}: {diagnostic}', flush=True)
             receipt['results'].append({'profile': item['profile'], 'group': item['group'], 'exit_code': code, **summary})
             complete = complete and code == 0 and summary['complete']
             write_json(output / 'receipt.json', receipt)

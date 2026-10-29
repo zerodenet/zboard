@@ -98,6 +98,34 @@ class MySQLProfilesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             profiles.result_summary([normal, normal], expected, 'example/backend')
 
+    def test_execution_failure_exposes_source_identity_without_raw_payload(self):
+        events = [
+            {'Action': 'run', 'Package': 'example/backend/handler', 'Test': 'TestMySQLMoney'},
+            {'Action': 'output', 'Package': 'example/backend/handler', 'Test': 'TestMySQLMoney',
+             'Output': '    money_test.go:33: private-diagnostic-payload database credentials\n'},
+            {'Action': 'fail', 'Package': 'example/backend/handler', 'Test': 'TestMySQLMoney'},
+        ]
+        summary = profiles.result_summary(events, {('./handler', 'TestMySQLMoney')}, 'example/backend')
+        lines = profiles.execution_failure_diagnostics(events, summary)
+        rendered = '\n'.join(lines)
+        self.assertIn('TestMySQLMoney', rendered)
+        self.assertIn('money_test.go:33', rendered)
+        self.assertNotIn('private-diagnostic-payload', rendered)
+        self.assertNotIn('database credentials', rendered)
+        self.assertNotIn('Active at incomplete', rendered)
+
+    def test_incomplete_execution_preserves_missing_and_active_without_blame(self):
+        expected = {('./handler', 'TestMySQLPending'), ('./handler', 'TestMySQLNotStarted')}
+        events = [{'Action': 'run', 'Package': 'example/backend/handler', 'Test': 'TestMySQLPending'}]
+        summary = profiles.result_summary(events, expected, 'example/backend')
+        lines = profiles.execution_failure_diagnostics(events, summary)
+        rendered = '\n'.join(lines)
+        self.assertIn('not a cause attribution', rendered)
+        self.assertIn('TestMySQLPending', rendered)
+        self.assertIn('TestMySQLNotStarted', rendered)
+        self.assertFalse(summary['complete'])
+        self.assertLessEqual(len(lines), 40)
+
 
     def test_download_diagnostics_do_not_corrupt_json_evidence(self):
         with tempfile.TemporaryDirectory() as folder:

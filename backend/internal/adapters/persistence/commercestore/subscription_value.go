@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"time"
@@ -47,11 +48,20 @@ func readSubscriptionValue(tx *gorm.DB, sub model.Subscription, at time.Time) (c
 	if err != nil {
 		return commerce.ValueProjection{}, "", err
 	}
-	events, _, err := readPlanBaseQuotaSyncEvents(tx, sub, records, false)
-	if err != nil {
-		return commerce.ValueProjection{}, currency, err
+	var projection commerce.ValueProjection
+	if entitlements.IsPerpetualEnd(sub.EndAt) {
+		events, _, readErr := readPlanBaseQuotaSyncEvents(tx, sub, records, false)
+		if readErr != nil {
+			return commerce.ValueProjection{}, currency, readErr
+		}
+		projection, err = commerce.ProjectEntitlementValueWithBaseSyncContext(tx.Statement.Context, records, events, entitlementValueState(sub), currency, at, sub.EntitlementEpoch)
+	} else {
+		events, _, readErr := readTimedPlanQuotaSyncEvents(tx, sub, records, false)
+		if readErr != nil {
+			return commerce.ValueProjection{}, currency, readErr
+		}
+		projection, err = commerce.ProjectTimedEntitlementValueWithPlanSyncContext(tx.Statement.Context, records, events, entitlementValueState(sub), currency, at, sub.EntitlementEpoch)
 	}
-	projection, err := commerce.ProjectEntitlementValueWithBaseSyncContext(tx.Statement.Context, records, events, entitlementValueState(sub), currency, at, sub.EntitlementEpoch)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return commerce.ValueProjection{}, currency, err

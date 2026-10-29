@@ -65,7 +65,7 @@ func TestApplySelectionMembersRespectsSpecialTargets(t *testing.T) {
 		"name":    "节点选择",
 		"proxies": []interface{}{"节点 A", "DIRECT", "REJECT"},
 	}
-	applySelectionMembers(group, "name", "proxies", preferences)
+	applySelectionMembers(subscriptionRendererClash, group, "name", "proxies", preferences)
 	members, ok := group["proxies"].([]string)
 	if !ok {
 		t.Fatalf("filtered members have unexpected type %T", group["proxies"])

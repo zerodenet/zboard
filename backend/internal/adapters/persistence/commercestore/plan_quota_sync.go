@@ -35,9 +35,16 @@ func synchronizePlanTrafficQuota(tx *gorm.DB, plan commerce.Plan, actor uint, sc
 				continue
 			}
 			var baseSync *commerce.PerpetualBaseQuotaSyncDetail
+			var timedSync *commerce.TimedPlanQuotaSyncDetail
 			var historyBytes int64
 			var next int64
-			if sub.ResetQuotaBytes > 0 && sub.CycleStartUsed >= 0 && sub.FlowTotal >= sub.CycleStartUsed && sub.FlowTotal-sub.CycleStartUsed == sub.ResetQuotaBytes {
+			if !entitlements.IsPerpetualEnd(sub.EndAt) {
+				var err error
+				timedSync, next, historyBytes, err = prepareTimedPlanQuotaSync(tx, sub, plan, now)
+				if err != nil {
+					return 0, planQuotaSyncEvidenceError(err)
+				}
+			} else if sub.ResetQuotaBytes > 0 && sub.CycleStartUsed >= 0 && sub.FlowTotal >= sub.CycleStartUsed && sub.FlowTotal-sub.CycleStartUsed == sub.ResetQuotaBytes {
 				// Preserve the established ordinary single-cycle quota rule.
 				var err error
 				next, err = commerce.SynchronizedPlanQuota(sub.CycleStartUsed, sub.FlowUsed, sub.FlowTotal, plan.TrafficBytes)
@@ -82,7 +89,9 @@ func synchronizePlanTrafficQuota(tx *gorm.DB, plan commerce.Plan, actor uint, sc
 			}
 			var detail []byte
 			var err error
-			if baseSync != nil {
+			if timedSync != nil {
+				detail, err = json.Marshal(timedSync)
+			} else if baseSync != nil {
 				detail, err = json.Marshal(baseSync)
 			} else {
 				detail, err = json.Marshal(map[string]any{"plan_id": plan.ID, "plan_revision": plan.Revision, "actor_id": actor, "previous_flow_total": oldTotal, "flow_total": next, "flow_used": sub.FlowUsed, "previous_reset_quota_bytes": oldQuota, "reset_quota_bytes": plan.TrafficBytes})
@@ -94,7 +103,7 @@ func synchronizePlanTrafficQuota(tx *gorm.DB, plan commerce.Plan, actor uint, sc
 			if err := tx.Create(&event).Error; err != nil {
 				return 0, err
 			}
-			if baseSync != nil {
+			if baseSync != nil || timedSync != nil {
 				if err := verifyStoredPlanBaseQuotaBudget(tx, event.ID, historyBytes); err != nil {
 					return 0, err
 				}
@@ -103,4 +112,15 @@ func synchronizePlanTrafficQuota(tx *gorm.DB, plan commerce.Plan, actor uint, sc
 		}
 	}
 	return count, nil
+}
+
+func planQuotaSyncEvidenceError(err error) error {
+	var invalid *commerce.ValidationError
+	if errors.As(err, &invalid) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if !errors.Is(err, commerce.ErrValueEvidence) && !errors.Is(err, commerce.ErrSubscriptionValueUnavailable) && !errors.Is(err, commerce.ErrSubscriptionEvidenceBudget) && !errors.Is(err, commerce.ErrSubscriptionQuoteChanged) {
+		return err
+	}
+	return &commerce.ValidationError{Message: "历史订阅基础额度与加购来源无法安全核对，套餐与订阅均未修改。", Fields: map[string]string{"sync_traffic_quota": "套餐免费扩容不会恢复已消费金额；无法核验来源时请通过工单核对。"}}
 }
