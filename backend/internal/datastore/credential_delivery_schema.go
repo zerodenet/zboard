@@ -38,8 +38,14 @@ func preflightCredentialDeliverySchema(db *gorm.DB) error {
 			complete = complete && db.Migrator().HasColumn("node_credential_delivery_states", column)
 		}
 		if complete {
+			hashMismatch := "source.desired_config_sha256 <> receipt.config_sha256 OR source.applied_config_sha256 <> receipt.config_sha256"
+			if !IsSQLite(db) {
+				// Historical baseline columns and later receipt tables can inherit
+				// different collations. Configuration hashes require exact bytes.
+				hashMismatch = "BINARY source.desired_config_sha256 <> BINARY receipt.config_sha256 OR BINARY source.applied_config_sha256 <> BINARY receipt.config_sha256"
+			}
 			var invalid []uint
-			err := db.Table("node_credential_delivery_states AS receipt").Select("receipt.node_id").Joins("JOIN nodes ON nodes.id = receipt.node_id").Joins("LEFT JOIN protocol_deployments AS source ON source.id = receipt.deployment_id").Where("receipt.deployment_id > 0 AND LENGTH(receipt.config_sha256) = 64 AND (source.id IS NULL OR source.node_id <> receipt.node_id OR source.status <> ? OR source.credential_targets = ? OR source.desired_config_sha256 <> receipt.config_sha256 OR source.applied_config_sha256 <> receipt.config_sha256)", "succeeded", "").Limit(1).Pluck("receipt.node_id", &invalid).Error
+			err := db.Table("node_credential_delivery_states AS receipt").Select("receipt.node_id").Joins("JOIN nodes ON nodes.id = receipt.node_id").Joins("LEFT JOIN protocol_deployments AS source ON source.id = receipt.deployment_id").Where("receipt.deployment_id > 0 AND LENGTH(receipt.config_sha256) = 64 AND (source.id IS NULL OR source.node_id <> receipt.node_id OR source.status <> ? OR source.credential_targets = ? OR "+hashMismatch+")", "succeeded", "").Limit(1).Pluck("receipt.node_id", &invalid).Error
 			if err != nil {
 				return err
 			}
@@ -247,13 +253,17 @@ func visitConfirmedCredentialManifests(db *gorm.DB, visit func(model.ProtocolDep
 // managed bindings require the ordinary publisher, never a synthetic receipt.
 func recoverUnconfirmedDeliveryIntents(db *gorm.DB) error {
 	var nodes []uint
+	hashMatch := "state.config_sha256 = confirmation.config_sha256"
+	if !IsSQLite(db) {
+		hashMatch = "BINARY state.config_sha256 = BINARY confirmation.config_sha256"
+	}
 	credentials := `SELECT DISTINCT credential.node_id FROM protocol_credentials AS credential
  LEFT JOIN credential_delivery_confirmations AS confirmation ON confirmation.credential_id = credential.id AND confirmation.node_id = credential.node_id AND confirmation.protocol_endpoint_id = credential.protocol_endpoint_id
- LEFT JOIN node_credential_delivery_states AS state ON state.node_id = credential.node_id AND state.config_sha256 = confirmation.config_sha256
+ LEFT JOIN node_credential_delivery_states AS state ON state.node_id = credential.node_id AND ` + hashMatch + `
  WHERE credential.delivery_required = true AND credential.status = 'active' AND (confirmation.credential_id IS NULL OR state.node_id IS NULL)`
 	entries := `SELECT DISTINCT entry.node_id FROM network_entries AS entry
  LEFT JOIN network_entry_delivery_confirmations AS confirmation ON confirmation.entry_id = entry.id AND confirmation.node_id = entry.node_id
- LEFT JOIN node_credential_delivery_states AS state ON state.node_id = entry.node_id AND state.config_sha256 = confirmation.config_sha256
+ LEFT JOIN node_credential_delivery_states AS state ON state.node_id = entry.node_id AND ` + hashMatch + `
  WHERE entry.delivery_required = true AND entry.enabled = true AND entry.node_id > 0 AND (confirmation.entry_id IS NULL OR state.node_id IS NULL)`
 	if err := db.Raw("SELECT DISTINCT pending.node_id FROM (" + credentials + " UNION " + entries + ") AS pending JOIN nodes ON nodes.id = pending.node_id ORDER BY pending.node_id").Scan(&nodes).Error; err != nil {
 		return err
