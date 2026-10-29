@@ -149,6 +149,27 @@ func ProjectTimedEntitlementValueWithPlanSyncContext(ctx context.Context, record
 	if err != nil {
 		return ValueProjection{}, err
 	}
+	// Existing non-plan quota adjustments already have a supported valuation
+	// path. Preserve its rules/fingerprint when base changes occur only WITHIN
+	// verified paid snapshots, never between them or after the last one. The
+	// original projector still validates each paid transition. Checking only the
+	// last paid base would hide a missing free-resize cap before that payment.
+	legacy := len(events) == 0 && at.Before(current.EndAt) && current.EndedAt == nil && current.EndReason == "" && (current.NextResetAt == nil || current.NextResetAt.After(at))
+	base := records[0].After.ResetQuotaBytes
+	for i, record := range records {
+		if err := ctx.Err(); err != nil {
+			return ValueProjection{}, err
+		}
+		if i > 0 && (record.Before == nil || record.Before.ResetQuotaBytes != base) {
+			legacy = false
+		}
+		base = record.After.ResetQuotaBytes
+	}
+	legacy = legacy && current.ResetQuotaBytes == base
+	if legacy {
+		out, _, err := projectTimedValueEvents(ctx, records, current, currency, at, nil, 0, false)
+		return out, err
+	}
 	out, _, err := projectTimedValueEvents(ctx, records, current, currency, at, events, epoch, true)
 	return out, err
 }

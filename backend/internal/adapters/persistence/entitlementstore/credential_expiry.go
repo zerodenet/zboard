@@ -120,7 +120,7 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 						return err
 					}
 				}
-				return tx.Model(&model.Subscription{}).Where("id = ?", sub.ID).UpdateColumn("retirement_retry_at", nil).Error
+				return tx.Model(&model.Subscription{}).Where("id = ?", sub.ID).UpdateColumns(map[string]any{"retirement_retry_at": nil, "updated_at": gorm.Expr("updated_at")}).Error
 			})
 		}
 		if err == nil {

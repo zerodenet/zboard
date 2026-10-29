@@ -44,7 +44,9 @@ func (s CredentialExpiry) deferRetirement(ctx context.Context, candidate model.S
 			}
 		}
 		retry := now.UTC().Add(retirementBudgetRetryDelay)
-		if err := tx.Model(&model.Subscription{}).Where("id = ?", sub.ID).UpdateColumn("retirement_retry_at", retry).Error; err != nil {
+		// MySQL's published updated_at has ON UPDATE CURRENT_TIMESTAMP. Pin it
+		// explicitly so operational scheduling cannot rewrite business timing.
+		if err := tx.Model(&model.Subscription{}).Where("id = ?", sub.ID).UpdateColumns(map[string]any{"retirement_retry_at": retry, "updated_at": gorm.Expr("updated_at")}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&model.AuditLog{UserID: &sub.UserID, Actor: "system", Action: "subscription.retirement_deferred", Target: fmt.Sprintf("subscription:%d", sub.ID), Detail: fmt.Sprintf("reason=%s; epoch=%d; end_at=%s; retry_at=%s; financial closure rolled back; histories retained; access expiry is independently scheduled", reason, sub.EntitlementEpoch, sub.EndAt.UTC().Format(time.RFC3339Nano), retry.Format(time.RFC3339Nano))}).Error

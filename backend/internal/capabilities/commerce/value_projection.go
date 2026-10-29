@@ -31,6 +31,9 @@ type ValueProjection struct {
 	CurrentCycle   ValueCycle     `json:"-"`
 }
 type valueBasisEvidence struct {
+	// The existing exact core payment clock only proves a bounded datetime(3)
+	// round-up overlap; it never replaces the stored basis or billing precision.
+	CoreCapturedAt        time.Time
 	TimeOnlyWhenExhausted bool
 	Basis                 RemainingValueBasis
 	CycleStart            time.Time
@@ -165,9 +168,18 @@ func (f *valueFrame) project(s EntitlementValueState, at time.Time) (ValueProjec
 		out.CurrentCycle = c
 		basis := RemainingValueBasis{At: c.StartAt, EndAt: c.EndAt, AmountMinor: c.AmountMinor, UsedAtBasis: s.CycleStartUsed, QuotaBytes: quota}
 		basisSources := sources[i]
+		valueAt := at
 		if f.basis != nil && f.basis.CycleStart.Equal(c.StartAt) && f.basis.Basis.EndAt.Equal(c.EndAt) {
 			basis = f.basis.Basis
 			basisSources = f.basis.Sources
+			// An already committed core payment can have a row rounded ahead
+			// of its real capture instant. Bridge only that proved <=1ms
+			// interval with the actual millisecond representation; a caller before capture or another discrepancy still
+			// reaches the original TimeRemaining refusal below.
+			captured := f.basis.CoreCapturedAt
+			if at.Before(basis.At) && !captured.IsZero() && !at.Before(captured) && !basis.At.Before(captured) && basis.At.Equal(captured.Round(time.Millisecond)) {
+				valueAt = basis.At
+			}
 			// Administrative quota synchronization preserves cumulative usage. Apply
 			// the actual quota delta to the remaining-rights denominator, without
 			// returning to a consumed pre-reset cash basis.
@@ -182,13 +194,13 @@ func (f *valueFrame) project(s EntitlementValueState, at time.Time) (ValueProjec
 			if s.FlowUsed != basis.UsedAtBasis {
 				return out, ErrValueEvidence
 			}
-			value, err = basis.TimeRemaining(at)
+			value, err = basis.TimeRemaining(valueAt)
 			if err != nil {
 				return out, err
 			}
 		}
 		if basis.QuotaBytes > 0 {
-			value, err = basis.Remaining(at, s.FlowUsed)
+			value, err = basis.Remaining(valueAt, s.FlowUsed)
 			if err != nil {
 				return out, err
 			}
@@ -364,7 +376,7 @@ func projectTimedValueEvents(ctx context.Context, records []EntitlementValueSnap
 						return empty, nil, err
 					}
 					remaining := max(int64(0), s.After.FlowTotal-s.After.FlowUsed)
-					frame.basis = &valueBasisEvidence{CycleStart: c.StartAt, TotalQuota: totalQuota, Sources: shares, TimeOnlyWhenExhausted: remaining == 0, Basis: RemainingValueBasis{At: eventAt, EndAt: c.EndAt, AmountMinor: before.CurrentMinor + added, UsedAtBasis: s.After.FlowUsed, QuotaBytes: remaining}}
+					frame.basis = &valueBasisEvidence{CoreCapturedAt: s.CapturedAt, CycleStart: c.StartAt, TotalQuota: totalQuota, Sources: shares, TimeOnlyWhenExhausted: remaining == 0, Basis: RemainingValueBasis{At: eventAt, EndAt: c.EndAt, AmountMinor: before.CurrentMinor + added, UsedAtBasis: s.After.FlowUsed, QuotaBytes: remaining}}
 				}
 				break
 			}
@@ -395,7 +407,7 @@ func projectTimedValueEvents(ctx context.Context, records []EntitlementValueSnap
 			if remaining == 0 {
 				return empty, nil, ErrValueEvidence
 			}
-			frame.basis = &valueBasisEvidence{CycleStart: before.CurrentCycle.StartAt, TotalQuota: quota, Sources: shares,
+			frame.basis = &valueBasisEvidence{CoreCapturedAt: s.CapturedAt, CycleStart: before.CurrentCycle.StartAt, TotalQuota: quota, Sources: shares,
 				Basis: RemainingValueBasis{At: eventAt, EndAt: before.CurrentCycle.EndAt, AmountMinor: before.CurrentMinor + s.ActualPaidMinor, UsedAtBasis: s.After.FlowUsed, QuotaBytes: remaining}}
 		case "paid_reset":
 			if s.AllocationModel != "reset_value_continuity_v1" || !s.Before.EndAt.Equal(s.After.EndAt) || s.Before.NextResetAt == nil || s.After.NextResetAt == nil || !s.Before.NextResetAt.Equal(*s.After.NextResetAt) || s.After.FlowUsed != s.Before.FlowUsed || s.After.CycleStartUsed != s.After.FlowUsed || before.CurrentMinor > math.MaxInt64-s.ActualPaidMinor {
@@ -414,7 +426,7 @@ func projectTimedValueEvents(ctx context.Context, records []EntitlementValueSnap
 			if err != nil {
 				return empty, nil, err
 			}
-			frame.basis = &valueBasisEvidence{CycleStart: before.CurrentCycle.StartAt, TotalQuota: quota, Sources: shares, Basis: RemainingValueBasis{At: eventAt, EndAt: before.CurrentCycle.EndAt, AmountMinor: before.CurrentMinor + s.ActualPaidMinor, UsedAtBasis: s.After.FlowUsed, QuotaBytes: quota}}
+			frame.basis = &valueBasisEvidence{CoreCapturedAt: s.CapturedAt, CycleStart: before.CurrentCycle.StartAt, TotalQuota: quota, Sources: shares, Basis: RemainingValueBasis{At: eventAt, EndAt: before.CurrentCycle.EndAt, AmountMinor: before.CurrentMinor + s.ActualPaidMinor, UsedAtBasis: s.After.FlowUsed, QuotaBytes: quota}}
 		default:
 			return empty, nil, ErrValueEvidence
 		}

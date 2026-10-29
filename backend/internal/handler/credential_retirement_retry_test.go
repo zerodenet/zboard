@@ -159,6 +159,50 @@ func assertRetirementFreshPriority(t *testing.T, f orderFixture) {
 	fundTestWallet(t, f, 30000)
 	healthy := accessExpiryPaidRoot(t, f, "retirement-fresh-after-200")
 	now = healthy.EndAt.Add(time.Hour)
+	// Real payment may perform the existing user-scoped expiry before granting
+	// the new subscription. Capture that committed state, not the insertion-only
+	// fixture: this test permits only retry scheduling to change from now on.
+	ids := make([]uint, len(rows))
+	for n := range rows {
+		ids[n] = rows[n].ID
+	}
+	var baseline []model.Subscription
+	if err := f.h.db.Where("id IN ?", ids).Order("id").Find(&baseline).Error; err != nil || len(baseline) != len(rows) {
+		t.Fatal("capture committed retry cohort", len(baseline), err)
+	}
+	money := lifecyclePageMoney(t, f.h.db)
+	expectedRetries := map[uint]time.Time{}
+	assertRetryCohort := func(changed ...uint) {
+		t.Helper()
+		held := make(map[uint]bool, len(changed))
+		for _, id := range changed {
+			held[id] = true
+		}
+		var actual []model.Subscription
+		if err := f.h.db.Where("id IN ?", ids).Order("id").Find(&actual).Error; err != nil || len(actual) != len(baseline) {
+			t.Fatal("read retry cohort", len(actual), err)
+		}
+		for n, row := range actual {
+			want := baseline[n]
+			if held[row.ID] {
+				if row.RetirementRetryAt == nil || !row.RetirementRetryAt.After(now) {
+					t.Fatal("identity budget not durably held", row)
+				}
+				retry, seen := expectedRetries[row.ID]
+				if !seen {
+					retry = *row.RetirementRetryAt
+					expectedRetries[row.ID] = retry
+				}
+				want.RetirementRetryAt = &retry
+			}
+			if !reflect.DeepEqual(row, want) {
+				t.Fatal("retry changed committed rights, history or another row", row, want)
+			}
+		}
+		if !reflect.DeepEqual(money, lifecyclePageMoney(t, f.h.db)) {
+			t.Fatal("retry scheduling changed money or purchase evidence")
+		}
+	}
 	store := accessExpiryStore(f)
 	original := store.PrepareScope
 	store.PrepareScope = func(ctx context.Context, subs []model.Subscription) (entitlementstore.CredentialExpiryScope, error) {
@@ -174,24 +218,19 @@ func assertRetirementFreshPriority(t *testing.T, f orderFixture) {
 	if err := f.h.db.First(&closed, healthy.ID).Error; err != nil || closed.Status != "ended" {
 		t.Fatal("fresh row was not closed", closed, err)
 	}
+	assertRetryCohort()
 	// At the next turn a precise identity budget defers the oldest retry, then
 	// advances durably to the next one even across repository reconstruction.
 	if _, err := store.ExpireDueCredentials(t.Context(), now, 1); !errors.Is(err, entitlements.ErrCredentialExpiryScopeBudget) {
 		t.Fatal("identity budget not preserved", err)
 	}
-	var first model.Subscription
-	if err := f.h.db.First(&first, rows[0].ID).Error; err != nil || first.RetirementRetryAt == nil || !first.RetirementRetryAt.After(now) || first.Status != "active" {
-		t.Fatal("identity budget not durably held", first, err)
-	}
+	assertRetryCohort(rows[0].ID)
 	restarted := accessExpiryStore(f)
 	restarted.PrepareScope = store.PrepareScope
 	if _, err := restarted.ExpireDueCredentials(t.Context(), now, 1); !errors.Is(err, entitlements.ErrCredentialExpiryScopeBudget) {
 		t.Fatal("restarted retry missing budget receipt", err)
 	}
-	var second model.Subscription
-	if err := f.h.db.First(&second, rows[1].ID).Error; err != nil || second.RetirementRetryAt == nil || !second.RetirementRetryAt.After(now) {
-		t.Fatal("restart retried held lowID instead of advancing", second, err)
-	}
+	assertRetryCohort(rows[0].ID, rows[1].ID)
 }
 
 func TestCredentialRetirementBudgetHoldRechecksRealRenewal(t *testing.T) {
