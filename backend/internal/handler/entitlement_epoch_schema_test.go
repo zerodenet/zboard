@@ -17,7 +17,7 @@ func TestEntitlementEpochFormalAndInterruptedUpgradePreservesSources(t *testing.
 }
 func TestMySQLEntitlementEpochFormalAndInterruptedUpgradePreservesSources(t *testing.T) {
 	for _, mode := range []string{"formal", "partial_columns", "partial_index"} {
-		t.Run(mode, func(t *testing.T) { assertEpochUpgrade(t, newMySQLOrderFixture(t), mode) })
+		t.Run(mode, func(t *testing.T) { assertEpochUpgrade(t, newMySQLBusinessOrderFixture(t), mode) })
 	}
 }
 func assertEpochUpgrade(t *testing.T, f orderFixture, mode string) {

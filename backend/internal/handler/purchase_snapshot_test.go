@@ -126,7 +126,7 @@ func TestSQLitePurchaseSnapshotMigrationAndRecovery(t *testing.T) {
 }
 func TestMySQLPurchaseSnapshotMigrationAndRecovery(t *testing.T) {
 	for _, state := range []string{"repeat", "interrupted_after_ddl", "old_schema", "recorded_missing_column"} {
-		t.Run(state, func(t *testing.T) { assertPurchaseSnapshotMigration(t, newMySQLOrderFixture(t), state) })
+		t.Run(state, func(t *testing.T) { assertPurchaseSnapshotMigration(t, newMySQLBusinessOrderFixture(t), state) })
 	}
 }
 func assertPurchaseSnapshotMigration(t *testing.T, f orderFixture, state string) {

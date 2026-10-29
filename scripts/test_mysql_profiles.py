@@ -14,6 +14,31 @@ spec.loader.exec_module(profiles)
 
 
 class MySQLProfilesTest(unittest.TestCase):
+    def test_migration_host_generic_mysql_variants_are_added_without_reducing_core(self):
+        policy = json.loads(Path(__file__).with_name('mysql_extended_tests.json').read_text())
+        added = {'TestMigrationCapabilityAdmissionIsAtomicAndRechecksAuthority',
+                 'TestMigrationExecutionRequiresClaimAndFinalizesUncertainty',
+                 'TestMigrationInspectionPermissionsAndSafeProjection'}
+        selected = [entry for entry in policy['extended'] if entry['test'] in added]
+        self.assertEqual({entry['test'] for entry in selected}, added)
+        self.assertEqual(len(selected), len(added))
+        self.assertTrue(all(entry['package'] == './internal/handler' for entry in selected))
+        before = {**policy, 'extended': [entry for entry in policy['extended'] if entry['test'] not in added]}
+        protected = {('./internal/handler', name) for name in (
+            'TestMySQLAutomaticRenewalVersusManualVerifiedCash',
+            'TestMySQLPaymentIntegrationRequiresCurrentAdministrator',
+            'TestMySQLEntitlementEpochFormalAndInterruptedUpgradePreservesSources',
+            'TestMySQLPurchaseSnapshotMigrationAndRecovery')}
+        inventory = {(entry['package'], entry['test']) for entry in policy['extended']} | protected
+        previous_inventory = {entry for entry in inventory if re.search(profiles.inventory_expression(before), entry[1])}
+        previous = profiles.partition(previous_inventory, before)
+        current = profiles.partition(inventory, policy)
+        self.assertEqual(current['core'], previous['core'])
+        self.assertTrue(protected <= current['core'])
+        for name in added:
+            self.assertTrue(re.search(profiles.inventory_expression(policy), name))
+            self.assertIsNone(re.search(profiles.inventory_expression(policy), name+'Unexpected'))
+
     def test_inventory_preserves_all_mysql_names_and_exact_explicit_generic_matrices(self):
         policy = self.policy()
         policy['extended'].append({'package': './handler', 'test': 'TestCommerceAuthority',
