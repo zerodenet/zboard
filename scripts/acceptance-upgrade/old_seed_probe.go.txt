@@ -38,6 +38,11 @@ func TestConvergenceOldVersionFixture(t *testing.T) {
 	if err := f.h.db.Model(&model.Node{}).Where("id = ?", endpoint.NodeID).Update("name", "old-upgrade-order-publish").Error; err != nil {
 		t.Fatal(err)
 	}
+	// The shared helper's empty runtime key is unique too. Give this newly
+	// created old endpoint a real identity before freezing its original data.
+	if err := f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Update("runtime_key", uuid.NewString()).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := f.h.db.Model(&f.planRecord).Update("traffic_bytes", 1000000).Error; err != nil {
 		t.Fatal(err)
 	}
