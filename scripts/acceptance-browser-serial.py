@@ -236,9 +236,31 @@ CASE_GO = {'refund': ('TestConsumptionRefundChromiumAcceptance', 'consumption_re
            'recurring': ('TestAutomaticRecurringChromiumAcceptance', 'automatic_recurring_browser_test.go')}
 
 
+def public_http_failures(root, failures):
+    """Only repository OpenAPI templates, fixed roles/statuses and counts."""
+    if not isinstance(failures, list): return None
+    templates = re.findall(r'^  (/api/v1/[A-Za-z0-9_/{\}-]+):$',
+                           (root/'backend/api/openapi.yaml').read_text(), re.MULTILINE)
+    patterns = []
+    for template in templates:
+        parts = re.split(r'(\{[A-Za-z_]\w*\})', template)
+        pattern = ''.join('[^/?]+' if re.fullmatch(r'\{[A-Za-z_]\w*\}', part) else re.escape(part) for part in parts)
+        patterns.append((template, re.compile(pattern)))
+    counts = {}
+    for row in failures[:1000]:
+        if not isinstance(row, dict) or type(row.get('status')) is not int or not 400 <= row['status'] <= 599: continue
+        role = row.get('role') if row.get('role') in ('owner', 'admin') else 'unknown'
+        path = row.get('path')
+        endpoint = next((template for template, pattern in patterns if isinstance(path, str) and pattern.fullmatch(path)), 'unknown_endpoint')
+        key = role, endpoint, row['status']
+        counts[key] = counts.get(key, 0) + 1
+    return [{'role': role, 'endpoint_template': endpoint, 'status': status, 'count': count}
+            for (role, endpoint, status), count in sorted(counts.items())]
+
+
 def failure_diagnostic(root, private, case):
     result = {'go_outcome': 'not_observed', 'source_locations': [],
-              'browser_error': 'not_observed', 'stage': 'not_observed', 'checks': None}
+              'browser_error': 'not_observed', 'stage': 'not_observed', 'checks': None, 'http_failures': None}
     def bounded(path):
         if path.is_symlink() or not path.is_file(): return ''
         with path.open('rb') as stream: return stream.read(512 * 1024).decode('utf-8', errors='replace')
@@ -271,6 +293,7 @@ def failure_diagnostic(root, private, case):
         summary = bounded(private/case/'browser-checks.json')
         if summary:
             data = json.loads(summary)
+            result['http_failures'] = public_http_failures(root, data.get('api_failures'))
             stage = data.get('stage')
             if stage in DIAGNOSTIC_LABELS['stages'][case]: result['stage'] = stage
             checks = data.get('checks')

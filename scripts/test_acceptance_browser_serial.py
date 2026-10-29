@@ -18,6 +18,19 @@ spec.loader.exec_module(runner)
 
 
 class BrowserSerialPolicyTest(unittest.TestCase):
+    def test_http_failure_projection_exposes_only_public_templates_and_counts(self):
+        result = runner.public_http_failures(ROOT, [
+            {'role': 'admin', 'path': '/api/v1/admin/orders/27/consumption-refunds', 'status': 400},
+            {'role': 'admin', 'path': '/api/v1/admin/orders/28/consumption-refunds', 'status': 400},
+            {'role': 'PRIVATE_ROLE', 'path': '/api/v1/PRIVATE_TOKEN', 'status': 404},
+            {'role': 'owner', 'path': '/api/v1/PRIVATE_TOKEN', 'status': 'PRIVATE_STATUS'},
+            {'role': 'owner', 'path': '/api/v1/PRIVATE_TOKEN', 'status': True}])
+        self.assertIn({'role': 'admin', 'endpoint_template': '/api/v1/admin/orders/{id}/consumption-refunds', 'status': 400, 'count': 2}, result)
+        self.assertIn({'role': 'unknown', 'endpoint_template': 'unknown_endpoint', 'status': 404, 'count': 1}, result)
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        self.assertNotIn('27', json.dumps(result))
+        self.assertIsNone(runner.public_http_failures(ROOT, None))
+
     def test_failed_refund_diagnostic_exposes_only_source_owned_labels(self):
         with tempfile.TemporaryDirectory() as directory:
             private = Path(directory)
