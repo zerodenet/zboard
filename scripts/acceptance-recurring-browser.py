@@ -128,10 +128,14 @@ def main():
             check('one_explicit_enable_no_replay', len(puts) == 1)
             stage('enabled', 'renewed')
             result['stage'] = 'real_worker_debit'
-            refresh.click()
-            expect(panel).to_contain_text('最近订单 #')
+            with page.expect_response(lambda response: urlparse(response.url).path == api_path and response.request.method == 'GET') as refreshed:
+                refresh.click()
+            current = refreshed.value.json()['data']
+            last_order = current.get('last_order_id')
+            check('worker_order_visible_without_consent_write', refreshed.value.status == 200
+                  and current.get('enabled') is True and type(last_order) is int and last_order > 0 and len(puts) == 1)
+            expect(panel).to_contain_text(f'最近成功自动续费订单 #{last_order}。')
             expect(disable).to_be_visible()
-            check('worker_order_visible_without_consent_write', len(puts) == 1)
             page.screenshot(path=str(evidence / '02-real-renewed.png'), full_page=True)
             save(disable, False)
             expect(disable).to_have_count(0)
