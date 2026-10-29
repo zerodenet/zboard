@@ -36,12 +36,14 @@ export function safeReauthenticationRoute(value: string) {
       ? new Set(['lifecycle', 'connector', 'sort', 'direction', 'density', 'protocol_page', 'protocol_limit'])
       : url.pathname === '/admin/node-groups' ? new Set(['enabled'])
         : url.pathname === '/admin/subscription-templates' ? new Set(['template'])
-          : url.pathname === '/admin/fair-use' ? new Set(['range']) : new Set<string>()
+          : url.pathname === '/admin/fair-use' ? new Set(['range'])
+            : url.pathname === '/admin/orders' ? new Set(['order', 'user_id']) : new Set<string>()
     const enumValues: Record<string, readonly string[]> = { lifecycle: ['active', 'maintenance', 'retired'], connector: ['online', 'offline'], sort: ['id', 'name', 'region', 'last_seen_at'], direction: ['asc', 'desc'], density: ['compact', 'comfortable'], enabled: ['true', 'false'], range: ['1d', '3d', '7d', '15d'] }
     for (const key of [...url.searchParams.keys()]) {
       if (queryKeys.has(key)) continue
       const values = url.searchParams.getAll(key)
-      const allowed = pageKeys.has(key) && values.length === 1 && (key === 'template' ? values[0] === 'new' || (/^[1-9]\d{0,15}$/.test(values[0]!) && validID(Number(values[0]))) : enumValues[key]
+      const safeID = /^[1-9]\d{0,15}$/.test(values[0]!) && validID(Number(values[0]))
+      const allowed = pageKeys.has(key) && values.length === 1 && (key === 'template' ? values[0] === 'new' || safeID : key === 'order' || key === 'user_id' ? safeID : enumValues[key]
         ? enumValues[key]!.includes(values[0]!)
         : /^\d{1,6}$/.test(values[0]!) && Number(values[0]) > 0 && (key !== 'protocol_limit' || ['25', '50', '100'].includes(values[0]!)))
       if (!allowed) url.searchParams.delete(key)

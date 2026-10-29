@@ -69,6 +69,17 @@ it('preserves template editor position only for a safe ID or new on its own page
   expect(safeReauthenticationRoute('/account/tickets?template=19')).toBe('/account/tickets')
 })
 
+it('preserves only safe order detail and owner-filter IDs on the administrator order page', () => {
+  expect(safeReauthenticationRoute('/admin/orders?order=27&user_id=1&token=secret&payment_authorization=old'))
+    .toBe('/admin/orders?order=27&user_id=1')
+  expect(safeReauthenticationRoute('/admin/orders?order=9007199254740991&user_id=1234567'))
+    .toBe('/admin/orders?order=9007199254740991&user_id=1234567')
+  for (const key of ['order', 'user_id']) for (const value of ['-1', '0', '9007199254740992', 'abc', '1&'+key+'=2']) {
+    expect(safeReauthenticationRoute('/admin/orders?'+key+'='+value)).toBe('/admin/orders')
+  }
+  expect(safeReauthenticationRoute('/account/orders?order=27&user_id=1')).toBe('/account/orders')
+})
+
 it('preserves only the bounded observation range on the fair-use page', () => {
   for (const value of ['1d', '3d', '7d', '15d']) expect(safeReauthenticationRoute('/admin/fair-use?range=' + value + '&subscription=7&token=secret')).toBe('/admin/fair-use?range=' + value + '&subscription=7')
   for (const value of ['30d', '-1', '7d&range=15d']) expect(safeReauthenticationRoute('/admin/fair-use?range=' + value)).toBe('/admin/fair-use')
