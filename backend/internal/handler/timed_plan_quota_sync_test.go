@@ -19,12 +19,17 @@ func timedPlanSyncFixture(t *testing.T, base orderFixture) (fullReplacementFixtu
 	t.Helper()
 	f := newFullReplacementFixture(t, base, false, 60, 0)
 	*f.at = f.at.AddDate(0, 0, 5).Add(500 * time.Microsecond)
-	sku := base.sku(t, base.planRecord.ID, 2000, "timed-addon")
+	// The fixture helper persists its last argument as the allowed operation.
+	sku := base.sku(t, base.planRecord.ID, 2000, "addon")
 	if err := f.db.Model(&sku).Updates(map[string]any{"entitlement_mode": "traffic_addon", "traffic_bytes": 100, "billing_unit": "once", "billing_value": 1, "billing_mode": "one_time", "renewal_effect": "none"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	made, err := f.orders.Create(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: sku.ID, TargetSubscriptionID: f.subscription, IdempotencyKey: "timed-sync-real-addon"})
 	if err != nil {
+		var invalid *commerce.ValidationError
+		if errors.As(err, &invalid) {
+			t.Fatalf("real timed add-on creation rejected: %v fields=%v", err, invalid.Fields)
+		}
 		t.Fatal(err)
 	}
 	if _, err := f.payments.Configure(t.Context(), 1, made.ID, commerce.FundingRequest{UseBalance: true}); err != nil {

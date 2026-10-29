@@ -139,7 +139,7 @@ func assertPlanSyncPagedSuccess(t *testing.T, base orderFixture, group bool) {
 	if group {
 		request.NodeGroupID = &f.group.ID
 	}
-	updated, err := f.base.h.services.PlanUpdate.Update(t.Context(), 1, f.plan.ID, request)
+	updated, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, f.plan.ID, request)
 	if err != nil {
 		t.Fatal("1200-subscription plan update failed", err)
 	}
@@ -156,7 +156,7 @@ func assertPlanSyncPagedSuccess(t *testing.T, base orderFixture, group bool) {
 		t.Fatal(err)
 	}
 	var stale *commerce.PlanRevisionError
-	if _, err := f.base.h.services.PlanUpdate.Update(t.Context(), 1, f.plan.ID, request); !errors.As(err, &stale) {
+	if _, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, f.plan.ID, request); !errors.As(err, &stale) {
 		t.Fatal("stale revision replay was accepted", err)
 	}
 	if err := f.db.Order("node_id").Find(&intentsAfter).Error; err != nil || !reflect.DeepEqual(intentsBefore, intentsAfter) {
@@ -230,7 +230,7 @@ func assertPlanSyncPagesCombined(t *testing.T, base orderFixture) {
 	f := newPlanSyncPageFixture(t, base)
 	beforeMoney := planSyncFinancialSnapshot(t, f.db)
 	quota := int64(200)
-	_, err := f.base.h.services.PlanUpdate.Update(t.Context(), 1, f.plan.ID, commerce.PlanUpdateRequest{NodeGroupID: &f.group.ID, TrafficBytes: &quota, SyncTrafficQuota: true, ExpectedRevision: &f.plan.Revision})
+	_, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, f.plan.ID, commerce.PlanUpdateRequest{NodeGroupID: &f.group.ID, TrafficBytes: &quota, SyncTrafficQuota: true, ExpectedRevision: &f.plan.Revision})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func assertPlanSyncPagesRollback(t *testing.T, base orderFixture, group, unknown
 	if group {
 		request.NodeGroupID = &f.group.ID
 	}
-	_, err := f.base.h.services.PlanUpdate.Update(t.Context(), 1, f.plan.ID, request)
+	_, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, f.plan.ID, request)
 	if unknown {
 		var invalid *commerce.ValidationError
 		if !errors.As(err, &invalid) || invalid.Fields["sync_traffic_quota"] == "" {
@@ -405,7 +405,7 @@ func assertPlanSyncPagesMeteringRace(t *testing.T, base orderFixture) {
 	done, metered := make(chan error, 1), make(chan error, 1)
 	quota := int64(200)
 	go func() {
-		_, err := f.base.h.services.PlanUpdate.Update(context.WithValue(ctx, marker{}, true), 1, f.plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, SyncTrafficQuota: true, ExpectedRevision: &f.plan.Revision})
+		_, err := planQuotaUpdateService(f.db).Update(context.WithValue(ctx, marker{}, true), 1, f.plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, SyncTrafficQuota: true, ExpectedRevision: &f.plan.Revision})
 		done <- err
 	}()
 	select {
@@ -473,7 +473,7 @@ func assertPlanSyncPagesLowerQuota(t *testing.T, base orderFixture) {
 	f := newPlanSyncPageFixture(t, base)
 	beforeMoney := planSyncFinancialSnapshot(t, f.db)
 	quota := int64(40)
-	if _, err := f.base.h.services.PlanUpdate.Update(t.Context(), 1, f.plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, SyncTrafficQuota: true, ExpectedRevision: &f.plan.Revision}); err != nil {
+	if _, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, f.plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, SyncTrafficQuota: true, ExpectedRevision: &f.plan.Revision}); err != nil {
 		t.Fatal(err)
 	}
 	assertPlanSyncPagedRows(t, f, false, true, quota, 0)

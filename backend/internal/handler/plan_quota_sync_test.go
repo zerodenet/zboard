@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
@@ -20,6 +21,14 @@ import (
 )
 
 type planQuotaRaceMarker struct{}
+
+// Use the same real database clock as the purchase, scheduled reset and
+// metering fixtures. The handler's base database intentionally keeps wall time;
+// mixing it with January/April paid evidence invents an overdue reset instead
+// of testing the quota synchronization transaction at the intended instant.
+func planQuotaUpdateService(db *gorm.DB) commerce.PlanUpdate {
+	return commerce.PlanUpdate{Repository: commercestore.PlanUpdate{DB: db}}
+}
 
 // Hold the first authoritative subscription write until the other real request
 // is demonstrably blocked: SQLite's single connection or an InnoDB row lock.
@@ -134,7 +143,7 @@ func assertPlanQuotaSync(t *testing.T, base orderFixture) {
 		t.Fatal(err)
 	}
 	quota := int64(200)
-	updated, err := f.base.h.services.PlanUpdate.Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision})
+	updated, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +156,7 @@ func assertPlanQuotaSync(t *testing.T, base orderFixture) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err = f.base.h.services.PlanUpdate.Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &updated.Revision, SyncTrafficQuota: true})
+	updated, err = planQuotaUpdateService(f.db).Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &updated.Revision, SyncTrafficQuota: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +182,7 @@ func assertPlanQuotaSync(t *testing.T, base orderFixture) {
 		t.Fatal("stale replacement quote survived quota synchronization")
 	}
 	quota = 50
-	updated, err = f.base.h.services.PlanUpdate.Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &updated.Revision, SyncTrafficQuota: true})
+	updated, err = planQuotaUpdateService(f.db).Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &updated.Revision, SyncTrafficQuota: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +200,7 @@ func assertPlanQuotaSync(t *testing.T, base orderFixture) {
 		t.Fatal("quota sync lost durable delivery intent", err)
 	}
 	quota = 150
-	if _, err := f.base.h.services.PlanUpdate.Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &updated.Revision, SyncTrafficQuota: true}); err != nil {
+	if _, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &updated.Revision, SyncTrafficQuota: true}); err != nil {
 		t.Fatal(err)
 	}
 	assertSyncState(150, 90)
@@ -222,18 +231,20 @@ func assertPlanQuotaSyncRollback(t *testing.T, base orderFixture) {
 		t.Fatal(err)
 	}
 	const hook = "plan-quota-sync-failure"
+	injected := false
 	if err := f.db.Callback().Create().Before("gorm:create").Register(hook, func(tx *gorm.DB) {
 		if tx.Statement.Table == "quota_events" {
+			injected = true
 			tx.AddError(errors.New("injected quota event failure"))
 		}
 	}); err != nil {
 		t.Fatal(err)
 	}
 	quota := int64(50)
-	_, err := base.h.services.PlanUpdate.Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
+	_, err := planQuotaUpdateService(f.db).Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
 	f.db.Callback().Create().Remove(hook)
-	if err == nil {
-		t.Fatal("quota event failure ignored")
+	if err == nil || !injected || !strings.Contains(err.Error(), "injected quota event failure") {
+		t.Fatal("quota event failure was not reached or was ignored", err)
 	}
 	var after model.Subscription
 	var afterPlan model.Plan
@@ -315,10 +326,10 @@ func TestMySQLPlanQuotaSyncSupportsMoreThanOneThousand(t *testing.T) {
 	assertPlanSyncPagedSuccess(t, newMySQLBusinessOrderFixture(t), false)
 }
 
-func TestPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync(t *testing.T) {
+func TestPlanQuotaSyncPreservesPaidAddonWhileResetPending(t *testing.T) {
 	assertPlanQuotaSyncAddonGuard(t, newOrderFixture(t))
 }
-func TestMySQLPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync(t *testing.T) {
+func TestMySQLPlanQuotaSyncPreservesPaidAddonWhileResetPending(t *testing.T) {
 	assertPlanQuotaSyncAddonGuard(t, newMySQLBusinessOrderFixture(t))
 }
 func assertPlanQuotaSyncAddonGuard(t *testing.T, base orderFixture) {
@@ -353,11 +364,17 @@ func assertPlanQuotaSyncAddonGuard(t *testing.T, base orderFixture) {
 	if err := f.db.First(&plan, before.PlanID).Error; err != nil {
 		t.Fatal(err)
 	}
+	// A complete timed add-on is now supported. An overdue quota reset still
+	// makes its current-cycle value unavailable; do not guess or rewrite money.
+	if before.NextResetAt == nil {
+		t.Fatal("fixture lacks a scheduled reset")
+	}
+	*f.at = *before.NextResetAt
 	quota := int64(200)
-	_, err = base.h.services.PlanUpdate.Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
+	_, err = planQuotaUpdateService(f.db).Update(t.Context(), 1, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
 	var invalid *commerce.ValidationError
 	if !errors.As(err, &invalid) || invalid.Fields["sync_traffic_quota"] == "" {
-		t.Fatalf("mixed paid rights overwritten: %v", err)
+		t.Fatalf("pending-reset paid rights overwritten: %v", err)
 	}
 	var after model.Subscription
 	var afterPlan model.Plan
@@ -372,7 +389,7 @@ func assertPlanQuotaSyncAddonGuard(t *testing.T, base orderFixture) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(paid, afterOrder) || afterPlan.Revision != plan.Revision || afterPlan.TrafficBytes != plan.TrafficBytes {
-		t.Fatal("ambiguous synchronization lost paid addon or partially changed plan")
+		t.Fatal("pending-reset synchronization lost paid addon or partially changed plan")
 	}
 }
 
@@ -411,7 +428,7 @@ func assertPlanQuotaSyncRenewalRace(t *testing.T, fixture func(*testing.T) order
 			}
 			quota := int64(200)
 			synchronize := func(ctx context.Context) error {
-				_, err := f.base.h.services.PlanUpdate.Update(ctx, admin, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
+				_, err := planQuotaUpdateService(f.db).Update(ctx, admin, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
 				return err
 			}
 			pay := func(ctx context.Context) error { _, err := f.payments.Pay(ctx, 1, order.ID); return err }
@@ -501,7 +518,7 @@ func assertPlanQuotaSyncMeteringRace(t *testing.T, fixture func(*testing.T) orde
 			meter := func(ctx context.Context) error { _, _, err := accounting.Complete(ctx, event); return err }
 			quota := int64(200)
 			synchronize := func(ctx context.Context) error {
-				_, err := f.base.h.services.PlanUpdate.Update(ctx, admin, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
+				_, err := planQuotaUpdateService(f.db).Update(ctx, admin, plan.ID, commerce.PlanUpdateRequest{TrafficBytes: &quota, ExpectedRevision: &plan.Revision, SyncTrafficQuota: true})
 				return err
 			}
 			var syncErr, meterErr error
