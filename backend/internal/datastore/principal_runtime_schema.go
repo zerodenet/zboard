@@ -308,6 +308,9 @@ func principalIdentityLengthSQL(db *gorm.DB) string {
 }
 
 func backfillPrincipalRuntimeDigests(db *gorm.DB) error {
+	if !IsSQLite(db) {
+		return backfillMySQLPrincipalRuntimeDigests(db)
+	}
 	size := principalIdentityLengthSQL(db)
 	var cursor uint64
 	digestSize := "OCTET_LENGTH(core_instance_sha256)"
