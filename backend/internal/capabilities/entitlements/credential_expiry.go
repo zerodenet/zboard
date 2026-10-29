@@ -39,3 +39,20 @@ func (s CredentialExpiry) HasDue(ctx context.Context, now time.Time) (bool, erro
 	}
 	return s.Repository.HasDueCredentials(ctx, now.UTC())
 }
+
+// CredentialAccessExpiryRepository exposes only bounded local revocation and
+// publication intent. It does not end financial histories or bypass their locks.
+type CredentialAccessExpiryRepository interface {
+	ExpireDueAccessCredentials(context.Context, time.Time, int) (int, error)
+}
+
+func (s CredentialExpiry) ExpireAccessDue(ctx context.Context, now time.Time, limit int) (int, error) {
+	repository, ok := s.Repository.(CredentialAccessExpiryRepository)
+	if !ok {
+		return 0, ErrCredentialExpiryUnavailable
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	return repository.ExpireDueAccessCredentials(ctx, now.UTC(), limit)
+}

@@ -31,11 +31,15 @@ func TestMySQLBusinessOwnedSingletonCaptureRejectsActiveStateWithoutClearing(t *
 	if err := db.Model(&model.NodeObservationMaterialBudget{}).Where("id=?", 1).Update("retained_bytes", uint64(19)).Error; err != nil {
 		t.Fatal(err)
 	}
+	var beforeBudget model.NodeObservationMaterialBudget
+	if err := db.First(&beforeBudget, 1).Error; err != nil || beforeBudget.RetainedBytes != 19 || beforeBudget.Revision != 1 {
+		t.Fatal("material budget fixture did not advance", beforeBudget, err)
+	}
 	if _, _, err := captureBusinessSeeds(db, "node_observation_material_budget"); err == nil {
 		t.Fatal("active material budget accepted as initializer")
 	}
 	var budget model.NodeObservationMaterialBudget
-	if err := db.First(&budget, 1).Error; err != nil || budget.RetainedBytes != 19 || budget.Revision != 1 {
+	if err := db.First(&budget, 1).Error; err != nil || !reflect.DeepEqual(beforeBudget, budget) {
 		t.Fatal("rejected capture changed material authority", budget, err)
 	}
 	var state model.PrincipalStatisticsState
@@ -45,6 +49,11 @@ func TestMySQLBusinessOwnedSingletonCaptureRejectsActiveStateWithoutClearing(t *
 	if err := db.Model(&model.PrincipalStatisticsState{}).Where("id=?", 1).Update("projected_head", uint64(7)).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Snapshot after the deliberate mutation: GORM also updates UpdatedAt.
+	// Every field must then remain unchanged by the rejected capture itself.
+	if err := db.First(&state, 1).Error; err != nil || state.ProjectedHead != 7 {
+		t.Fatal("projection fixture did not advance", state, err)
+	}
 	if _, _, err := captureBusinessSeeds(db, "principal_statistics_state"); err == nil {
 		t.Fatal("progressed projection accepted as empty initializer")
 	}
@@ -52,7 +61,6 @@ func TestMySQLBusinessOwnedSingletonCaptureRejectsActiveStateWithoutClearing(t *
 	if err := db.First(&retained, 1).Error; err != nil {
 		t.Fatal(err)
 	}
-	state.ProjectedHead = 7
 	if !reflect.DeepEqual(state, retained) {
 		t.Fatal("rejected capture modified projection state", state, retained)
 	}
@@ -63,6 +71,9 @@ func TestMySQLBusinessOwnedSingletonCaptureRejectsActiveStateWithoutClearing(t *
 	if err := db.Model(&model.FlowStartStatisticsState{}).Where("id=?", 1).Update("projected_head", uint64(9)).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.First(&flowState, 1).Error; err != nil || flowState.ProjectedHead != 9 {
+		t.Fatal("flow statistics fixture did not advance", flowState, err)
+	}
 	if _, _, err := captureBusinessSeeds(db, "flow_start_statistics_state"); err == nil {
 		t.Fatal("progressed flow statistics accepted as empty initializer")
 	}
@@ -70,7 +81,6 @@ func TestMySQLBusinessOwnedSingletonCaptureRejectsActiveStateWithoutClearing(t *
 	if err := db.First(&flowRetained, 1).Error; err != nil {
 		t.Fatal(err)
 	}
-	flowState.ProjectedHead = 9
 	if !reflect.DeepEqual(flowState, flowRetained) {
 		t.Fatal("rejected capture modified flow state")
 	}

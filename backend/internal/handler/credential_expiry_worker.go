@@ -18,6 +18,16 @@ func (h *handlers) StartCredentialExpiryWorker() {
 		// Drain a bounded burst so mass expiries do not wait another interval per batch.
 		for batch := 0; batch < 10; batch++ {
 			now := time.Now().UTC()
+			// Stop access from authoritative deadlines before financial cleanup.
+			// Expired credential rows leave this bounded scan after commit, so a
+			// low-ID order-history budget cannot retain the next credential page.
+			revoked, err := h.services.CredentialExpiry(h.credentialCipher).ExpireAccessDue(ctx, now, credentialExpiryReconcileBatchSize)
+			if err != nil {
+				return err
+			}
+			if revoked == credentialExpiryReconcileBatchSize {
+				continue
+			}
 			expired, err := h.services.CredentialExpiry(h.credentialCipher).ExpireDue(ctx, now, credentialExpiryReconcileBatchSize)
 			if err != nil {
 				return err
@@ -46,6 +56,9 @@ func (h *handlers) runExpiredCredentialReconciliation(now time.Time) error {
 	started := now.UTC()
 	if started.IsZero() {
 		started = time.Now().UTC()
+	}
+	if _, err := h.services.CredentialExpiry(h.credentialCipher).ExpireAccessDue(context.Background(), started, credentialExpiryReconcileBatchSize); err != nil {
+		return err
 	}
 	expired, err := h.services.CredentialExpiry(h.credentialCipher).ExpireDue(context.Background(), started, credentialExpiryReconcileBatchSize)
 	if err != nil {
