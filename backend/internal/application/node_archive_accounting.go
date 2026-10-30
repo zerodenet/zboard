@@ -3,7 +3,6 @@ package application
 import (
 	"sort"
 
-	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -24,8 +23,14 @@ func managedFlowInputs(tx *gorm.DB, flows []metering.FlowSample) ([]metering.Flo
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	var nodes []model.Node
-	if err := tx.Clauses(credentialstore.CurrentResourceReadLock(tx)).Select("id,lifecycle_status").Where("id IN ?", ids).Order("id").Find(&nodes).Error; err != nil {
-		return nil, 0, credentialstore.CurrentResourceReadError(err)
+	// This snapshot only avoids resolving principals for already closed nodes.
+	// Do not retain node locks before waiting on subscription/commerce locks:
+	// that would block independent heartbeat writes for the entire wait.
+	// ResolveCompletionCredential rechecks the current node under SHARE NOWAIT
+	// after acquiring the subscription. A concurrent closure then rolls back
+	// this batch and leaves its spool replayable; the next snapshot filters it.
+	if err := tx.Select("id,lifecycle_status").Where("id IN ?", ids).Order("id").Find(&nodes).Error; err != nil {
+		return nil, 0, err
 	}
 	closed := map[uint]bool{}
 	for _, node := range nodes {

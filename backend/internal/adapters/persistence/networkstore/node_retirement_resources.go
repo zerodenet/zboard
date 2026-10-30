@@ -2,7 +2,9 @@ package networkstore
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -12,10 +14,13 @@ import (
 
 // Material is adapter-private: encrypted credentials never enter progress APIs.
 type retirementMaterial struct {
-	Node        model.Node
-	DNS         model.ManagedDNSRecord
-	Certificate model.ManagedCertificate
-	Shared      bool
+	Node                  model.Node
+	DNS                   model.ManagedDNSRecord
+	Certificate           model.ManagedCertificate
+	Shared                bool
+	Mode                  string
+	RemoteCleanupPossible bool
+	RemoteCleanupReason   string
 }
 
 func retirementHostExclusive(tx *gorm.DB, node model.Node) error {
@@ -36,24 +41,46 @@ func (s NodeRetirement) material(ctx context.Context, id uint, runID string, ste
 			return err
 		}
 		found := false
+		var persisted network.RetirementStep
 		for _, expected := range retirementView(row).Steps {
 			if expected.ID == step.ID && expected.Kind == step.Kind && expected.State == "running" {
 				found = true
+				persisted = expected
 			}
 		}
-		if !found || row.Mode != "retire" {
+		if !found || (row.Mode != "retire" && row.Mode != "delete") {
 			return jobs.ErrInvalid
 		}
 		if err := tx.First(&out.Node, id).Error; err != nil {
 			return err
 		}
-		if out.Node.LifecycleStatus != "deleting" {
+		out.Mode = row.Mode
+		if out.Node.LifecycleStatus != "deleting" && !(row.Mode == "delete" && out.Node.LifecycleStatus == "archived") {
 			return jobs.ErrConflict
+		}
+		out.RemoteCleanupPossible = true
+		if row.Mode == "delete" && step.Kind != "dns" {
+			n := out.Node
+			if n.SSHHost == "" || n.SSHUser == "" || n.SSHPwd == "" || n.SSHHostKeyFingerprint == "" || n.ConnectorLastSeenAt == nil || n.ConnectorLastSeenAt.Before(time.Now().Add(-2*time.Minute)) {
+				out.RemoteCleanupPossible = false
+				out.RemoteCleanupReason = "节点离线或没有可用的已验证 SSH，远端程序和文件未能清理。"
+			}
+			if e := retirementHostExclusive(tx, n); n.SSHHost != "" && e != nil {
+				var blocked *network.RetirementBlocked
+				if !errors.As(e, &blocked) {
+					return e
+				}
+				out.RemoteCleanupPossible = false
+				out.RemoteCleanupReason = "SSH 主机仍由其他节点使用，未清理共享主机上的程序和文件。"
+			}
 		}
 		switch step.Kind {
 		case "dns":
 			if err := tx.First(&out.DNS, "id = ? AND node_id = ?", step.ID, id).Error; err != nil {
 				return err
+			}
+			if row.Mode == "delete" && (persisted.ProviderAccountID != out.DNS.ProviderAccountID || persisted.ProviderZoneID != out.DNS.ProviderZoneID || persisted.ProviderRecordID != out.DNS.ProviderRecordID) {
+				return jobs.ErrConflict
 			}
 			var count int64
 			q := tx.Model(&model.ManagedDNSRecord{}).Where("node_id <> ?", id).
@@ -67,7 +94,7 @@ func (s NodeRetirement) material(ctx context.Context, id uint, runID string, ste
 			}
 			out.Shared = out.Shared || count > 0
 		case "certificate":
-			if err := retirementHostExclusive(tx, out.Node); err != nil {
+			if err := retirementHostExclusive(tx, out.Node); err != nil && row.Mode != "delete" {
 				return err
 			}
 			if err := tx.First(&out.Certificate, "id = ? AND node_id = ?", step.ID, id).Error; err != nil {
@@ -81,7 +108,10 @@ func (s NodeRetirement) material(ctx context.Context, id uint, runID string, ste
 				return retirementBlocked("证书被其他节点引用，拒绝清理")
 			}
 		case "zero":
-			return retirementHostExclusive(tx, out.Node)
+			if row.Mode != "delete" {
+				return retirementHostExclusive(tx, out.Node)
+			}
+			return nil
 		default:
 			return jobs.ErrInvalid
 		}
@@ -98,5 +128,5 @@ func (s NodeRetirement) Material(ctx context.Context, id uint, runID string, ste
 		return network.RetirementMaterial{}, err
 	}
 	n, d, c := m.Node, m.DNS, m.Certificate
-	return network.RetirementMaterial{SSH: network.NodeCleanupSnapshot{NodeID: n.ID, Host: n.SSHHost, Port: n.SSHPort, User: n.SSHUser, AuthMethod: n.SSHAuthMethod, CredentialCiphertext: n.SSHPwd, PassphraseCiphertext: n.SSHPrivateKeyPassphrase, PrivilegeMode: n.SSHPrivilegeMode, PrivilegePasswordCiphertext: n.SSHPrivilegePassword, HostKeyFingerprint: n.SSHHostKeyFingerprint}, DNS: network.ManagedDNSRecord{ID: d.ID, NodeID: d.NodeID, ProviderAccountID: d.ProviderAccountID, ProviderZoneID: d.ProviderZoneID, ProviderRecordID: d.ProviderRecordID, DomainName: d.DomainName, RecordType: d.RecordType, RecordValue: d.RecordValue, TTL: d.TTL, Proxied: d.Proxied, ObservedHash: d.ObservedHash, LastSyncedAt: d.LastSyncedAt}, CertificateID: c.ID, CertPath: c.CertPath, KeyPath: c.KeyPath, Shared: m.Shared}, nil
+	return network.RetirementMaterial{SSH: network.NodeCleanupSnapshot{NodeID: n.ID, Host: n.SSHHost, Port: n.SSHPort, User: n.SSHUser, AuthMethod: n.SSHAuthMethod, CredentialCiphertext: n.SSHPwd, PassphraseCiphertext: n.SSHPrivateKeyPassphrase, PrivilegeMode: n.SSHPrivilegeMode, PrivilegePasswordCiphertext: n.SSHPrivilegePassword, HostKeyFingerprint: n.SSHHostKeyFingerprint}, Mode: m.Mode, RemoteCleanupPossible: m.RemoteCleanupPossible, RemoteCleanupReason: m.RemoteCleanupReason, DNS: network.ManagedDNSRecord{ID: d.ID, NodeID: d.NodeID, ProviderAccountID: d.ProviderAccountID, ProviderZoneID: d.ProviderZoneID, ProviderRecordID: d.ProviderRecordID, DomainName: d.DomainName, RecordType: d.RecordType, RecordValue: d.RecordValue, TTL: d.TTL, Proxied: d.Proxied, ObservedHash: d.ObservedHash, LastSyncedAt: d.LastSyncedAt}, CertificateID: c.ID, CertPath: c.CertPath, KeyPath: c.KeyPath, Shared: m.Shared}, nil
 }

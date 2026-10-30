@@ -2310,7 +2310,7 @@ export interface NodeBatchFilters {
 }
 
 export async function createNodeBatchOperation(payload: {
-	action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire'
+	action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'disable' | 'retire'
 	node_ids?: number[]
 	all_matching?: boolean
 	filters?: NodeBatchFilters

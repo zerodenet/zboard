@@ -75,11 +75,11 @@ func (h *handlers) NodeBatchOperationHandler(w http.ResponseWriter, r *http.Requ
 	case "maintenance":
 		taskType = taskTypeNodeLifecycle
 		content.LifecycleStatus = "maintenance"
-	case "retire":
+	case "disable", "retire":
 		taskType = taskTypeNodeLifecycle
 		content.LifecycleStatus = "retired"
 	default:
-		BadRequest(w, "action must be detect, reconcile, activate, maintenance or retire")
+		BadRequest(w, "action must be detect, reconcile, activate, maintenance or disable")
 		return
 	}
 	ids, scope, err := h.resolveNodeBatchScope(r.Context(), req)

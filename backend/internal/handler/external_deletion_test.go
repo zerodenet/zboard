@@ -2,6 +2,9 @@ package handler
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,10 +92,16 @@ func TestNodeArchivalClearsCurrentRelationsWithoutSSHOrProviderAccess(t *testing
 	calls := 0
 	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(403) })
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
+	f.h.backgroundJobs()
+	f.h.services.Jobs.Detach(network.NodeRetirementHandler)
 	w := httptest.NewRecorder()
 	f.h.NodeCascadeDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/nodes/%d", b.NodeID), f.admin, ""))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remote_zero_stopped":false`) {
+	if w.Code != http.StatusAccepted {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	executor := jobs.Executor{Store: jobstore.New(f.h.db), Worker: "delete-http-test", Timeout: time.Minute, Handlers: map[string]jobs.Handler{network.NodeRetirementHandler: f.h.services.NodeRetirement(f.h).Execute}}
+	if err := executor.RunOne(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 	for _, query := range []*gorm.DB{
 		f.h.db.Model(&model.NetworkEntry{}).Where("id = ?", entry.ID),
@@ -116,9 +125,7 @@ func TestNodeArchivalClearsCurrentRelationsWithoutSSHOrProviderAccess(t *testing
 	if err := f.h.db.First(&retainedPool, pool.ID).Error; err != nil || retainedPool.AutoSync || retainedPool.Config != "{}" {
 		t.Fatal("current proxy configuration survived archive", retainedPool, err)
 	}
-	if !strings.Contains(w.Body.String(), `"archived":true`) || !strings.Contains(w.Body.String(), `"history_preserved":true`) || !strings.Contains(w.Body.String(), `"deleted":false`) {
-		t.Fatal("archive reported physical deletion", w.Body.String())
-	}
+
 	var surviving model.Node
 	if err := f.h.db.First(&surviving, a.ID).Error; err != nil {
 		t.Fatal("entry node was removed")

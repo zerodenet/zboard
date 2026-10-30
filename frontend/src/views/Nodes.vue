@@ -25,7 +25,7 @@
       <template #selection>
         <div v-if="filters.lifecycle !== 'archived' && (selectedNodeIDs.length || selectionAllMatching)" class="bulk-action-bar">
           <div><strong>已选择 {{ selectedNodeCount }} 个节点</strong><span v-if="selectionAllMatching">范围：当前全部筛选结果</span><span v-else>范围：已勾选行</span><UiButton v-if="canSelectAllMatching" variant="ghost" size="sm" type="button" @click="selectAllMatching">选择全部 {{ total }} 条筛选结果</UiButton></div>
-          <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'detect'" @click="runBatch('detect')"><UiIcon name="search" />批量检测</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'reconcile'" @click="openBatchKernelRollout"><UiIcon name="play" />批量升级 Zero</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'maintenance'" @click="runBatch('maintenance')">设为维护</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'activate'" @click="runBatch('activate')">恢复启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'retire'" @click="runBatch('retire')">批量退役</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
+          <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'detect'" @click="runBatch('detect')"><UiIcon name="search" />批量检测</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'reconcile'" @click="openBatchKernelRollout"><UiIcon name="play" />批量升级 Zero</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'maintenance'" @click="runBatch('maintenance')">设为维护</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'activate'" @click="runBatch('activate')">恢复启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'disable'" @click="runBatch('disable')">批量禁用</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
         </div>
       </template>
       <TableSkeleton v-if="initialLoading && !nodes.length" label="正在加载节点资产" :columns="10" />
@@ -43,7 +43,7 @@
               <td class="selection-column"><UiCheckbox :model-value="isNodeSelected(node.id)" :disabled="selectionAllMatching || node.lifecycle_status === 'archived'" :aria-label="`选择节点 ${node.name}`" @update:model-value="toggleNodeSelection(node.id, $event)" /></td>
               <td class="table-primary-column"><div class="cell-title"><strong>{{ node.name }}</strong><EndpointAddress v-if="node.address" :address="node.address" /><span v-else>未设置地址</span></div></td>
               <td data-column-priority="3"><TableText :value="node.region" /></td>
-              <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
+              <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ !node.is_enabled && !['archived', 'deleting', 'maintenance'].includes(node.lifecycle_status) ? '已禁用' : lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
               <td><StatusBadge :tone="node.connector_online ? 'success' : node.connector_last_seen_at ? 'warning' : 'neutral'" :icon="node.connector_online ? 'wifi' : node.connector_last_seen_at ? 'alert' : 'minus'">{{ node.connector_online ? '在线' : node.connector_last_seen_at ? '离线' : '未连接' }}</StatusBadge></td>
               <td data-column-priority="3"><StatusBadge :tone="node.ssh_verified_at ? 'success' : node.ssh_configured ? 'warning' : 'neutral'" icon="key">{{ node.ssh_verified_at ? '已验证' : node.ssh_configured ? '待验证' : '未配置' }}</StatusBadge></td>
               <td data-column-priority="2"><div class="kernel-list-cell"><StatusBadge :tone="kernelListTone(node.kernel_state?.status)" icon="activity">{{ kernelListLabel(node.kernel_state?.status) }}</StatusBadge><span v-if="node.kernel_state?.installed_version" class="mono kernel-list-version" :title="node.kernel_state.installed_version">{{ compactZeroVersion(node.kernel_state.installed_version) }}</span></div></td>
@@ -64,7 +64,7 @@
         <article class="panel node-summary">
           <div class="node-summary-main">
             <span class="node-avatar"><UiIcon name="nodes" /></span>
-            <div><div class="title-line"><h2>{{ selectedNode.name }}</h2><StatusBadge :tone="lifecycleTone(selectedNode)">{{ lifecycleLabel(selectedNode.lifecycle_status) }}</StatusBadge></div><p>{{ selectedNode.region || '未设置区域' }} · <span class="mono">{{ selectedNode.address || '未设置默认业务地址' }}</span></p><small>{{ selectedNode.remark || '暂无备注' }}</small></div>
+            <div><div class="title-line"><h2>{{ selectedNode.name }}</h2><StatusBadge :tone="lifecycleTone(selectedNode)">{{ !selectedNode.is_enabled && !['archived', 'deleting', 'maintenance'].includes(selectedNode.lifecycle_status) ? '已禁用' : lifecycleLabel(selectedNode.lifecycle_status) }}</StatusBadge></div><p>{{ selectedNode.region || '未设置区域' }} · <span class="mono">{{ selectedNode.address || '未设置默认业务地址' }}</span></p><small>{{ selectedNode.remark || '暂无备注' }}</small></div>
           </div>
           <div v-if="selectedNode.lifecycle_status !== 'archived'" class="node-actions">
             <UiButton variant="secondary" size="sm" type="button" @click="openEdit(selectedNode)"><UiIcon name="edit" />编辑资产</UiButton>
@@ -73,13 +73,13 @@
             <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="openTerminal(selectedNode)"><UiIcon name="terminal" />打开终端</UiButton>
             <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedNode.ssh_verified_at" @click="diagnosticsOpen = true"><UiIcon name="search" />运行诊断</UiButton>
             <UiButton v-if="selectedNode.ssh_host_key_fingerprint" variant="danger" size="sm" type="button" @click="resetSSHHostKey(selectedNode)">重新信任主机</UiButton>
-            <UiButton variant="danger" size="sm" type="button" @click="removeNode(selectedNode)"><UiIcon name="trash" />退役／移除管理</UiButton>
+            <UiButton variant="danger" size="sm" type="button" @click="removeNode(selectedNode)"><UiIcon name="trash" />删除节点</UiButton>
           </div>
         </article>
 
-        <PageAlert v-if="selectedNode.lifecycle_status === 'archived'" tone="info" title="节点已永久归档">
-          <p>管理能力和连接凭证已关闭，历史账本及归属保留。归档后不能重新启用；相同主机再次接入需登记新节点。</p>
-          <p v-if="selectedNode.archived_at">归档时间 <TimeBadge :value="selectedNode.archived_at" /></p>
+        <PageAlert v-if="selectedNode.lifecycle_status === 'archived'" tone="info" title="节点已删除">
+          <p>节点配置和管理关联已删除，历史计费数据保留。需要再次接入时，请登记新节点。</p>
+          <p v-if="selectedNode.archived_at">删除时间 <TimeBadge :value="selectedNode.archived_at" /></p>
           <RouterLink :to="adminContextLink('/admin/operation-logs', { node_id: String(selectedNode.id) })">查看历史运行记录</RouterLink>
         </PageAlert>
         <template v-else>
@@ -168,7 +168,7 @@
             </div>
             <section class="kernel-history" aria-label="离线节点清理">
               <h3>离线节点清理</h3>
-              <p>“退役并清理”会提交远端清理任务；“仅移除面板管理”会保留远端资源。网站不可用时，也可通过 SSH 在节点本机执行离线脚本。</p>
+              <p>删除节点会清理面板管理的供应商 DNS 和系统关联；SSH 不可用时，远端程序和文件的未清理结果会明确显示。网站不可用时，也可在主机上通过 SSH 执行离线卸载脚本。</p>
               <UiButton variant="secondary" size="sm" type="button" @click="downloadCleanupScript">下载清理脚本</UiButton>
               <p>停机并关闭自动启动：<code>sudo sh cleanup-zero-node.sh stop --yes</code></p>
               <p>彻底卸载内核、配置和事件队列：<code>sudo sh cleanup-zero-node.sh uninstall --yes</code></p>
@@ -239,7 +239,7 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-create-form" type="submit" :loading="saving">保存 VPS</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑 VPS" description="维护资产元数据和生命周期；维护或退役会自动停止对外交付。" :busy="saving" @close="editOpen = false">
+    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑 VPS" description="维护资产元数据和生命周期；维护或禁用会停止对外交付，恢复启用后可继续使用。" :busy="saving" @close="editOpen = false">
       <PageAlert v-if="assetDraftConflict" tone="warning" title="资产已在其他会话更新">已保留旧草稿，不能直接覆盖服务器的新内容。<template #actions><UiButton variant="secondary" type="button" @click="reloadAssetEditor">重新加载最新资产</UiButton></template></PageAlert>
       <form id="node-edit-form" ref="editFormElement" class="form-grid" novalidate @submit.prevent="saveNode">
         <PageAlert v-if="editErrors.formError.value" class="field-full" tone="danger" title="无法保存 VPS">{{ editErrors.formError.value }}</PageAlert>
@@ -366,8 +366,8 @@ const nodeSortFields = new Set<NodeSortField>(['id', 'name', 'region', 'last_see
 const sortField = ref(resolveSortField(route.query.sort, nodeSortFields, 'id'))
 const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direction, 'desc'))
 const density = ref<'compact' | 'comfortable'>(resolveTableDensity(route.query.density))
-const lifecycleOptions = [{ label: '正常', value: 'active' }, { label: '维护', value: 'maintenance' }, { label: '退役', value: 'retired' }]
-const lifecycleFilterOptions = [{ label: '管理中的节点', value: '' }, ...lifecycleOptions, { label: '已归档', value: 'archived' }]
+const lifecycleOptions = [{ label: '正常', value: 'active' }, { label: '维护', value: 'maintenance' }, { label: '禁用', value: 'retired' }]
+const lifecycleFilterOptions = [{ label: '管理中的节点', value: '' }, ...lifecycleOptions, { label: '已删除', value: 'archived' }]
 const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { label: 'Connector 在线', value: 'online' }, { label: 'Connector 离线', value: 'offline' }]
 const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥', value: 'private_key' }]
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
@@ -397,7 +397,7 @@ const nodeDetailTabs = [
   { value: 'credentials', label: '连接凭证', icon: 'key' },
 ]
 const saving = ref(false), testingNode = ref(0)
-const bulkBusy = ref<'' | 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire'>('')
+const bulkBusy = ref<'' | 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'disable'>('')
 const message = ref('')
 const detailMessage = ref('')
 const detailError = ref('')
@@ -546,7 +546,8 @@ const { items: nodes, total, loading, initialLoading, refreshing, error, load: r
     offset: offset.value,
     limit: limit.value,
     q: filters.q || undefined,
-    lifecycleStatus: filters.lifecycle || undefined,
+    lifecycleStatus: filters.lifecycle === 'retired' ? undefined : filters.lifecycle || undefined,
+ enabled: filters.lifecycle === 'retired' ? false : undefined,
     connectorOnline: filters.connector ? filters.connector === 'online' : undefined,
     sort: sortField.value,
     direction: sortDirection.value,
@@ -593,7 +594,7 @@ const kernelStatusLabel = computed(() => ({
 } as Record<string, string>)[kernelState.value?.status || 'unknown'] || formatUnknownValue('状态', kernelState.value?.status))
 const kernelDescription = computed(() => kernelState.value?.installed_version ? `Zero ${kernelState.value.installed_version} · ${serviceLabel(kernelState.value.service_status)}` : kernelStatusLabel.value)
 const reconcileButtonLabel = computed(() => kernelState.value?.status === 'unsupported' ? '当前制品不兼容' : kernelState.value?.status === 'not_installed' ? '自动安装' : kernelState.value?.recommended_action === 'configure' ? '应用配置' : '安装 / 升级 / 修复')
-function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役', deleting: '退役处理中', archived: '已归档' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
+function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '已禁用', deleting: '删除中', archived: '已删除' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
 function lifecycleTone(node: any): 'success' | 'warning' | 'neutral' { return node.lifecycle_status === 'maintenance' ? 'warning' : node.lifecycle_status === 'retired' ? 'neutral' : node.is_enabled ? 'success' : 'neutral' }
 function kernelListLabel(value?: string) { return ({ unknown: '未检测', not_installed: '未安装', healthy: '健康', degraded: '异常', failed: '失败', unsupported: '不兼容', publishing: '发布中', apply_failed: '应用失败', reconciling: '待核对' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
 function kernelListTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { if (value === 'healthy') return 'success'; if (!value || value === 'unknown') return 'neutral'; if (value === 'not_installed' || value === 'unsupported' || value === 'publishing' || value === 'reconciling') return 'warning'; return 'danger' }
@@ -607,14 +608,14 @@ function operationStatusTone(value: string): 'info' | 'success' | 'danger' | 'wa
 function kernelActionLabel(value?: string) { return ({ detect: '先检测', install: '安装', upgrade: '升级', repair: '修复', configure: '同步配置', reconcile_configuration: '核对配置结果', check_release: '检查新版本', manual_review: '人工确认', none: '无需操作' } as Record<string, string>)[value || 'detect'] || formatUnknownValue('动作', value) }
 function operationLabel(value?: string) { return ({ detect: '环境检测', reconcile: '状态对齐', install: '安装', upgrade: '升级', downgrade: '降级', repair: '修复', configure: '配置同步', none: '状态确认' } as Record<string, string>)[value || 'reconcile'] || formatUnknownValue('操作', value) }
 function operationSummary(operation: NodeKernelOperation) { return truncateOutput(normalizeOutput(operation.result_summary || operation.error || kernelPhaseLabel(operation.phase)), 220) }
-async function runBatch(action: 'detect' | 'activate' | 'maintenance' | 'retire') {
-  const labels = { detect: '检测节点状态', activate: '恢复启用节点', maintenance: '将节点设为维护', retire: '退役节点' }
+async function runBatch(action: 'detect' | 'activate' | 'maintenance' | 'disable') {
+  const labels = { detect: '检测节点状态', activate: '恢复启用节点', maintenance: '将节点设为维护', disable: '禁用节点' }
   const count = selectedNodeCount.value
-  const accepted = await confirmAction({ title: labels[action], message: `将对 ${count} 个节点创建后台任务。请求被接受后可以离开页面，最终成功、失败和部分失败会持续显示。`, confirmText: action === 'retire' ? '确认退役' : '创建任务', tone: action === 'retire' ? 'danger' : 'primary' })
+  const accepted = await confirmAction({ title: labels[action], message: `将对 ${count} 个节点创建后台任务。请求被接受后可以离开页面，最终成功、失败和部分失败会持续显示。`, confirmText: action === 'disable' ? '确认禁用' : '创建任务', tone: action === 'disable' ? 'danger' : 'primary' })
   if (!accepted) return
   bulkBusy.value = action; error.value = ''; message.value = ''
   try {
-    const task = await createNodeBatchOperation({ action, ...(selectionAllMatching.value ? { all_matching: true, filters: { q: filters.q || undefined, lifecycle_status: filters.lifecycle || undefined, connector_online: filters.connector ? filters.connector === 'online' : undefined } } : { node_ids: selectedNodeIDs.value }) })
+    const task = await createNodeBatchOperation({ action, ...(selectionAllMatching.value ? { all_matching: true, filters: { q: filters.q || undefined, lifecycle_status: filters.lifecycle === 'retired' ? undefined : filters.lifecycle || undefined, enabled: filters.lifecycle === 'retired' ? false : undefined, connector_online: filters.connector ? filters.connector === 'online' : undefined } } : { node_ids: selectedNodeIDs.value }) })
     trackAdminTask(task); clearSelection(); message.value = `后台任务 #${task.id} 已接受；最终结果会显示在任务托盘。`
   } catch (e: any) { error.value = e?.response?.data?.message || '批量节点任务创建失败。' }
   finally { bulkBusy.value = '' }
@@ -636,7 +637,7 @@ async function submitBatchKernelRollout() {
       action: 'reconcile',
       version: batchReleaseVersion.value,
       allow_downgrade: batchAllowDowngrade.value,
-      ...(selectionAllMatching.value ? { all_matching: true, filters: { q: filters.q || undefined, lifecycle_status: filters.lifecycle || undefined, connector_online: filters.connector ? filters.connector === 'online' : undefined } } : { node_ids: selectedNodeIDs.value }),
+      ...(selectionAllMatching.value ? { all_matching: true, filters: { q: filters.q || undefined, lifecycle_status: filters.lifecycle === 'retired' ? undefined : filters.lifecycle || undefined, enabled: filters.lifecycle === 'retired' ? false : undefined, connector_online: filters.connector ? filters.connector === 'online' : undefined } } : { node_ids: selectedNodeIDs.value }),
     })
     trackAdminTask(task)
     batchKernelOpen.value = false
@@ -772,7 +773,7 @@ function adminContextLink(path: string, query: Record<string, string>) { return 
 async function syncURL(replace = false) {
   const page = Math.floor(offset.value / limit.value) + 1
   const location = { query: {
-    ...(retirementOpen.value && retirementTarget.value ? { retirement: String(retirementTarget.value.id) } : {}),
+    ...(retirementOpen.value && retirementTarget.value ? { deletion: String(retirementTarget.value.id) } : {}),
     ...preserveAdminReturnTo(route.query.return_to),
     ...(filters.q ? { q: filters.q } : {}),
     ...(filters.lifecycle ? { lifecycle: filters.lifecycle } : {}),
@@ -813,14 +814,14 @@ async function downloadCleanupScript() {
 const retirementOpen = ref(false), retirementTarget = ref<{ id: number; name: string } | null>(null)
 async function removeNode(node: AdminNodeDetail) { retirementTarget.value = node; retirementOpen.value = true; await syncURL(true) }
 async function closeRetirement() { retirementOpen.value = false; await syncURL(true) }
-watch(() => route.query.retirement, value => {
+watch(() => route.query.deletion ?? route.query.retirement, value => {
   const id = Number(value)
   if (Number.isSafeInteger(id) && id > 0) { if (retirementTarget.value?.id !== id) retirementTarget.value = { id, name: `#${id}` }; retirementOpen.value = true }
   else retirementOpen.value = false
 }, { immediate: true })
 async function retirementCompleted() {
   if (selectedNode.value?.id === retirementTarget.value?.id) await closeDetail()
-  message.value = '节点退役处理完成，清理结果可在退役任务中核对。'
+  message.value = '节点已删除，供应商资源及远端清理结果可在删除任务中查看。'
   await refresh()
 }
 async function changeNodeProtocolPage(value: { offset: number; limit: number }) { nodeProtocolOffset.value = value.offset; nodeProtocolLimit.value = value.limit; await syncURL() }

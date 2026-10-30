@@ -56,8 +56,9 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 	var err error
 	if len(input.Flows) > 0 || len(input.Nodes) > 0 || len(input.Sources) > 0 {
 		err = s.nativeAuthorityTransaction(ctx, input, func(tx *gorm.DB) error {
-			// Retain exact parent SHARE NOWAIT locks through settlement and source append.
-			// Terminal source bodies are still enqueued, held by the existing tombstone.
+			// Filter closed sources without locking nodes ahead of subscriptions.
+			// Settlement rechecks current parents under SHARE NOWAIT; source
+			// append retains terminal bodies under the existing tombstone.
 			flows, closed, err := managedFlowInputs(tx, input.Flows)
 			if err != nil {
 				return err

@@ -2,9 +2,13 @@ package handler
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestNodeArchivalRollsBackAssociationsWhenArchiveWriteFails(t *testing.T) {
@@ -25,10 +29,16 @@ func TestNodeArchivalRollsBackAssociationsWhenArchiveWriteFails(t *testing.T) {
 	if err := f.h.db.First(&originalNode, b.NodeID).Error; err != nil {
 		t.Fatal(err)
 	}
+	f.h.backgroundJobs()
+	f.h.services.Jobs.Detach(network.NodeRetirementHandler)
 	w := httptest.NewRecorder()
 	f.h.NodeCascadeDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/nodes/%d", b.NodeID), f.admin, ""))
-	if w.Code != 500 {
+	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	executor := jobs.Executor{Store: jobstore.New(f.h.db), Worker: "delete-rollback-test", Timeout: time.Minute, Handlers: map[string]jobs.Handler{network.NodeRetirementHandler: f.h.services.NodeRetirement(f.h).Execute}}
+	if err := executor.RunOne(t.Context()); err == nil {
+		t.Fatal("archive write failure was ignored")
 	}
 	if err := f.h.db.First(&entry, entry.ID).Error; err != nil {
 		t.Fatal("failed deletion lost entry")
@@ -45,7 +55,7 @@ func TestNodeArchivalRollsBackAssociationsWhenArchiveWriteFails(t *testing.T) {
 	if err := f.h.db.First(&retainedNode, b.NodeID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if retainedNode.LifecycleStatus != originalNode.LifecycleStatus || retainedNode.IsEnabled != originalNode.IsEnabled {
+	if retainedNode.LifecycleStatus != "deleting" || retainedNode.IsEnabled || retainedNode.ArchivedAt != nil {
 		t.Fatal("failed deletion left node disabled or deleting")
 	}
 

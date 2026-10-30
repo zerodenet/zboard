@@ -185,7 +185,7 @@ func (s NodeAdministration) Update(ctx context.Context, actor uint, request Node
 		}
 		request.LifecycleStatus = &value
 		if value != "active" && request.IsEnabled != nil && *request.IsEnabled {
-			return NodeAdministrationRecord{}, nodeAdministrationValidation("is_enabled", "维护或退役节点不能承载对外服务。")
+			return NodeAdministrationRecord{}, nodeAdministrationValidation("is_enabled", "维护或禁用的节点不能承载对外服务。")
 		}
 	}
 	if request.Name == nil && request.Region == nil && request.Address == nil && request.Remark == nil && request.LifecycleStatus == nil && request.IsEnabled == nil {

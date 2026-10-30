@@ -19,7 +19,7 @@ func (s *Services) HistoryRetentionJobs() []PeriodicJob {
 		{"history_retention_tasks", "运营任务历史保留", observability.Tasks, 5 * time.Minute},
 		{"history_retention_node_operations", "节点操作历史保留", observability.NodeOperations, 5 * time.Minute},
 		{"history_retention_protocol_deployments", "发布历史保留", observability.ProtocolDeployments, 5 * time.Minute},
-		{"history_retention_archived_cursors", "归档节点游标回收", observability.ArchivedFlowCursors, time.Minute},
+		{"history_retention_archived_cursors", "已删除节点计费游标回收", observability.ArchivedFlowCursors, time.Minute},
 		{"history_retention_periodic_success", "成功周期任务历史保留", observability.PeriodicSuccess, time.Minute},
 		{"history_retention_periodic_failure", "失败周期任务历史保留", observability.PeriodicFailure, time.Minute},
 	}

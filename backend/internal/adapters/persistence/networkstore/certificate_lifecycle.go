@@ -79,7 +79,7 @@ func (s CertificateLifecycle) UpdateCertificate(ctx context.Context, actor, id u
 		if err != nil {
 			return network.ErrCertificatePermission
 		}
-		if row.Status == "deleting" {
+		if row.Status == "deleting" || row.Status == "deleted" {
 			return network.ErrCertificateDeleting
 		}
 		if row.Revision != change.ExpectedRevision {
@@ -117,7 +117,7 @@ func (s CertificateLifecycle) UpdateCertificateRenewal(ctx context.Context, acto
 		if err != nil {
 			return network.ErrCertificatePermission
 		}
-		if row.Status == "deleting" {
+		if row.Status == "deleting" || row.Status == "deleted" {
 			return network.ErrCertificateDeleting
 		}
 		if row.Revision != expected {
@@ -148,7 +148,7 @@ func (s CertificateLifecycle) StartCertificateOperation(ctx context.Context, act
 			}
 			requestedBy = &actor
 		}
-		if certificate.Status == "deleting" {
+		if certificate.Status == "deleting" || certificate.Status == "deleted" {
 			return network.ErrCertificateDeleting
 		}
 		if certificate.Status == "issuing" || certificate.Status == "renewing" {
@@ -246,7 +246,7 @@ func (s CertificateLifecycle) FailCertificateOperation(ctx context.Context, oper
 }
 
 func (s CertificateLifecycle) DueCertificateRenewals(ctx context.Context, now time.Time, limit int) ([]uint, error) {
-	if err := s.DB.WithContext(ctx).Model(&model.ManagedCertificate{}).Where("not_after IS NOT NULL AND not_after <= ? AND status NOT IN ?", now, []string{"issuing", "renewing", "expired", "deleting"}).Updates(map[string]any{"status": "expired", "last_error": "certificate has expired"}).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Model(&model.ManagedCertificate{}).Where("not_after IS NOT NULL AND not_after <= ? AND status NOT IN ?", now, []string{"issuing", "renewing", "expired", "deleting", "deleted"}).Updates(map[string]any{"status": "expired", "last_error": "certificate has expired"}).Error; err != nil {
 		return nil, err
 	}
 	var ids []uint

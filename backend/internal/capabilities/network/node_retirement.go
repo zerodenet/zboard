@@ -18,16 +18,25 @@ type NodeRetirementRunInput struct {
 	NodeID   uint   `json:"node_id"`
 }
 
+// RemoteCleanupUnconfirmed records a host-side result without turning missing
+// SSH access into a successful native cleanup or blocking provider deletion.
+type RemoteCleanupUnconfirmed struct{ Reason string }
+
+func (e *RemoteCleanupUnconfirmed) Error() string { return e.Reason }
+
 type RetirementBlocked struct{ Reason string }
 
 func (e *RetirementBlocked) Error() string { return e.Reason }
 
 type RetirementStep struct {
-	Kind    string `json:"kind"`
-	ID      uint   `json:"id"`
-	Label   string `json:"label"`
-	State   string `json:"state"`
-	Message string `json:"message,omitempty"`
+	Kind              string `json:"kind"`
+	ProviderAccountID uint   `json:"provider_account_id,omitempty"`
+	ProviderZoneID    string `json:"provider_zone_id,omitempty"`
+	ProviderRecordID  string `json:"provider_record_id,omitempty"`
+	ID                uint   `json:"id"`
+	Label             string `json:"label"`
+	State             string `json:"state"`
+	Message           string `json:"message,omitempty"`
 }
 type Retirement struct {
 	NodeID    uint             `json:"node_id"`
@@ -49,12 +58,15 @@ type RetirementRepository interface {
 
 // Execution-only facts. SSH ciphertext is never serialized into progress APIs.
 type RetirementMaterial struct {
-	SSH           NodeCleanupSnapshot `json:"-"`
-	DNS           ManagedDNSRecord
-	CertificateID uint
-	CertPath      string
-	KeyPath       string
-	Shared        bool
+	SSH                   NodeCleanupSnapshot `json:"-"`
+	DNS                   ManagedDNSRecord
+	CertificateID         uint
+	CertPath              string
+	KeyPath               string
+	Shared                bool
+	Mode                  string
+	RemoteCleanupPossible bool
+	RemoteCleanupReason   string
 }
 type RetirementRemote interface {
 	RetireResource(context.Context, uint, string, RetirementStep) (string, error)
@@ -77,7 +89,7 @@ func (s NodeRetirement) Execute(ctx context.Context, run jobs.Run) error {
 		return jobs.ErrLeaseLost
 	}
 	for i, step := range item.Steps {
-		if step.State == "succeeded" || step.State == "retained" {
+		if step.State == "succeeded" || step.State == "retained" || (item.Mode == "delete" && step.State == "unconfirmed") {
 			continue
 		}
 		if err := s.Repository.Advance(ctx, item.NodeID, run.ID, i, "running", ""); err != nil {
@@ -85,12 +97,16 @@ func (s NodeRetirement) Execute(ctx context.Context, run jobs.Run) error {
 		}
 		message, err := s.Remote.RetireResource(ctx, item.NodeID, run.ID, step)
 		state := "succeeded"
-		if message != "" {
+		if message != "" && item.Mode != "delete" {
 			state = "retained"
+		}
+		var unavailable *RemoteCleanupUnconfirmed
+		if item.Mode == "delete" && (step.Kind == "certificate" || step.Kind == "zero") && errors.As(err, &unavailable) {
+			state, message, err = "unconfirmed", unavailable.Reason, nil
 		}
 		if err != nil {
 			// Persist a bounded public explanation, never raw provider/SSH errors.
-			message = fmt.Sprintf("%s未完成；记录已保留，请检查连接、权限和资源归属后重试。", step.Label)
+			message = fmt.Sprintf("%s删除未完成；请检查供应商权限和资源归属后重试。", step.Label)
 			var blocked *RetirementBlocked
 			if errors.As(err, &blocked) {
 				message = blocked.Reason

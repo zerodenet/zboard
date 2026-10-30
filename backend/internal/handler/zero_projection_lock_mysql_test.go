@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	capabilitynetwork "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"testing"
 	"time"
 
@@ -13,6 +14,15 @@ import (
 )
 
 func TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock(t *testing.T) {
+	assertAccountingWaitNodeLock(t, false)
+}
+
+func TestMySQLAccountingWaitRechecksConcurrentNodeDeletion(t *testing.T) {
+	assertAccountingWaitNodeLock(t, true)
+}
+
+func assertAccountingWaitNodeLock(t *testing.T, deleting bool) {
+	t.Helper()
 	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	node, _ := receiptFixture(t, h)
 	// Use the same billable node; receiptFixture supplies a separate authenticated
@@ -63,6 +73,13 @@ func TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	applied, err := h.services.NodeActivity.TryReceipt(context.Background(), node.ID, node.NodeCredential, time.Now().UTC())
+	// The preliminary lifecycle snapshot was already read before this wait.
+	// A current parent fence must still reject closure committed during the wait.
+	if deleting {
+		if e := h.db.Model(&model.Node{}).Where("id = ?", node.ID).Update("lifecycle_status", "deleting").Error; e != nil {
+			t.Fatal(e)
+		}
+	}
 	// Always release and join the projector, including on assertion failures.
 	if commitErr := lock.Commit().Error; commitErr != nil {
 		t.Fatal(commitErr)
@@ -70,6 +87,24 @@ func TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock(t *testing.T) {
 	projectionErr := <-done
 	if err != nil || !applied {
 		t.Fatalf("accounting waiting on subscription held node write lock: applied=%v error=%v", applied, err)
+	}
+	if deleting {
+		if !errors.Is(projectionErr, capabilitynetwork.ErrNodeAdministrationDeleting) {
+			t.Fatal("stale lifecycle snapshot admitted accounting", projectionErr)
+		}
+		assertAccountingTotal(t, h, credential.SubscriptionID, 0, subStatusActive)
+		for _, table := range []any{&model.FlowUsage{}, &model.TrafficRecord{}} {
+			var count int64
+			if e := h.db.Model(table).Where("node_id = ?", node.ID).Count(&count).Error; e != nil || count != 0 {
+				t.Fatal("closed node wrote accounting facts", count, e)
+			}
+		}
+		// The unchanged spool is replayable: the next snapshot omits closed flows.
+		if e := h.projectZeroNodeEvents(context.Background(), events); e != nil {
+			t.Fatal("closed source prevented replay", e)
+		}
+		assertAccountingTotal(t, h, credential.SubscriptionID, 0, subStatusActive)
+		return
 	}
 	if projectionErr != nil {
 		t.Fatal(projectionErr)

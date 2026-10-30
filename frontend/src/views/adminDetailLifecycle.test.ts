@@ -308,9 +308,9 @@ it('shares an in-flight version read between repeated kernel source selections',
 it('keeps archived node history readable while hiding management actions and exposing the archive filter', async () => {
   mocks.detail.mockResolvedValue({ ...detail(1), lifecycle_status: 'archived', is_enabled: false, archived_at: '2026-10-30T00:00:00Z' })
   const { router, wrapper: view } = await render(cases.find(item => item.name === 'nodes')!)
-  expect(view.text()).toContain('归档后不能重新启用')
+  expect(view.text()).toContain('需要再次接入时，请登记新节点')
   expect(view.text()).not.toContain('编辑资产')
-  expect(view.text()).not.toContain('退役／移除管理')
+  expect(view.text()).not.toContain('确认删除节点')
   await router.replace({ path: '/', query: { node: '1', lifecycle: 'archived' } })
   await flushPromises()
   expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ lifecycleStatus: 'archived' }), expect.objectContaining({ signal: expect.any(AbortSignal) }))

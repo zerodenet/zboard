@@ -301,10 +301,10 @@ and its targeted receipt. New integrated full checks and CI are separate gates.
 
 ## 0073 节点归档与 0074 历史回收索引
 
-节点退役完成后保留 Node/ProtocolEndpoint 身份与账本外键，永久关闭管理能力；
-普通 `retired` 仍是可恢复的服务状态，`archived` 不允许单独或批量恢复。
-旧 DELETE 接口返回 `archived=true`、`history_preserved=true`、`deleted=false`，
-显式远端清理继续使用持久化退役计划。归档时间缺失不能当作旧数据自动补造。
+节点删除完成后保留 Node/ProtocolEndpoint 身份与账本外键，永久关闭管理能力；
+普通 `retired` 表示可恢复的禁用状态，内部 `archived` 表示已删除，不允许单独或批量恢复。
+DELETE 接口返回 202 和持久化删除任务进度，供应商 DNS 清理不依赖 SSH。
+归档时间缺失不能当作旧数据自动补造。
 
 0073 只增加归档元数据和节点索引，不回填财务事实；0074 建立运行历史回收索引，
 需要对已有 job history 单独测量建索引耗时。各策略有独立、可抑制空运行的原生任务，
@@ -316,3 +316,9 @@ and its targeted receipt. New integrated full checks and CI are separate gates.
 0073 down 保留终态字段，不能清空迁移收据或恢复生命周期绕过终态。完整保留矩阵、
 迟到报文处理、复制校验和容量限制见 [归档与保留契约](node-archive-and-retention.md)。
 本次重构的本地验证不等于生产部署或全量 CI 通过。
+
+## 节点删除语义调整
+
+面向用户仅区分禁用与删除。删除使用持久化任务，供应商 DNS 清理不依赖 SSH；供应商权限或归属未确认时保持失败与重试证据，SSH 不可用则单独显示远端程序/文件结果未确认。DELETE 节点接口改为202异步进度；新增 /admin/nodes/:id/deletion。原 retirement URL与历史请求模式保留兼容，前端不再提供保留 DNS 的面板移除选项。
+
+内部稳定历史身份及账本关联继续保留，archived 仅为存储实现，界面显示已删除。证书管理状态转为 deleted 并解除供应商账户关联，证书执行历史按独立保留策略保存，不随节点删除级联清除。

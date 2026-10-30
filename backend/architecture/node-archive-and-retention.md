@@ -1,12 +1,18 @@
-# Node archive and retention contract
+# Node deletion, disable and history retention
 
-## Lifecycle
+## Product contract
 
-`active/maintenance/retired -> deleting -> archived` is irreversible once management retirement starts. `retired` remains a reversible service setting; `archived` is the terminal management boundary. Remote cleanup receipts belong to the existing durable retirement plan. Detach preserves external resources. Neither mode deletes historical identity rows or rewrites traffic references.
+The user has two operations: **disable** and **delete**. Disable retains configuration, supplier resources and management relationships and permits re-enabling. Delete closes management permanently, removes current delivery relationships and deletes system-managed provider DNS. Neither the UI nor a successful deletion presents internal archival as a third user operation.
 
-The archive transaction locks the actual retirement lease and node, rechecks unresolved work, disables current endpoints, removes live topology/group membership, clears current observations, revokes node authentication and erases SSH/control secrets. Node and endpoint IDs, immutable report receipts, traffic ledger and cumulative cursors remain unchanged. Its work depends on current configuration, never the number of historical flows or traffic records. Names remain reserved by archived identities; reusing a host creates a new identity and credentials.
+Deletion uses a durable plan. Provider DNS cleanup is independent of SSH. Each tracked DNS record must be deleted or confirmed absent before node deletion completes; denied provider access, unknown ownership and shared dependencies stay explicit blockers with retryable evidence. Ownership follows the recorded zone/record identity and the panel marker; an owned record's changed IP/TTL is not a reason to keep it. Shared references must first be transferred or removed.
 
-All writes and publication/accounting admission reject deleting and archived nodes under the existing parent lock. Archive cannot be reverted through single or bulk updates. History remains readable by ID and in an explicit archived inventory filter. Default inventories exclude archives.
+Offline/missing/unverified SSH does not block provider cleanup. Host cleanup is attempted only for a currently observed node with verified SSH credentials and an exclusive host. Host command failures and unavailable access are reported as unconfirmed, never as proof that native processes or files closed. Custom certificate paths and shared hosts are not removed. The remote event directory remains protected from deletion.
+
+Successful deletion removes local DNS management rows, stops certificate management and detaches its provider account while retaining certificate execution history. It also removes topology/group membership, disables endpoint delivery, revokes node authentication, clears node/SSH/pool secrets, suspends publication and stops automatic renewal/synchronization. A provider error prevents this final transaction and preserves progress for retry. Completed mandatory steps are not replayed.
+
+## Internal identity boundary
+
+Stable node and endpoint rows remain solely to preserve historical foreign keys and billing attribution. Internally this terminal state is stored as `archived` plus `archived_at`; the UI displays **deleted** and a deletion timestamp. It is not reactivation-capable. Current writes, publication and accounting reject `deleting` and `archived` under parent locks. Buffered accounting uses a preliminary snapshot to omit already closed sources, then takes the definitive current parent locks after subscription locks. Closure racing that snapshot rolls back settlement for spool replay; waiting on a subscription never retains an early node lock that suppresses heartbeats. The deletion transaction never scans or rewrites TrafficRecord/FlowUsage. Late event sources remain explicitly held, while healthy nodes continue settlement.
 
 ## Retention matrix
 
@@ -33,8 +39,10 @@ Deploy with old writers stopped. After the first archive, older binaries lacking
 
 ## Acceptance
 
-Prove ledger/cursor rows and historical foreign keys byte-for-byte unchanged by retirement; compare SQL statement counts at small and large history sizes. Verify no remote calls on detach, actual remote receipts on retire, permission/blocker/lease checks, atomic failure rollback, terminal mutation/accounting rejection, archived inventory/history access, bounded/resumable GC and delayed replay refusal. Rehearse SQLite and real MySQL migration/copy and query plans. Build and test the coherent change before a single deployment candidate; production remains on its current verified image until release validation.
+Prove ledger/cursor rows and historical foreign keys byte-for-byte unchanged by deletion; compare SQL statement counts at small and large history sizes. Verify offline provider deletion, denied-provider retry, explicit unconfirmed SSH results, preserved certificate execution history, reversible disable, legacy-mode compatibility, permission/blocker/lease checks, atomic failure rollback, terminal mutation/accounting rejection, deleted-node history access, bounded/resumable GC and delayed replay refusal. Rehearse SQLite and real MySQL migration/copy and query plans. Build and test the coherent change before a single deployment candidate; production remains on its current verified image until release validation.
 
 ## API compatibility
 
-Legacy `DELETE /nodes/:id` now closes management without remote commands and returns `archived=true`, `history_preserved=true`, `deleted=false`. The deprecated per-node traffic count is no longer computed or emitted. Use the durable retirement endpoint for explicit remote cleanup. Node inventory omits archives unless requested by lifecycle or ID; historical reference APIs retain node names and IDs.
+`DELETE /api/v1/nodes/:id` and `POST /api/v1/admin/nodes/:id/deletion` submit the same `mode=delete` command and return 202 plus durable progress. `GET .../deletion` remains readable after removal. The UI offers one delete action and separate disable controls.
+
+The old `/retirement` URL, persisted job handler/table identities, and explicit `retire`/`detach` modes remain compatibility contracts for historical requests. They are not shown as new user choices and are never silently reinterpreted into destructive provider deletion. An explicit delete can upgrade a failed or completed legacy detach with a new run/attempt. A canonical delete cannot downgrade to detach to bypass required DNS cleanup. Legacy lifecycle value `retired` is displayed as disabled; the new batch action is `disable`.
