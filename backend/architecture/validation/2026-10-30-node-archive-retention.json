@@ -64,5 +64,6 @@
     "macOS native plugin process startup failures; Linux CI remains required"
   ],
   "delivery": "reviewable branch; no merge, tag, image publication or production activation in this refactor",
-  "go_build": "passed"
+  "go_build": "passed",
+  "inventory_publication_join_regressions": "passed after qualifying protocol_endpoints.node_id"
 }
