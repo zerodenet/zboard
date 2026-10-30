@@ -1,0 +1,68 @@
+{
+  "recorded_at": "2026-10-30T01:47:49.564126+00:00",
+  "base_commit": "78d67d486cc82072b9d94fa2c70cdbbebcd6f127",
+  "branch": "codex/node-archive-lifecycle",
+  "production_deployed": false,
+  "mysql": {
+    "version": "8.4.11",
+    "scope": "owned disposable database, not production",
+    "archive_history_rows_per_table": 140000,
+    "archive_elapsed_ms": 492.983869,
+    "retirement_reads_or_writes_traffic_and_flow_tables": false,
+    "ledger_and_cursor_full_row_equality": true,
+    "original_foreign_keys_preserved": true,
+    "cursor_gc_batches": [
+      256,
+      256
+    ],
+    "gc_failure_rollback_and_live_cursor_protection": true,
+    "schema_upgrade_repeat_copy_and_lost_authority_refusal": true,
+    "periodic_success_batches": [
+      1000,
+      1000,
+      1
+    ],
+    "task_children_per_kind": 1503,
+    "task_child_first_batch_per_kind": 1000,
+    "current_explicit_unknown_interrupted_runs_preserved": true,
+    "uncertain_mail_delivery_preserved": true,
+    "retention_seek_index_verified": true
+  },
+  "targeted_backend_packages": [
+    "networkstore",
+    "observabilitystore",
+    "application",
+    "handler",
+    "server",
+    "datastore",
+    "adapters/zero (configuration renderer tests)"
+  ],
+  "targeted_backend_result": "passed",
+  "frontend": {
+    "targeted_files": 2,
+    "targeted_tests": 39,
+    "targeted_result": "passed",
+    "typecheck": "passed",
+    "production_build": "passed",
+    "full_suite": {
+      "passed": 1566,
+      "failed": 6,
+      "skipped": 8,
+      "baseline_failures_reproduced_on_original_commit": true,
+      "failing_files": [
+        "src/utils/adminRowActionsAudit.test.ts",
+        "src/utils/formPolicy.test.ts",
+        "src/utils/frontendArchitecturePolicy.test.ts",
+        "src/views/commercePurchaseExperience.test.ts"
+      ]
+    }
+  },
+  "go_vet": "passed",
+  "full_backend_certified": false,
+  "full_backend_limitations": [
+    "macOS native rollback script aggregate timeout",
+    "macOS native plugin process startup failures; Linux CI remains required"
+  ],
+  "delivery": "reviewable branch; no merge, tag, image publication or production activation in this refactor",
+  "go_build": "passed"
+}

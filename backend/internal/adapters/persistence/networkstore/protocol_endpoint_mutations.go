@@ -242,7 +242,7 @@ func lockAvailableProtocolEndpointNodes(tx *gorm.DB, ids []uint) error {
 		return &network.ProtocolEndpointMutationValidation{Message: "协议服务校验失败。", Fields: map[string]string{"node_id": "所选承载节点不存在。"}}
 	}
 	for _, node := range nodes {
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrProtocolEndpointResourceDeleting
 		}
 	}

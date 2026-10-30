@@ -99,7 +99,7 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 			return &network.NetworkEntryMutationValidation{Message: "A 与 B 必须是两个存在的不同节点"}
 		}
 		for _, node := range nodes {
-			if change.Entry.Enabled && (!node.IsEnabled || node.LifecycleStatus == "deleting") {
+			if change.Entry.Enabled && (!node.IsEnabled || network.NodeManagementClosed(node.LifecycleStatus)) {
 				return &network.NetworkEntryMutationValidation{Message: "A、B 节点必须启用且未在删除"}
 			}
 		}

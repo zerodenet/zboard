@@ -20,7 +20,7 @@ type retirementMaterial struct {
 
 func retirementHostExclusive(tx *gorm.DB, node model.Node) error {
 	var count int64
-	q := tx.Model(&model.Node{}).Where("id <> ?", node.ID).Where("(LOWER(TRIM(ssh_host)) = ? AND ssh_port = ?) OR (ssh_host_key_fingerprint <> '' AND ssh_host_key_fingerprint = ?)", strings.ToLower(strings.TrimSpace(node.SSHHost)), node.SSHPort, node.SSHHostKeyFingerprint)
+	q := tx.Model(&model.Node{}).Where("id <> ? AND lifecycle_status <> ?", node.ID, "archived").Where("(LOWER(TRIM(ssh_host)) = ? AND ssh_port = ?) OR (ssh_host_key_fingerprint <> '' AND ssh_host_key_fingerprint = ?)", strings.ToLower(strings.TrimSpace(node.SSHHost)), node.SSHPort, node.SSHHostKeyFingerprint)
 	if err := q.Count(&count).Error; err != nil {
 		return err
 	}

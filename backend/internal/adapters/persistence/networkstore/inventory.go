@@ -26,6 +26,9 @@ func nodeKernelRecord(row model.NodeKernelState) network.NodeKernelRecord {
 
 func (s Inventory) ListNodes(ctx context.Context, input network.NodeInventoryQuery) (network.NodeInventoryPage, error) {
 	query := withObservationEvidence(s.DB.WithContext(ctx).Model(&model.Node{}))
+	if input.LifecycleStatus == "" && input.ID == 0 {
+		query = query.Where("nodes.lifecycle_status <> ?", "archived")
+	}
 	if input.ID != 0 {
 		query = query.Where("nodes.id = ?", input.ID)
 	}
@@ -232,6 +235,9 @@ func runtimeNodeRecord(row model.Node) network.NodeRuntimeRecord {
 
 func (s Inventory) endpointQuery(ctx context.Context, input network.ProtocolEndpointInventoryQuery) *gorm.DB {
 	q := s.DB.WithContext(ctx).Model(&model.ProtocolEndpoint{})
+	if input.NodeID == 0 && len(input.IDs) == 0 {
+		q = q.Where("node_id NOT IN (?)", s.DB.Model(&model.Node{}).Select("id").Where("lifecycle_status = ?", "archived"))
+	}
 	if len(input.IDs) > 0 {
 		q = q.Where("protocol_endpoints.id IN ?", input.IDs)
 	}

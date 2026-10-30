@@ -542,7 +542,7 @@ func (r RuntimeConfigurationRenderer) appendNetworkEntries(config map[string]int
 		if !entry.Landing.NodeExists {
 			return fmt.Errorf("入口 %d 的落地节点不存在", entry.ID)
 		}
-		if !entry.Landing.Active || !entry.Landing.NodeEnabled || entry.Landing.NodeLifecycleStatus == "deleting" {
+		if !entry.Landing.Active || !entry.Landing.NodeEnabled || network.NodeManagementClosed(entry.Landing.NodeLifecycleStatus) {
 			continue
 		}
 		if ports[entry.Port] {

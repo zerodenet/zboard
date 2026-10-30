@@ -39,7 +39,7 @@ func (s ConnectionRevocation) WithRevokedPrincipal(ctx context.Context, nodeID u
 		// SHARE remains compatible with commerce's credential foreign-key checks;
 		// an exclusive node lock here would invert commerce's subscription order.
 		var node model.Node
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id", "lifecycle_status", "is_enabled").First(&node, nodeID).Error; err != nil || node.LifecycleStatus == "deleting" {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id", "lifecycle_status", "is_enabled").First(&node, nodeID).Error; err != nil || network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrConnectionRevocationPending
 		}
 		var sub model.Subscription

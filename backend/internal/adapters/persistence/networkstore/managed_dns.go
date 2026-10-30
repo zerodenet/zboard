@@ -60,7 +60,7 @@ func (s ManagedDNS) ListManagedDNS(ctx context.Context, actor uint, query networ
 		if _, err := providerAdmin(tx, actor); err != nil {
 			return network.ErrManagedDNSPermission
 		}
-		db := tx.Model(&model.ManagedDNSRecord{})
+		db := tx.Model(&model.ManagedDNSRecord{}).Where("node_id NOT IN (?)", tx.Model(&model.Node{}).Select("id").Where("lifecycle_status = ?", "archived"))
 		if query.Search != "" {
 			db = db.Where("domain_name LIKE ?", "%"+query.Search+"%")
 		}
@@ -138,7 +138,7 @@ func (s ManagedDNS) ManagedDNSDependencies(ctx context.Context, actor, providerI
 		if err := tx.Select("id", "address", "ssh_host", "lifecycle_status").First(&node, nodeID).Error; err != nil {
 			return network.ErrManagedDNSDependency
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrManagedDNSDeleting
 		}
 		var provider model.ProviderAccount
@@ -379,7 +379,7 @@ func (s ManagedDNS) CompleteManagedDNS(ctx context.Context, execution network.Ma
 
 func (s ManagedDNS) ListManagedDNSObservations(ctx context.Context, now time.Time, interval time.Duration, limit int) ([]network.ManagedDNSRecord, error) {
 	var rows []model.ManagedDNSRecord
-	err := s.DB.WithContext(ctx).Where("public_resolved = ? AND last_synced_at IS NOT NULL AND status IN ? AND (last_public_check_at IS NULL OR last_public_check_at <= ?)", false, []string{network.ManagedDNSActive, network.ManagedDNSDrifted}, now.Add(-interval)).Order("last_public_check_at asc, id asc").Limit(limit).Find(&rows).Error
+	err := s.DB.WithContext(ctx).Where("node_id NOT IN (?)", s.DB.Model(&model.Node{}).Select("id").Where("lifecycle_status = ?", "archived")).Where("public_resolved = ? AND last_synced_at IS NOT NULL AND status IN ? AND (last_public_check_at IS NULL OR last_public_check_at <= ?)", false, []string{network.ManagedDNSActive, network.ManagedDNSDrifted}, now.Add(-interval)).Order("last_public_check_at asc, id asc").Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +410,7 @@ func lockManagedDNSNode(tx *gorm.DB, id uint) error {
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "lifecycle_status").First(&node, id).Error; err != nil {
 		return network.ErrManagedDNSDependency
 	}
-	if node.LifecycleStatus == "deleting" {
+	if network.NodeManagementClosed(node.LifecycleStatus) {
 		return network.ErrManagedDNSDeleting
 	}
 	return nil

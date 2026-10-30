@@ -298,3 +298,21 @@ old-write/roll-forward are unsupported. Preserve a coherent database/spool backu
 and compatible recovery plan; never delete source facts to force binary rollback.
 No production migration/deploy occurred. See [handoff behavior and limits](core-convergence-node-observation-handoff.md)
 and its targeted receipt. New integrated full checks and CI are separate gates.
+
+## 0073 节点归档与 0074 历史回收索引
+
+节点退役完成后保留 Node/ProtocolEndpoint 身份与账本外键，永久关闭管理能力；
+普通 `retired` 仍是可恢复的服务状态，`archived` 不允许单独或批量恢复。
+旧 DELETE 接口返回 `archived=true`、`history_preserved=true`、`deleted=false`，
+显式远端清理继续使用持久化退役计划。归档时间缺失不能当作旧数据自动补造。
+
+0073 只增加归档元数据和节点索引，不回填财务事实；0074 建立运行历史回收索引，
+需要对已有 job history 单独测量建索引耗时。各策略有独立、可抑制空运行的原生任务，
+每轮父记录及各类子记录各有批次上限，失败互不阻塞。成功周期记录默认 7 天，
+失败/取消默认 30 天；运营任务/运行历史仍为 90 天、审计 180 天，0 表示保留。
+归档节点游标默认在 7 天后分批回收，活跃节点游标、账本与幂等回执不按时间删除。
+
+停旧写入者后准备 schema，再启用新二进制；归档激活后不支持直接用旧二进制写入。
+0073 down 保留终态字段，不能清空迁移收据或恢复生命周期绕过终态。完整保留矩阵、
+迟到报文处理、复制校验和容量限制见 [归档与保留契约](node-archive-and-retention.md)。
+本次重构的本地验证不等于生产部署或全量 CI 通过。

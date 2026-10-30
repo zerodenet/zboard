@@ -238,6 +238,9 @@ func (w Worker) apply(ctx context.Context, h model.NodeObservationIntent, budget
 		if node.AssetTag == "" || node.AssetTag != h.AssetTag {
 			return ownedAck(tx, h, "held", "asset_mismatch")
 		}
+		if node.LifecycleStatus == "archived" {
+			return ownedAck(tx, h, "held", "node_archived")
+		}
 		state, err := lockState(tx, h.NodeID, h.AssetTag)
 		if err != nil {
 			return err

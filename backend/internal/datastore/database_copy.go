@@ -59,6 +59,9 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	if err := preflightNodeArchiveSchema(source); err != nil {
+		return err
+	}
 	if err := preflightNodeAssetSchema(source); err != nil {
 		return err
 	}

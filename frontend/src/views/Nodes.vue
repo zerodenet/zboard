@@ -23,7 +23,7 @@
         </WorkbenchFilterBar>
       </template>
       <template #selection>
-        <div v-if="selectedNodeIDs.length || selectionAllMatching" class="bulk-action-bar">
+        <div v-if="filters.lifecycle !== 'archived' && (selectedNodeIDs.length || selectionAllMatching)" class="bulk-action-bar">
           <div><strong>已选择 {{ selectedNodeCount }} 个节点</strong><span v-if="selectionAllMatching">范围：当前全部筛选结果</span><span v-else>范围：已勾选行</span><UiButton v-if="canSelectAllMatching" variant="ghost" size="sm" type="button" @click="selectAllMatching">选择全部 {{ total }} 条筛选结果</UiButton></div>
           <div><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'detect'" @click="runBatch('detect')"><UiIcon name="search" />批量检测</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'reconcile'" @click="openBatchKernelRollout"><UiIcon name="play" />批量升级 Zero</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'maintenance'" @click="runBatch('maintenance')">设为维护</UiButton><UiButton variant="secondary" size="sm" type="button" :loading="bulkBusy === 'activate'" @click="runBatch('activate')">恢复启用</UiButton><UiButton variant="danger" size="sm" type="button" :loading="bulkBusy === 'retire'" @click="runBatch('retire')">批量退役</UiButton><UiButton variant="ghost" size="sm" type="button" @click="clearSelection">清除</UiButton></div>
         </div>
@@ -31,7 +31,7 @@
       <TableSkeleton v-if="initialLoading && !nodes.length" label="正在加载节点资产" :columns="10" />
       <DataTable v-else-if="nodes.length" caption="节点资产列表；可按节点、区域和最近心跳排序，选择“查看”打开节点详情" :row-count="total" :density="density" :min-width="900" selectable table-class="workbench-table">
           <thead><tr>
-            <th class="selection-column"><UiCheckbox :model-value="allPageNodesSelected" :indeterminate="pageNodeSelectionIndeterminate" :disabled="selectionAllMatching" aria-label="选择当前页全部节点" @update:model-value="toggleCurrentNodePage" /></th>
+            <th class="selection-column"><UiCheckbox :model-value="allPageNodesSelected" :indeterminate="pageNodeSelectionIndeterminate" :disabled="selectionAllMatching || filters.lifecycle === 'archived'" aria-label="选择当前页全部节点" @update:model-value="toggleCurrentNodePage" /></th>
             <SortableHeader field="name" label="节点" :sort-field="sortField" :direction="sortDirection" pinned="start" @sort="setSort" />
             <SortableHeader field="region" label="区域" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" />
             <th data-column-priority="2">资产状态</th><th>Connector</th><th data-column-priority="3">SSH</th><th data-column-priority="2">内核</th><th class="numeric-column" data-column-priority="3" title="启用的直连协议与前置入口总数">服务数</th>
@@ -40,7 +40,7 @@
           </tr></thead>
           <tbody>
             <tr v-for="node in nodes" :key="node.id" :class="{ selected: selectedNode?.id === node.id, 'batch-selected': isNodeSelected(node.id) }">
-              <td class="selection-column"><UiCheckbox :model-value="isNodeSelected(node.id)" :disabled="selectionAllMatching" :aria-label="`选择节点 ${node.name}`" @update:model-value="toggleNodeSelection(node.id, $event)" /></td>
+              <td class="selection-column"><UiCheckbox :model-value="isNodeSelected(node.id)" :disabled="selectionAllMatching || node.lifecycle_status === 'archived'" :aria-label="`选择节点 ${node.name}`" @update:model-value="toggleNodeSelection(node.id, $event)" /></td>
               <td class="table-primary-column"><div class="cell-title"><strong>{{ node.name }}</strong><EndpointAddress v-if="node.address" :address="node.address" /><span v-else>未设置地址</span></div></td>
               <td data-column-priority="3"><TableText :value="node.region" /></td>
               <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
@@ -66,7 +66,7 @@
             <span class="node-avatar"><UiIcon name="nodes" /></span>
             <div><div class="title-line"><h2>{{ selectedNode.name }}</h2><StatusBadge :tone="lifecycleTone(selectedNode)">{{ lifecycleLabel(selectedNode.lifecycle_status) }}</StatusBadge></div><p>{{ selectedNode.region || '未设置区域' }} · <span class="mono">{{ selectedNode.address || '未设置默认业务地址' }}</span></p><small>{{ selectedNode.remark || '暂无备注' }}</small></div>
           </div>
-          <div class="node-actions">
+          <div v-if="selectedNode.lifecycle_status !== 'archived'" class="node-actions">
             <UiButton variant="secondary" size="sm" type="button" @click="openEdit(selectedNode)"><UiIcon name="edit" />编辑资产</UiButton>
             <UiButton variant="secondary" size="sm" type="button" @click="openSSH(selectedNode)"><UiIcon name="key" />SSH 连接</UiButton>
             <UiButton variant="secondary" size="sm" type="button" :disabled="testingNode === selectedNode.id" @click="testSSH(selectedNode.id)"><UiIcon name="activity" />{{ testingNode === selectedNode.id ? '验证中…' : '验证 SSH' }}</UiButton>
@@ -77,6 +77,12 @@
           </div>
         </article>
 
+        <PageAlert v-if="selectedNode.lifecycle_status === 'archived'" tone="info" title="节点已永久归档">
+          <p>管理能力和连接凭证已关闭，历史账本及归属保留。归档后不能重新启用；相同主机再次接入需登记新节点。</p>
+          <p v-if="selectedNode.archived_at">归档时间 <TimeBadge :value="selectedNode.archived_at" /></p>
+          <RouterLink :to="adminContextLink('/admin/operation-logs', { node_id: String(selectedNode.id) })">查看历史运行记录</RouterLink>
+        </PageAlert>
+        <template v-else>
         <UiTabs v-model="detailSection" :items="nodeDetailTabs" label="节点详情分区" />
 
         <section v-if="detailSection === 'overview'" class="node-health-strip" aria-label="节点状态概览">
@@ -216,6 +222,7 @@
           <div class="credential-row"><span class="credential-icon"><UiIcon name="activity" /></span><div><strong>Zero 主动连接</strong><p v-if="selectedNode.node_credential_prefix">当前前缀 <code>{{ selectedNode.node_credential_prefix }}…</code></p><p v-else>用于心跳和命令领取，当前尚未生成；首次 Zero 安装会自动生成并激活，无需提前手工创建。安装失败时会随本次 generation 一起回滚。</p></div><div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" @click="rotateConnector(selectedNode)">{{ selectedNode.node_credential_prefix ? '轮换' : '手动生成' }}</UiButton><UiButton v-if="selectedNode.node_credential_prefix && !selectedNode.node_credential_revoked_at" variant="danger" size="sm" type="button" @click="revokeConnector(selectedNode)">吊销</UiButton></div></div>
           <div class="credential-row"><span class="credential-icon"><UiIcon name="shield" /></span><div><strong>流量上报</strong><p v-if="selectedNode.traffic_secret_prefix">当前前缀 <code>{{ selectedNode.traffic_secret_prefix }}…</code></p><p v-else>与 SSH、Zero 连接凭证独立，当前尚未生成。</p></div><div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" @click="rotateReport(selectedNode)">{{ selectedNode.traffic_secret_prefix ? '轮换' : '生成' }}</UiButton><UiButton v-if="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at" variant="danger" size="sm" type="button" @click="revokeReport(selectedNode)">吊销</UiButton></div></div>
         </section>
+        </template>
       </main>
     </DetailDrawer>
 
@@ -360,7 +367,7 @@ const sortField = ref(resolveSortField(route.query.sort, nodeSortFields, 'id'))
 const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direction, 'desc'))
 const density = ref<'compact' | 'comfortable'>(resolveTableDensity(route.query.density))
 const lifecycleOptions = [{ label: '正常', value: 'active' }, { label: '维护', value: 'maintenance' }, { label: '退役', value: 'retired' }]
-const lifecycleFilterOptions = [{ label: '全部生命周期', value: '' }, ...lifecycleOptions]
+const lifecycleFilterOptions = [{ label: '管理中的节点', value: '' }, ...lifecycleOptions, { label: '已归档', value: 'archived' }]
 const connectorFilterOptions = [{ label: '全部连接状态', value: '' }, { label: 'Connector 在线', value: 'online' }, { label: 'Connector 离线', value: 'offline' }]
 const sshAuthOptions = [{ label: '密码', value: 'password' }, { label: '私钥', value: 'private_key' }]
 const sshPrivilegeOptions = [{ label: '直接登录 root', value: 'none' }, { label: 'sudo 提权', value: 'sudo' }, { label: 'su 切换 root', value: 'su' }]
@@ -586,7 +593,7 @@ const kernelStatusLabel = computed(() => ({
 } as Record<string, string>)[kernelState.value?.status || 'unknown'] || formatUnknownValue('状态', kernelState.value?.status))
 const kernelDescription = computed(() => kernelState.value?.installed_version ? `Zero ${kernelState.value.installed_version} · ${serviceLabel(kernelState.value.service_status)}` : kernelStatusLabel.value)
 const reconcileButtonLabel = computed(() => kernelState.value?.status === 'unsupported' ? '当前制品不兼容' : kernelState.value?.status === 'not_installed' ? '自动安装' : kernelState.value?.recommended_action === 'configure' ? '应用配置' : '安装 / 升级 / 修复')
-function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役', deleting: '退役处理中' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
+function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '退役', deleting: '退役处理中', archived: '已归档' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
 function lifecycleTone(node: any): 'success' | 'warning' | 'neutral' { return node.lifecycle_status === 'maintenance' ? 'warning' : node.lifecycle_status === 'retired' ? 'neutral' : node.is_enabled ? 'success' : 'neutral' }
 function kernelListLabel(value?: string) { return ({ unknown: '未检测', not_installed: '未安装', healthy: '健康', degraded: '异常', failed: '失败', unsupported: '不兼容', publishing: '发布中', apply_failed: '应用失败', reconciling: '待核对' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
 function kernelListTone(value?: string): 'success' | 'warning' | 'danger' | 'neutral' { if (value === 'healthy') return 'success'; if (!value || value === 'unknown') return 'neutral'; if (value === 'not_installed' || value === 'unsupported' || value === 'publishing' || value === 'reconciling') return 'warning'; return 'danger' }

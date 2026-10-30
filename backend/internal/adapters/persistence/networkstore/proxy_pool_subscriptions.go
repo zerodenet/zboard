@@ -34,6 +34,13 @@ func (s ProxyPoolSubscriptions) LoadProxyPoolSubscription(ctx context.Context, a
 			}
 			return err
 		}
+		var node model.Node
+		if err := tx.Clauses(currentResourceReadLock(tx)).Select("id,lifecycle_status").First(&node, row.NodeID).Error; err != nil {
+			return currentResourceReadError(err)
+		}
+		if network.NodeManagementClosed(node.LifecycleStatus) {
+			return network.ErrProxyPoolConflict
+		}
 		out = proxyPoolSubscriptionSnapshot(row)
 		return nil
 	})

@@ -10,6 +10,9 @@ import (
 
 func SetupPreferenceDefinitions() []model.SystemConfig {
 	return []model.SystemConfig{
+		{ConfigKey: "periodic_success_retention_days", Name: "成功周期任务保留天数", Value: "7", ValueType: "int", Description: "已结束的周期任务执行记录；不影响运营任务、显式提交幂等键或当前任务。0 表示永久保留。", Revision: 1},
+		{ConfigKey: "periodic_failure_retention_days", Name: "失败周期任务保留天数", Value: "30", ValueType: "int", Description: "已确认失败或取消的周期任务；结果不明和中断的执行证据保留。0 表示永久保留。", Revision: 1},
+		{ConfigKey: "archived_flow_cursor_retention_days", Name: "归档节点计费游标保留天数", Value: "7", ValueType: "int", Description: "仅回收永久归档且凭证已撤销节点的累计游标；账本、报文回执和历史身份永久保留。0 表示永久保留。", Revision: 1},
 		{
 			ConfigKey:   "audit_log_retention_days",
 			Name:        "审计日志保留天数",

@@ -10,7 +10,7 @@ import (
 )
 
 // Corrupt/missing plans must never degrade into an empty cleanup followed by
-// deleting the node. A detach may intentionally have an empty plan.
+// archiving management. A detach may intentionally have an empty plan.
 func validateRetirementPlan(row model.NodeRetirement) error {
 	var steps []network.RetirementStep
 	if row.Mode != "retire" && row.Mode != "detach" {

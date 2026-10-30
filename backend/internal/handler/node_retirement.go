@@ -63,6 +63,7 @@ func (h *handlers) NodeRetirementHandler(w http.ResponseWriter, r *http.Request)
 		}
 		return
 	}
+	h.invalidateZeroEventCredential(uint(id))
 	writeJSON(w, http.StatusAccepted, "节点退役任务已提交", result)
 }
 func (h *handlers) executeNodeRetirement(ctx context.Context, run jobs.Run) error {

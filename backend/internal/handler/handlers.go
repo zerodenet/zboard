@@ -722,6 +722,7 @@ type nodeListItem struct {
 	Address              string                     `json:"address"`
 	Status               int16                      `json:"status"`
 	LifecycleStatus      string                     `json:"lifecycle_status"`
+	ArchivedAt           *time.Time                 `json:"archived_at,omitempty"`
 	IsEnabled            bool                       `json:"is_enabled"`
 	ConnectorLastSeenAt  *time.Time                 `json:"connector_last_seen_at,omitempty"`
 	ConnectorOnline      bool                       `json:"connector_online"`
@@ -760,7 +761,7 @@ type nodeDetailItem struct {
 func newNodeListItem(node model.Node, enabledProtocolCount int64, cutoff time.Time) nodeListItem {
 	return nodeListItem{
 		ID: node.ID, Name: node.Name, Region: node.Region, Address: node.Address, Status: node.Status,
-		LifecycleStatus: node.LifecycleStatus, IsEnabled: node.IsEnabled,
+		LifecycleStatus: node.LifecycleStatus, ArchivedAt: node.ArchivedAt, IsEnabled: node.IsEnabled,
 		ConnectorLastSeenAt:  node.ConnectorLastSeenAt,
 		ConnectorOnline:      node.ConnectorLastSeenAt != nil && node.ConnectorLastSeenAt.After(cutoff),
 		SSHConfigured:        node.SSHHost != "" && node.SSHUser != "",
@@ -808,7 +809,7 @@ func (h *handlers) nodePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if lifecycle := strings.TrimSpace(r.URL.Query().Get("lifecycle_status")); lifecycle != "" {
 		switch lifecycle {
-		case "active", "maintenance", "retired", resourceStatusDeleting:
+		case "active", "maintenance", "retired", "archived", resourceStatusDeleting:
 			query.LifecycleStatus = lifecycle
 		default:
 			BadRequest(w, "invalid lifecycle_status")
@@ -880,7 +881,7 @@ func (h *handlers) NodeDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 func nodeInventoryModel(item networkcap.NodeInventoryItem) model.Node {
 	r := item.Node
-	node := model.Node{ID: r.ID, Name: r.Name, Region: r.Region, Address: r.Address, NodeCredentialPrefix: r.NodeCredentialPrefix, NodeCredentialRevokedAt: r.NodeCredentialRevokedAt, CommunicationProtocol: r.CommunicationProtocol, Status: r.Status, LifecycleStatus: r.LifecycleStatus, Config: r.Config, IsEnabled: r.IsEnabled, Remark: r.Remark, IsOnline: r.IsOnline, LastSeenAt: r.LastSeenAt, LastSyncAt: r.LastSyncAt, Version: r.Version, SSHHost: r.SSHHost, SSHPort: r.SSHPort, SSHUser: r.SSHUser, SSHAuthMethod: r.SSHAuthMethod, SSHPrivilegeMode: r.SSHPrivilegeMode, SSHPrivilegeConfigured: r.SSHPrivilegeConfigured, SSHHostKeyFingerprint: r.SSHHostKeyFingerprint, SSHVerifiedAt: r.SSHVerifiedAt, ConnectorLastSeenAt: r.ConnectorLastSeenAt, ConnectorOnline: r.ConnectorOnline, UptimeSeconds: r.UptimeSeconds, ActiveFlows: r.ActiveFlows, BytesUp: r.BytesUp, BytesDown: r.BytesDown, TrafficSecretPrefix: r.TrafficSecretPrefix, TrafficSecretRevokedAt: r.TrafficSecretRevokedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	node := model.Node{ID: r.ID, Name: r.Name, Region: r.Region, Address: r.Address, NodeCredentialPrefix: r.NodeCredentialPrefix, NodeCredentialRevokedAt: r.NodeCredentialRevokedAt, CommunicationProtocol: r.CommunicationProtocol, Status: r.Status, LifecycleStatus: r.LifecycleStatus, ArchivedAt: r.ArchivedAt, Config: r.Config, IsEnabled: r.IsEnabled, Remark: r.Remark, IsOnline: r.IsOnline, LastSeenAt: r.LastSeenAt, LastSyncAt: r.LastSyncAt, Version: r.Version, SSHHost: r.SSHHost, SSHPort: r.SSHPort, SSHUser: r.SSHUser, SSHAuthMethod: r.SSHAuthMethod, SSHPrivilegeMode: r.SSHPrivilegeMode, SSHPrivilegeConfigured: r.SSHPrivilegeConfigured, SSHHostKeyFingerprint: r.SSHHostKeyFingerprint, SSHVerifiedAt: r.SSHVerifiedAt, ConnectorLastSeenAt: r.ConnectorLastSeenAt, ConnectorOnline: r.ConnectorOnline, UptimeSeconds: r.UptimeSeconds, ActiveFlows: r.ActiveFlows, BytesUp: r.BytesUp, BytesDown: r.BytesDown, TrafficSecretPrefix: r.TrafficSecretPrefix, TrafficSecretRevokedAt: r.TrafficSecretRevokedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 	node.ObservationKnown = r.Observation.Known
 	node.ObservationSource = r.Observation.Source
 	node.ObservationLatestSourceKnown = r.Observation.LatestSourceKnown

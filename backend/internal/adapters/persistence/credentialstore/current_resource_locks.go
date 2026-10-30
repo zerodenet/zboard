@@ -66,7 +66,7 @@ func LockCurrentEndpointParents(tx *gorm.DB, sourceNodeID, endpointID uint) erro
 	}
 	// Retirement is irreversible and may already have retired cumulative
 	// cursors. Disabled, otherwise live nodes still accept historical traffic.
-	if node.LifecycleStatus == "deleting" {
+	if network.NodeManagementClosed(node.LifecycleStatus) {
 		return network.ErrNodeAdministrationDeleting
 	}
 	return nil

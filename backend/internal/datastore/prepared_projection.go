@@ -80,7 +80,7 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	// unsafe. Extra history (including the retained development chain accepted
 	// by preparePreReleaseMigrationHistory) is not reinterpreted or rewritten.
 	// This validator does not certify whole-database or future-binary compatibility.
-	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion, observationRetirementVersion}
+	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeArchiveSchemaVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion, observationRetirementVersion}
 	for _, v := range required {
 		if !seen[v] {
 			return projectionError("required migration receipt missing: "+v, nil)
@@ -203,6 +203,9 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	}
 	if !asset.receipt || !asset.nodes || !asset.column {
 		return projectionError("node asset identity incomplete", nil)
+	}
+	if err := validateNodeArchiveSchema(db); err != nil {
+		return projectionError("node archive authority", err)
 	}
 	for _, table := range observationTables {
 		if !tables[table] {

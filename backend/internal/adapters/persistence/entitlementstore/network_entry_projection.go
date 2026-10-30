@@ -99,7 +99,7 @@ func (s NetworkEntryProjection) LoadNetworkEntryProjection(ctx context.Context, 
 	}
 	var nodes []model.Node
 	if err := s.DB.WithContext(ctx).Select("id", "region", "is_enabled", "lifecycle_status", "last_seen_at").
-		Where("id IN ? AND is_enabled = ? AND lifecycle_status <> ?", nodeIDs, true, "deleting").Find(&nodes).Error; err != nil {
+		Where("id IN ? AND is_enabled = ? AND lifecycle_status NOT IN ?", nodeIDs, true, []string{"deleting", "archived"}).Find(&nodes).Error; err != nil {
 		return result, err
 	}
 	for _, row := range nodes {

@@ -6,7 +6,7 @@
         <label><input v-model="mode" type="radio" value="retire" name="retirement-mode">退役并清理独占资源</label>
         <p>通过已验证 SSH 卸载该节点的 Zero，清理面板专用证书文件和可确认归属的 DNS。该节点现有代理连接会中断。共享和来源不匹配的资源会保留，不撤销 CA 证书。持久化事件目录保留，避免丢失待投递事件。</p>
         <label><input v-model="mode" type="radio" value="detach" name="retirement-mode">仅移除面板管理</label>
-        <p>保留剩余远端进程、文件和供应商 DNS，只移除面板内的节点及关联。已完成的清理无法撤销。</p>
+        <p>保留剩余远端进程、文件和供应商 DNS，归档节点并关闭管理关系，保留历史身份及账本关联。已完成的清理无法撤销。归档后不能重新启用，重新接入需登记新节点。</p>
       </fieldset>
       <PageAlert v-if="error || task?.last_error" tone="danger">{{ error || task?.last_error }}</PageAlert>
       <p v-if="loading" role="status">正在读取任务进度…</p>
@@ -17,10 +17,10 @@
             <div><strong>{{ step.label }}</strong><StatusBadge :tone="step.state === 'failed' ? 'danger' : step.state === 'succeeded' ? 'success' : 'neutral'">{{ stateLabel(step.state) }}</StatusBadge></div>
             <p v-if="step.message">{{ step.message }}</p>
           </li>
-          <li><div><strong>移除面板记录及关联</strong><StatusBadge :tone="completed ? 'success' : 'neutral'">{{ completed ? '已完成' : '待确认清理结果' }}</StatusBadge></div></li>
+          <li><div><strong>归档节点并关闭管理</strong><StatusBadge :tone="completed ? 'success' : 'neutral'">{{ completed ? '已完成' : '待确认清理结果' }}</StatusBadge></div></li>
         </ol>
         <p v-if="failed">节点与未完成资源记录已保留。修复连接或权限后可重试；已确认完成的步骤不会重复执行。结果不明的任务需先等待远端命令超时，再重新核对。</p>
-        <p v-if="completed">处理完成。历史流量、任务和审计记录仍保留。</p>
+        <p v-if="completed">归档完成。历史流量及原始归属保持不变，可在“已归档”筛选中查看节点。后台按独立策略回收运行历史，不影响本次退役完成。</p>
       </template>
     </div>
     <template #footer>

@@ -39,7 +39,7 @@ func (s CertificateLifecycle) CreateCertificate(ctx context.Context, actor uint,
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "name", "lifecycle_status").First(&node, input.NodeID).Error; err != nil {
 			return network.ErrCertificateDependency
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrCertificateDeleting
 		}
 		if input.ChallengeType == "dns-01" {

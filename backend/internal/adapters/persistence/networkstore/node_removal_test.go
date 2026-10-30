@@ -2,11 +2,8 @@ package networkstore
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,61 +15,27 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type nodeRemovalCipher struct{}
-
-func (nodeRemovalCipher) Encrypt(value string) (string, error) {
-	return "sealed:" + base64.RawStdEncoding.EncodeToString([]byte(value)), nil
-}
-
-func (nodeRemovalCipher) Decrypt(value string) (string, error) {
-	decoded, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(value, "sealed:"))
-	return string(decoded), err
-}
-
 func nodeRemovalFixtureService(db *gorm.DB) network.NodeRemoval {
 	return network.NodeRemoval{Store: NodeRemoval{DB: db}}
 }
 
-func TestNodeRemovalAtomicallyQueuesEncryptedRemoteCleanup(t *testing.T) {
+func TestLegacyNodeRemovalArchivesWithoutImplicitRemoteCleanup(t *testing.T) {
 	db, _ := administrationFixture(t)
 	prepareProviderDirectory(t, db)
-	fingerprint := "SHA256:" + base64.RawStdEncoding.EncodeToString(make([]byte, 32))
-	if err := db.Model(&model.Node{}).Where("id = ?", 1).Updates(map[string]any{
-		"ssh_host": "node.example.test", "ssh_port": 2222, "ssh_user": "root", "ssh_auth_method": "password",
-		"ssh_pwd": "encrypted:ssh-secret", "ssh_privilege_mode": "sudo", "ssh_privilege_password": "encrypted:sudo-secret",
-		"ssh_host_key_fingerprint": fingerprint,
-	}).Error; err != nil {
+	if err := db.Model(&model.Node{}).Where("id = 1").Updates(map[string]any{"ssh_host": "offline.test", "ssh_pwd": "secret", "node_credential": "node-secret", "traffic_secret": "traffic-secret"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	service := network.NodeRemoval{Store: NodeRemoval{DB: db, Cipher: nodeRemovalCipher{}}}
-	result, err := service.Remove(context.Background(), 1, 1)
-	if err != nil || result.RemoteCleanupRunID == "" || !result.RemoteZeroRetained {
-		t.Fatalf("result=%+v err=%v", result, err)
+	result, err := nodeRemovalFixtureService(db).Remove(t.Context(), 1, 1)
+	if err != nil || !result.Archived || !result.HistoryPreserved || result.Deleted || result.RemoteCleanupRunID != "" {
+		t.Fatal(result, err)
 	}
-	var run jobstore.Record
-	if err := db.First(&run, "id = ?", result.RemoteCleanupRunID).Error; err != nil {
-		t.Fatal(err)
+	var node model.Node
+	if err := db.First(&node, 1).Error; err != nil || node.SSHPwd != "" || node.NodeCredential != "" || node.TrafficSecret != "" || node.ArchivedAt == nil {
+		t.Fatal("archive retained live secrets", err)
 	}
-	if run.Handler != network.NodeCleanupHandler || run.Resource != network.NodeCleanupResource("node.example.test", 2222) || run.MaxAttempts != 3 || run.State != "queued" {
-		t.Fatalf("cleanup run=%+v", run)
-	}
-	if strings.Contains(run.Payload, "ssh-secret") || strings.Contains(run.Payload, "sudo-secret") {
-		t.Fatal("cleanup payload exposed SSH secrets")
-	}
-	var input network.NodeCleanupRunInput
-	if err := json.Unmarshal([]byte(run.Payload), &input); err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := (nodeRemovalCipher{}).Decrypt(input.SnapshotCiphertext)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var snapshot network.NodeCleanupSnapshot
-	if err := json.Unmarshal([]byte(encoded), &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	if snapshot.NodeID != 1 || snapshot.Host != "node.example.test" || snapshot.CredentialCiphertext != "encrypted:ssh-secret" || snapshot.HostKeyFingerprint != fingerprint {
-		t.Fatalf("snapshot=%+v", snapshot)
+	result, err = nodeRemovalFixtureService(db).Remove(t.Context(), 1, 1)
+	if err != nil || !result.Archived {
+		t.Fatal("archive is not idempotent", result, err)
 	}
 }
 
@@ -90,7 +53,7 @@ func TestNodeRemovalRollsBackRemoteCleanupIntentWithDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Callback().Create().Remove("fail_node_cleanup_audit") })
-	service := network.NodeRemoval{Store: NodeRemoval{DB: db, Cipher: nodeRemovalCipher{}}}
+	service := network.NodeRemoval{Store: NodeRemoval{DB: db}}
 	if _, err := service.Remove(context.Background(), 1, 1); err == nil {
 		t.Fatal("removal unexpectedly succeeded")
 	}
@@ -141,7 +104,7 @@ func TestNodeRemovalPreservesChildExecutionEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			result, err := service.Remove(context.Background(), 1, 1)
-			if err != nil || !result.Deleted || !result.RemoteZeroRetained || !result.ProviderDNSRecordsRetained {
+			if err != nil || !result.Archived || !result.RemoteZeroRetained || !result.ProviderDNSRecordsRetained {
 				t.Fatal(result, err)
 			}
 			var retained jobstore.Record

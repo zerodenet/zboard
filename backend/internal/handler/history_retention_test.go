@@ -4,8 +4,8 @@ import "testing"
 
 func TestHistoryRetentionDefaultsAreBoundedAndPrivate(t *testing.T) {
 	defaults := historyRetentionDefaults()
-	if len(defaults) != 4 {
-		t.Fatalf("historyRetentionDefaults() returned %d configs, want 4", len(defaults))
+	if len(defaults) != 7 {
+		t.Fatalf("historyRetentionDefaults() returned %d configs, want 7", len(defaults))
 	}
 	values := map[string]string{}
 	for _, config := range defaults {

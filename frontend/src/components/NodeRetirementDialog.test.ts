@@ -19,7 +19,7 @@ describe('node retirement progress', () => {
     api.read.mockResolvedValue(value('succeeded', 'detach'))
     await vi.advanceTimersByTimeAsync(2000); await flushPromises()
     expect(w.emitted('completed')).toHaveLength(1)
-    expect(w.text()).toContain('处理完成')
+    expect(w.text()).toContain('归档完成')
     w.unmount()
   })
   it('restores a failed task and retries the same node with retained evidence visible', async () => {

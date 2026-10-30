@@ -291,7 +291,7 @@ func lockNodeAdministration(tx *gorm.DB, id uint) (model.Node, error) {
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, id).Error; err != nil {
 		return row, nodeAdministrationError(err)
 	}
-	if row.LifecycleStatus == "deleting" {
+	if network.NodeManagementClosed(row.LifecycleStatus) {
 		return row, network.ErrNodeAdministrationDeleting
 	}
 	return row, nil
@@ -320,7 +320,7 @@ func nodeAdministrationRecord(row model.Node) network.NodeAdministrationRecord {
 	return network.NodeAdministrationRecord{
 		ID: row.ID, Name: row.Name, Region: row.Region, Address: row.Address,
 		NodeCredentialPrefix: row.NodeCredentialPrefix, NodeCredentialRevokedAt: row.NodeCredentialRevokedAt,
-		CommunicationProtocol: row.CommunicationProtocol, Status: row.Status, LifecycleStatus: row.LifecycleStatus,
+		CommunicationProtocol: row.CommunicationProtocol, Status: row.Status, LifecycleStatus: row.LifecycleStatus, ArchivedAt: row.ArchivedAt,
 		Config: row.Config, IsEnabled: row.IsEnabled, Remark: row.Remark, IsOnline: row.IsOnline,
 		LastSeenAt: row.LastSeenAt, LastSyncAt: row.LastSyncAt, Version: row.Version,
 		SSHHost: row.SSHHost, SSHPort: row.SSHPort, SSHUser: row.SSHUser, SSHAuthMethod: row.SSHAuthMethod,

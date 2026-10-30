@@ -115,6 +115,9 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, id).Error; err != nil {
 			return removalError(err)
 		}
+		if node.LifecycleStatus == "archived" {
+			return network.ErrNodeAdministrationDeleting
+		}
 		if mode == "retire" {
 			if node.SSHHost == "" || node.SSHHostKeyFingerprint == "" {
 				return retirementBlocked("请先配置并验证 SSH；无法远程清理时可选择仅移除面板管理")
@@ -232,9 +235,6 @@ func (s NodeRetirement) Advance(ctx context.Context, id uint, runID string, inde
 	})
 }
 func (s NodeRetirement) Finalize(ctx context.Context, id uint, runID string) error {
-	if err := s.prepareRemoval(ctx, id, runID); err != nil {
-		return err
-	}
 	return jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
 		row, err := retirementLease(tx, id, runID)
 		if err != nil {
@@ -245,7 +245,7 @@ func (s NodeRetirement) Finalize(ctx context.Context, id uint, runID string) err
 				return jobs.ErrConflict
 			}
 		}
-		if _, err := (NodeRemoval{DB: tx, SkipRemote: true, FinalizingRetirement: true}).RemoveNode(ctx, row.ActorID, id); err != nil {
+		if _, err := (NodeRemoval{DB: tx, FinalizingRetirement: true}).RemoveNode(ctx, row.ActorID, id); err != nil {
 			return err
 		}
 		return tx.Model(&row).Updates(map[string]any{"state": "succeeded", "last_error": ""}).Error

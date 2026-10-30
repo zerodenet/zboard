@@ -47,7 +47,7 @@ func (s ObservationIntentOperations) RetryObservationIntent(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		if node.AssetTag != h.AssetTag || !node.IsEnabled || node.NodeCredentialRevokedAt != nil || node.LifecycleStatus == "deleting" {
+		if node.AssetTag != h.AssetTag || !node.IsEnabled || node.NodeCredentialRevokedAt != nil || network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrObservationIntentRetryConflict
 		}
 		var state model.NodeObservationState

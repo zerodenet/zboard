@@ -11,7 +11,7 @@ var (
 	ErrNodeAdministrationUnavailable = errors.New("node administration unavailable")
 	ErrNodeAdministrationPermission  = errors.New("node administration requires current administrator")
 	ErrNodeAdministrationNotFound    = errors.New("node not found")
-	ErrNodeAdministrationDeleting    = errors.New("node is deleting")
+	ErrNodeAdministrationDeleting    = errors.New("node management is permanently closed")
 	ErrNodeCredentialNotFound        = errors.New("node credential not found")
 )
 
@@ -32,6 +32,7 @@ type NodeAdministrationRecord struct {
 	CommunicationProtocol   int16           `json:"communication_protocol"`
 	Status                  int16           `json:"status"`
 	LifecycleStatus         string          `json:"lifecycle_status"`
+	ArchivedAt              *time.Time      `json:"archived_at,omitempty"`
 	Config                  string          `json:"config"`
 	IsEnabled               bool            `json:"is_enabled"`
 	Remark                  string          `json:"remark"`
