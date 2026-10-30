@@ -194,7 +194,8 @@ func TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks(t *testing.T) {
 	if err := target.DB.Create(&child).Error; err != nil {
 		t.Fatal("existing parent must permit child", err)
 	}
-	if err := target.DB.Delete(&endpoint).Error; err != nil {
+	// This probes the physical database FK, independently of protocol lifecycle deletion.
+	if err := target.DB.Unscoped().Delete(&endpoint).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := target.DB.First(&child, child.ID).Error; err != nil || child.ParentProtocolID != nil {
