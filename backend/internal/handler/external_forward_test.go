@@ -150,36 +150,18 @@ func verifyExternalForwardClosure(t *testing.T, f trafficReadFixture, a model.No
 	if err := f.h.db.Model(&model.NetworkEntry{}).Where("id = ? AND node_id IS NULL", entry.ID).Count(&nullNode).Error; err != nil || nullNode != 1 {
 		t.Fatalf("external edit invented an A node: %v %d", err, nullNode)
 	}
-	// Deleting the sole delivered path of a sold group must fail without
-	// withdrawing its existing access. Resolve it by supplying a replacement.
+	// Sold plans and active subscribers are impact information, not deletion
+	// prerequisites. An administrator may remove the final route independently.
 	w = httptest.NewRecorder()
-	f.h.NetworkEntriesHandler(w, announcementRequest(http.MethodDelete, fmt.Sprintf("/api/v1/admin/network-entries/%d", entry.ID), f.admin, ""))
-	if w.Code != http.StatusConflict {
-		t.Fatalf("last delivered path was deleted: %d %s", w.Code, w.Body.String())
-	}
-	var blocked struct {
+	f.h.NetworkEntryDeletionCheckHandler(w, announcementRequest(http.MethodGet, fmt.Sprintf("/api/v1/admin/network-entries/%d/deletion-check", entry.ID), f.admin, ""))
+	var assessment struct {
 		Data struct {
-			Blockers []struct{ Code, Message, Href string }
+			Blockers []any
+			Warnings []any
 		}
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &blocked); err != nil || len(blocked.Data.Blockers) == 0 || blocked.Data.Blockers[0].Code != "group_delivery" || blocked.Data.Blockers[0].Href == "" {
-		t.Fatalf("missing actionable deletion reason: %s %v", w.Body.String(), err)
-	}
-	if err := f.h.db.First(&model.NetworkEntry{}, entry.ID).Error; err != nil {
-		t.Fatal("blocked deletion removed entry", err)
-	}
-	if got := activeEndpointCredentialsForTest(t, f.h, b.ID, now); len(got) != 1 {
-		t.Fatalf("blocked deletion withdrew current access: %+v", got)
-	}
-	replacement := b
-	replacement.ID = 0
-	replacement.Name = "Replacement protocol"
-	replacement.RuntimeKey = "00000000-0000-4000-8000-000000000099"
-	if err := f.h.db.Create(&replacement).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := f.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: replacement.ID}).Error; err != nil {
-		t.Fatal(err)
+	if err := json.Unmarshal(w.Body.Bytes(), &assessment); err != nil || w.Code != 200 || len(assessment.Data.Blockers) != 0 || len(assessment.Data.Warnings) == 0 {
+		t.Fatalf("missing nonblocking impact: %d %s %v", w.Code, w.Body.String(), err)
 	}
 	w = httptest.NewRecorder()
 	f.h.NetworkEntriesHandler(w, announcementRequest(http.MethodDelete, fmt.Sprintf("/api/v1/admin/network-entries/%d", entry.ID), f.admin, ""))

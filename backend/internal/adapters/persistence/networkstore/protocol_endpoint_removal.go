@@ -73,6 +73,11 @@ func (s ProtocolEndpointRemoval) RemoveProtocolEndpoint(ctx context.Context, act
 			Updates(map[string]any{"status": "revoked", "revoked_at": now}).Error; err != nil {
 			return err
 		}
+		// Other independently configured protocols survive; remove only their
+		// parent association, matching the former FK SET NULL without deleting us.
+		if err := tx.Model(&model.ProtocolEndpoint{}).Where("parent_protocol_id = ?", endpoint.ID).Update("parent_protocol_id", nil).Error; err != nil {
+			return err
+		}
 		// Keep the identity and all financial/deployment foreign keys intact.
 		if err := tx.Model(&endpoint).Updates(map[string]any{"is_active": false, "deleted_at": now}).Error; err != nil {
 			return err

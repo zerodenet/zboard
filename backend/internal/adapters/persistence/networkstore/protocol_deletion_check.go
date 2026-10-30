@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -45,10 +44,10 @@ func deletionAdministrator(tx *gorm.DB, actor uint) (model.User, error) {
 	return admin, err
 }
 func protocolDeletionCheck(tx *gorm.DB, endpoint model.ProtocolEndpoint, node model.Node, lock bool) (network.DeletionCheck, error) {
-	check := network.DeletionCheck{ID: endpoint.ID, Name: endpoint.Name, Blockers: []network.DeletionBlocker{}, Effects: []string{}}
+	check := network.DeletionCheck{ID: endpoint.ID, Name: endpoint.Name, Blockers: []network.DeletionBlocker{}, Warnings: []network.DeletionBlocker{}, Effects: []string{}}
 	if endpoint.DeletedAt.Valid || node.LifecycleStatus == "archived" {
 		check.AlreadyDeleted = true
-		check.Effects = append(check.Effects, "该协议已删除，仅保留历史身份及账本引用，无需再次删除。")
+		check.Effects = append(check.Effects, "该协议已删除，历史流量和账本保留，无需再次删除。")
 		return check, nil
 	}
 	if network.NodeManagementClosed(node.LifecycleStatus) {
@@ -56,17 +55,17 @@ func protocolDeletionCheck(tx *gorm.DB, endpoint model.ProtocolEndpoint, node mo
 		return check, nil
 	}
 	var children int64
-	if err := deletionCount(tx.Model(&model.ProtocolEndpoint{}).Where("parent_protocol_id = ?", endpoint.ID), "protocol_endpoints.id", lock, &children); err != nil {
+	if err := tx.Model(&model.ProtocolEndpoint{}).Where("parent_protocol_id = ?", endpoint.ID).Count(&children).Error; err != nil {
 		return check, err
 	}
 	if children > 0 {
-		check.Blockers = append(check.Blockers, network.DeletionBlocker{Code: "dependent_protocols", Message: fmt.Sprintf("仍有 %d 个子协议依赖此服务，请先更换父协议或删除子协议。", children), Href: fmt.Sprintf("/admin/protocols?node=%d", node.ID)})
+		check.Warnings = append(check.Warnings, network.DeletionBlocker{Code: "related_protocols", Message: fmt.Sprintf("解除 %d 个协议的父级关联；这些协议及其服务器继续保留。", children), Href: fmt.Sprintf("/admin/protocols?node=%d", node.ID)})
 	}
-	groups, err := topologyDeletionGroupBlockers(tx, endpoint.ID, 0, lock)
+	groups, err := topologyDeletionGroupWarnings(tx, endpoint.ID, 0, lock)
 	if err != nil {
 		return check, err
 	}
-	check.Blockers = append(check.Blockers, groups...)
+	check.Warnings = append(check.Warnings, groups...)
 	var entries []model.NetworkEntry
 	if err := tx.Where("endpoint_id = ?", endpoint.ID).Find(&entries).Error; err != nil {
 		return check, err
@@ -77,22 +76,22 @@ func protocolDeletionCheck(tx *gorm.DB, endpoint model.ProtocolEndpoint, node mo
 			nodes = append(nodes, entry.NodeID)
 		}
 	}
-	publication, err := deletionPublicationBlockers(tx, uniqueSortedIDs(nodes), lock)
+	publication, err := deletionPublicationWarnings(tx, uniqueSortedIDs(nodes), lock)
 	if err != nil {
 		return check, err
 	}
-	check.Blockers = append(check.Blockers, publication...)
+	check.Warnings = append(check.Warnings, publication...)
 	var grants int64
 	if err := tx.Model(&model.ProtocolCredential{}).Where("protocol_endpoint_id = ? AND revoked_at IS NULL", endpoint.ID).Count(&grants).Error; err != nil {
 		return check, err
 	}
-	check.Effects = append(check.Effects, fmt.Sprintf("删除此协议、%d 个前置入口及当前权限组和证书关联，撤销 %d 条当前授权。", len(entries), grants), "保留协议历史身份、流量游标、账本及发布记录，不级联删除历史明细。", "服务器运行配置撤除将进入发布队列；远端完成更新前可能仍保留旧配置。")
+	check.Effects = append(check.Effects, fmt.Sprintf("删除此协议、%d 个前置入口及当前权限组和证书关联，撤销 %d 条当前授权。", len(entries), grants), "历史流量、计费账本和发布记录保留，不影响已结算数据。", "服务器运行配置撤除将进入发布队列；远端完成更新前可能仍保留旧配置。")
 	return check, nil
 }
 
 // Check both direct and forwarded alternatives. Removing a landing endpoint
 // removes all of its entries; none can count as a surviving delivery path.
-func topologyDeletionGroupBlockers(tx *gorm.DB, endpointID, entryID uint, lock bool) ([]network.DeletionBlocker, error) {
+func topologyDeletionGroupWarnings(tx *gorm.DB, endpointID, entryID uint, lock bool) ([]network.DeletionBlocker, error) {
 	var groups []model.NodeGroup
 	q := tx.Model(&model.NodeGroup{})
 	if endpointID != 0 {
@@ -111,32 +110,32 @@ func topologyDeletionGroupBlockers(tx *gorm.DB, endpointID, entryID uint, lock b
 	closed := []string{"deleting", "archived"}
 	for _, group := range groups {
 		var direct, forward int64
-		if err := deletionCount(tx.Table("node_group_endpoints AS m").Joins("JOIN protocol_endpoints AS p ON p.id = m.protocol_endpoint_id").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("m.node_group_id = ? AND p.id <> ?", group.ID, endpointID).Where(live, true, true, closed), "p.id", lock, &direct); err != nil {
+		if err := tx.Table("node_group_endpoints AS m").Joins("JOIN protocol_endpoints AS p ON p.id = m.protocol_endpoint_id").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("m.node_group_id = ? AND p.id <> ?", group.ID, endpointID).Where(live, true, true, closed).Count(&direct).Error; err != nil {
 			return nil, err
 		}
 		if direct > 0 {
 			continue
 		}
-		if err := deletionCount(tx.Table("node_group_network_entries AS m").Joins("JOIN network_entries AS e ON e.id = m.network_entry_id").Joins("JOIN protocol_endpoints AS p ON p.id = e.endpoint_id").Joins("JOIN nodes AS n ON n.id = p.node_id").Joins("LEFT JOIN nodes AS h ON h.id = e.node_id").Where("m.node_group_id = ? AND p.id <> ? AND e.id <> ? AND e.enabled = ?", group.ID, endpointID, entryID, true).Where(live, true, true, closed).Where("e.node_id IS NULL OR e.node_id = 0 OR (h.is_enabled = ? AND h.lifecycle_status NOT IN ?)", true, closed), "p.id", lock, &forward); err != nil {
+		if err := tx.Table("node_group_network_entries AS m").Joins("JOIN network_entries AS e ON e.id = m.network_entry_id").Joins("JOIN protocol_endpoints AS p ON p.id = e.endpoint_id").Joins("JOIN nodes AS n ON n.id = p.node_id").Joins("LEFT JOIN nodes AS h ON h.id = e.node_id").Where("m.node_group_id = ? AND p.id <> ? AND e.id <> ? AND e.enabled = ?", group.ID, endpointID, entryID, true).Where(live, true, true, closed).Where("e.node_id IS NULL OR e.node_id = 0 OR (h.is_enabled = ? AND h.lifecycle_status NOT IN ?)", true, closed).Count(&forward).Error; err != nil {
 			return nil, err
 		}
 		if forward > 0 {
 			continue
 		}
 		var plans, subscriptions int64
-		if err := deletionCount(tx.Model(&model.Plan{}).Where("node_group_id = ? AND is_active = ?", group.ID, true), "plans.id", lock, &plans); err != nil {
+		if err := tx.Model(&model.Plan{}).Where("node_group_id = ? AND is_active = ?", group.ID, true).Count(&plans).Error; err != nil {
 			return nil, err
 		}
-		if err := deletionCount(tx.Model(&model.Subscription{}).Where("node_group_id = ? AND status = ? AND end_at > ?", group.ID, "active", time.Now().UTC()), "subscriptions.id", lock, &subscriptions); err != nil {
+		if err := tx.Model(&model.Subscription{}).Where("node_group_id = ? AND status = ? AND end_at > ?", group.ID, "active", time.Now().UTC()).Count(&subscriptions).Error; err != nil {
 			return nil, err
 		}
 		if group.IsEnabled || plans > 0 || subscriptions > 0 {
-			blockers = append(blockers, network.DeletionBlocker{Code: "group_delivery", Message: fmt.Sprintf("权限组“%s”将失去全部可用线路（已发布套餐 %d 个、有效订阅 %d 个）。请先加入替代服务，或停用权限组并处理套餐和订阅。", group.Name, plans, subscriptions), Href: fmt.Sprintf("/admin/node-groups?group=%d", group.ID)})
+			blockers = append(blockers, network.DeletionBlocker{Code: "group_delivery", Message: fmt.Sprintf("删除后，权限组“%s”将没有可用线路（已发布套餐 %d 个、有效订阅 %d 个）。套餐和订阅保留，可随后补充其他线路。", group.Name, plans, subscriptions), Href: fmt.Sprintf("/admin/node-groups?group=%d", group.ID)})
 		}
 	}
 	return blockers, nil
 }
-func deletionPublicationBlockers(tx *gorm.DB, nodeIDs []uint, lock bool) ([]network.DeletionBlocker, error) {
+func deletionPublicationWarnings(tx *gorm.DB, nodeIDs []uint, lock bool) ([]network.DeletionBlocker, error) {
 	blockers := []network.DeletionBlocker{}
 	for _, id := range nodeIDs {
 		var deployments, activeJobs, tasks int64
@@ -171,23 +170,8 @@ func deletionPublicationBlockers(tx *gorm.DB, nodeIDs []uint, lock bool) ([]netw
 			leased = leased || p.LeaseToken != ""
 		}
 		if deployments > 0 || activeJobs > 0 || tasks > 0 || leased {
-			blockers = append(blockers, network.DeletionBlocker{Code: "publication_unconfirmed", Message: fmt.Sprintf("服务器 #%d 仍有运行中或结果待核验的发布任务，请先等待或核验结果；租约过期不代表远端已停止。", id), Href: "/admin/operation-logs?node_id=" + strconv.FormatUint(uint64(id), 10)})
+			blockers = append(blockers, network.DeletionBlocker{Code: "publication_unconfirmed", Message: fmt.Sprintf("服务器 #%d 有尚未确认完成的发布任务。协议会立即从面板删除，配置撤除排队处理；完成前远端可能仍保留旧配置。", id), Href: "/admin/operation-logs?node_id=" + strconv.FormatUint(uint64(id), 10)})
 		}
 	}
 	return blockers, nil
-}
-
-// A deletion transaction may already have a repeatable-read snapshot before
-// acquiring a group lock. Use current reads for dependencies so a waiter cannot
-// count a concurrently deleted path as an available replacement.
-func deletionCount(q *gorm.DB, column string, lock bool, count *int64) error {
-	if !lock {
-		return q.Count(count).Error
-	}
-	var ids []uint
-	if err := q.Clauses(credentialstore.CurrentResourceReadLock(q)).Pluck(column, &ids).Error; err != nil {
-		return credentialstore.CurrentResourceReadError(err)
-	}
-	*count = int64(len(ids))
-	return nil
 }

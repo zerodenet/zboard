@@ -101,18 +101,18 @@ func TestActiveProtocolDeletionClearsReferencesAndQueuesWithoutSSH(t *testing.T)
 	}
 }
 
-func TestProtocolEndpointDeletionReportsRunningPublicationConflict(t *testing.T) {
+func TestProtocolEndpointDeletionQueuesWithdrawalDuringPublication(t *testing.T) {
 	f, _, endpoint := networkEntryFixture(t)
 	if err := f.h.db.Create(&model.ProtocolDeployment{ProtocolEndpointID: endpoint.ID, NodeID: endpoint.NodeID, Status: "running"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
 	f.h.ProtocolEndpointDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/admin/protocol-endpoints/%d", endpoint.ID), f.admin, ""))
-	if w.Code != 409 {
+	if w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	var count int64
-	if err := f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Count(&count).Error; err != nil || count != 1 {
+	if err := f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("endpoint count=%d error=%v", count, err)
 	}
 }

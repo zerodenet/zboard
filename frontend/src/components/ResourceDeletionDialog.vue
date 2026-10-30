@@ -3,9 +3,12 @@
     <p>资源 #{{ target?.id }} · {{ target?.name }}</p>
     <p v-if="checking" role="status">正在检查删除依赖…</p>
     <PageAlert v-if="failure" tone="danger" title="删除未完成">{{ failure }}</PageAlert>
-    <PageAlert v-if="check?.already_deleted" tone="info" title="该资源已删除">仅保留历史身份和账本引用，无需再次删除。</PageAlert>
+    <PageAlert v-if="check?.already_deleted" tone="info" title="该资源已删除">历史流量和账本保留，无需再次删除。</PageAlert>
     <div v-for="blocker in check?.blockers || []" :key="`${blocker.code}:${blocker.href}`" class="deletion-blocker">
       <PageAlert tone="danger" title="暂时无法删除">{{ blocker.message }} <RouterLink v-if="blocker.href" :to="blocker.href">查看并处理</RouterLink></PageAlert>
+    </div>
+    <div v-for="warning in check?.warnings || []" :key="`${warning.code}:${warning.href}`" class="deletion-blocker">
+      <PageAlert tone="warning" title="删除影响">{{ warning.message }} <RouterLink v-if="warning.href" :to="warning.href">查看关联</RouterLink></PageAlert>
     </div>
     <ul v-if="check && !check.already_deleted" class="deletion-effects"><li v-for="effect in check.effects" :key="effect">{{ effect }}</li></ul>
     <p v-if="check && !check.already_deleted">删除无法在面板内撤销，请确认以上影响。</p>

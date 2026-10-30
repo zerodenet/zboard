@@ -7,6 +7,7 @@ type DeletionCheck struct {
 	Name           string            `json:"name"`
 	AlreadyDeleted bool              `json:"already_deleted"`
 	Blockers       []DeletionBlocker `json:"blockers"`
+	Warnings       []DeletionBlocker `json:"warnings"`
 	Effects        []string          `json:"effects"`
 }
 type DeletionBlocker struct {

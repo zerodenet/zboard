@@ -2661,6 +2661,7 @@ export interface ResourceDeletionCheck {
   name: string
   already_deleted: boolean
   blockers: { code: string; message: string; href?: string }[]
+  warnings?: { code: string; message: string; href?: string }[]
   effects: string[]
 }
 export async function checkResourceDeletion(kind: 'protocol' | 'entry', id: number): Promise<ResourceDeletionCheck> {

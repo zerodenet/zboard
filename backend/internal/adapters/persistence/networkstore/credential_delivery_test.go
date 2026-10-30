@@ -3,6 +3,7 @@ package networkstore
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -499,5 +500,74 @@ func TestCredentialDeliveryMySQLAndSQLiteRepairsMissingGateWithoutLosingLease(t 
 	var repairedEntry model.NetworkEntry
 	if err := db.First(&repairedEntry, entry.ID).Error; err != nil || !repairedEntry.DeliveryRequired {
 		t.Fatal("listener repair defaulted to legacy availability", err)
+	}
+}
+
+func TestProtocolDeletionLateEntryAcknowledgementAndRecovery(t *testing.T) {
+	deletedEntryAcknowledgement(t)
+}
+func TestMySQLProtocolDeletionLateEntryAcknowledgementAndRecovery(t *testing.T) {
+	if os.Getenv("ZBOARD_TEST_MYSQL_DSN") == "" {
+		t.Skip("requires isolated real MySQL")
+	}
+	deletedEntryAcknowledgement(t)
+}
+func deletedEntryAcknowledgement(t *testing.T) {
+	db, _ := administrationFixture(t)
+	now := seedPrincipalIndexOwners(t, db)
+	if err := db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	front := model.Node{ID: 2, Name: "late-front", Config: "{}"}
+	if err := db.Create(&front).Error; err != nil {
+		t.Fatal(err)
+	}
+	entry := model.NetworkEntry{NodeID: front.ID, EndpointID: 1, Name: "late entry", Network: "tcp", Address: "front.test", Port: 8443, PublicPort: 8443, Enabled: true, DeliveryRequired: true}
+	if err := db.Create(&entry).Error; err != nil {
+		t.Fatal(err)
+	}
+	state := network.ConfigurationPublicationState{Repository: ConfigurationPublicationState{DB: db}}
+	start, err := state.Begin(t.Context(), network.ConfigurationPublicationRequest{NodeID: front.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := state.SetDesiredWithTargets(t.Context(), start.Deployment, strings.Repeat("d", 64), network.ConfigurationDeliveryTargets{Credentials: []network.CredentialDeliveryTarget{}, NetworkEntries: []network.NetworkEntryDeliveryTarget{{NetworkEntryID: entry.ID, MaterialSHA256: strings.Repeat("a", 64)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before model.ProtocolDeployment
+	if err := db.First(&before, frozen.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := (TopologyRemoval{DB: db}).RemoveEntry(t.Context(), 1, entry.ID); err != nil {
+		t.Fatal("inflight publication prevented local deletion", err)
+	}
+	if _, err := state.Complete(t.Context(), frozen, network.ConfigurationPublicationCompletion{ConfigSHA: frozen.DesiredConfigSHA256, LastHealthyAt: now}); err != nil {
+		t.Fatal("late acknowledgement failed after removal", err)
+	}
+	for range 2 {
+		if err := datastore.RunMigrations(db); err != nil {
+			t.Fatal("restart tried to restore deleted entry projection", err)
+		}
+	}
+	var count int64
+	for _, row := range []any{&model.NetworkEntry{}, &model.NetworkEntryDeliveryConfirmation{}} {
+		q := db.Model(row)
+		if _, ok := row.(*model.NetworkEntry); ok {
+			q = q.Where("id = ?", entry.ID)
+		} else {
+			q = q.Where("entry_id = ?", entry.ID)
+		}
+		if err := q.Count(&count).Error; err != nil || count != 0 {
+			t.Fatal("deleted entry/projection was resurrected", count, err)
+		}
+	}
+	var after model.ProtocolDeployment
+	if err := db.First(&after, frozen.ID).Error; err != nil || after.CredentialTargets != before.CredentialTargets || after.Status != "succeeded" {
+		t.Fatal("immutable acknowledgement evidence lost", err)
+	}
+	var queued model.NodeConfigPublish
+	if err := db.First(&queued, front.ID).Error; err != nil {
+		t.Fatal("withdrawal generation lost", err)
 	}
 }

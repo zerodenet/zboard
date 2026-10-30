@@ -1,6 +1,7 @@
 package networkstore
 
 import (
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -38,8 +39,12 @@ func confirmCredentialDelivery(tx *gorm.DB, deployment model.ProtocolDeployment,
 		}
 	}
 	if manifest.NetworkEntries != nil {
-		rows := make([]model.NetworkEntryDeliveryConfirmation, 0, len(*manifest.NetworkEntries))
-		for _, target := range *manifest.NetworkEntries {
+		current, err := credentialstore.CurrentDeliveryEntries(tx, *manifest.NetworkEntries, true)
+		if err != nil {
+			return err
+		}
+		rows := make([]model.NetworkEntryDeliveryConfirmation, 0, len(current))
+		for _, target := range current {
 			rows = append(rows, model.NetworkEntryDeliveryConfirmation{EntryID: target.NetworkEntryID, NodeID: deployment.NodeID, DeploymentID: deployment.ID, MaterialSHA256: target.MaterialSHA256, ConfigSHA256: deployment.DesiredConfigSHA256, ConfirmedAt: now})
 		}
 		if len(rows) > 0 {

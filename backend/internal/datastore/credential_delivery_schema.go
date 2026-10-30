@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/publicationstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -193,8 +194,12 @@ func reconcileCredentialDeliverySchema(db *gorm.DB) error {
 				if err := tx.Model(&model.NetworkEntryDeliveryConfirmation{}).Where("node_id = ?", deployment.NodeID).Update("config_sha256", "").Error; err != nil {
 					return err
 				}
-				routes := make([]model.NetworkEntryDeliveryConfirmation, 0, len(*manifest.NetworkEntries))
-				for _, target := range *manifest.NetworkEntries {
+				current, err := credentialstore.CurrentDeliveryEntries(tx, *manifest.NetworkEntries, true)
+				if err != nil {
+					return err
+				}
+				routes := make([]model.NetworkEntryDeliveryConfirmation, 0, len(current))
+				for _, target := range current {
 					routes = append(routes, model.NetworkEntryDeliveryConfirmation{EntryID: target.NetworkEntryID, NodeID: deployment.NodeID, DeploymentID: deployment.ID, MaterialSHA256: target.MaterialSHA256, ConfigSHA256: deployment.AppliedConfigSHA256, ConfirmedAt: *deployment.FinishedAt})
 				}
 				if len(routes) > 0 {
@@ -236,6 +241,13 @@ func visitConfirmedCredentialManifests(db *gorm.DB, visit func(model.ProtocolDep
 			manifest, err := network.DecodeConfigurationDeliveryManifest(row.CredentialTargets)
 			if err != nil {
 				return fmt.Errorf("deployment%d: %w", row.ID, err)
+			}
+			if manifest.NetworkEntries != nil {
+				current, err := credentialstore.CurrentDeliveryEntries(db, *manifest.NetworkEntries, false)
+				if err != nil {
+					return err
+				}
+				manifest.NetworkEntries = &current
 			}
 			if err := visit(row, manifest); err != nil {
 				return err

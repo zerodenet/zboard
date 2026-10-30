@@ -96,9 +96,9 @@ func TestProtocolEndpointRemovalCommitsTopologyCredentialsAuditAndPublications(t
 	}
 }
 
-func TestProtocolEndpointRemovalRejectsConflictRevocationAndDeletingNode(t *testing.T) {
+func TestProtocolEndpointRemovalRejectsRevocationCompetingNodeDeletionAndFailedAudit(t *testing.T) {
 	rootDB, _ := administrationFixture(t)
-	for _, scenario := range []string{"running", "revoked", "deleting", "audit"} {
+	for _, scenario := range []string{"revoked", "deleting", "audit"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := rootDB.Begin()
 			t.Cleanup(func() { db.Rollback() })
@@ -226,7 +226,7 @@ func TestProtocolDeletionRetainsFinancialIdentitiesAndIsIdempotent(t *testing.T)
 		t.Fatal("idempotency bypassed current authorization", err)
 	}
 }
-func TestProtocolDeletionCheckAndCommitRevalidateDependencies(t *testing.T) {
+func TestProtocolDeletionWarnsWithoutRequiringOtherResourcesToBeDeleted(t *testing.T) {
 	rootDB, _ := administrationFixture(t)
 	for _, scenario := range []string{"direct group", "forward group", "published plan", "subscription", "child protocol", "other endpoint publication", "expired lease", "archived parent"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -281,18 +281,29 @@ func TestProtocolDeletionCheckAndCommitRevalidateDependencies(t *testing.T) {
 				}
 				return
 			}
-			if len(check.Blockers) == 0 {
-				t.Fatal("missing preview blocker", scenario)
+			if len(check.Blockers) != 0 || len(check.Warnings) == 0 {
+				t.Fatal("business references blocked deletion or hid its impact", scenario, check)
 			}
-			var blocked *network.DeletionBlocked
-			if _, err := service.Remove(t.Context(), 1, endpoint.ID); !errors.As(err, &blocked) || len(blocked.Check.Blockers) == 0 {
-				t.Fatal("commit trusted stale preview", err)
+			if result, err := service.Remove(t.Context(), 1, endpoint.ID); err != nil || !result.Deleted {
+				t.Fatal("independent protocol deletion failed", scenario, result, err)
 			}
-			var count int64
-			db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Count(&count)
-			if count != 1 {
-				t.Fatal("blocked mutation changed identity")
+			var server model.Node
+			if err := db.First(&server, endpoint.NodeID).Error; err != nil || server.LifecycleStatus == "archived" {
+				t.Fatal("protocol deletion removed server", err)
 			}
+			if scenario == "child protocol" {
+				var child model.ProtocolEndpoint
+				if err := db.Where("id <> ?", endpoint.ID).First(&child).Error; err != nil || child.ParentProtocolID != nil {
+					t.Fatal("related protocol was deleted or retained stale parent", err)
+				}
+			}
+			if scenario == "expired lease" {
+				var q model.NodeConfigPublish
+				if err := db.First(&q, entry.NodeID).Error; err != nil || q.LeaseToken != "unconfirmed" || q.Generation <= 1 {
+					t.Fatal("deletion lost executing lease or withdrawal generation", q, err)
+				}
+			}
+
 		})
 	}
 }
@@ -357,15 +368,15 @@ func TestDeletionGroupsAcceptOnlySurvivingDeliveryPaths(t *testing.T) {
 				t.Fatal(err)
 			}
 			blocked := kind == "disabled node" || kind == "deleted endpoint"
-			if (len(check.Blockers) > 0) != blocked {
+			if (len(check.Warnings) > 0) != blocked {
 				t.Fatal("incorrect surviving path", kind, check)
 			}
 		})
 	}
 }
-func TestEntryDeletionCannotEmptyLiveGroupAndKeepsDirectAlternative(t *testing.T) {
+func TestEntryDeletionWarnsAboutEmptyGroupAndKeepsParent(t *testing.T) {
 	db, _ := administrationFixture(t)
-	_, endpoint, entry, group := protocolEndpointRemovalFixture(t, db)
+	_, endpoint, entry, _ := protocolEndpointRemovalFixture(t, db)
 	store := TopologyRemoval{DB: db}
 	// With a direct membership the forwarding entry is independently removable.
 	check, err := store.CheckEntryDeletion(t.Context(), 1, entry.ID)
@@ -376,15 +387,8 @@ func TestEntryDeletionCannotEmptyLiveGroupAndKeepsDirectAlternative(t *testing.T
 		t.Fatal(err)
 	}
 	check, err = store.CheckEntryDeletion(t.Context(), 1, entry.ID)
-	if err != nil || len(check.Blockers) == 0 {
+	if err != nil || len(check.Blockers) != 0 || len(check.Warnings) == 0 {
 		t.Fatal(check, err)
-	}
-	var blocked *network.DeletionBlocked
-	if err := store.RemoveEntry(t.Context(), 1, entry.ID); !errors.As(err, &blocked) {
-		t.Fatal("stale preview bypassed current group dependency", err)
-	}
-	if err := db.Model(&group).Update("is_enabled", false).Error; err != nil {
-		t.Fatal(err)
 	}
 	if err := store.RemoveEntry(t.Context(), 1, entry.ID); err != nil {
 		t.Fatal(err)

@@ -55,7 +55,7 @@ func (s TopologyRemoval) CheckEntryDeletion(ctx context.Context, actor, id uint)
 	return
 }
 func entryDeletionCheck(tx *gorm.DB, entry model.NetworkEntry, lock bool) (network.DeletionCheck, error) {
-	check := network.DeletionCheck{ID: entry.ID, Name: entry.Name, Blockers: []network.DeletionBlocker{}, Effects: []string{"删除此前置入口及权限组关联；父协议和其他线路保留。", "撤回仅由此前置入口授予的访问权限，历史流量账本保留。", "面板托管的转发配置将排队撤除；外部转发需自行停止。"}}
+	check := network.DeletionCheck{ID: entry.ID, Name: entry.Name, Blockers: []network.DeletionBlocker{}, Warnings: []network.DeletionBlocker{}, Effects: []string{"删除此前置入口及权限组关联；父协议和其他线路保留。", "撤回仅由此前置入口授予的访问权限，历史流量账本保留。", "面板托管的转发配置将排队撤除；外部转发需自行停止。"}}
 	var endpoint model.ProtocolEndpoint
 	if err := tx.Unscoped().First(&endpoint, entry.EndpointID).Error; err != nil {
 		return check, removalError(err)
@@ -75,15 +75,15 @@ func entryDeletionCheck(tx *gorm.DB, entry model.NetworkEntry, lock bool) (netwo
 			check.Blockers = append(check.Blockers, network.DeletionBlocker{Code: "node_deleting", Message: fmt.Sprintf("关联服务器 #%d 正在删除或已删除，请查看服务器删除结果。", node.ID), Href: fmt.Sprintf("/admin/nodes?deletion=%d", node.ID)})
 		}
 	}
-	groups, err := topologyDeletionGroupBlockers(tx, 0, entry.ID, lock)
+	groups, err := topologyDeletionGroupWarnings(tx, 0, entry.ID, lock)
 	if err != nil {
 		return check, err
 	}
-	check.Blockers = append(check.Blockers, groups...)
-	publications, err := deletionPublicationBlockers(tx, ids, lock)
+	check.Warnings = append(check.Warnings, groups...)
+	publications, err := deletionPublicationWarnings(tx, ids, lock)
 	if err != nil {
 		return check, err
 	}
-	check.Blockers = append(check.Blockers, publications...)
+	check.Warnings = append(check.Warnings, publications...)
 	return check, nil
 }
