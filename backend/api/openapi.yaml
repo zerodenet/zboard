@@ -2764,7 +2764,7 @@ paths:
         - { name: node_id, in: query, schema: { type: integer, format: int64 } }
         - { name: q, in: query, schema: { type: string } }
         - { name: region, in: query, schema: { type: string } }
-        - { name: lifecycle_status, in: query, schema: { type: string, enum: [active, maintenance, retired, deleting] } }
+        - { name: lifecycle_status, in: query, schema: { type: string, enum: [active, maintenance, retired, deleting, archived] } }
         - { name: enabled, in: query, schema: { type: boolean } }
         - { name: connector_online, in: query, schema: { type: boolean } }
         - { name: kernel_status, in: query, schema: { type: string } }
@@ -2860,11 +2860,66 @@ paths:
     delete:
       tags: [nodes]
       summary: Delete a node asset and its local associations
-      description: Atomically clears owned protocol services, credentials, network entries, shared pools, memberships, certificate and DNS management records. No SSH or provider access is attempted. Remote services, files and DNS remain. Surviving entry nodes receive queued withdrawal. Historical traffic, administrative tasks and audit records are retained. Unconfirmed child executions, contradictory outcomes, publication leases and active task items block removal. Failure rolls back node lifecycle and association changes.
+      description: "Starts the same durable deletion command as POST /admin/nodes/{id}/deletion. System-managed provider DNS must be deleted or confirmed absent. SSH cleanup is best effort with explicit unconfirmed results. Historical billing identities and records are retained."
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
-        "200": { description: Node asset deleted }
+        "202":
+          description: Node deletion accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/NodeRetirement" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/nodes/{id}/deletion:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      tags: [admin, nodes]
+      summary: Read node deletion progress
+      description: Admin only. Available after the node is removed. Includes per-resource completed, retained, failed or pending steps; never includes credentials. Expired execution leases remain uncertain until explicitly reconciled by a bounded safe retry.
+      responses:
+        "200":
+          description: Deletion status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/NodeRetirement" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin, nodes]
+      summary: Delete a node or retry unfinished deletion
+      description: "Deletes system-managed provider DNS before finalizing node removal. Provider ownership, permissions and shared dependencies are rechecked. Missing or unavailable SSH never bypasses provider cleanup and never blocks deletion by itself; host cleanup failures remain explicit unconfirmed outcomes. Billing identities, ledger and execution history remain. A completed historical detach may be explicitly upgraded to deletion. Disable is a separate reversible operation."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [delete] }
+      responses:
+        "202":
+          description: Node deletion accepted or existing deletion returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - properties:
+                      data: { $ref: "#/components/schemas/NodeRetirement" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/v1/admin/nodes/{id}/retirement:
     parameters:
@@ -2898,7 +2953,7 @@ paths:
               additionalProperties: false
               required: [mode]
               properties:
-                mode: { type: string, enum: [retire, detach] }
+                mode: { type: string, enum: [delete, retire, detach] }
       responses:
         "202":
           description: Durable retirement accepted or existing intent returned
@@ -6634,7 +6689,7 @@ components:
       properties:
         node_id: { type: integer, format: int64 }
         node_name: { type: string }
-        mode: { type: string, enum: [retire, detach] }
+        mode: { type: string, enum: [delete, retire, detach] }
         state: { type: string }
         run_id: { type: string }
         attempt: { type: integer, minimum: 1 }
@@ -6646,9 +6701,12 @@ components:
             required: [kind, id, label, state]
             properties:
               kind: { type: string, enum: [dns, certificate, zero] }
+              provider_account_id: { type: integer, format: int64 }
+              provider_zone_id: { type: string }
+              provider_record_id: { type: string }
               id: { type: integer, format: int64 }
               label: { type: string }
-              state: { type: string, enum: [pending, running, succeeded, retained, failed] }
+              state: { type: string, enum: [pending, running, succeeded, retained, unconfirmed, failed] }
               message: { type: string }
     ApiErrorDetail:
       type: object
@@ -7108,7 +7166,7 @@ components:
       type: object
       required: [action]
       properties:
-        action: { type: string, enum: [detect, reconcile, activate, maintenance, retire] }
+        action: { type: string, enum: [detect, reconcile, activate, maintenance, disable, retire] }
         node_ids:
           type: array
           maxItems: 10000
@@ -7158,7 +7216,7 @@ components:
           type: string
         communication_protocol: { type: integer }
         status: { type: integer, description: Runtime status enum; enabled state is represented separately. }
-        lifecycle_status: { type: string, enum: [active, maintenance, retired, deleting] }
+        lifecycle_status: { type: string, enum: [active, maintenance, retired, deleting, archived] }
         config: { type: string, description: Node-level JSON configuration. }
         is_enabled: { type: boolean }
         remark: { type: string }
@@ -7240,7 +7298,7 @@ components:
         region: { type: string }
         address: { type: string }
         status: { type: integer }
-        lifecycle_status: { type: string, enum: [active, maintenance, retired, deleting] }
+        lifecycle_status: { type: string, enum: [active, maintenance, retired, deleting, archived] }
         is_enabled: { type: boolean }
         connector_last_seen_at: { type: string, format: date-time, nullable: true }
         connector_online: { type: boolean }

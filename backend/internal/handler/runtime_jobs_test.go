@@ -166,8 +166,12 @@ func TestHistoryRetentionBatchesAndPreservesActiveTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := h.runHistoryRetention(time.Now().UTC())
-	if err != nil || result.AuditLogs != 1001 {
+	if err != nil || result.AuditLogs != 1000 {
 		t.Fatal(result, err)
+	}
+	next, err := h.runHistoryRetention(time.Now().UTC())
+	if err != nil || next.AuditLogs != 1 {
+		t.Fatal("bounded cleanup did not resume", next, err)
 	}
 	var count int64
 	h.db.Model(&model.Task{}).Where("id = ?", task.ID).Count(&count)

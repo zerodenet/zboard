@@ -28,7 +28,7 @@ func (s ProtocolEndpointRemoval) RemoveProtocolEndpoint(ctx context.Context, act
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, endpoint.NodeID).Error; err != nil {
 			return removalError(err)
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrProtocolEndpointResourceDeleting
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&endpoint, id).Error; err != nil {

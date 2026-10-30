@@ -50,7 +50,7 @@ func (s ProxyPoolMutations) CommitProxyPoolMutation(ctx context.Context, actor u
 			}
 			return err
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return &network.ProxyPoolMutationValidation{Message: "节点正在删除"}
 		}
 

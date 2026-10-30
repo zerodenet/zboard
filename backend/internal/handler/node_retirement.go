@@ -20,6 +20,7 @@ func (h *handlers) NodeRetirementHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	value := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/nodes/"), "/retirement")
+	value = strings.TrimSuffix(value, "/deletion")
 	id, err := strconv.ParseUint(value, 10, 32)
 	if err != nil || id == 0 {
 		BadRequest(w, "节点编号无效")
@@ -41,7 +42,11 @@ func (h *handlers) NodeRetirementHandler(w http.ResponseWriter, r *http.Request)
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		BadRequest(w, "请提供明确的退役方式，且不要添加其他字段")
+		BadRequest(w, "请提供有效的删除请求")
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/deletion") && input.Mode != "delete" {
+		BadRequest(w, "删除请求必须使用 delete 方式")
 		return
 	}
 	lock := h.nodePublishLock(uint(id))
@@ -57,13 +62,14 @@ func (h *handlers) NodeRetirementHandler(w http.ResponseWriter, r *http.Request)
 		if errors.As(err, &blocked) {
 			writeJSON(w, http.StatusConflict, blocked.Reason, nil)
 		} else if errors.Is(err, jobs.ErrInvalid) {
-			BadRequest(w, "退役方式必须为 retire 或 detach")
+			BadRequest(w, "删除请求的处理方式无效")
 		} else {
 			resourceRemovalError(w, err)
 		}
 		return
 	}
-	writeJSON(w, http.StatusAccepted, "节点退役任务已提交", result)
+	h.invalidateZeroEventCredential(uint(id))
+	writeJSON(w, http.StatusAccepted, "节点删除任务已提交", result)
 }
 func (h *handlers) executeNodeRetirement(ctx context.Context, run jobs.Run) error {
 	err := h.services.NodeRetirement(h).Execute(ctx, run)

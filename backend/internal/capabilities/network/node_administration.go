@@ -11,7 +11,7 @@ var (
 	ErrNodeAdministrationUnavailable = errors.New("node administration unavailable")
 	ErrNodeAdministrationPermission  = errors.New("node administration requires current administrator")
 	ErrNodeAdministrationNotFound    = errors.New("node not found")
-	ErrNodeAdministrationDeleting    = errors.New("node is deleting")
+	ErrNodeAdministrationDeleting    = errors.New("node management is permanently closed")
 	ErrNodeCredentialNotFound        = errors.New("node credential not found")
 )
 
@@ -32,6 +32,7 @@ type NodeAdministrationRecord struct {
 	CommunicationProtocol   int16           `json:"communication_protocol"`
 	Status                  int16           `json:"status"`
 	LifecycleStatus         string          `json:"lifecycle_status"`
+	ArchivedAt              *time.Time      `json:"archived_at,omitempty"`
 	Config                  string          `json:"config"`
 	IsEnabled               bool            `json:"is_enabled"`
 	Remark                  string          `json:"remark"`
@@ -184,7 +185,7 @@ func (s NodeAdministration) Update(ctx context.Context, actor uint, request Node
 		}
 		request.LifecycleStatus = &value
 		if value != "active" && request.IsEnabled != nil && *request.IsEnabled {
-			return NodeAdministrationRecord{}, nodeAdministrationValidation("is_enabled", "维护或退役节点不能承载对外服务。")
+			return NodeAdministrationRecord{}, nodeAdministrationValidation("is_enabled", "维护或禁用的节点不能承载对外服务。")
 		}
 	}
 	if request.Name == nil && request.Region == nil && request.Address == nil && request.Remark == nil && request.LifecycleStatus == nil && request.IsEnabled == nil {

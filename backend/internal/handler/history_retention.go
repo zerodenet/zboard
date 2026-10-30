@@ -21,16 +21,16 @@ const (
 	defaultOperationRetention = 90
 	defaultTaskRetentionDays  = 90
 	historyRetentionMaxDays   = observability.RetentionMaxDays
-	historyRetentionInterval  = 6 * time.Hour
 )
 
 type historyRetentionResult struct {
-	AuditLogs             int64
-	Tasks                 int64
-	NodeOperations        int64
-	ProtocolDeployments   int64
-	CertificateOperations int64
-	ProviderOperations    int64
+	AuditLogs                                              int64
+	Tasks                                                  int64
+	NodeOperations                                         int64
+	ProtocolDeployments                                    int64
+	CertificateOperations                                  int64
+	ProviderOperations                                     int64
+	PeriodicSucceeded, PeriodicFailed, ArchivedFlowCursors int64
 }
 
 func historyRetentionDefaults() []model.SystemConfig {
@@ -42,13 +42,20 @@ func (h *handlers) ReconcileHistoryRetentionDefaults() error {
 }
 
 func (h *handlers) StartHistoryRetentionWorker() {
-	h.startScheduledJob("history_retention", historyRetentionInterval, func(ctx context.Context) error {
-		_, err := h.runHistoryRetentionContext(ctx, time.Now().UTC())
-		return err
-	})
+	for _, job := range h.services.HistoryRetentionJobs() {
+		h.startPeriodicJob(job)
+	}
 }
-
-func (h *handlers) CloseHistoryRetentionWorker() { h.closeScheduledJob("history_retention") }
+func (h *handlers) CloseHistoryRetentionWorker() {
+	for _, job := range h.services.HistoryRetentionJobs() {
+		h.closeScheduledJob(job.ID)
+	}
+}
+func (h *handlers) detachHistoryRetentionWorkers() {
+	for _, job := range h.services.HistoryRetentionJobs() {
+		h.detachScheduledJob(job.ID)
+	}
+}
 
 func (h *handlers) runHistoryRetentionSafely() {
 	if h.backgroundWorkPaused() {
@@ -69,24 +76,21 @@ func (h *handlers) runHistoryRetention(now time.Time) (historyRetentionResult, e
 	return h.runHistoryRetentionContext(context.Background(), now)
 }
 func (h *handlers) runHistoryRetentionContext(ctx context.Context, now time.Time) (historyRetentionResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	core, err := h.services.HistoryRetention.Run(ctx, now)
-	result := historyRetentionResult{AuditLogs: core.AuditLogs, Tasks: core.Tasks, NodeOperations: core.NodeOperations, ProtocolDeployments: core.ProtocolDeployments}
+	result := historyRetentionResult{AuditLogs: core.AuditLogs, Tasks: core.Tasks, NodeOperations: core.NodeOperations, ProtocolDeployments: core.ProtocolDeployments, PeriodicSucceeded: core.PeriodicSucceeded, PeriodicFailed: core.PeriodicFailed, ArchivedFlowCursors: core.ArchivedFlowCursors}
 	if err != nil {
 		return result, err
 	}
 	days := h.historyRetentionDays(operationRetentionKey, defaultOperationRetention)
 	if days != 0 {
 		for kind, count := range map[network.OperationKind]*int64{network.CertificateOperation: &result.CertificateOperations, network.DNSOperation: &result.ProviderOperations} {
-			for {
-				n, err := h.services.OperationHistory.Prune(ctx, kind, now.AddDate(0, 0, -days))
-				if err != nil {
-					return result, err
-				}
-				*count += n
-				if n < network.HistoryBatchSize {
-					break
-				}
+			n, err := h.services.OperationHistory.Prune(ctx, kind, now.AddDate(0, 0, -days))
+			if err != nil {
+				return result, err
 			}
+			*count += n
 		}
 	}
 	return result, nil

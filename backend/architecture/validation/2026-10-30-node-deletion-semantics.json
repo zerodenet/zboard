@@ -1,0 +1,52 @@
+{
+  "recorded_at": "2026-10-30T02:55:27.312925+00:00",
+  "parent_commit": "8d000bd7e4230e687711f1d4abb6872546333815",
+  "changed_source_sha256": "a75734c1bb9eeef434f1dad1c41501c1ffa5cbc573b000161575d78f2938a54c",
+  "contract": "disable is reversible; delete requires managed provider DNS removal independent of SSH; SSH results explicitly unconfirmed when unavailable",
+  "production_deployed": false,
+  "mysql": {
+    "version": "8.4.11",
+    "scope": "owned disposable local database, not production",
+    "mandatory_delete_and_legacy_upgrade": "passed",
+    "provider_failure_retry_and_no_detach_bypass": "passed",
+    "certificate_history_preserved_after_management_deletion": "passed",
+    "prior_ci_lock_regression_reproduced": true,
+    "accounting_subscription_wait_does_not_hold_node_lock": "passed",
+    "concurrent_closure_after_snapshot_rejects_accounting_and_replays_without_charge": "passed"
+  },
+  "backend": {
+    "complete_packages_before_final_lock_order_change": [
+      "networkstore",
+      "application",
+      "capabilities/network",
+      "server",
+      "api"
+    ],
+    "deletion_http_offline_provider_denied_disable_rollback_batch_contracts": "passed",
+    "final_lock_order_integration_and_archived_source_no_charge_contracts": "passed",
+    "full_go_vet": "passed",
+    "affected_package_vet_after_lock_change": "passed",
+    "final_server_build": "passed",
+    "full_macOS_suite": "not rerun; previously recorded native-process timeouts remain"
+  },
+  "frontend": {
+    "related_files": 4,
+    "related_tests": 59,
+    "result": "passed; three files passed together and RuntimeJobHistory six tests rerun after updating its deletion-name assertion",
+    "typecheck": "passed",
+    "production_build": "passed",
+    "full_suite": "not rerun; pre-existing six failures and controlled CI exclusions documented in previous receipt"
+  },
+  "openapi": {
+    "lint": "passed",
+    "warnings": 284
+  },
+  "prior_ci": {
+    "head": "8d000bd7e4230e687711f1d4abb6872546333815",
+    "run_id": 40989258589,
+    "backend_frontend_contract_compose_zrs": "success",
+    "mysql": "failed in TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock; reproduced and corrected with actual MySQL concurrency regressions in this change"
+  },
+  "delivery": "draft PR update; no merge, release tag, image publication or production activation",
+  "prior_archive_and_retention_evidence": "2026-10-30-node-archive-retention.json; 140000-row performance receipt is for previous source snapshot, not repeated for provider deletion"
+}

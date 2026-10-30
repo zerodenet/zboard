@@ -81,7 +81,7 @@ func (h *handlers) publishNodeConfigWithOwnerLocked(ctx context.Context, nodeID,
 	if err != nil {
 		return model.ProtocolDeployment{}, time.Since(started), err
 	}
-	if node.LifecycleStatus == resourceStatusDeleting {
+	if network.NodeManagementClosed(node.LifecycleStatus) {
 		return model.ProtocolDeployment{}, time.Since(started), errResourceDeleting
 	}
 	state := h.services.ConfigurationPublicationState()

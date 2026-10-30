@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
-	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/messagingstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -18,8 +17,8 @@ import (
 
 type HistoryRetention struct{ DB *gorm.DB }
 
-func (s HistoryRetention) PrunePeriodicRuns(ctx context.Context, cutoff time.Time) (int64, error) {
-	return jobstore.New(s.DB).PrunePeriodic(ctx, cutoff)
+func (s HistoryRetention) PrunePeriodicRuns(ctx context.Context, cutoff time.Time, successful bool) (int64, error) {
+	return jobstore.New(s.DB).PrunePeriodicOutcome(ctx, cutoff, successful)
 }
 
 func (s HistoryRetention) ReconcileDefaults(ctx context.Context) error {
@@ -60,31 +59,39 @@ func (s HistoryRetention) RetentionDays(ctx context.Context, key string, fallbac
 }
 
 func (s HistoryRetention) Prune(ctx context.Context, target observability.HistoryTarget, cutoff time.Time, limit int) (count int64, err error) {
+	if limit < 1 || limit > observability.HistoryBatchSize {
+		return 0, errors.New("invalid history batch")
+	}
+	if target == observability.ArchivedFlowCursors {
+		return s.pruneArchivedFlowCursors(ctx, cutoff, limit)
+	}
+	query, value, column, task, err := historyQuery(s.DB.WithContext(ctx), target, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	var candidates []uint
+	if err := query.Order(column+",id").Limit(limit).Pluck("id", &candidates).Error; err != nil {
+		return 0, err
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		modelValue, column, task, err := historyTarget(target)
+		var ids []uint
+		locked, _, _, _, err := historyQuery(tx, target, cutoff)
 		if err != nil {
 			return err
 		}
-		var ids []uint
-		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Model(modelValue).Where(column+" < ?", cutoff)
-		if task {
-			query = query.Where("status IN ?", []int16{2, 3})
-		}
-		if err := query.Order("id ASC").Limit(limit).Pluck("id", &ids).Error; err != nil {
+		if err := locked.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", candidates).Order("id").Pluck("id", &ids).Error; err != nil {
 			return err
 		}
 		if len(ids) == 0 {
 			return nil
 		}
 		if task {
-			if err := messagingstore.PruneMailAttempts(tx, ids); err != nil {
-				return err
-			}
-			if err := tx.Where("task_id IN ?", ids).Delete(&model.TaskItem{}).Error; err != nil {
-				return err
-			}
+			return pruneTaskHistoryChildren(tx, ids, limit, &count)
 		}
-		deleted := tx.Where("id IN ?", ids).Delete(modelValue)
+		deleted := tx.Where("id IN ?", ids).Delete(value)
 		count = deleted.RowsAffected
 		return deleted.Error
 	})
@@ -104,4 +111,35 @@ func historyTarget(target observability.HistoryTarget) (any, string, bool, error
 	default:
 		return nil, "", false, errors.New("unknown history retention target")
 	}
+}
+
+func historyQuery(db *gorm.DB, target observability.HistoryTarget, cutoff time.Time) (*gorm.DB, any, string, bool, error) {
+	value, column, task, err := historyTarget(target)
+	if err != nil {
+		return nil, nil, "", false, err
+	}
+	q := db.Model(value).Where(column+" < ?", cutoff)
+	if task {
+		q = q.Where("status IN ?", []int16{2, 3}).Where("NOT EXISTS (?)", db.Model(&model.MailDeliveryAttempt{}).Select("1").Where("mail_delivery_attempts.task_id = tasks.id AND (acceptance = ? OR finished_at IS NULL)", "unknown")).Where("NOT EXISTS (?)", db.Model(&model.TaskItem{}).Select("1").Where("task_items.task_id = tasks.id AND task_items.status = 1"))
+	}
+	if target == observability.NodeOperations || target == observability.ProtocolDeployments {
+		q = q.Where("status IN ?", []string{"succeeded", "failed"})
+	}
+	return q, value, column, task, nil
+}
+func (s HistoryRetention) HasPendingHistory(ctx context.Context, target observability.HistoryTarget, cutoff time.Time) (bool, error) {
+	if target == observability.PeriodicSuccess || target == observability.PeriodicFailure {
+		return jobstore.New(s.DB).HasPrunablePeriodic(ctx, cutoff, target == observability.PeriodicSuccess)
+	}
+	var ids []uint
+	if target == observability.ArchivedFlowCursors {
+		err := archivedCursorNodes(s.DB.WithContext(ctx), cutoff).Order("archived_at,id").Limit(1).Pluck("id", &ids).Error
+		return len(ids) > 0, err
+	}
+	q, _, column, _, err := historyQuery(s.DB.WithContext(ctx), target, cutoff)
+	if err != nil {
+		return false, err
+	}
+	err = q.Order(column+",id").Limit(1).Pluck("id", &ids).Error
+	return len(ids) > 0, err
 }

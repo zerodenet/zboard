@@ -91,8 +91,8 @@ func TestRetirementRetainsFailedResourcesAndResumesAfterRestart(t *testing.T) {
 	if remote.calls["dns"] != 2 || remote.calls["zero"] != 1 {
 		t.Fatal("completed steps replayed", remote.calls)
 	}
-	if err := db.First(&node, 1).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatal("node not removed", err)
+	if err := db.First(&node, 1).Error; err != nil || node.LifecycleStatus != "archived" || node.ArchivedAt == nil {
+		t.Fatal("node not archived", err)
 	}
 	done, err := store.Read(ctx, 1)
 	if err != nil || done.State != "succeeded" {
@@ -229,7 +229,7 @@ func TestRetirementFencesStaleWorkersAndUnconfirmedRuns(t *testing.T) {
 	if err := (JobReviews{DB: db}).RecordVerifiedOutcome(ctx, jobs.Reviewer{AccountID: 1}, jobs.Review{RunID: item.RunID, Outcome: jobs.Succeeded, Reason: "not actually verified"}); !errors.Is(err, jobs.ErrOutcomeUnverified) {
 		t.Fatal("generic review bypassed retirement", err)
 	}
-	if _, err := (NodeRemoval{DB: db, SkipRemote: true}).RemoveNode(ctx, 1, 1); err == nil {
+	if _, err := (NodeRemoval{DB: db}).RemoveNode(ctx, 1, 1); err == nil {
 		t.Fatal("active retirement bypassed by legacy deletion")
 	}
 	old := now.Add(-4 * time.Minute)

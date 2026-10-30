@@ -14,7 +14,7 @@ import (
 type BatchScopes struct{ DB *gorm.DB }
 
 func (s BatchScopes) ResolveBatchNodes(ctx context.Context, all bool, ids []uint, filter network.BatchNodeFilter, onlineAfter time.Time, limit int) ([]uint, error) {
-	query := s.DB.WithContext(ctx).Model(&model.Node{}).Select("nodes.id")
+	query := s.DB.WithContext(ctx).Model(&model.Node{}).Select("nodes.id").Where("nodes.lifecycle_status <> ?", "archived")
 	if all {
 		pattern := "%" + filter.Query + "%"
 		if filter.Query != "" {

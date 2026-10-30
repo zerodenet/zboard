@@ -13,7 +13,7 @@ import (
 
 func TestDeletingNodeDoesNotFalselyConfirmConnectionRevocation(t *testing.T) {
 	h := openPublishTestHandlers(t, filepath.Join(t.TempDir(), "deleting.db"))
-	if err := h.db.Create(&model.Node{ID: 1, Name: "deleting", Config: "{}", LifecycleStatus: "deleting"}).Error; err != nil {
+	if err := h.db.Create(&model.Node{ID: 1, Name: "deleting", Config: "{}", LifecycleStatus: "active"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := enqueueNodeConfigPublishOnly(h.db, 1, 0, 0); err != nil {
@@ -27,6 +27,11 @@ func TestDeletingNodeDoesNotFalselyConfirmConnectionRevocation(t *testing.T) {
 	ok, err = h.services.MarkPublicationConfigurationApplied(context.Background(), publicationCapability(item), strings.Repeat("a", 64))
 	if err != nil || !ok {
 		t.Fatal(ok, err)
+	}
+	// A previously accepted publication cannot turn a later terminal lifecycle
+	// into evidence that the original native connections were actually closed.
+	if err := h.db.Model(&model.Node{}).Where("id = 1").Update("lifecycle_status", "deleting").Error; err != nil {
+		t.Fatal(err)
 	}
 	item.Phase = "connections"
 	item.AppliedConfigSHA256 = strings.Repeat("a", 64)

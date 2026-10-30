@@ -154,6 +154,8 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodGet, "/api/v1/admin/node-cleanup-script", h.NodeCleanupScriptHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-observation-intents", h.NodeObservationIntentsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/node-observation-intents/:id/retry", h.NodeObservationIntentRetryHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/nodes/:id/deletion", h.NodeRetirementHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/nodes/:id/deletion", h.NodeRetirementHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
 		newRoute(http.MethodGet, "/api/v1/nodes", h.NodeListHandler),

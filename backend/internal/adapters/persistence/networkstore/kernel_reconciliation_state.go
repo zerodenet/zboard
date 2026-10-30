@@ -20,7 +20,7 @@ func (s KernelReconciliationState) BeginReconciliation(ctx context.Context, requ
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, request.NodeID).Error; err != nil {
 			return err
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrKernelResourceDeleting
 		}
 		var actor model.User

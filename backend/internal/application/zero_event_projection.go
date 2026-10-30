@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"sort"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
@@ -21,6 +22,7 @@ type BufferedEventProjection struct {
 type BufferedEventProjectionResult struct {
 	Exhausted   []metering.FlowAccountingResult
 	CoverageErr error
+	ClosedFlows int
 }
 
 // ProjectBufferedEvents atomically settles financial facts and appends immutable
@@ -40,6 +42,13 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, id := range ids {
+		var node model.Node
+		if err := s.Identity.db.WithContext(ctx).Select("id,lifecycle_status").First(&node, id).Error; err != nil {
+			return result, err
+		}
+		if network.NodeManagementClosed(node.LifecycleStatus) {
+			continue
+		}
 		if err := (credentialstore.PrincipalIndex{DB: s.Identity.db, Cipher: cipher}).Prepare(ctx, id); err != nil {
 			return result, err
 		}
@@ -47,9 +56,15 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 	var err error
 	if len(input.Flows) > 0 || len(input.Nodes) > 0 || len(input.Sources) > 0 {
 		err = s.nativeAuthorityTransaction(ctx, input, func(tx *gorm.DB) error {
-			// No node or observation-state locks are acquired in this transaction.
-			var err error
-			result.Exhausted, err = ApplyFlowBatch(tx, input.Flows, cipher)
+			// Filter closed sources without locking nodes ahead of subscriptions.
+			// Settlement rechecks current parents under SHARE NOWAIT; source
+			// append retains terminal bodies under the existing tombstone.
+			flows, closed, err := managedFlowInputs(tx, input.Flows)
+			if err != nil {
+				return err
+			}
+			result.ClosedFlows = closed
+			result.Exhausted, err = ApplyFlowBatch(tx, flows, cipher)
 			if err != nil {
 				return err
 			}

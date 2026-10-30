@@ -24,11 +24,12 @@ func (h *handlers) nodeCascadeDeleteHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer lock.Unlock()
-	result, err := h.services.NodeRemoval(h.credentialCipher).Remove(r.Context(), claims.UserID, id)
+	h.backgroundJobs()
+	result, err := h.services.NodeRetirement(h).Repository.Start(r.Context(), claims.UserID, id, "delete")
 	if err != nil {
 		resourceRemovalError(w, err)
 		return
 	}
 	h.invalidateZeroEventCredential(id)
-	OK(w, result)
+	writeJSON(w, http.StatusAccepted, "节点删除任务已提交", result)
 }

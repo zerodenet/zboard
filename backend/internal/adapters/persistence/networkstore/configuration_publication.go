@@ -19,7 +19,7 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, request.NodeID).Error; err != nil {
 			return err
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrKernelResourceDeleting
 		}
 		if request.TriggerEndpointID != 0 {

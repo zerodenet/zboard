@@ -40,13 +40,13 @@ func (s NodeRetirement) Read(ctx context.Context, id uint) (network.Retirement, 
 			out.State = run.State
 		}
 		if (out.State == "failed" || out.State == "unknown" || out.State == "interrupted") && out.LastError == "" {
-			out.LastError = "清理或移除面板记录尚未完成；记录已保留，请检查任务并重试。"
+			out.LastError = "删除尚未完成；请检查失败的项目并重试。"
 		}
 	}
 	return out, nil
 }
 func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) (out network.Retirement, err error) {
-	if mode != "retire" && mode != "detach" {
+	if mode != "retire" && mode != "detach" && mode != "delete" {
 		return out, jobs.ErrInvalid
 	}
 	err = jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
@@ -54,6 +54,7 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 			return network.ErrResourcePermission
 		}
 		var row model.NodeRetirement
+		upgradeDelete := false
 		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, "node_id = ?", id)
 		if found.Error != nil && !errors.Is(found.Error, gorm.ErrRecordNotFound) {
 			return found.Error
@@ -62,10 +63,14 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 			if err := validateRetirementPlan(row); err != nil {
 				return err
 			}
-			if row.Mode != mode && mode != "detach" {
+			upgradeDelete = mode == "delete" && row.Mode != "delete"
+			if row.Mode == "delete" && mode != "delete" {
+				return jobs.ErrConflict
+			}
+			if row.Mode != mode && mode != "detach" && mode != "delete" {
 				return retirementBlocked("不能将已移除管理的任务切换为远端清理")
 			}
-			if row.State == "succeeded" {
+			if row.State == "succeeded" && !upgradeDelete {
 				out = retirementView(row)
 				return nil
 			}
@@ -94,11 +99,15 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 				if err := jobstore.New(tx).Resolve(ctx, run.ID, jobs.Failed); err != nil {
 					return err
 				}
+			case jobs.Succeeded:
+				if !upgradeDelete {
+					return jobs.ErrConflict
+				}
 			case jobs.Failed, jobs.Canceled:
 			default:
 				return jobs.ErrConflict
 			}
-			if row.Mode != mode {
+			if row.Mode != mode && !upgradeDelete {
 				view := retirementView(row)
 				for i := range view.Steps {
 					if view.Steps[i].State != "succeeded" {
@@ -114,6 +123,9 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 		var node model.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, id).Error; err != nil {
 			return removalError(err)
+		}
+		if node.LifecycleStatus == "archived" && mode != "delete" {
+			return network.ErrNodeAdministrationDeleting
 		}
 		if mode == "retire" {
 			if node.SSHHost == "" || node.SSHHostKeyFingerprint == "" {
@@ -141,9 +153,9 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 		if len(blockers) > 0 {
 			return &network.ResourceRemovalBlocked{Blockers: blockers}
 		}
-		if found.Error != nil {
+		if found.Error != nil || upgradeDelete {
 			steps := []network.RetirementStep{}
-			if mode == "retire" {
+			if mode == "retire" || mode == "delete" {
 				var dns []model.ManagedDNSRecord
 				var certificates []model.ManagedCertificate
 				if err := tx.Where("node_id = ?", id).Order("id").Find(&dns).Error; err != nil {
@@ -153,15 +165,30 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 					return err
 				}
 				for _, d := range dns {
-					steps = append(steps, network.RetirementStep{Kind: "dns", ID: d.ID, Label: "DNS：" + d.DomainName, State: "pending"})
+					steps = append(steps, network.RetirementStep{Kind: "dns", ID: d.ID, ProviderAccountID: d.ProviderAccountID, ProviderZoneID: d.ProviderZoneID, ProviderRecordID: d.ProviderRecordID, Label: "删除 DNS：" + d.DomainName, State: "pending"})
 				}
 				for _, c := range certificates {
-					steps = append(steps, network.RetirementStep{Kind: "certificate", ID: c.ID, Label: "证书：" + c.Name, State: "pending"})
+					steps = append(steps, network.RetirementStep{Kind: "certificate", ID: c.ID, Label: "清理远端证书文件：" + c.Name, State: "pending"})
 				}
-				steps = append(steps, network.RetirementStep{Kind: "zero", ID: id, Label: "远端 Zero", State: "pending"})
+				steps = append(steps, network.RetirementStep{Kind: "zero", ID: id, Label: "清理远端 Zero", State: "pending"})
+			}
+			if upgradeDelete {
+				for i := range steps {
+					for _, old := range retirementView(row).Steps {
+						if old.Kind == steps[i].Kind && old.ID == steps[i].ID && old.State == "succeeded" {
+							steps[i].State = old.State
+							steps[i].Message = old.Message
+						}
+					}
+				}
 			}
 			encoded, _ := json.Marshal(steps)
-			row = model.NodeRetirement{NodeID: id, NodeName: node.Name, ActorID: actor, Mode: mode, Steps: string(encoded)}
+			if found.Error != nil {
+				row = model.NodeRetirement{NodeID: id, NodeName: node.Name, ActorID: actor, Mode: mode, Steps: string(encoded)}
+			} else {
+				row.Mode = mode
+				row.Steps = string(encoded)
+			}
 		}
 		row.ActorID = actor
 		row.Attempt++
@@ -169,7 +196,7 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 		row.LastError = ""
 		payload, _ := json.Marshal(network.NodeRetirementRunInput{Revision: network.NodeRetirementRevision, NodeID: id})
 		resource := network.NodeCleanupResource(node.SSHHost, node.SSHPort)
-		if node.SSHHost == "" || mode == "detach" {
+		if node.SSHHost == "" || mode == "detach" || mode == "delete" {
 			resource = fmt.Sprintf("node-retirement:%d", id)
 		}
 		run, err := jobstore.New(tx).SubmitLocked(ctx, jobs.Submission{Owner: "system", Handler: network.NodeRetirementHandler, Key: fmt.Sprintf("node-retirement:%d:%d", id, row.Attempt), Resource: resource, Timeout: 10 * time.Minute, Payload: string(payload)})
@@ -177,13 +204,15 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 			return err
 		}
 		row.RunID = run.ID
-		if err := tx.Model(&node).Updates(map[string]any{"lifecycle_status": "deleting", "is_enabled": false}).Error; err != nil {
-			return err
+		if node.LifecycleStatus != "archived" {
+			if err := tx.Model(&node).Updates(map[string]any{"lifecycle_status": "deleting", "is_enabled": false}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Save(&row).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &actor, Action: "node.retirement.start", Target: fmt.Sprintf("node:%d", id), Detail: mode + " run=" + run.ID}).Error; err != nil {
+		if err := tx.Create(&model.AuditLog{UserID: &actor, Action: "node.delete.start", Target: fmt.Sprintf("node:%d", id), Detail: mode + " run=" + run.ID}).Error; err != nil {
 			return err
 		}
 		out = retirementView(row)
@@ -232,21 +261,24 @@ func (s NodeRetirement) Advance(ctx context.Context, id uint, runID string, inde
 	})
 }
 func (s NodeRetirement) Finalize(ctx context.Context, id uint, runID string) error {
-	if err := s.prepareRemoval(ctx, id, runID); err != nil {
-		return err
-	}
 	return jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
 		row, err := retirementLease(tx, id, runID)
 		if err != nil {
 			return err
 		}
 		for _, step := range retirementView(row).Steps {
-			if step.State != "succeeded" && step.State != "retained" {
+			if step.State != "succeeded" && step.State != "retained" && !(row.Mode == "delete" && step.State == "unconfirmed" && (step.Kind == "certificate" || step.Kind == "zero")) {
 				return jobs.ErrConflict
 			}
 		}
-		if _, err := (NodeRemoval{DB: tx, SkipRemote: true, FinalizingRetirement: true}).RemoveNode(ctx, row.ActorID, id); err != nil {
+
+		if _, err := (NodeRemoval{DB: tx, FinalizingRetirement: true}).RemoveNode(ctx, row.ActorID, id); err != nil {
 			return err
+		}
+		if row.Mode == "delete" {
+			if err := finalizeManagedNodeDeletion(tx, id); err != nil {
+				return err
+			}
 		}
 		return tx.Model(&row).Updates(map[string]any{"state": "succeeded", "last_error": ""}).Error
 	})

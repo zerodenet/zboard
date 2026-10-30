@@ -366,7 +366,8 @@ export interface AdminNodeListItem {
 	region: string
 	address: string
 	status: number
-	lifecycle_status: 'active' | 'maintenance' | 'retired' | 'deleting'
+	lifecycle_status: 'active' | 'maintenance' | 'retired' | 'deleting' | 'archived'
+ archived_at?: string
 	is_enabled: boolean
 	connector_last_seen_at?: string
 	connector_online: boolean
@@ -2309,7 +2310,7 @@ export interface NodeBatchFilters {
 }
 
 export async function createNodeBatchOperation(payload: {
-	action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire'
+	action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'disable' | 'retire'
 	node_ids?: number[]
 	all_matching?: boolean
 	filters?: NodeBatchFilters

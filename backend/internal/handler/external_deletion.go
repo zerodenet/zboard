@@ -21,7 +21,7 @@ func requireAvailableNode(tx *gorm.DB, id uint) error {
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, id).Error; err != nil {
 		return err
 	}
-	if node.LifecycleStatus == resourceStatusDeleting {
+	if network.NodeManagementClosed(node.LifecycleStatus) {
 		return errResourceDeleting
 	}
 	return nil

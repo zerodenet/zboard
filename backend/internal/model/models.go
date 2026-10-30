@@ -183,6 +183,7 @@ type Node struct {
 	CommunicationProtocol   int16      `json:"communication_protocol" gorm:"not null;default:1"`
 	Status                  int16      `json:"status" gorm:"not null;default:0"`
 	LifecycleStatus         string     `json:"lifecycle_status" gorm:"size:20;not null;default:active"`
+	ArchivedAt              *time.Time `json:"archived_at,omitempty" gorm:"type:datetime"`
 	Config                  string     `json:"config" gorm:"type:json"`
 	IsEnabled               bool       `json:"is_enabled" gorm:"not null;default:true"`
 	Remark                  string     `json:"remark" gorm:"size:255"`

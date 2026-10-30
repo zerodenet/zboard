@@ -3,15 +3,12 @@ package networkstore
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
-	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -20,19 +17,23 @@ import (
 
 type NodeRemoval struct {
 	DB                   *gorm.DB
-	Cipher               network.ProviderCredentialCipher
-	SkipRemote           bool
 	FinalizingRetirement bool
 }
 
+// RemoveNode archives management, never historical identity. Remote changes are
+// owned exclusively by the durable retirement plan, not an after-delete job.
 func (s NodeRemoval) RemoveNode(ctx context.Context, actor, id uint) (out network.NodeRemovalFacts, err error) {
-	cleanup := network.NodeDeleteCleanup{}
-	var trafficRecords int64
-	var remoteCleanupRunID string
 	err = jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
+		admin, err := providerAdmin(tx, actor)
+		if err != nil {
+			return network.ErrResourcePermission
+		}
 		var node model.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, id).Error; err != nil {
 			return removalError(err)
+		}
+		if node.LifecycleStatus == "archived" {
+			return nil
 		}
 		if !s.FinalizingRetirement {
 			var active int64
@@ -43,144 +44,62 @@ func (s NodeRemoval) RemoveNode(ctx context.Context, actor, id uint) (out networ
 				return &network.ResourceRemovalBlocked{Blockers: map[string]int64{"node_retirement": active}}
 			}
 		}
-		user, err := providerAdmin(tx, actor)
-		if err != nil {
-			if errors.Is(err, network.ErrProviderPermission) {
-				return network.ErrResourcePermission
-			}
+		var endpoints []uint
+		if err := tx.Model(&model.ProtocolEndpoint{}).Where("node_id = ?", id).Pluck("id", &endpoints).Error; err != nil {
 			return err
 		}
-		var endpointIDs []uint
-		if err := tx.Model(&model.ProtocolEndpoint{}).Where("node_id = ?", id).Pluck("id", &endpointIDs).Error; err != nil {
-			return err
-		}
-		blockers, err := nodeRemovalBlockers(tx, id, endpointIDs)
+		blockers, err := nodeRemovalBlockers(tx, id, endpoints)
 		if err != nil {
 			return err
 		}
 		if len(blockers) > 0 {
 			return &network.ResourceRemovalBlocked{Blockers: blockers}
 		}
-		if err := tx.Model(&model.TrafficRecord{}).Where("node_id = ?", id).Count(&trafficRecords).Error; err != nil {
+		if err := TouchEndpointGroups(tx, endpoints); err != nil {
 			return err
 		}
-
-		var cleanupErr error
-		if err := TouchEndpointGroups(tx, endpointIDs); err != nil {
-			return err
-		}
-		cleanup.NetworkEntries, cleanupErr = RemoveTopologyEntries(tx, user.ID, TopologySelection{NodeID: node.ID})
-		if cleanupErr != nil {
-			return cleanupErr
-		}
-
-		var certificateIDs []uint
-		if err := tx.Model(&model.ManagedCertificate{}).Where("node_id = ?", node.ID).Pluck("id", &certificateIDs).Error; err != nil {
-			return err
-		}
-
-		if len(endpointIDs) > 0 {
-			cleanup.NodeGroupLinks, err = deleteNodeScopedRows(tx, &model.NodeGroupEndpoint{}, "protocol_endpoint_id IN ?", endpointIDs)
-			if err != nil {
-				return err
-			}
-			cleanup.CertificateLinks, err = deleteNodeScopedRows(tx, &model.CertificateProtocolEndpoint{}, "protocol_endpoint_id IN ?", endpointIDs)
-			if err != nil {
-				return err
-			}
-		}
-		if len(certificateIDs) > 0 {
-			removed, err := deleteNodeScopedRows(tx, &model.CertificateProtocolEndpoint{}, "managed_certificate_id IN ?", certificateIDs)
-			if err != nil {
-				return err
-			}
-			cleanup.CertificateLinks += removed
-		}
-
-		cleanup.PrincipalFlowCurrents, cleanup.PrincipalFlowGeneration, err = meteringstore.RemoveNode(tx, node.ID)
+		out.Cleanup.NetworkEntries, err = RemoveTopologyEntries(tx, admin.ID, TopologySelection{NodeID: id})
 		if err != nil {
 			return err
 		}
-
-		if cleanup.ProtocolCredentials, err = deleteNodeScopedRows(tx, &model.ProtocolCredential{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.FlowUsage, err = deleteNodeScopedRows(tx, &model.FlowUsage{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.ProtocolDeployments, err = deleteNodeScopedRows(tx, &model.ProtocolDeployment{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.CertificateOperations, err = deleteNodeScopedRows(tx, &model.CertificateOperation{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.ManagedCertificates, err = deleteNodeScopedRows(tx, &model.ManagedCertificate{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.ManagedDNSRecords, err = deleteNodeScopedRows(tx, &model.ManagedDNSRecord{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.ProtocolEndpoints, err = deleteNodeScopedRows(tx, &model.ProtocolEndpoint{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.KernelOperations, err = deleteNodeScopedRows(tx, &model.NodeOperation{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-		if cleanup.KernelState, err = deleteNodeScopedRows(tx, &model.NodeKernelState{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-
-		if cleanup.ProxyPools, err = deleteNodeScopedRows(tx, &model.NodeProxyPool{}, "node_id = ?", node.ID); err != nil {
-			return err
-		}
-
-		if !s.SkipRemote && strings.TrimSpace(node.SSHHost) != "" {
-			if s.Cipher == nil {
-				return errors.New("node cleanup cipher is unavailable")
-			}
-			snapshot, err := json.Marshal(network.NodeCleanupSnapshot{
-				NodeID: node.ID, Host: strings.TrimSpace(node.SSHHost), Port: node.SSHPort, User: node.SSHUser,
-				AuthMethod: node.SSHAuthMethod, CredentialCiphertext: node.SSHPwd, PassphraseCiphertext: node.SSHPrivateKeyPassphrase,
-				PrivilegeMode: node.SSHPrivilegeMode, PrivilegePasswordCiphertext: node.SSHPrivilegePassword, HostKeyFingerprint: node.SSHHostKeyFingerprint,
-			})
+		if len(endpoints) > 0 {
+			out.Cleanup.NodeGroupLinks, err = deleteNodeScopedRows(tx, &model.NodeGroupEndpoint{}, "protocol_endpoint_id IN ?", endpoints)
 			if err != nil {
 				return err
 			}
-			encrypted, err := s.Cipher.Encrypt(string(snapshot))
-			if err != nil {
-				return fmt.Errorf("encrypt node cleanup snapshot: %w", err)
-			}
-			payload, err := json.Marshal(network.NodeCleanupRunInput{Revision: "1", NodeID: node.ID, NodeName: node.Name, SnapshotCiphertext: encrypted})
-			if err != nil {
+			if err := tx.Model(&model.ProtocolEndpoint{}).Where("id IN ?", endpoints).Update("is_active", false).Error; err != nil {
 				return err
 			}
-			run, err := jobstore.New(tx).SubmitLocked(ctx, jobs.Submission{
-				Owner: "system", Key: fmt.Sprintf("node-cleanup:%d", node.ID), Handler: network.NodeCleanupHandler,
-				Resource: network.NodeCleanupResource(node.SSHHost, node.SSHPort), Timeout: 3 * time.Minute,
-				MaxAttempts: 3, RetryBackoff: 30 * time.Second, Payload: string(payload),
-			})
-			if err != nil {
-				return err
-			}
-			remoteCleanupRunID = run.ID
 		}
-
-		if err := observationstore.Tombstone(tx, node.ID, node.AssetTag); err != nil {
+		out.Cleanup.PrincipalFlowCurrents, out.Cleanup.PrincipalFlowGeneration, err = meteringstore.RemoveNode(tx, id)
+		if err != nil {
 			return err
 		}
-		if err := tx.Delete(&node).Error; err != nil {
+		if err := tx.Model(&model.ManagedCertificate{}).Where("node_id = ?", id).Update("auto_renew", false).Error; err != nil {
 			return err
 		}
-		encodedCleanup, _ := json.Marshal(cleanup)
-		externalCleanup := "not_required"
-		if remoteCleanupRunID != "" {
-			externalCleanup = "queued run_id=" + remoteCleanupRunID
+		if err := tx.Model(&model.NodeProxyPool{}).Where("node_id = ?", id).Updates(map[string]any{"auto_sync": false, "subscription_url": "", "config": "{}", "revision": gorm.Expr("revision + 1")}).Error; err != nil {
+			return err
 		}
-		return tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "node.delete", Target: fmt.Sprintf("node:%d", node.ID), Detail: fmt.Sprintf("name=%s cleanup=%s traffic_records_retained=%d external_cleanup=%s", node.Name, encodedCleanup, trafficRecords, externalCleanup)}).Error
+		if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ?", id).Update("suspended", true).Error; err != nil {
+			return err
+		}
+		if err := observationstore.Tombstone(tx, id, node.AssetTag); err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if err := tx.Model(&node).Updates(map[string]any{
+			"lifecycle_status": "archived", "archived_at": now, "is_enabled": false, "is_online": false,
+			"node_credential": "", "node_credential_prefix": "", "node_credential_revoked_at": now,
+			"traffic_secret": "", "traffic_secret_prefix": "", "traffic_secret_revoked_at": now,
+			"ssh_pwd": "", "ssh_private_key_passphrase": "", "ssh_privilege_password": "", "ssh_verified_at": nil,
+			"config": "{}",
+		}).Error; err != nil {
+			return err
+		}
+		detail, _ := json.Marshal(out.Cleanup)
+		return tx.Create(&model.AuditLog{UserID: &admin.ID, Actor: admin.Email, Action: "node.archive", Target: fmt.Sprintf("node:%d", id), Detail: fmt.Sprintf("name=%s cleanup=%s history_preserved=true external_cleanup=retirement_plan", node.Name, detail)}).Error
 	})
-	if err == nil {
-		out = network.NodeRemovalFacts{Cleanup: cleanup, TrafficRecordsRetained: trafficRecords, RemoteCleanupRunID: remoteCleanupRunID}
-	}
 	return
 }
 func deleteNodeScopedRows(tx *gorm.DB, value any, query string, args ...any) (int64, error) {

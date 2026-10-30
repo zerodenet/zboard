@@ -288,8 +288,8 @@ func (s *Services) MieruEndpointConfigurations(cipher network.ProviderCredential
 	return network.MieruEndpointConfigurations{Repository: networkstore.MieruEndpointConfigurations{DB: s.Identity.db}, Cipher: cipher}
 }
 
-func (s *Services) NodeRemoval(cipher network.ProviderCredentialCipher) network.NodeRemoval {
-	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db, Cipher: cipher, SkipRemote: true}}
+func (s *Services) NodeRemoval() network.NodeRemoval {
+	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db}}
 }
 
 func (s *Services) NodeRetirement(remote network.RetirementRemote) network.NodeRetirement {

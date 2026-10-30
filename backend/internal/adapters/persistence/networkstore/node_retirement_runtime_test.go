@@ -82,8 +82,8 @@ func retirementThroughRuntime(t *testing.T, mode string) {
 		t.Fatal("missing durable completion", done, err)
 	}
 	var remaining int64
-	if err := db.Model(&model.Node{}).Where("id = ?", 1).Count(&remaining).Error; err != nil || remaining != 0 {
-		t.Fatal("node remains after successful retirement", remaining, err)
+	if err := db.Model(&model.Node{}).Where("id = ? AND lifecycle_status = ? AND archived_at IS NOT NULL", 1, "archived").Count(&remaining).Error; err != nil || remaining != 1 {
+		t.Fatal("archive authority missing after successful retirement", remaining, err)
 	}
 	if mode == "detach" && len(remote.calls) != 0 {
 		t.Fatal("offline detach called remote", remote.calls)
