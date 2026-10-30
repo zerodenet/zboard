@@ -69,7 +69,7 @@ func TestNodeArchivalRollsBackAssociationsWhenArchiveWriteFails(t *testing.T) {
 func TestActiveProtocolDeletionClearsReferencesAndQueuesWithoutSSH(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
 	entry := saveEntryForTest(t, f, a, b, "")
-	group := model.NodeGroup{Name: "published", Code: "published"}
+	group := model.NodeGroup{Name: "unused", Code: "unused"}
 	if err := f.h.db.Create(&group).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,9 @@ func TestActiveProtocolDeletionClearsReferencesAndQueuesWithoutSSH(t *testing.T)
 		t.Fatal(err)
 	}
 	if err := f.h.db.Create(&model.NodeGroupNetworkEntry{NodeGroupID: group.ID, NetworkEntryID: entry.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&group).Update("is_enabled", false).Error; err != nil {
 		t.Fatal(err)
 	}
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})

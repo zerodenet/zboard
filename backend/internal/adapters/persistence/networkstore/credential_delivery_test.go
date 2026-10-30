@@ -444,7 +444,7 @@ func TestCredentialDeliveryMySQLAndSQLiteEndpointRemovalPreservesNodeEvidence(t 
 		t.Fatal(err)
 	}
 	var after model.ProtocolDeployment
-	if err := db.First(&after, frozen.ID).Error; err != nil || after.ProtocolEndpointID != 0 || after.CredentialTargets != before.CredentialTargets || after.Status != "succeeded" || after.AppliedConfigSHA256 != before.AppliedConfigSHA256 {
+	if err := db.First(&after, frozen.ID).Error; err != nil || after.ProtocolEndpointID != before.ProtocolEndpointID || after.CredentialTargets != before.CredentialTargets || after.Status != "succeeded" || after.AppliedConfigSHA256 != before.AppliedConfigSHA256 {
 		t.Fatal("endpoint deletion erased node confirmation evidence", after.Status, err)
 	}
 	if err := datastore.RunMigrations(db); err != nil {

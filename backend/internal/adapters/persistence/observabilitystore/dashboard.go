@@ -130,7 +130,7 @@ CROSS JOIN
 CROSS JOIN
  (SELECT COUNT(*) AS protocol_endpoints,
    COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END),0) AS active_protocol_endpoints
-  FROM protocol_endpoints) AS endpoint_summary
+  FROM protocol_endpoints WHERE deleted_at IS NULL AND node_id NOT IN (SELECT id FROM nodes WHERE lifecycle_status = 'archived')) AS endpoint_summary
 CROSS JOIN
  (SELECT COALESCE(SUM(CASE WHEN status IN ('open','pending_admin') THEN 1 ELSE 0 END),0) AS pending_tickets FROM tickets) AS ticket_summary
 CROSS JOIN
@@ -253,8 +253,8 @@ func (s Dashboard) loadDashboard(ctx context.Context, period observability.Dashb
  (SELECT COUNT(*) FROM principal_flow_scope_currents WHERE scope_type = ?) AS observed_scopes,
  (SELECT COUNT(*) FROM principal_flow_scope_currents WHERE scope_type = ? AND active_flows > 0) AS active_subscriptions,
  (SELECT COALESCE(SUM(active_flows),0) FROM principal_flow_scope_currents WHERE scope_type = ?) AS active_flows,
- (SELECT COUNT(*) FROM protocol_endpoints) AS protocol_endpoints,
- (SELECT COUNT(*) FROM protocol_endpoints WHERE is_active = ?) AS active_protocol_endpoints,
+ (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND node_id NOT IN (SELECT id FROM nodes WHERE lifecycle_status = 'archived')) AS protocol_endpoints,
+ (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND is_active = ?) AS active_protocol_endpoints,
  (SELECT COUNT(*) FROM plans WHERE is_active = ?) AS published_plans,
  (SELECT COUNT(*) FROM tickets WHERE status IN (?,?)) AS pending_tickets,
  (SELECT COUNT(*) FROM protocol_deployments WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = ?) AS unresolved_deployments`,

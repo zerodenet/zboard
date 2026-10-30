@@ -2,7 +2,6 @@ package networkstore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -21,34 +20,34 @@ func (s ProtocolEndpointRemoval) RemoveProtocolEndpoint(ctx context.Context, act
 	}
 	err = jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
 		var endpoint model.ProtocolEndpoint
-		if err := tx.First(&endpoint, id).Error; err != nil {
+		admin, err := deletionAdministrator(tx, actor)
+		if err != nil {
+			return err
+		}
+		if err := tx.Unscoped().First(&endpoint, id).Error; err != nil {
 			return removalError(err)
 		}
 		var node model.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, endpoint.NodeID).Error; err != nil {
 			return removalError(err)
 		}
-		if network.NodeManagementClosed(node.LifecycleStatus) {
-			return network.ErrProtocolEndpointResourceDeleting
-		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&endpoint, id).Error; err != nil {
+		if err := tx.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).First(&endpoint, id).Error; err != nil {
 			return removalError(err)
 		}
-		admin, err := providerAdmin(tx, actor)
+		check, err := protocolDeletionCheck(tx, endpoint, node, true)
 		if err != nil {
-			if errors.Is(err, network.ErrProviderPermission) {
-				return network.ErrResourcePermission
+			return err
+		}
+		if check.AlreadyDeleted {
+			out = network.ProtocolEndpointRemovalFacts{ID: endpoint.ID, AlreadyDeleted: true}
+			return nil
+		}
+		if len(check.Blockers) > 0 {
+			cause := network.ErrProtocolEndpointRemovalConflict
+			if network.NodeManagementClosed(node.LifecycleStatus) {
+				cause = network.ErrProtocolEndpointResourceDeleting
 			}
-			return err
-		}
-		var runningDeployments int64
-		if err := tx.Model(&model.ProtocolDeployment{}).
-			Where("protocol_endpoint_id = ? AND status = ?", endpoint.ID, "running").
-			Count(&runningDeployments).Error; err != nil {
-			return err
-		}
-		if runningDeployments > 0 {
-			return network.ErrProtocolEndpointRemovalConflict
+			return &network.DeletionBlocked{Check: check, Cause: cause}
 		}
 		if err := TouchEndpointGroups(tx, []uint{endpoint.ID}); err != nil {
 			return err
@@ -74,13 +73,8 @@ func (s ProtocolEndpointRemoval) RemoveProtocolEndpoint(ctx context.Context, act
 			Updates(map[string]any{"status": "revoked", "revoked_at": now}).Error; err != nil {
 			return err
 		}
-		// A deployment describes the whole node, even when this endpoint triggered
-		// it. Preserve frozen targets and unknown/confirmed results when removing
-		// the trigger; the nullable reference must not cascade-delete that evidence.
-		if err := tx.Model(&model.ProtocolDeployment{}).Where("protocol_endpoint_id = ?", endpoint.ID).Update("protocol_endpoint_id", nil).Error; err != nil {
-			return err
-		}
-		if err := tx.Delete(&endpoint).Error; err != nil {
+		// Keep the identity and all financial/deployment foreign keys intact.
+		if err := tx.Model(&endpoint).Updates(map[string]any{"is_active": false, "deleted_at": now}).Error; err != nil {
 			return err
 		}
 		if err := EnqueuePublication(tx, endpoint.NodeID, 0, admin.ID); err != nil {

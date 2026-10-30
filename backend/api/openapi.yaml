@@ -5226,8 +5226,8 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [nodes, admin]
-      summary: Remove and delete a protocol endpoint
-      description: Rechecks the current active administrator and atomically removes dependent front entries, increments affected node-group revisions, removes memberships and certificate bindings, revokes endpoint credentials, records the audit, deletes the endpoint, and queues runtime withdrawal for landing and entry nodes without requiring SSH success. A deleting node or running deployment blocks concurrent deletion.
+      summary: Delete a protocol endpoint while preserving historical identity
+      description: Rechecks the active administrator and current dependencies inside the transaction. Child protocols, loss of the last delivery path in an enabled or commercially used group, deleting hosts, and unconfirmed publication work block deletion with structured reasons and action links. Removes current front entries and bindings, revokes current grants, records a terminal deletion marker, and queues runtime withdrawal. Retains the original endpoint identity, traffic records, cumulative cursors, credential ownership and deployment evidence without rewriting their foreign keys. A duplicate delete, including a protocol already deleted with its host, is idempotent. Runtime cleanup is queued only for a newly deleted live endpoint.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -5236,6 +5236,27 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/protocol-endpoints/{id}/deletion-check:
+    get:
+      tags: [nodes, admin]
+      summary: Inspect protocol deletion effects and blocking dependencies
+      description: Read-only preview, repeated under locks at deletion time. Does not authorize a later deletion. Returns the resource identity, already_deleted, effects and blockers with stable code, localized message and optional admin href.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Current deletion assessment }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/network-entries/{id}/deletion-check:
+    get:
+      tags: [nodes, admin]
+      summary: Inspect forwarding entry deletion dependencies
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Current deletion assessment with effects and blocking dependencies }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/admin/protocol-endpoints/{id}/usage-resets:
     get:
       tags: [nodes, admin]

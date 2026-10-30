@@ -41,12 +41,13 @@
       </div>
       <template #footer><UiButton variant="secondary" @click="open = false">取消</UiButton><UiButton :loading="saving" @click="save">{{ form.deployment_mode === 'external' ? '保存入口' : '保存并发布' }}</UiButton></template>
     </ModalDialog>
+    <ResourceDeletionDialog :target="deletionTarget" kind="entry" @close="deletionTarget = null" @deleted="entryDeleted" />
   </section>
 </template>
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { fetchNetworkEntries, saveNetworkEntry, deleteNetworkEntry, fetchProtocolEndpoints, fetchNodeProxyPools, type NetworkEntry, type ProtocolEndpointNodeGroupMembership } from '../api/client'
-import { confirmAction } from '../utils/feedback'
+import ResourceDeletionDialog from '../components/ResourceDeletionDialog.vue'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import EndpointAddress from '../components/EndpointAddress.vue'
@@ -102,10 +103,14 @@ async function save() {
     await saveNetworkEntry(editing.value?.id || 0, payload); open.value = false; message.value = '已保存服务和节点组关联。'; emit('saved'); if(!props.editorOnly) await load()
   } catch(cause) { formError.value = failure(cause) } finally { saving.value = false }
 }
-async function remove(entry: NetworkEntry) {
-  if(!await confirmAction({title: '删除前置入口', message: `删除「${entry.name}」及节点组关联。${entry.deployment_mode === 'external' ? '外部转发由您自行停止。' : '面板将撤除入口服务器的转发配置。'}父协议及单独授权的直连线路保留；仅依赖此入口的授权会撤回。`, confirmText: '删除入口', tone: 'danger'})) return
-  try { await deleteNetworkEntry(entry.id); message.value = entry.deployment_mode === 'external' ? '已删除入口并撤回关联授权。' : '已删除入口，正在撤回关联授权和转发配置。'; emit('saved'); if(!props.editorOnly) await load() } catch(cause) { error.value = failure(cause) }
+const deletionTarget = ref<NetworkEntry | null>(null)
+function remove(entry: NetworkEntry) { deletionTarget.value = entry }
+async function entryDeleted() {
+  deletionTarget.value = null
+  message.value = '入口已删除，历史账本保留；运行配置撤除结果请查看发布任务。'
+  emit('saved'); if (!props.editorOnly) await load()
 }
+
 let poolSequence=0
 watch(()=>form.node_id,async (id,previous)=>{const seq=++poolSequence;poolOptions.value=[];poolError.value='';if(previous && id !== editing.value?.node_id)poolID.value=0;if(!id)return;poolLoading.value=true;try{const pools=await fetchNodeProxyPools(id);if(seq===poolSequence)poolOptions.value=pools.map(pool=>({label:pool.name,value:pool.id}))}catch(cause){if(seq===poolSequence)poolError.value=failure(cause)}finally{if(seq===poolSequence)poolLoading.value=false}})
 defineExpose({edit,load,remove})

@@ -56,7 +56,7 @@ func LockCurrentResourceNodes(tx *gorm.DB, ids []uint) error {
 func LockCurrentEndpointParents(tx *gorm.DB, sourceNodeID, endpointID uint) error {
 	if endpointID != 0 {
 		var endpoint model.ProtocolEndpoint
-		if err := tx.Clauses(CurrentResourceReadLock(tx)).Select("id").Where("id = ?", endpointID).Find(&endpoint).Error; err != nil {
+		if err := tx.Unscoped().Clauses(CurrentResourceReadLock(tx)).Select("id").Where("id = ?", endpointID).Find(&endpoint).Error; err != nil {
 			return CurrentResourceReadError(err)
 		}
 	}

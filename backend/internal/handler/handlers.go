@@ -1451,12 +1451,21 @@ func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.
 		Forbidden(w, "administrator access required")
 		return
 	}
+	if errors.Is(err, networkcap.ErrResourcesBusy) {
+		writeJSON(w, http.StatusConflict, "相关资源正在更新，请重新检查删除依赖后重试。", nil)
+		return
+	}
+	var blocked *networkcap.DeletionBlocked
+	if errors.As(err, &blocked) {
+		writeJSON(w, http.StatusConflict, blocked.Error(), blocked.Check)
+		return
+	}
 	if errors.Is(err, networkcap.ErrProtocolEndpointRemovalConflict) {
 		writeJSON(w, http.StatusConflict, "该协议服务仍有发布任务运行，请等待任务结束后再删除。", nil)
 		return
 	}
 	if errors.Is(err, networkcap.ErrProtocolEndpointResourceDeleting) {
-		writeJSON(w, http.StatusConflict, err.Error(), nil)
+		writeJSON(w, http.StatusConflict, "所属服务器正在删除，请等待删除任务结束。", nil)
 		return
 	}
 	if err != nil {

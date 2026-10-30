@@ -170,7 +170,7 @@ func (s *flowBatch) endpoint(tx *gorm.DB, id uint) (model.ProtocolEndpoint, erro
 		return endpoint, nil
 	}
 	var endpoint model.ProtocolEndpoint
-	if err := tx.First(&endpoint, id).Error; err != nil {
+	if err := tx.Unscoped().First(&endpoint, id).Error; err != nil {
 		return endpoint, err
 	}
 	s.endpoints[id] = endpoint

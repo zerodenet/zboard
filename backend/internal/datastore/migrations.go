@@ -156,6 +156,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := preflightNodeObservationSchema(db); err != nil {
 		return err
 	}
+	if err := preflightProtocolDeletionSchema(db); err != nil {
+		return err
+	}
 	if err := preflightNodeArchiveSchema(db); err != nil {
 		return err
 	}
@@ -277,6 +280,9 @@ func RunMigrations(db *gorm.DB) error {
 		return err
 	}
 	if err := reconcileNodeAssetSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileProtocolDeletionSchema(db); err != nil {
 		return err
 	}
 	if err := reconcileNodeArchiveSchema(db); err != nil {
@@ -480,6 +486,12 @@ func runMigrations(db *gorm.DB) error {
 		}
 		if version == nodeObservationSchemaVersion {
 			if err := reconcileNodeObservationSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == protocolDeletionSchemaVersion {
+			if err := reconcileProtocolDeletionSchema(db); err != nil {
 				return err
 			}
 			continue

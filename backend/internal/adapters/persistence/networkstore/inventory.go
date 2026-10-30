@@ -235,9 +235,7 @@ func runtimeNodeRecord(row model.Node) network.NodeRuntimeRecord {
 
 func (s Inventory) endpointQuery(ctx context.Context, input network.ProtocolEndpointInventoryQuery) *gorm.DB {
 	q := s.DB.WithContext(ctx).Model(&model.ProtocolEndpoint{})
-	if input.NodeID == 0 && len(input.IDs) == 0 {
-		q = q.Where("protocol_endpoints.node_id NOT IN (?)", s.DB.Model(&model.Node{}).Select("id").Where("lifecycle_status = ?", "archived"))
-	}
+	q = q.Where("protocol_endpoints.node_id NOT IN (?)", s.DB.Model(&model.Node{}).Select("id").Where("lifecycle_status = ?", "archived"))
 	if len(input.IDs) > 0 {
 		q = q.Where("protocol_endpoints.id IN ?", input.IDs)
 	}
@@ -346,7 +344,7 @@ func (s Inventory) protocolEndpointStatusFacets(ctx context.Context, input netwo
 
 func (s Inventory) ProtocolEndpoint(ctx context.Context, id uint, now time.Time) (network.ProtocolEndpointInventoryItem, error) {
 	var row model.ProtocolEndpoint
-	if err := s.DB.WithContext(ctx).First(&row, id).Error; err != nil {
+	if err := s.endpointQuery(ctx, network.ProtocolEndpointInventoryQuery{}).First(&row, id).Error; err != nil {
 		return network.ProtocolEndpointInventoryItem{}, inventoryError(err)
 	}
 	items, err := s.decorateEndpoints(ctx, []model.ProtocolEndpoint{row}, now, true)

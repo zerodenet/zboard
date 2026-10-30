@@ -82,6 +82,8 @@ func (q NetworkEntryQueries) loadEntries(ctx context.Context, ids []uint) (resul
 				nodes.is_enabled AS node_enabled, nodes.connector_last_seen_at AS node_last_seen_at, nodes.name AS node_name, protocol_endpoints.name AS endpoint_name`).
 			Joins("LEFT JOIN nodes ON nodes.id = network_entries.node_id").
 			Joins("JOIN protocol_endpoints ON protocol_endpoints.id = network_entries.endpoint_id").
+			Where("protocol_endpoints.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM nodes AS landing WHERE landing.id = protocol_endpoints.node_id AND landing.lifecycle_status = ?)", "archived").
+			Where("nodes.lifecycle_status IS NULL OR nodes.lifecycle_status <> ?", "archived").
 			Order("network_entries.id DESC")
 		if len(ids) > 0 {
 			rowsQuery = rowsQuery.Where("network_entries.id IN ?", ids)

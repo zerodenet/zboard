@@ -59,6 +59,9 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	if err := preflightProtocolDeletionSchema(source); err != nil {
+		return err
+	}
 	if err := preflightNodeArchiveSchema(source); err != nil {
 		return err
 	}

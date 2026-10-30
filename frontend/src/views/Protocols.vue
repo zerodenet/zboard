@@ -83,7 +83,7 @@
               <td data-column-priority="3"><TableText :value="endpoint.forward ? endpoint.forward.node_group_names?.join('、') || '未分配' : endpoint.node_group_memberships?.map(group=>group.name).join('、') || '未分配'" /></td>
               <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
-              <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
             </tr>
             </template>
           </tbody>
@@ -312,17 +312,19 @@
       </template>
     </ModalDialog>
     </div>
+    <ResourceDeletionDialog :target="deletionTarget" kind="protocol" @close="deletionTarget = null" @deleted="endpointDeleted" />
   </section>
 </template>
 
 <script setup lang="ts">
+import ResourceDeletionDialog from '../components/ResourceDeletionDialog.vue'
 import NodeSetupGuide from '../components/NodeSetupGuide.vue'
 import TableText from '../components/TableText.vue'
 import NetworkEntries from './NetworkEntries.vue'
 import UiTabs from '../components/UiTabs.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, parseProtocolEndpointEgress, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointUsageReset, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, parseProtocolEndpointEgress, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointUsageReset, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
@@ -445,7 +447,7 @@ const usageResetOpen = ref(false), usageResetSaving = ref(false), usageResetReas
 const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) || 1) - 1) * 25)
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
 const realityProbeOpen = ref(false)
-const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), egressParsing = ref(false), egressImportError = ref(''), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), egressParsing = ref(false), egressImportError = ref(''), deployingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
 watch(editorOpen, () => { realityProbeOpen.value = false })
 const orderingOpen = ref(false), orderingLoading = ref(false), orderingSaving = ref(false), orderingError = ref(''), orderingVersion = ref('')
 const orderingDialogOpen = ref(false), orderingDragKey = ref(''), orderingDropKey = ref('')
@@ -1408,28 +1410,16 @@ async function deploy(endpoint: ProtocolEndpointListItem) {
   catch (e: any) { error.value = e?.response?.data?.message || '配置发布失败，节点已尝试回滚；请检查发布记录、SSH 和 Zero 状态。'; await refresh() }
   finally { deployingID.value = 0 }
 }
-async function removeEndpoint(endpoint: ProtocolEndpointListItem) {
-  const accepted = await confirmAction({
-    title: '删除协议服务？',
-    message: `将删除“${endpoint.name}”的面板记录、用户凭据、节点组关联及以它为落地的前置入口。节点运行配置撤除会排队重试，SSH 不可达不阻止删除；远端完成更新前可能仍保留旧配置。`,
-    confirmText: '确认删除',
-    tone: 'danger',
-  })
-  if (!accepted) return
-  deletingID.value = endpoint.id
-  error.value = ''
-  message.value = ''
-  try {
-    await deleteProtocolEndpoint(endpoint.id)
-    if (selectedEndpointDetail.value?.id === endpoint.id) await closeDetail()
-    message.value = `协议服务“${endpoint.name}”已删除。`
-    await refresh()
-  } catch (e: any) {
-    error.value = e?.response?.data?.message || '协议服务删除失败。'
-  } finally {
-    deletingID.value = 0
-  }
+const deletionTarget = ref<ProtocolEndpointListItem | null>(null)
+function removeEndpoint(endpoint: ProtocolEndpointListItem) { deletionTarget.value = endpoint }
+async function endpointDeleted() {
+  const target = deletionTarget.value
+  deletionTarget.value = null
+  if (selectedEndpointDetail.value?.id === target?.id) await closeDetail()
+  message.value = `协议服务“${target?.name || ''}”已删除，历史账本保留；运行配置撤除结果请查看发布任务。`
+  await refresh()
 }
+
 watch(() => route.fullPath, async () => {
   const nextLimit = Number(route.query.limit)
   const resolvedLimit = allowedPageSizes.includes(nextLimit) ? nextLimit : 50

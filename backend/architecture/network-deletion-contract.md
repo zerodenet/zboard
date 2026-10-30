@@ -1,0 +1,23 @@
+# Network resource deletion contract
+
+Deletion ends management and delivery. Disabling remains reversible. Neither operation erases financial facts. The API and UI use 删除 and 禁用; terminal identity records are an implementation detail.
+
+| Resource | Current state removed | Dependencies that must be resolved | History retained |
+| --- | --- | --- | --- |
+| Server | Current topology and credentials; owned provider DNS follows the durable deletion job, independently of SSH | Running or unverified operations and shared resources follow the server deletion contract | Server and protocol identities, accounting facts, original foreign keys |
+| Protocol | Current direct/forward memberships, certificate bindings, and access grants; host configuration withdrawal queued | Live child protocols, last usable delivery path of an enabled group or a group with published plans/active subscriptions, deleting hosts, running/unverified publication work on any affected host | Terminal protocol identity, original credentials, deployments and frozen targets, cumulative cursors, traffic records |
+| Forwarding entry | Entry and current memberships; entitlement reconciliation and managed forwarding withdrawal queued | Last usable group delivery path, deleting hosts, running/unverified publication work on the landing or forwarding host | Parent protocol identity and all financial ownership; immutable publication evidence |
+
+The read-only deletion check and the mutation share validation functions. The check returns resource ID/name, effects, stable blocker codes, localized explanations and admin links. It is a preview, not a token authorizing a later mutation. The deletion transaction rechecks current administrator authority, takes parent/resource and group locks, then reads current dependency rows. MySQL locking reads must not reuse an earlier repeatable-read snapshot after waiting for a group lock. Busy current resources fail closed and can be checked again.
+
+Only surviving usable paths count as alternatives: an active, undeleted protocol on an enabled current server, and for forwarding an enabled entry whose managed host is also current and enabled. All entries landing on a protocol disappear with that protocol and cannot count as alternatives to it. Historical rows and terminal failed/completed jobs do not block deletion. An expired nonempty publication lease still has an unverified result. A queued task does not prove remote execution; current-state checks and terminal protocol scope prevent it from restoring a deleted protocol.
+
+The operation dialog stays open while the mutation runs and after errors. It shows conflict reasons beside the selected resource, disables destructive submission while blocked or unchecked, and provides an explicit recheck. An already deleted protocol, including one inherited from a deleted server, is acknowledged idempotently without another audit, publication, or accounting rewrite. Current inventories, explicit ID selections, group filters, facets and detail reads exclude effective deletions.
+
+Protocol deletion is independent of historical volume: it never reads, rewrites or deletes traffic records or flow cursors. Late accounting can resolve an original deleted protocol identity through explicitly unscoped ownership reads; that does not restore current authentication. Existing history-retention jobs remain separate. Do not add a blind TTL or cascading deletion to accounting receipts, current cursors or financial records.
+
+Migration 0075 adds nullable protocol deletion metadata and its seek index. It performs no financial backfill. A recorded migration with lost metadata or its seek index fails startup/copy rather than fabricating active records. Interrupted unrecorded DDL resumes additively. Copy preserves terminal identity and original financial foreign keys. Down migration preserves the deletion fence.
+
+After the first standalone protocol deletion, writers older than this contract must not be used for rollback: they do not honor the terminal protocol marker. Preserve 0075 metadata and roll forward with a compatible writer. An image rollback alone is not a safe state rollback.
+
+Validation covers permission revocation after preview, stale dependency previews, direct and forwarded group dependencies, published plans and valid subscriptions, child protocols, node-wide publications triggered by other endpoints, expired leases, inherited deletion, repeated deletion, failed audit rollback, exact ledger/cursor/deployment preservation, migration/copy authority, inventory visibility and inline UI failures. Real MySQL verification is required because SQLite fixtures alone cannot prove production foreign-key behavior.

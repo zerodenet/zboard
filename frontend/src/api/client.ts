@@ -2655,3 +2655,15 @@ export async function deletePlan(id: number): Promise<void> {
 export async function deletePlanSKU(id: number): Promise<void> {
   await api.delete(`/admin/plan-skus/${id}`)
 }
+
+export interface ResourceDeletionCheck {
+  id: number
+  name: string
+  already_deleted: boolean
+  blockers: { code: string; message: string; href?: string }[]
+  effects: string[]
+}
+export async function checkResourceDeletion(kind: 'protocol' | 'entry', id: number): Promise<ResourceDeletionCheck> {
+  const resource = kind === 'protocol' ? 'protocol-endpoints' : 'network-entries'
+  return unwrap(await api.get(`/admin/${resource}/${id}/deletion-check`))
+}

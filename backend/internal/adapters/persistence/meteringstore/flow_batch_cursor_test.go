@@ -333,3 +333,34 @@ func TestSQLiteCursorCohortDisabledPathKeepsIndividualReads(t *testing.T) {
 		t.Fatal(count)
 	}
 }
+
+func TestDeletedProtocolKeepsLateAccountingAndReplayOwnership(t *testing.T) {
+	db, cred := cohortDB(t)
+	first := cohortSample(cred, "historical-flow", "core", 1, 50)
+	if err := applyCohort(db, []metering.FlowSample{first}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Model(&model.ProtocolEndpoint{}).Where("id = ?", cred.ProtocolEndpointID).Updates(map[string]any{"is_active": false, "deleted_at": now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.ProtocolCredential{}).Where("id = ?", cred.ID).Updates(map[string]any{"status": "revoked", "revoked_at": now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	late := cohortSample(cred, "historical-flow", "core", 2, 80)
+	for range 2 {
+		if err := applyCohort(db, []metering.FlowSample{late}); err != nil {
+			t.Fatal("historical ownership was hidden by current deletion", err)
+		}
+	}
+	cohortTotal(t, db, 80)
+	var usage model.FlowUsage
+	if err := db.First(&usage).Error; err != nil || usage.ProtocolEndpointID != cred.ProtocolEndpointID || usage.RawBytes != 80 {
+		t.Fatal(usage, err)
+	}
+	var live int64
+	db.Model(&model.ProtocolEndpoint{}).Where("id = ?", cred.ProtocolEndpointID).Count(&live)
+	if live != 0 {
+		t.Fatal("late accounting restored current protocol")
+	}
+}

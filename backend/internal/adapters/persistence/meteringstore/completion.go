@@ -76,7 +76,7 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 				subscription = closedQuotaSubscription(subscription, closed)
 			}
 			var endpoint model.ProtocolEndpoint
-			if err := tx.First(&endpoint, credential.ProtocolEndpointID).Error; err != nil {
+			if err := tx.Unscoped().First(&endpoint, credential.ProtocolEndpointID).Error; err != nil {
 				return err
 			}
 

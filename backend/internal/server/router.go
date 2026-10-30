@@ -220,6 +220,8 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints/:id/usage-resets", h.ProtocolEndpointUsageResetsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/:id/usage-resets", h.ProtocolEndpointUsageResetsHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/protocol-endpoints/:id", h.ProtocolEndpointUpdateHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/network-entries/:id/deletion-check", h.NetworkEntryDeletionCheckHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints/:id/deletion-check", h.ProtocolEndpointDeletionCheckHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/protocol-endpoints/:id", h.ProtocolEndpointDeleteHandler),
 		newRoute(http.MethodPatch, "/api/v1/admin/protocol-endpoints/:id/multiplier", h.ProtocolEndpointMultiplierHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/:id/deploy", h.ProtocolEndpointDeployHandler),
