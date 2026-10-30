@@ -65,5 +65,17 @@
   ],
   "delivery": "reviewable branch; no merge, tag, image publication or production activation in this refactor",
   "go_build": "passed",
-  "inventory_publication_join_regressions": "passed after qualifying protocol_endpoints.node_id"
+  "inventory_publication_join_regressions": "passed after qualifying protocol_endpoints.node_id",
+  "complete_backend_package_results": {
+    "networkstore": "passed",
+    "observabilitystore": "passed",
+    "observationstore": "passed",
+    "meteringstore": "passed",
+    "entitlementstore": "passed",
+    "application": "passed",
+    "server": "passed",
+    "datastore": "passed"
+  },
+  "http_archive_and_inflight_connection_contracts": "passed",
+  "http_full_package": "not certified: aggregate ten-minute macOS timeout during signed-plugin HTTP test; archive contracts updated and rerun"
 }

@@ -66,7 +66,7 @@ func TestDNSDeletionRemovesLocalRecordWithoutUsingExpiredProviderCredentials(t *
 	}
 }
 
-func TestNodeDeletionClearsRelationsWithoutSSHOrProviderAccess(t *testing.T) {
+func TestNodeArchivalClearsCurrentRelationsWithoutSSHOrProviderAccess(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
 	entry := saveEntryForTest(t, f, a, b, "")
 	group := model.NodeGroup{Name: "assigned", Code: "assigned"}
@@ -95,17 +95,29 @@ func TestNodeDeletionClearsRelationsWithoutSSHOrProviderAccess(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	for _, query := range []*gorm.DB{
-		f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID),
-		f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", b.ID),
 		f.h.db.Model(&model.NetworkEntry{}).Where("id = ?", entry.ID),
 		f.h.db.Model(&model.NodeGroupNetworkEntry{}).Where("node_group_id = ?", group.ID),
 		f.h.db.Model(&model.NodeGroupEndpoint{}).Where("node_group_id = ?", group.ID),
-		f.h.db.Model(&model.NodeProxyPool{}).Where("node_id = ?", b.NodeID),
 	} {
 		var count int64
 		if err := query.Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("local cleanup count=%d err=%v", count, err)
 		}
+	}
+	var archived model.Node
+	if err := f.h.db.First(&archived, b.NodeID).Error; err != nil || archived.LifecycleStatus != "archived" || archived.ArchivedAt == nil || archived.IsEnabled || archived.NodeCredentialRevokedAt == nil || archived.TrafficSecretRevokedAt == nil {
+		t.Fatal("archive authority missing", archived, err)
+	}
+	var endpoint model.ProtocolEndpoint
+	if err := f.h.db.First(&endpoint, b.ID).Error; err != nil || endpoint.IsActive {
+		t.Fatal("historical endpoint identity lost or enabled", endpoint, err)
+	}
+	var retainedPool model.NodeProxyPool
+	if err := f.h.db.First(&retainedPool, pool.ID).Error; err != nil || retainedPool.AutoSync || retainedPool.Config != "{}" {
+		t.Fatal("current proxy configuration survived archive", retainedPool, err)
+	}
+	if !strings.Contains(w.Body.String(), `"archived":true`) || !strings.Contains(w.Body.String(), `"history_preserved":true`) || !strings.Contains(w.Body.String(), `"deleted":false`) {
+		t.Fatal("archive reported physical deletion", w.Body.String())
 	}
 	var surviving model.Node
 	if err := f.h.db.First(&surviving, a.ID).Error; err != nil {

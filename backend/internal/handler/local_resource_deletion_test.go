@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T) {
+func TestNodeArchivalRollsBackAssociationsWhenArchiveWriteFails(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
 	entry := saveEntryForTest(t, f, a, b, "")
 	group := model.NodeGroup{Name: "rollback", Code: "rollback"}
@@ -18,7 +18,7 @@ func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T
 		t.Fatal(err)
 	}
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
-	if err := f.h.db.Exec(fmt.Sprintf("CREATE TRIGGER deny_node_delete BEFORE DELETE ON nodes WHEN OLD.id = %d BEGIN SELECT RAISE(ABORT, 'test delete failure'); END", b.NodeID)).Error; err != nil {
+	if err := f.h.db.Exec(fmt.Sprintf("CREATE TRIGGER deny_node_archive BEFORE UPDATE OF lifecycle_status ON nodes WHEN NEW.id = %d AND NEW.lifecycle_status = 'archived' BEGIN SELECT RAISE(ABORT, 'test archive failure'); END", b.NodeID)).Error; err != nil {
 		t.Fatal(err)
 	}
 	var originalNode model.Node
