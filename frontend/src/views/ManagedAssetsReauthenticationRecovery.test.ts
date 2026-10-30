@@ -255,3 +255,16 @@ it('fences a pending fresh-resource response after the account changes', async (
   expect(allStored()).toBe('')
   expectNoWrites()
 })
+
+it('keeps manual DNS entry available for a node with no public address candidates or SSH', async () => {
+  vi.mocked(fetchNodeAddressCandidates).mockResolvedValue({ node_id: 1, policy: 'public_only', ipv4: [], ipv6: [], ssh_probe_status: 'not_configured' })
+  await open('dns')
+  const vm = view!.vm as any
+  vm.openCreateDNS()
+  Object.assign(vm.dnsForm, { provider_account_id: 1, node_id: 1, domain_name: 'disposable.example.test' })
+  await flushPromises()
+  expect(view!.text()).toContain('未发现可公开路由的节点地址，请手动填写')
+  vm.dnsForm.ipv4_value = '192.0.2.123'; vm.markCreateAddressEdited('ipv4')
+  await vm.createDNS(); await flushPromises()
+  expect(createManagedDNSRecord).toHaveBeenCalledWith(expect.objectContaining({ domain_name: 'disposable.example.test', takeover_existing: false }))
+})

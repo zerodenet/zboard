@@ -451,7 +451,10 @@ export interface NodeAddressCandidates {
 
 export async function fetchNodeAddressCandidates(nodeId: number, options: ApiRequestOptions = {}): Promise<NodeAddressCandidates> {
 	const response = await api.get(`/admin/nodes/${nodeId}/address-candidates`, { signal: options.signal })
-	return unwrap(response)
+	const result = unwrap(response) as NodeAddressCandidates
+	// Older servers serialize empty Go slices as null. Keep the array contract
+	// at the API boundary so forms still permit manual address entry.
+	return { ...result, ipv4: result.ipv4 ?? [], ipv6: result.ipv6 ?? [] }
 }
 
 export interface NodeLoadSnapshot {

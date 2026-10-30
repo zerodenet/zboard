@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/netip"
 	"reflect"
@@ -99,5 +100,29 @@ func TestNormalizeNodeAddressHost(t *testing.T) {
 		if got := normalizeNodeAddressHost(input); got != want {
 			t.Fatalf("normalizeNodeAddressHost(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestNodeAddressCandidatesAlwaysSerializeAddressListsAsArrays(t *testing.T) {
+	for _, address := range []string{"", "1.1.1.1", "2606:4700:4700::1111", "192.0.2.123"} {
+		t.Run(address, func(t *testing.T) {
+			collector := newNodeAddressCandidateCollector()
+			if address != "" {
+				collector.add(address, nodeAddressSourceNodeAddress)
+			}
+			body, err := json.Marshal(collector.response(9, nodeAddressProbeNotConfigured, nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result map[string]json.RawMessage
+			if err := json.Unmarshal(body, &result); err != nil {
+				t.Fatal(err)
+			}
+			for _, family := range []string{"ipv4", "ipv6"} {
+				if len(result[family]) == 0 || result[family][0] != '[' {
+					t.Fatalf("%s is not a JSON array: %s", family, body)
+				}
+			}
+		})
 	}
 }
