@@ -49,8 +49,8 @@ func checkTrafficSummaryProjection(t *testing.T, h *handlers, credential model.P
 		}
 		hourly := 0
 		for _, query := range trace.queries {
-			if strings.Contains(query, "traffic_records") {
-				t.Fatalf("summary scanned ledger: %s", query)
+			if strings.Contains(query, "traffic_records") && !strings.Contains(query, "JOIN traffic_records r ON r.id=p.traffic_record_id") && !strings.Contains(query, "WHERE id IN") {
+				t.Fatalf("summary scanned history instead of a bounded checkpoint join: %s", query)
 			}
 			if strings.Contains(query, "traffic_usage_hourly") {
 				hourly++
@@ -62,7 +62,7 @@ func checkTrafficSummaryProjection(t *testing.T, h *handlers, credential model.P
 	}
 	assert(0, 0)
 	ctx := context.Background()
-	// The open UTC hour is visible after the independent worker commits.
+	// The open UTC hour is exact from settlements; closed history uses the worker.
 	current := accountingBenchmarkEvents(credential, 0, 32)
 	if err := h.projectZeroNodeEvents(ctx, current); err != nil {
 		t.Fatal(err)
@@ -304,8 +304,8 @@ func TestTrafficSummarySnapshotDoesNotBlockOrMixConcurrentSettlement(t *testing.
 		t.Fatalf("summary mixed snapshots: %+v: %v", first, err)
 	}
 	next, err := service.Read(context.Background(), 1, metering.UsageSummaryQuery{})
-	if !errors.Is(err, metering.ErrUsageProjectionPending) {
-		t.Fatalf("new pending settlement appeared as complete statistics: %+v %v", next, err)
+	if err != nil || next.TotalUsedBytes != 100 || next.RemainingBytes != 900 {
+		t.Fatalf("current-hour settlement was hidden behind its pending projection: %+v %v", next, err)
 	}
 	quota, err := f.h.services.UsageQuota().Read(context.Background(), 1, metering.UsageSummaryQuery{})
 	if err != nil || quota.RemainingBytes != 900 {

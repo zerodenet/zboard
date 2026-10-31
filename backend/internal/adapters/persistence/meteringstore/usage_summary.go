@@ -24,21 +24,15 @@ func (s UsageSummary) Read(ctx context.Context, actor uint, q metering.UsageSumm
 		read = s.DB
 	}
 	err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := EnsureHourlyUsageReady(tx, TrafficScope{UserID: q.UserID}, time.Time{}, time.Time{}); err != nil {
+		now = tx.NowFunc().UTC()
+		result.AsOf = now.Format(time.RFC3339)
+		if err := EnsureHourlyUsageReadable(tx, TrafficScope{UserID: q.UserID}, time.Time{}, time.Time{}); err != nil {
 			return err
 		}
-		scope := func(query *gorm.DB) *gorm.DB {
-			if q.UserID > 0 {
-				return query.Where("user_id = ?", q.UserID)
-			}
-			return query
-		}
-		// Both windows contain whole UTC hours, including the open hour. The
-		// projection has no unprocessed fact in this snapshot, so it includes
-		// newly committed and late-arriving usage without scanning the ledger.
-		// Preserve the existing unbounded upper edge (including future records).
+		// A bounded pending overlay keeps current and historical reports exact
+		// without waiting for an empty queue or scanning financial history.
 		var usage struct{ TotalUsedBytes, UsedBytesToday int64 }
-		if err := scope(tx.Table("traffic_usage_hourly")).Where("record_count > 0").Select(
+		if err := TrafficAggregateSource(tx, time.Time{}, time.Time{}, TrafficScope{UserID: q.UserID}).Select(
 			"COALESCE(SUM(used_bytes), 0) AS total_used_bytes, COALESCE(SUM(CASE WHEN record_at >= ? THEN used_bytes ELSE 0 END), 0) AS used_bytes_today",
 			now.Truncate(24*time.Hour).Format("2006-01-02 15:04:05"),
 		).Scan(&usage).Error; err != nil {

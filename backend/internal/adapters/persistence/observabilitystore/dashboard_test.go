@@ -98,8 +98,8 @@ func TestDashboardProjectionPreservesFactsAndBoundedPendingChecks(t *testing.T) 
 	if result.Business.NewUsers != 1 || result.Business.PreviousNewUsers != 0 || result.Business.PreviousRenewOrders != 1 {
 		t.Fatalf("comparison facts = %+v", result.Business)
 	}
-	if got := counter.queries.Load(); got != 6 {
-		t.Fatalf("dashboard used %d queries, want 4 aggregates and 2 indexed pending probes", got)
+	if got := counter.queries.Load(); got != 5 {
+		t.Fatalf("dashboard used %d queries, want 4 aggregates and 1 combined indexed pending probe", got)
 	}
 	if result.Business.RevenueCents != 120 || result.Business.PreviousRevenueCents != 70 || result.Business.PaidOrders != 1 || !result.Business.MixedCurrency {
 		t.Fatalf("business = %+v", result.Business)
@@ -139,7 +139,7 @@ func TestDashboardProjectionPreservesFactsAndBoundedPendingChecks(t *testing.T) 
 			if focused.Business != want || focused.Service.TrafficBytes != result.Service.TrafficBytes || focused.Service.PreviousTrafficBytes != result.Service.PreviousTrafficBytes {
 				t.Fatalf("statistics changed: %+v", focused)
 			}
-			if counter.queries.Load() != 5 {
+			if counter.queries.Load() != 4 {
 				t.Fatalf("statistics queries=%d", counter.queries.Load())
 			}
 		case "trend":

@@ -34,7 +34,7 @@ func (s NodeSeries) Read(ctx context.Context, actor uint, q metering.NodeSeriesQ
 	}
 	err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if q.Bucket != "minute" {
-			if err := EnsureHourlyUsageReady(tx, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, q.From, q.To); err != nil {
+			if err := EnsureHourlyUsageReadable(tx, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, q.From, q.To); err != nil {
 				return err
 			}
 		}

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -51,6 +50,9 @@ func TestAccountingHourlyProjectionFailurePreservesSettlementAndUnknownReads(t *
 		t.Fatal(err)
 	}
 	events := accountingBenchmarkEvents(credential, 0, 4)
+	for i := range events {
+		events[i].OccurredAt = time.Now().UTC().Truncate(time.Hour).Add(-time.Minute)
+	}
 	if err := h.projectZeroNodeEvents(ctx, events); err != nil {
 		t.Fatal("hourly chart failure blocked settlement", err)
 	}
@@ -59,30 +61,30 @@ func TestAccountingHourlyProjectionFailurePreservesSettlementAndUnknownReads(t *
 	if err != nil || quota.RemainingBytes != initial.RemainingBytes-120 {
 		t.Fatal(quota, err)
 	}
-	if _, err := h.services.UsageSummary().Read(ctx, credential.UserID, metering.UsageSummaryQuery{}); !errors.Is(err, metering.ErrUsageProjectionPending) {
-		t.Fatal("partial summary appeared complete", err)
+	if out, err := h.services.UsageSummary().Read(ctx, credential.UserID, metering.UsageSummaryQuery{}); err != nil || out.TotalUsedBytes != 120 {
+		t.Fatal("bounded pending summary", out, err)
 	}
-	day := time.Now().UTC().Truncate(24 * time.Hour)
+	day := events[0].OccurredAt.Truncate(24 * time.Hour)
 	trendCache := &hourlyReadTrendCache{}
 	trendQuery := metering.TrafficTrendQuery{From: day, Days: 1, Timezone: "UTC", Buckets: []metering.TrendBucket{{Key: day.Format("2006-01-02"), StartUTC: day, EndUTC: day.Add(24 * time.Hour)}}}
-	if _, err := h.services.TrafficTrends(trendCache).Read(ctx, credential.UserID, trendQuery); !errors.Is(err, metering.ErrUsageProjectionPending) || trendCache.calls != 0 {
-		t.Fatal("pending trend reached display cache", trendCache.calls, err)
+	if out, err := h.services.TrafficTrends(trendCache).Read(ctx, credential.UserID, trendQuery); err != nil || out.Snapshot.RecordCount != 4 || out.Snapshot.Points[0].UsedBytes != 120 || trendCache.calls != 1 {
+		t.Fatal("bounded pending trend", out, trendCache.calls, err)
 	}
 	breakdownCache := &hourlyReadBreakdownCache{}
 	breakdownQuery := metering.BreakdownQuery{Dimension: "node", From: day, To: day.Add(24 * time.Hour), Limit: 25}
-	if _, err := h.services.TrafficBreakdown(breakdownCache).Read(ctx, credential.UserID, breakdownQuery); !errors.Is(err, metering.ErrUsageProjectionPending) || breakdownCache.calls != 0 {
-		t.Fatal("pending breakdown reached display cache", breakdownCache.calls, err)
+	if out, err := h.services.TrafficBreakdown(breakdownCache).Read(ctx, credential.UserID, breakdownQuery); err != nil || out.Totals.UsedBytes != 120 || out.Totals.RecordCount != 4 || breakdownCache.calls != 1 {
+		t.Fatal("bounded pending breakdown", out, breakdownCache.calls, err)
 	}
 	period := observability.DashboardPeriod{Range: "today", From: day, To: day.Add(24 * time.Hour), PreviousFrom: day.Add(-24 * time.Hour), PreviousTo: day}
-	if _, err := h.services.Dashboard.View(ctx, period, time.Now().UTC(), nil, "statistics"); !errors.Is(err, metering.ErrUsageProjectionPending) {
-		t.Fatal("partial dashboard traffic appeared complete", err)
+	if _, err := h.services.Dashboard.View(ctx, period, time.Now().UTC(), nil, "statistics"); err != nil {
+		t.Fatal("bounded pending dashboard", err)
 	}
 	if _, err := h.services.Dashboard.View(ctx, period, time.Now().UTC(), nil, "current"); err != nil {
 		t.Fatal("auxiliary pending blocked core dashboard health", err)
 	}
 	w := httptest.NewRecorder()
 	h.TrafficSummaryHandler(w, announcementRequest(http.MethodGet, "/api/v1/traffic/summary", f.token, ""))
-	if w.Code != http.StatusServiceUnavailable {
+	if w.Code != http.StatusOK {
 		t.Fatalf("pending chart status=%d body=%s", w.Code, w.Body.String())
 	}
 	worker := meteringstore.UsageProjectionWorker{DB: h.db}
@@ -110,7 +112,7 @@ func TestAccountingHourlyProjectionFailurePreservesSettlementAndUnknownReads(t *
 		t.Fatal(full, err)
 	}
 	trend, err := h.services.TrafficTrends(trendCache).Read(ctx, credential.UserID, trendQuery)
-	if err != nil || trendCache.calls != 1 || trend.Snapshot.RecordCount != 4 || trend.Snapshot.Points[0].UsedBytes != 120 {
+	if err != nil || trendCache.calls != 2 || trend.Snapshot.RecordCount != 4 || trend.Snapshot.Points[0].UsedBytes != 120 {
 		t.Fatal("recovered trend did not load exact facts", trend, trendCache.calls, err)
 	}
 }

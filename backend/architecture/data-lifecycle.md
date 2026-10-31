@@ -43,6 +43,15 @@ No raw event body or full history scan is required by a trend request.
 Normal relative timestamps have minute precision (sub-minute values read
 “刚刚”/“即将”); exact tooltip times remain available for investigation.
 
+Traffic charts and lifetime summaries combine hourly projections with exact
+outstanding increments in one repeatable-read snapshot. At most 200 matching
+checkpoints join their canonical primary keys; no financial history scan is
+needed. Minute checkpoints contribute only their pending delta, while legacy
+checkpoints contribute their whole still-unprojected record. Calendar edges
+continue reading disjoint precise ledger slices. Continuous current or historical
+reporting therefore does not require an empty queue. A larger or inconsistent
+backlog remains explicitly unknown rather than producing incomplete statistics.
+
 Accounting and entitlement calculations do not use rounded display metrics.
 Late principal snapshots retain the existing generation/revision rejection;
 financial historical reports continue through their independent exact meter.

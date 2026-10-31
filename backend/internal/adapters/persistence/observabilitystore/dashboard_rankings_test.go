@@ -56,7 +56,7 @@ func TestDashboardRankingsExactPartialHoursAndBoundedQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counter.queries.Load() != 4 {
+	if counter.queries.Load() != 3 {
 		t.Fatalf("queries %d", counter.queries.Load())
 	}
 	if len(result.Nodes) != 10 || len(result.Users) != 10 {
@@ -75,7 +75,7 @@ func TestDashboardRankingsExactPartialHoursAndBoundedQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counter.queries.Load() != 3 || len(nodes.Nodes) != 10 || len(nodes.Users) != 0 {
+	if counter.queries.Load() != 2 || len(nodes.Nodes) != 10 || len(nodes.Users) != 0 {
 		t.Fatalf("nodes=%+v queries=%d", nodes, counter.queries.Load())
 	}
 

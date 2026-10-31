@@ -146,8 +146,8 @@ func TestHourlyProjectionCalendarMidnightEdgesDoNotBlockOtherFullHours(t *testin
 				t.Fatal("interior calendar edge was treated as a missing hourly bucket", out, err)
 			}
 			appendRecord("complete-hour", q.Buckets[0].StartUTC.Truncate(time.Hour).Add(2*time.Hour), 13)
-			if _, err := service.Read(context.Background(), 7, q); !errors.Is(err, metering.ErrUsageProjectionPending) {
-				t.Fatal("calendar lost an unprojected complete hour", err)
+			if out, err := service.Read(context.Background(), 7, q); err != nil || out.Snapshot.RecordCount != 3 || out.Snapshot.Points[0].UsedBytes != 20 || out.Snapshot.Points[1].UsedBytes != 11 {
+				t.Fatal("calendar lost bounded unprojected complete hour", out, err)
 			}
 			if count, err := (UsageProjectionWorker{DB: db}).Drain(context.Background(), 200); err != nil || count != 3 {
 				t.Fatal(count, err)

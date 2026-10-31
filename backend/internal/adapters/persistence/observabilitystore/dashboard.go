@@ -157,10 +157,8 @@ func (s Dashboard) loadDashboardSnapshot(ctx context.Context, period observabili
 		return s.loadDashboard(ctx, period, now, buckets, view)
 	}
 	err = s.readDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, window := range [][2]time.Time{{period.From, period.To}, {period.PreviousFrom, period.PreviousTo}} {
-			if err := meteringstore.EnsureHourlyUsageReady(tx, meteringstore.TrafficScope{}, window[0], window[1]); err != nil {
-				return err
-			}
+		if err := meteringstore.EnsureHourlyUsageWindowsReadable(tx, meteringstore.TrafficScope{}, [][2]time.Time{{period.From, period.To}, {period.PreviousFrom, period.PreviousTo}}); err != nil {
+			return err
 		}
 		out, err = (Dashboard{DB: tx, ReadDB: tx}).loadDashboard(ctx, period, now, buckets, view)
 		return err

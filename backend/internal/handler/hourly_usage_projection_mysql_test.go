@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -21,12 +20,15 @@ func TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint(t *test
 		t.Fatal(err)
 	}
 	events := accountingBenchmarkEvents(credential, 0, 4)
+	for i := range events {
+		events[i].OccurredAt = time.Now().UTC().Truncate(time.Hour).Add(-time.Minute)
+	}
 	if err := h.projectZeroNodeEvents(ctx, events); err != nil {
 		t.Fatal("hourly chart failure blocked committed settlement", err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 120, subStatusActive)
-	if _, err := h.services.UsageSummary().Read(ctx, credential.UserID, metering.UsageSummaryQuery{}); !errors.Is(err, metering.ErrUsageProjectionPending) {
-		t.Fatal("pending summary returned complete numbers", err)
+	if out, err := h.services.UsageSummary().Read(ctx, credential.UserID, metering.UsageSummaryQuery{}); err != nil || out.TotalUsedBytes != 120 {
+		t.Fatal("bounded pending summary", out, err)
 	}
 	worker := meteringstore.UsageProjectionWorker{DB: h.db}
 	if count, err := worker.Drain(ctx, 200); err == nil || count != 0 {
@@ -218,8 +220,8 @@ func TestMySQLHourlyProjectionCalendarGuardMatchesHalfQuarterHourEdges(t *testin
 			if err := h.projectZeroNodeEvents(context.Background(), next); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := h.services.TrafficTrends(nil).Read(context.Background(), credential.UserID, q); !errors.Is(err, metering.ErrUsageProjectionPending) {
-				t.Fatal("calendar accepted an incomplete actual full-hour bucket", err)
+			if out, err := h.services.TrafficTrends(nil).Read(context.Background(), credential.UserID, q); err != nil || out.Snapshot.RecordCount != 4 || out.Snapshot.Points[0].UsedBytes != 90 || out.Snapshot.Points[1].UsedBytes != 30 {
+				t.Fatal("calendar lost pending historical increments", out, err)
 			}
 			drainUsageProjections(t, h.db)
 			out, err = h.services.TrafficTrends(nil).Read(context.Background(), credential.UserID, q)
@@ -229,4 +231,44 @@ func TestMySQLHourlyProjectionCalendarGuardMatchesHalfQuarterHourEdges(t *testin
 			assertAccountingTotal(t, h, credential.SubscriptionID, 120, subStatusActive)
 		})
 	}
+}
+
+func TestMySQLLiveHourReportsStayReadableWhileProjectionIsPending(t *testing.T) {
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
+	ctx := context.Background()
+	if err := h.db.Exec(`CREATE TRIGGER reject_live_hour_chart BEFORE INSERT ON traffic_usage_hourly FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='chart unavailable'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	events := accountingBenchmarkEvents(credential, 0, 4)
+	if err := h.projectZeroNodeEvents(ctx, events); err != nil {
+		t.Fatal(err)
+	}
+	day := events[0].OccurredAt.Truncate(24 * time.Hour)
+	verify := func() {
+		t.Helper()
+		out, err := h.services.UsageSummary().Read(ctx, credential.UserID, metering.UsageSummaryQuery{})
+		if err != nil || out.TotalUsedBytes != 120 {
+			t.Fatal("live summary", out, err)
+		}
+		q := metering.TrafficTrendQuery{From: day, Days: 1, Timezone: "UTC", Buckets: []metering.TrendBucket{{Key: day.Format("2006-01-02"), StartUTC: day, EndUTC: day.Add(24 * time.Hour)}}}
+		trend, err := h.services.TrafficTrends(nil).Read(ctx, credential.UserID, q)
+		if err != nil || len(trend.Snapshot.Points) != 1 || trend.Snapshot.Points[0].UsedBytes != 120 || trend.Snapshot.RecordCount != 4 {
+			t.Fatal("live trend", trend, err)
+		}
+		breakdown, err := h.services.TrafficBreakdown(nil).Read(ctx, credential.UserID, metering.BreakdownQuery{Dimension: "node", From: day, To: day.Add(24 * time.Hour), Limit: 25})
+		if err != nil || breakdown.Totals.UsedBytes != 120 || breakdown.Totals.RecordCount != 4 {
+			t.Fatal("live breakdown", breakdown, err)
+		}
+	}
+	verify()
+	worker := meteringstore.UsageProjectionWorker{DB: h.db}
+	if n, err := worker.Drain(ctx, 200); err == nil || n != 0 {
+		t.Fatal("expected injected projection failure", n, err)
+	}
+	verify()
+	if err := h.db.Exec("DROP TRIGGER reject_live_hour_chart").Error; err != nil {
+		t.Fatal(err)
+	}
+	drainUsageProjections(t, h.db)
+	verify()
 }

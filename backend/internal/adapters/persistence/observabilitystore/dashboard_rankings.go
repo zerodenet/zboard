@@ -15,10 +15,8 @@ import (
 func (s Dashboard) LoadTrafficRankings(ctx context.Context, period observability.DashboardPeriod, selected ...string) (observability.DashboardTrafficRankings, error) {
 	out := observability.DashboardTrafficRankings{Period: period, Nodes: []observability.DashboardTrafficRanking{}, Users: []observability.DashboardTrafficRanking{}, AsOf: time.Now().UTC()}
 	err := s.readDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, window := range [][2]time.Time{{period.From, period.To}, {period.PreviousFrom, period.PreviousTo}} {
-			if err := meteringstore.EnsureHourlyUsageReady(tx, meteringstore.TrafficScope{}, window[0], window[1]); err != nil {
-				return err
-			}
+		if err := meteringstore.EnsureHourlyUsageWindowsReadable(tx, meteringstore.TrafficScope{}, [][2]time.Time{{period.From, period.To}, {period.PreviousFrom, period.PreviousTo}}); err != nil {
+			return err
 		}
 		for _, dimension := range []struct {
 			column, table, name, fallback string
