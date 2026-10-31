@@ -96,7 +96,16 @@ func persistNativeSettlement(tx *gorm.DB, row *model.TrafficRecord) error {
 	updates := map[string]any{"updated_at": row.UpdatedAt}
 	// Both databases keep the same fixed-size arithmetic proof. No per-event
 	// runtime, credential, flow body or timestamp list survives in this JSON.
-	updates["meta"] = gorm.Expr("JSON_OBJECT('kind','minute_settlement','version',1,'accounting_samples',COALESCE(JSON_EXTRACT(meta,'$.accounting_samples'),0)+?,'rounding_numerator',COALESCE(JSON_EXTRACT(meta,'$.rounding_numerator'),0)+?)", audit.AccountingSamples, audit.RoundingNumerator)
+	auditNumber := func(field string) string {
+		expr := "COALESCE(JSON_EXTRACT(meta,'$." + field + "'),0)"
+		if tx.Dialector.Name() == "mysql" {
+			expr = "CAST(" + expr + " AS UNSIGNED)"
+		}
+		return expr
+	}
+	// MySQL JSON arithmetic otherwise promotes integers to DOUBLE (2.0),
+	// which both breaks integer proof readers and can lose high-bit precision.
+	updates["meta"] = gorm.Expr("JSON_OBJECT('kind','minute_settlement','version',1,'accounting_samples',"+auditNumber("accounting_samples")+"+?,'rounding_numerator',"+auditNumber("rounding_numerator")+"+?)", audit.AccountingSamples, audit.RoundingNumerator)
 	for _, column := range []string{"raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "record_count"} {
 		updates[column] = gorm.Expr(column + " + " + incoming(column))
 	}

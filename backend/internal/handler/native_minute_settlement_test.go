@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
@@ -42,10 +43,29 @@ func nativeMinuteCharges(t *testing.T, h *handlers, c model.ProtocolCredential) 
 	}
 	var totals struct {
 		Raw, Used, Reports int64
-		Rows               int64
+		PhysicalRows       int64
 	}
-	if err := h.db.Model(&model.TrafficRecord{}).Select("SUM(raw_bytes) AS raw,SUM(used_bytes) AS used,SUM(record_count) AS reports,COUNT(*) AS rows").Scan(&totals).Error; err != nil || totals.Raw != 100 || totals.Used != 200 || totals.Reports != 100 || totals.Rows > 3 {
+	if err := h.db.Model(&model.TrafficRecord{}).Select("SUM(raw_bytes) AS raw,SUM(used_bytes) AS used,SUM(record_count) AS reports,COUNT(*) AS physical_rows").Scan(&totals).Error; err != nil || totals.Raw != 100 || totals.Used != 200 || totals.Reports != 100 || totals.PhysicalRows > 3 {
 		t.Fatal("charges were re-rounded or per-event history survived", totals, err)
+	}
+	var proofRows []model.TrafficRecord
+	if err := h.db.Find(&proofRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	var sampleCount, roundNumerator uint64
+	for _, row := range proofRows {
+		var proof struct {
+			Samples  uint64 `json:"accounting_samples"`
+			Rounding uint64 `json:"rounding_numerator"`
+		}
+		if err := json.Unmarshal([]byte(row.Meta), &proof); err != nil {
+			t.Fatal("arithmetic proof lost integer representation", err)
+		}
+		sampleCount += proof.Samples
+		roundNumerator += proof.Rounding
+	}
+	if sampleCount != 100 || roundNumerator != 99900 {
+		t.Fatal("per-report arithmetic proof changed", sampleCount, roundNumerator)
 	}
 	var sub model.Subscription
 	if err := h.db.First(&sub, c.SubscriptionID).Error; err != nil || sub.FlowUsed != 200 {
@@ -77,11 +97,19 @@ func nativeMinuteCharges(t *testing.T, h *handlers, c model.ProtocolCredential) 
 	if err := h.db.Table("traffic_usage_hourly").Select("SUM(used_bytes) AS used,SUM(record_count) AS reports").Scan(&projected).Error; err != nil || projected.Used != 200 || projected.Reports != 100 {
 		t.Fatal(projected, err)
 	}
-	t.Logf("100 original reports -> %d ledger rows; 100 rounding-preserving charges = 200 bytes; replay unchanged", totals.Rows)
+	t.Logf("100 original reports -> %d ledger rows; 100 rounding-preserving charges = 200 bytes; replay unchanged", totals.PhysicalRows)
 }
 
 func TestSQLiteNativeMinuteProjectionRebuildOnlyProjectsOutstandingDelta(t *testing.T) {
 	h, c := accountingBenchmarkFixture(t)
+	nativeMinuteProjectionRebuild(t, h, c)
+}
+func TestMySQLNativeMinuteProjectionRebuildOnlyProjectsOutstandingDelta(t *testing.T) {
+	h, c := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
+	nativeMinuteProjectionRebuild(t, h, c)
+}
+func nativeMinuteProjectionRebuild(t *testing.T, h *handlers, c model.ProtocolCredential) {
+	t.Helper()
 	at := time.Now().UTC().Truncate(time.Minute)
 	complete := func(id string) {
 		t.Helper()
@@ -119,6 +147,14 @@ func TestSQLiteNativeMinuteProjectionRebuildOnlyProjectsOutstandingDelta(t *test
 
 func TestSQLiteNativeMinuteSettlementKeepsQuotaCap(t *testing.T) {
 	h, c := accountingBenchmarkFixture(t)
+	nativeMinuteQuotaCap(t, h, c)
+}
+func TestMySQLNativeMinuteSettlementKeepsQuotaCap(t *testing.T) {
+	h, c := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
+	nativeMinuteQuotaCap(t, h, c)
+}
+func nativeMinuteQuotaCap(t *testing.T, h *handlers, c model.ProtocolCredential) {
+	t.Helper()
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", c.ProtocolEndpointID).Update("multiplier_milli", 1001).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -215,8 +251,8 @@ func TestMySQLNativeMinuteConcurrentSettlementAndProjection(t *testing.T) {
 			break
 		}
 	}
-	var ledger struct{ Rows, Reports, Raw, Used int64 }
-	if err := h.db.Model(&model.TrafficRecord{}).Select("COUNT(*) AS rows,SUM(record_count) AS reports,SUM(raw_bytes) AS raw,SUM(used_bytes) AS used").Scan(&ledger).Error; err != nil || ledger.Rows != 1 || ledger.Reports != 24 || ledger.Raw != 24 || ledger.Used != 48 {
+	var ledger struct{ PhysicalRows, Reports, Raw, Used int64 }
+	if err := h.db.Model(&model.TrafficRecord{}).Select("COUNT(*) AS physical_rows,SUM(record_count) AS reports,SUM(raw_bytes) AS raw,SUM(used_bytes) AS used").Scan(&ledger).Error; err != nil || ledger.PhysicalRows != 1 || ledger.Reports != 24 || ledger.Raw != 24 || ledger.Used != 48 {
 		t.Fatal(ledger, err)
 	}
 	var usage struct{ Reports, Used int64 }
@@ -324,8 +360,8 @@ func assertNativeMinuteConcurrentSameReport(t *testing.T, batch bool) {
 			t.Fatal(err)
 		}
 	}
-	var total struct{ Rows, Reports, Raw, Used int64 }
-	if err := h.db.Model(&model.TrafficRecord{}).Select("COUNT(*) AS rows,SUM(record_count) AS reports,SUM(raw_bytes) AS raw,SUM(used_bytes) AS used").Scan(&total).Error; err != nil || total.Rows != 1 || total.Reports != 1 || total.Raw != 7 || total.Used != 7 {
+	var total struct{ PhysicalRows, Reports, Raw, Used int64 }
+	if err := h.db.Model(&model.TrafficRecord{}).Select("COUNT(*) AS physical_rows,SUM(record_count) AS reports,SUM(raw_bytes) AS raw,SUM(used_bytes) AS used").Scan(&total).Error; err != nil || total.PhysicalRows != 1 || total.Reports != 1 || total.Raw != 7 || total.Used != 7 {
 		t.Fatal("concurrent original report charged twice", total, err)
 	}
 	var cursors int64
