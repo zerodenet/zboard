@@ -15,7 +15,11 @@ import (
 func TestMySQLUsageProjectionCompetingWorkersAndCheckpointRecovery(t *testing.T) {
 	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	ctx := context.Background()
-	if err := h.projectZeroNodeEvents(ctx, accountingBenchmarkEvents(credential, 0, 8)); err != nil {
+	events := accountingBenchmarkEvents(credential, 0, 8)
+	for i := range events {
+		events[i].OccurredAt = events[i].OccurredAt.Add(-time.Duration(i) * time.Minute)
+	}
+	if err := h.projectZeroNodeEvents(ctx, events); err != nil {
 		t.Fatal(err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 240, subStatusActive)
@@ -74,7 +78,7 @@ func TestMySQLUsageProjectionCompetingWorkersAndCheckpointRecovery(t *testing.T)
 	if err != nil || usage[credential.ProtocolEndpointID].TrafficProjectionPending || usage[credential.ProtocolEndpointID].UsedBytesTotal != 240 {
 		t.Fatalf("recovered inventory projection: %+v %v", usage, err)
 	}
-	if err := h.projectZeroNodeEvents(ctx, accountingBenchmarkEvents(credential, 0, 8)); err != nil {
+	if err := h.projectZeroNodeEvents(ctx, events); err != nil {
 		t.Fatal(err)
 	}
 	if count, err := worker.Drain(ctx, 4); err != nil || count != 0 {

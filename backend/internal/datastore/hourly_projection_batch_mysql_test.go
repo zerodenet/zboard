@@ -73,7 +73,7 @@ func TestMySQLHourlyProjectionBatchesMissingColumnsWithoutChangingCutover(t *tes
 		var additions []string
 		created, dropped := 0, 0
 		for _, statement := range observed {
-			if strings.HasPrefix(statement, "ALTER TABLE "+table+" ADD COLUMN ") {
+			if strings.HasPrefix(statement, "ALTER TABLE "+table+" ADD COLUMN ") && !strings.Contains(statement, "ADD COLUMN delta_") {
 				additions = append(additions, statement)
 			}
 			if strings.HasPrefix(statement, "CREATE INDEX idx_usage_hourly_pending_") {

@@ -231,7 +231,7 @@ func RunMigrations(db *gorm.DB) error {
 	// A stopped 0078 DDL may have committed ledger columns before the pending
 	// deltas. Repair that owned partial layout before any hourly recovery reads
 	// it; a fresh pre-0078 installation still follows normal migration order.
-	if db.Migrator().HasColumn("traffic_records", "is_aggregate") {
+	if IsSQLite(db) && db.Migrator().HasColumn("traffic_records", "is_aggregate") {
 		if err := reconcileNativeSettlementSchema(db); err != nil {
 			return err
 		}
@@ -419,6 +419,13 @@ func runMigrations(db *gorm.DB) error {
 	}
 	if err := preparePreReleaseMigrationHistory(sqlDB, versions, ownedMigrationPreparationChecks(db)...); err != nil {
 		return err
+	}
+	// Validate migration ownership before recording partial native DDL recovery.
+	// Invalid/unversioned databases must retain their original history unchanged.
+	if db.Migrator().HasColumn("traffic_records", "is_aggregate") {
+		if err := reconcileNativeSettlementSchema(db); err != nil {
+			return err
+		}
 	}
 	if err := prepareNodePublicationMigrationTables(sqlDB); err != nil {
 		return err

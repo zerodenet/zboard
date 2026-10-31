@@ -109,7 +109,13 @@ func hourlyTableNeedsRecovery(db *gorm.DB) (bool, error) {
 	}
 	query := db.Table("traffic_records").Select("id").Limit(1)
 	if db.Migrator().HasColumn(usageProjectionTable, "hourly_pending") {
-		query = query.Where("NOT EXISTS (SELECT 1 FROM metering_usage_projection_pending p WHERE p.traffic_record_id = traffic_records.id AND p.hourly_pending = 1)")
+		confirmed := "NOT EXISTS (SELECT 1 FROM metering_usage_projection_pending p WHERE p.traffic_record_id = traffic_records.id AND p.hourly_pending = 1)"
+		if db.Migrator().HasColumn("traffic_records", "record_count") && db.Migrator().HasColumn(usageProjectionTable, "delta_record_count") {
+			// A mutable minute may already contain projected contributions even
+			// while newer increments remain pending. They still require recovery.
+			confirmed += " OR EXISTS (SELECT 1 FROM metering_usage_projection_pending p WHERE p.traffic_record_id = traffic_records.id AND p.hourly_pending = 1 AND p.delta_record_count > 0 AND traffic_records.record_count > p.delta_record_count)"
+		}
+		query = query.Where(confirmed)
 	}
 	var source struct{ ID uint }
 	read = query.Scan(&source)

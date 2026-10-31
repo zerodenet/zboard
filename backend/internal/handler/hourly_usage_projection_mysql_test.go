@@ -110,7 +110,9 @@ func TestMySQLSlowHourlyProjectionDoesNotHoldCoreIntentInsertGap(t *testing.T) {
 	defer coreCancel()
 	next := accountingBenchmarkEvents(credential, 1, 4)
 	for i := range next {
-		next[i].OccurredAt = record.At
+		// A different minute owns a different intent; this tests the queue's
+		// insert gap, not serialization of updates to the same minute.
+		next[i].OccurredAt = record.At.Add(-time.Minute)
 	}
 	if err := h.projectZeroNodeEvents(coreCtx, next); err != nil {
 		t.Fatal("slow chart blocked authoritative intent insertion", err)
