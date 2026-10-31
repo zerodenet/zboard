@@ -391,3 +391,12 @@ func TestNativeMinuteHTTPReplayAcknowledgesNoNewCharge(t *testing.T) {
 		t.Fatal("legacy ACK changed", ack)
 	}
 }
+
+func TestSQLiteNativeMinuteDiagnosticEncodingCannotBlockAccounting(t *testing.T) {
+	h, c := accountingBenchmarkFixture(t)
+	in := metering.CompletedFlow{NodeID: c.NodeID, PrincipalKey: c.PrincipalKey, SourceID: "diagnostic\x01", CoreInstanceID: "valid-runtime", FlowID: "diagnostic-independent", EventID: "diagnostic-independent", EventType: "flow.completed", Sequence: 1, BytesUp: 7, OccurredAt: time.Now().UTC()}
+	if _, _, err := h.services.CompletionAccounting(h.credentialCipher).Complete(t.Context(), in); err != nil {
+		t.Fatal("unused diagnostic material blocked accounting", err)
+	}
+	assertAccountingTotal(t, h, c.SubscriptionID, 7, subStatusActive)
+}

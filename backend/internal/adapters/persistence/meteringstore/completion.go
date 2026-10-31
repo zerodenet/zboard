@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
@@ -159,7 +158,7 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 				ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 				UsedBytes:               charged,
 				At:                      recordAt,
-				Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"continued_flow":%t}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID, continues),
+				Meta:                    "{}",
 			}
 			if err := storeNativeSettlement(tx, &record, subscription.StartAt); err != nil {
 				return err

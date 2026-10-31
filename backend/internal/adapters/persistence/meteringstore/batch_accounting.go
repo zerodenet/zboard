@@ -141,7 +141,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 		UsedBytes:               charged,
 		At:                      recordAt,
-		Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"buffered":true,"accounting_samples":%d,"first_sequence":%d,"rounding_numerator":%d}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID, charge.AccountingSamples, charge.FirstSequence, charge.RoundingNumerator),
+		Meta:                    fmt.Sprintf(`{"accounting_samples":%d,"rounding_numerator":%d}`, charge.AccountingSamples, charge.RoundingNumerator),
 	}
 	if err := batch.appendRecord(tx, record, subscription.StartAt); err != nil {
 		return result, err
