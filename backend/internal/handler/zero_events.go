@@ -200,12 +200,7 @@ func (h *handlers) zeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if exhausted {
 	}
-	OK(w, map[string]interface{}{
-		"accepted":          true,
-		"event_id":          event.EventID,
-		"traffic_record_id": result.ID,
-		"charged_bytes":     result.UsedBytes,
-	})
+	OK(w, zeroFlowEventReceiptResponse(event.EventID, result))
 }
 
 type zeroEventRequestError struct {
@@ -487,4 +482,19 @@ func maxInt64(left, right int64) int64 {
 
 func (event zeroEventEnvelope) String() string {
 	return fmt.Sprintf("%s/%s", event.EventType, event.EventID)
+}
+
+// A canonical row can include many original reports. Replaying one accepted
+// report applies no new charge; its ACK must never claim the entire minute's
+// cumulative amount as the charge for that report. Legacy ACKs stay unchanged.
+func zeroFlowEventReceiptResponse(eventID string, record model.TrafficRecord) map[string]interface{} {
+	out := map[string]interface{}{"accepted": true, "event_id": eventID, "traffic_record_id": record.ID, "charged_bytes": record.UsedBytes}
+	if record.IsAggregate {
+		out["traffic_record_aggregate"] = true
+		if record.ReportID != eventID {
+			out["duplicate"] = true
+			out["charged_bytes"] = int64(0)
+		}
+	}
+	return out
 }

@@ -132,3 +132,9 @@ Once minute settlements exist, deploy only a compatible writer. Additive schema
 columns stay in place; a pre-0078 binary cannot recover discarded event bodies
 or understand the new delta checkpoint contract. No automatic downgrade or
 reconstruction of per-event history is offered.
+
+Native HTTP acknowledgements distinguish the first applied contribution from a
+duplicate: duplicate minute receipts acknowledge the original event and zero new
+charged bytes, with explicit aggregate/duplicate flags. A minute's cumulative
+amount is never presented as one replayed report's newly applied charge. Legacy
+event-row acknowledgements retain their prior shape.

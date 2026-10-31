@@ -370,3 +370,24 @@ func assertNativeMinuteConcurrentSameReport(t *testing.T, batch bool) {
 	}
 	assertAccountingTotal(t, h, c.SubscriptionID, 7, subStatusActive)
 }
+
+func TestNativeMinuteHTTPReplayAcknowledgesNoNewCharge(t *testing.T) {
+	first := model.TrafficRecord{ID: 17, ReportID: "original-report", UsedBytes: 2, IsAggregate: true}
+	ack := zeroFlowEventReceiptResponse("original-report", first)
+	if ack["charged_bytes"] != int64(2) || ack["traffic_record_id"] != uint(17) {
+		t.Fatal("first accepted charge changed", ack)
+	}
+	replay := first
+	replay.ReportID = "bucket:v1:minute-identity"
+	replay.UsedBytes = 200
+	ack = zeroFlowEventReceiptResponse("original-report", replay)
+	if ack["charged_bytes"] != int64(0) || ack["duplicate"] != true || ack["traffic_record_aggregate"] != true || ack["traffic_record_id"] != uint(17) {
+		t.Fatal("aggregate total leaked into per-report ACK", ack)
+	}
+	legacy := first
+	legacy.IsAggregate = false
+	ack = zeroFlowEventReceiptResponse("original-report", legacy)
+	if ack["charged_bytes"] != int64(2) || ack["traffic_record_aggregate"] != nil {
+		t.Fatal("legacy ACK changed", ack)
+	}
+}
