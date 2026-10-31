@@ -36,8 +36,11 @@ func (s Breakdown) Read(ctx context.Context, actor uint, q metering.BreakdownQue
 	}
 	scope := TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}
 	// A cached historical snapshot must not disguise pending current facts.
+	pending := false
 	if s.Cache != nil {
-		if err := EnsureHourlyUsageReadable(read.WithContext(ctx), scope, q.From, q.To); err != nil {
+		var err error
+		pending, err = inspectHourlyUsageWindows(read.WithContext(ctx), scope, [][2]time.Time{{q.From, q.To}})
+		if err != nil {
 			return metering.BreakdownSnapshot{}, err
 		}
 	}
@@ -72,6 +75,10 @@ func (s Breakdown) Read(ctx context.Context, actor uint, q metering.BreakdownQue
 	key, err := json.Marshal(q)
 	if err != nil {
 		return metering.BreakdownSnapshot{}, err
+	}
+	if pending {
+		invalidateUsageSnapshot(s.Cache, sha256.Sum256(key))
+		return load()
 	}
 	return s.Cache.Get(ctx, sha256.Sum256(key), load)
 }

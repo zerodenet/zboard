@@ -118,19 +118,24 @@ func EnsureHourlyUsageReadable(tx *gorm.DB, scope TrafficScope, from, to time.Ti
 // A large/corrupt backlog stays explicitly unknown instead of scanning history
 // or returning incomplete totals. Call within the same snapshot as the source.
 func EnsureHourlyUsageWindowsReadable(tx *gorm.DB, scope TrafficScope, windows [][2]time.Time) error {
+	_, err := inspectHourlyUsageWindows(tx, scope, windows)
+	return err
+}
+
+func inspectHourlyUsageWindows(tx *gorm.DB, scope TrafficScope, windows [][2]time.Time) (bool, error) {
 	q, err := hourlyPendingQuery(tx, scope, windows)
 	if err != nil || q == nil {
-		return err
+		return false, err
 	}
 	var pending []model.MeteringUsageProjectionPending
 	if err := q.Limit(UsageProjectionBatchLimit + 1).Find(&pending).Error; err != nil {
-		return err
+		return false, err
 	}
 	if len(pending) > UsageProjectionBatchLimit {
-		return metering.ErrUsageProjectionPending
+		return true, metering.ErrUsageProjectionPending
 	}
 	if len(pending) == 0 {
-		return nil
+		return false, nil
 	}
 	ids := make([]uint, len(pending))
 	for i, p := range pending {
@@ -138,7 +143,7 @@ func EnsureHourlyUsageWindowsReadable(tx *gorm.DB, scope TrafficScope, windows [
 	}
 	var records []model.TrafficRecord
 	if err := tx.Select("id,user_id,subscription_id,node_id,protocol_endpoint_id,record_at,is_aggregate,record_count,raw_bytes,upload_bytes,download_bytes,used_bytes").Where("id IN ?", ids).Find(&records).Error; err != nil {
-		return err
+		return false, err
 	}
 	byID := make(map[uint]model.TrafficRecord, len(records))
 	for _, r := range records {
@@ -147,15 +152,22 @@ func EnsureHourlyUsageWindowsReadable(tx *gorm.DB, scope TrafficScope, windows [
 	for _, p := range pending {
 		r, ok := byID[p.TrafficRecordID]
 		if !ok || r.UserID != p.UserID || r.SubscriptionID != p.SubscriptionID || r.NodeID != p.NodeID || r.ProtocolEndpointID != p.ProtocolEndpointID || p.RecordAt == nil || !r.At.UTC().Truncate(time.Hour).Equal(p.RecordAt.UTC()) {
-			return metering.ErrUsageProjectionPending
+			return true, metering.ErrUsageProjectionPending
 		}
 		if r.IsAggregate {
 			if p.DeltaRecordCount <= 0 || p.DeltaRecordCount > r.RecordCount || p.DeltaRawBytes < 0 || p.DeltaRawBytes > r.RawBytes || p.DeltaUploadBytes < 0 || p.DeltaUploadBytes > r.UploadBytes || p.DeltaDownloadBytes < 0 || p.DeltaDownloadBytes > r.DownloadBytes || p.DeltaUsedBytes < 0 || p.DeltaUsedBytes > r.UsedBytes {
-				return metering.ErrUsageProjectionPending
+				return true, metering.ErrUsageProjectionPending
 			}
 		} else if p.DeltaRecordCount != 0 || p.DeltaRawBytes != 0 || p.DeltaUploadBytes != 0 || p.DeltaDownloadBytes != 0 || p.DeltaUsedBytes != 0 {
-			return metering.ErrUsageProjectionPending
+			return true, metering.ErrUsageProjectionPending
 		}
 	}
-	return nil
+	return true, nil
+}
+
+// Optional invalidation keeps existing cache implementations compatible.
+func invalidateUsageSnapshot(cache any, key [32]byte) {
+	if invalidator, ok := cache.(interface{ Invalidate([32]byte) }); ok {
+		invalidator.Invalidate(key)
+	}
 }

@@ -51,6 +51,8 @@ checkpoints contribute their whole still-unprojected record. Calendar edges
 continue reading disjoint precise ledger slices. Continuous current or historical
 reporting therefore does not require an empty queue. A larger or inconsistent
 backlog remains explicitly unknown rather than producing incomplete statistics.
+Pending reads bypass and expire built-in display snapshots, so an older cached
+value cannot reappear after the projector catches up.
 
 Accounting and entitlement calculations do not use rounded display metrics.
 Late principal snapshots retain the existing generation/revision rejection;

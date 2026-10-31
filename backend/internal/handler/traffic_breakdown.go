@@ -58,3 +58,5 @@ func (h *handlers) trafficBreakdownHandler(w http.ResponseWriter, r *http.Reques
 	}
 	OK(w, result)
 }
+
+func (a trafficBreakdownCacheAdapter) Invalidate(key [32]byte) { a.cache.invalidate(key) }

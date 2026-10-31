@@ -129,3 +129,24 @@ func TestTrafficSnapshotBoundsBusyAndCompletedEntries(t *testing.T) {
 		}
 	})
 }
+
+func TestTrafficSnapshotInvalidationKeepsInflightResultExpired(t *testing.T) {
+	var cache trafficSnapshotCache[int]
+	var key [32]byte
+	started, finish := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.get(t.Context(), key, func() (int, error) { close(started); <-finish; return 1, nil })
+		done <- err
+	}()
+	<-started
+	cache.invalidate(key)
+	close(finish)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	next, err := cache.get(t.Context(), key, func() (int, error) { return 2, nil })
+	if err != nil || next != 2 {
+		t.Fatal("late leader republished an invalidated snapshot", next, err)
+	}
+}

@@ -28,7 +28,7 @@ func TestTrafficBreakdownDimensionsScopesTotalsAndPermissionRevocation(t *testin
 				t.Fatalf("dimension %s: %+v: %v", dimension, first, err)
 			}
 			for _, query := range f.log.queries {
-				if strings.Contains(query, "traffic_records") {
+				if strings.Contains(query, "traffic_records") && !strings.Contains(query, "JOIN traffic_records r ON r.id=p.traffic_record_id") && !strings.Contains(query, "WHERE id IN") {
 					t.Fatalf("aligned dimension statistics scanned ledger: %s", query)
 				}
 			}
@@ -186,5 +186,22 @@ func TestTrafficDimensionDrilldownDoesNotReuseBroaderConnectionPeaks(t *testing.
 				t.Fatalf("%s reused daily account peak: %+v", filter, point)
 			}
 		}
+	}
+}
+
+func TestTrafficBreakdownPendingIncrementBypassesCachedSnapshot(t *testing.T) {
+	f := newTrafficReadFixture(t)
+	f.seedUsage(t)
+	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	q := metering.BreakdownQuery{Dimension: "node", From: from, To: from.Add(24 * time.Hour), Limit: 25}
+	service := f.h.services.TrafficBreakdown(trafficBreakdownCacheAdapter{&f.h.trafficBreakdownCache})
+	before, err := service.Read(t.Context(), 1, q)
+	if err != nil || before.Totals.UsedBytes != 210 {
+		t.Fatal(before, err)
+	}
+	appendPendingTrendFact(t, f.h.db, "cached-breakdown-late", 23)
+	after, err := service.Read(t.Context(), 1, q)
+	if err != nil || after.Totals.UsedBytes != 233 || after.Totals.RecordCount != 7 {
+		t.Fatal("cache hid exact pending contribution", after, err)
 	}
 }

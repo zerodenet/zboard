@@ -34,7 +34,8 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 		for _, bucket := range q.Buckets {
 			windows = append(windows, [2]time.Time{bucket.StartUTC, bucket.EndUTC})
 		}
-		if err := EnsureHourlyUsageWindowsReadable(read, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, windows); err != nil {
+		pending, err := inspectHourlyUsageWindows(read, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, windows)
+		if err != nil {
 			return err
 		}
 		load := func() (metering.TrafficTrendSnapshot, error) {
@@ -52,7 +53,12 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 			cacheQuery := q
 			cacheQuery.IncludeSubscriptions = false
 			key, _ := json.Marshal(cacheQuery)
-			out.Snapshot, err = s.Cache.Get(ctx, sha256.Sum256(key), load)
+			if pending {
+				invalidateUsageSnapshot(s.Cache, sha256.Sum256(key))
+				out.Snapshot, err = load()
+			} else {
+				out.Snapshot, err = s.Cache.Get(ctx, sha256.Sum256(key), load)
+			}
 		}
 		if err != nil {
 			return err

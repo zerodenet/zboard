@@ -84,6 +84,10 @@ func assertPendingTrendWire(t *testing.T, response *httptest.ResponseRecorder, d
 
 func TestTrafficTrendPendingIsUnknownOnAllRoutesAndPreservesQuota(t *testing.T) {
 	f := pendingTrendFixture(t)
+	// Over-budget backlogs remain unknown; small exact overlays are readable.
+	for i := 0; i < meteringstore.UsageProjectionBatchLimit; i++ {
+		appendPendingTrendFact(t, f.h.db, fmt.Sprint("backlog-", i), 0)
+	}
 	routes := []struct {
 		name    string
 		handler http.HandlerFunc
@@ -115,7 +119,7 @@ func TestTrafficTrendPendingIsUnknownOnAllRoutesAndPreservesQuota(t *testing.T) 
 		}
 	}
 	var pending int64
-	if err := f.h.db.Table("metering_usage_projection_pending").Count(&pending).Error; err != nil || pending != 1 {
+	if err := f.h.db.Table("metering_usage_projection_pending").Count(&pending).Error; err != nil || pending != int64(meteringstore.UsageProjectionBatchLimit+1) {
 		t.Fatal("HTTP drained durable projection work", pending, err)
 	}
 	quota, err := f.h.services.UsageQuota().Read(t.Context(), 1, metering.UsageSummaryQuery{})
@@ -149,7 +153,7 @@ func TestTrafficTrendPendingIsUnknownOnAllRoutesAndPreservesQuota(t *testing.T) 
 		if strings.HasPrefix(route.name, "calendar") {
 			timezone = "Asia/Kathmandu"
 		}
-		if complete.Code != http.StatusOK || complete.Header().Get("X-Zboard-Statistics-State") != "complete" || string(values["projection_pending"]) != "false" || string(values["record_count"]) != "1" || string(values["as_of"]) == "null" || scope.UserID != 1 || scope.TimeZone != timezone {
+		if complete.Code != http.StatusOK || complete.Header().Get("X-Zboard-Statistics-State") != "complete" || string(values["projection_pending"]) != "false" || string(values["record_count"]) != fmt.Sprint(meteringstore.UsageProjectionBatchLimit+1) || string(values["as_of"]) == "null" || scope.UserID != 1 || scope.TimeZone != timezone {
 			t.Fatalf("%s did not retain complete snapshot/header/scope: %d %s", route.name, complete.Code, complete.Body.String())
 		}
 	}
@@ -170,18 +174,24 @@ func TestTrafficTrendPendingBypassesCompleteCacheAndRecoversExactFacts(t *testin
 	f.h.trafficTrendsCache.mu.Unlock()
 	appendPendingTrendFact(t, f.h.db, "after-complete-snapshot", 23)
 	response, data := pendingTrendResponse(t, f.h.TrafficTrendsHandler, pendingTrendPath, f.token)
-	assertPendingTrendWire(t, response, data, 1, false, "UTC")
+	var live trafficTrendResponse
+	encodedLive, _ := json.Marshal(data)
+	if err := json.Unmarshal(encodedLive, &live); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || response.Header().Get("X-Zboard-Statistics-State") != "complete" || live.RecordCount != 7 || live.Points[0].UsedBytes != 233 {
+		t.Fatal("cached snapshot hid pending contribution", response.Body.String())
+	}
+	var pending int64
+	if err := f.h.db.Table("metering_usage_projection_pending").Count(&pending).Error; err != nil || pending != 1 {
+		t.Fatal("read request drained projection", pending, err)
+	}
 	other, otherData := pendingTrendResponse(t, f.h.TrafficTrendsHandler, "/api/v1/admin/traffic/trends?user_id=2&from=2026-09-01&to=2026-09-01", f.admin)
 	if other.Code != http.StatusOK || other.Header().Get("X-Zboard-Statistics-State") != "complete" || string(otherData["projection_pending"]) != "false" {
 		t.Fatal("unrelated pending blocked other scope", other.Code, other.Body.String())
 	}
 	// Projection runs only in the separately invoked worker, never in the request.
 	drainUsageProjections(t, f.h.db)
-	f.h.trafficTrendsCache.mu.Lock()
-	for _, entry := range f.h.trafficTrendsCache.entries {
-		entry.expires = time.Time{}
-	}
-	f.h.trafficTrendsCache.mu.Unlock()
 	complete, completeData := pendingTrendResponse(t, f.h.TrafficTrendsHandler, pendingTrendPath, f.token)
 	var recovered trafficTrendResponse
 	encoded, _ := json.Marshal(completeData)
