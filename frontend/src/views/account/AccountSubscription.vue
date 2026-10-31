@@ -154,7 +154,7 @@
           <div class="access-time"><span>最近使用</span><TimeBadge :value="access.last_used_at" /></div>
         </div>
         <div v-else class="access-meta">
-          <strong>此订阅尚未生成可用链接</strong>
+          <strong>{{ access.notice || '此订阅尚未生成可用链接' }}</strong>
           <p>生成或轮换只会影响订阅 #{{ selectedSubscription.id }}。</p>
         </div>
 
@@ -203,7 +203,7 @@
           <UiButton v-if="subscriptionUrl" variant="secondary" size="sm" type="button" @click="copy">
             <UiIcon name="copy" />{{ copyLabel }}
           </UiButton>
-          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask(access.configured ? 'rotate' : 'generate')">
+          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask(access.configured ? 'rotate' : 'generate')">
             {{ access.configured ? '轮换此链接' : '生成此链接' }}
           </UiButton>
           <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working || !selectedContextReady" @click="ask('revoke')">吊销此链接</UiButton>
@@ -436,7 +436,7 @@ const accessReady = computed(() => Boolean(selectedSubscription.value) && access
 const loading = computed(() => listLoading.value || metadataLoading.value || accessLoading.value || templateLoading.value || protocolLoadResource.loading.value)
 const error = computed(() => listError.value || automaticRowError.value || selectedNotice.value || selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value || templateResource.error.value)
 const subscriptionUrl = computed(() => accessReady.value
-  ? buildSubscriptionURL(access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : '', selectedTemplate.value)
+  ? buildSubscriptionURL(access.value.subscription_url ? new URL(access.value.subscription_url, window.location.origin).toString() : '', selectedTemplate.value)
   : '')
 const templateOptions = computed(() => [
   { label: '自动识别（推荐）', value: subscriptionDeliveryAuto },

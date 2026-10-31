@@ -156,7 +156,7 @@ func TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks(t *testing.T) {
 	if err := target.DB.Exec(statement, user.ID, 0).Error; err != nil {
 		t.Fatal(err)
 	}
-	err = target.DB.Unscoped().Delete(&user).Error
+	err = target.DB.Delete(&model.AccountSubject{ID: user.ID}).Error
 	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1451 {
 		t.Fatal("ON DELETE RESTRICT changed", err)
 	}

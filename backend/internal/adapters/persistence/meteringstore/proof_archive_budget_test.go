@@ -116,7 +116,7 @@ func TestSQLiteNativeProofArchiveBudgetIncludesAlreadySealedDecompression(t *tes
 
 func TestSQLiteNativeProofArchiveFullReadsRejectRowsAndOutputBeforeLoading(t *testing.T) {
 	db := usageProjectionDB(t, filepath.Join(t.TempDir(), "archive-full-read-budget.db"))
-	if err := db.AutoMigrate(&model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.AccountSubject{}, &model.User{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&model.User{ID: 1, Email: "proof-read@example.test", Password: "unused", Status: "active"}).Error; err != nil {

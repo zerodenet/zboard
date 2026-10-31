@@ -25,13 +25,13 @@ type PaymentReceipt struct {
 	TicketID         *uint  `gorm:"index"`
 	ResolutionReason string `gorm:"size:500;not null;default:''"`
 	ResolvedAt       *time.Time
-	Resolver         *User   `gorm:"foreignKey:ResolvedBy;constraint:OnDelete:RESTRICT"`
-	Ticket           *Ticket `gorm:"foreignKey:TicketID;constraint:OnDelete:RESTRICT"`
-	OrderID          uint    `gorm:"not null;index"`
-	AmountMinor      int64   `gorm:"not null"`
-	Currency         string  `gorm:"size:16;not null"`
-	Disposition      string  `gorm:"size:32;not null"`
-	WalletEntryID    *uint   `gorm:"index"`
+	Resolver         *AccountSubject `gorm:"foreignKey:ResolvedBy;constraint:OnDelete:RESTRICT"`
+	Ticket           *Ticket         `gorm:"foreignKey:TicketID;constraint:OnDelete:RESTRICT"`
+	OrderID          uint            `gorm:"not null;index"`
+	AmountMinor      int64           `gorm:"not null"`
+	Currency         string          `gorm:"size:16;not null"`
+	Disposition      string          `gorm:"size:32;not null"`
+	WalletEntryID    *uint           `gorm:"index"`
 	CreatedAt        time.Time
 	ProcessedAt      time.Time
 	Order            *Order       `gorm:"foreignKey:OrderID;constraint:OnDelete:RESTRICT"`

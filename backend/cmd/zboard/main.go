@@ -14,6 +14,7 @@ import (
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/router"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
@@ -174,6 +175,10 @@ func main() {
 
 	webDir := os.Getenv("ZBOARD_WEB_DIR")
 	serverOptions := make([]rest.RunOption, 0, 1)
+	serverOptions = append(serverOptions, rest.WithRouter(server.SubscriptionRouter{
+		Router: router.NewRouter(), Prefix: application.SubscriptionPrefixLookup(db),
+		LegacyTokenExists: application.LegacySubscriptionIdentityLookup(db),
+	}))
 	if webDir != "" {
 		serverOptions = append(serverOptions, rest.WithNotFoundHandler(staticFallbackHandler(webDir)))
 	}

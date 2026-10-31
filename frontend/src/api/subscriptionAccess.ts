@@ -2,6 +2,7 @@ import { authenticatedAPI as subscriptionAccessApi, type ApiRequestOptions } fro
 
 export interface SubscriptionAccess {
   configured: boolean
+  delivery_configured?: boolean
   subscription_id: number
   token?: string
   token_prefix?: string

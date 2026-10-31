@@ -15,8 +15,8 @@ type OrderValueBudget struct {
 	Revision           uint64 `gorm:"not null;default:1"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
-	Order              *Order `gorm:"foreignKey:OrderID;constraint:OnDelete:RESTRICT"`
-	User               *User  `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
+	Order              *Order          `gorm:"foreignKey:OrderID;constraint:OnDelete:RESTRICT"`
+	User               *AccountSubject `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
 }
 type SubscriptionValueSettlement struct {
 	ID                 uint   `gorm:"primaryKey;index:idx_value_settlement_owner,priority:3"`
@@ -35,11 +35,11 @@ type SubscriptionValueSettlement struct {
 	Reason             string `gorm:"size:500;not null"`
 	QuoteSnapshot      string `gorm:"type:text;not null"`
 	CreatedAt          time.Time
-	User               *User         `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
-	Subscription       *Subscription `gorm:"foreignKey:SubscriptionID;constraint:OnDelete:RESTRICT"`
-	RootOrder          *Order        `gorm:"foreignKey:RootOrderID;constraint:OnDelete:RESTRICT"`
-	Entry              *WalletEntry  `gorm:"foreignKey:EntryID;constraint:OnDelete:RESTRICT"`
-	Actor              *User         `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
+	User               *AccountSubject `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
+	Subscription       *Subscription   `gorm:"foreignKey:SubscriptionID;constraint:OnDelete:RESTRICT"`
+	RootOrder          *Order          `gorm:"foreignKey:RootOrderID;constraint:OnDelete:RESTRICT"`
+	Entry              *WalletEntry    `gorm:"foreignKey:EntryID;constraint:OnDelete:RESTRICT"`
+	Actor              *AccountSubject `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
 }
 type SubscriptionValueSettlementSource struct {
 	SettlementID uint                         `gorm:"primaryKey;autoIncrement:false"`

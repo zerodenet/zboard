@@ -40,7 +40,7 @@ func (c *cohortSQL) Trace(_ context.Context, _ time.Time, sql func() (string, in
 func cohortDB(t *testing.T) (*gorm.DB, model.ProtocolCredential) {
 	t.Helper()
 	db := usageProjectionDB(t, filepath.Join(t.TempDir(), "cohort.db"))
-	if err := db.AutoMigrate(&model.User{}, &model.Node{}, &model.ProtocolEndpoint{}, &model.Subscription{}, &model.ProtocolCredential{}, &model.FlowUsage{}, &model.ClosedEntitlement{}); err != nil {
+	if err := db.AutoMigrate(&model.AccountSubject{}, &model.User{}, &model.Node{}, &model.ProtocolEndpoint{}, &model.Subscription{}, &model.ProtocolCredential{}, &model.FlowUsage{}, &model.ClosedEntitlement{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, stmt := range []string{

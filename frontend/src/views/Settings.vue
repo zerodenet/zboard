@@ -24,6 +24,11 @@
             </form>
           </UiSection>
 
+          <UiSection title="订阅入口" description="管理员必须手动配置站内路径。留空不提供订阅入口；旧默认地址暂时301到配置路径，保留token及查询参数。修改已有自定义路径后，请重新交付地址。">
+            <PageAlert v-if="!subscriptionEntryConfig?.value" tone="warning" title="订阅入口尚未配置">用户暂时无法获取订阅地址，请设置独立的站内路径前缀。</PageAlert>
+            <ConfigRow v-if="subscriptionEntryConfig" :config="subscriptionEntryConfig" :draft="drafts[subscriptionEntryConfig.config_key]" :dirty="configDirty(subscriptionEntryConfig)" :saving="savingKey === subscriptionEntryConfig.config_key" :error="configErrors[subscriptionEntryConfig.config_key]" :conflict="Boolean(configConflicts[subscriptionEntryConfig.config_key])" @update:draft="updateDraft(subscriptionEntryConfig.config_key, $event)" @reload="reloadConfig(subscriptionEntryConfig.config_key)" @save="saveConfig(subscriptionEntryConfig)" />
+          </UiSection>
+
           <UiSection title="视觉品牌" description="配置公开站点使用的 Logo 和浏览器图标。支持完整 HTTP/HTTPS URL 或 / 开头的站内资源路径。">
             <template #meta><StatusBadge v-if="groupDirty(siteVisualKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="site-config-layout">
@@ -156,6 +161,9 @@
         </div>
 
         <div v-else class="settings-panel stack-lg">
+          <UiSection id="account-cleanup" title="账号自动清理" description="默认0关闭。开启后，已有账号也适用；连续无有效订阅达到配置天数后永久删除，无法恢复。管理员、有余额或未结业务的账号受保护，历史结算与流量账本保留。">
+            <ConfigRow v-if="accountCleanupConfig" :config="accountCleanupConfig" :draft="drafts[accountCleanupConfig.config_key]" :dirty="configDirty(accountCleanupConfig)" :saving="savingKey === accountCleanupConfig.config_key" :error="configErrors[accountCleanupConfig.config_key]" :conflict="Boolean(configConflicts[accountCleanupConfig.config_key])" @update:draft="updateDraft(accountCleanupConfig.config_key, $event)" @reload="reloadConfig(accountCleanupConfig.config_key)" @save="saveConfig(accountCleanupConfig)" />
+          </UiSection>
           <UiSection title="安全边界" description="敏感凭证不属于浏览器设置，不会在这里读取或回显。">
             <template #meta><UiIcon class="security-header" name="shield" /></template>
             <div class="panel-body security-list">
@@ -280,12 +288,12 @@ const settingsDraftRecovery = useReauthenticationDraft({
 })
 
 const hiddenSiteKeys = new Set(['site_name', 'site_url', 'register_switch'])
-const deprecatedSiteKeys = new Set(['site_terms_url', 'site_privacy_url', 'site_refund_url', 'site_home_primary_cta'])
+const deprecatedSiteKeys = new Set(['subscribe_url', 'site_terms_url', 'site_privacy_url', 'site_refund_url', 'site_home_primary_cta'])
 const legacyPolicyKeys = new Set(['site_terms_content', 'site_privacy_content', 'site_refund_content'])
 const policyDocumentsKeys = new Set(['site_policy_documents'])
 const legalMetadataKeys = new Set(['site_legal_items'])
 const registrationKeys = new Set(['register_email_verification'])
-const dedicatedOperationsKeys = new Set(['maintenance_enabled', 'maintenance_title', 'maintenance_message', 'maintenance_task_id'])
+const dedicatedOperationsKeys = new Set(['subscription_url_prefix', 'user_cleanup_inactive_days', 'maintenance_enabled', 'maintenance_title', 'maintenance_message', 'maintenance_task_id'])
 const siteVisualKeys = ['site_logo', 'site_logo_dark', 'site_favicon']
 const siteContentKeys = ['site_desc', 'site_home_kicker', 'site_home_title']
 const siteContactKeys = ['site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url']
@@ -300,6 +308,8 @@ const legalMetadataConfig = computed(() => operationalConfigs.value.find(item =>
 const alertConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')))
 const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
+const subscriptionEntryConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'subscription_url_prefix'))
+const accountCleanupConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'user_cleanup_inactive_days'))
 const recoveryConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key === 'subscription_renewal_grace_days'))
 const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && item.config_key !== 'subscription_renewal_grace_days' && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
@@ -455,6 +465,7 @@ async function saveConfig(config: SystemConfig) {
     document.getElementById(`${key}-control`)?.focus()
     return
   }
+  if (key === 'user_cleanup_inactive_days' && Number(normalized.value) > 0 && !await confirmAction({title: '启用账号自动硬删除', message: `连续 ${normalized.value} 天无有效订阅且符合条件的已有及新账号将被永久删除，无法恢复。确认启用？`, confirmText: '启用自动删除', tone: 'danger'})) return
   savingKey.value = key
   try {
     const updated = await updateSystemConfig(key, normalized.value, config.revision)

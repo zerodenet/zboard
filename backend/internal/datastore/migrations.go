@@ -121,6 +121,17 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if db != nil && db.Migrator().HasTable("schema_migrations") {
+		var applied int64
+		if err := db.Table("schema_migrations").Where("version=?", accountSubjectVersion).Count(&applied).Error; err != nil {
+			return err
+		}
+		if applied > 0 {
+			if err := validateAccountSubjectSchema(db); err != nil {
+				return err
+			}
+		}
+	}
 	if err := preflightFlowStartStatisticsSchema(db); err != nil {
 		return err
 	}
@@ -385,6 +396,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileNativeSettlementSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileAccountSubjectSchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -447,6 +461,12 @@ func runMigrations(db *gorm.DB) error {
 		}
 		if version == principalMinuteVersion {
 			if err := reconcilePrincipalMinuteSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == accountSubjectVersion {
+			if err := reconcileAccountSubjectSchema(db); err != nil {
 				return err
 			}
 			continue

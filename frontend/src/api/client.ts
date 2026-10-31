@@ -2670,3 +2670,11 @@ export async function checkResourceDeletion(kind: 'protocol' | 'entry', id: numb
   const resource = kind === 'protocol' ? 'protocol-endpoints' : 'network-entries'
   return unwrap(await api.get(`/admin/${resource}/${id}/deletion-check`))
 }
+
+export type UserDeletionPreview = { user_id: number; allowed: boolean; blockers: string[]; history_retained: boolean }
+export async function fetchUserDeletionPreview(id: number): Promise<UserDeletionPreview> {
+  return unwrap(await api.get(`/admin/users/${id}/deletion-preview`))
+}
+export async function deleteAdminUser(id: number): Promise<void> {
+  await api.delete(`/admin/users/${id}`)
+}

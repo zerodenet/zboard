@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page">
     <PageHeader title="用户与权限" description="查找账户、管理权限与状态，直接查看关联订阅和订单。" eyebrow="Identity">
-      <template #actions><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
+      <template #actions><RouterLink class="button button-secondary" to="/admin/settings/runtime#account-cleanup">自动清理规则</RouterLink><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="用户信息已更新" error-title="用户操作失败" />
@@ -28,7 +28,7 @@
               <td class="numeric-column" data-column-priority="2"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订阅`">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</RouterLink></td>
               <td class="numeric-column" data-column-priority="3"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订单`">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</RouterLink></td>
               <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${user.email} 的操作`" :trigger-key="`user-${user.id}`"><UiButton variant="secondary" size="sm" type="button" :data-user-detail-trigger="user.id" @click="openDetail(user.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })">查看订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink><UiButton variant="ghost" size="sm" type="button" @click="openEdit(user)"><UiIcon name="edit" />账户与权限</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions :label="`${user.email} 的操作`" :trigger-key="`user-${user.id}`"><UiButton variant="secondary" size="sm" type="button" :data-user-detail-trigger="user.id" @click="openDetail(user.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })">查看订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink><UiButton variant="ghost" size="sm" type="button" @click="openEdit(user)"><UiIcon name="edit" />账户与权限</UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
             </tr>
           </tbody>
       </DataTable>
@@ -66,6 +66,7 @@
           <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">查看订阅</RouterLink>
           <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink>
           <UiButton variant="ghost" size="sm" type="button" @click="openEdit(selectedUserDetail)"><UiIcon name="edit" />账户与权限</UiButton>
+          <UiButton variant="danger" size="sm" type="button" @click="openDeletion(selectedUserDetail)">删除用户</UiButton>
         </div>
       </main>
     </DetailDrawer>
@@ -98,6 +99,18 @@
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="edit-user-form" type="submit" :disabled="accountRecoveryConflict" :loading="saving">保存账户</UiButton></template>
     </ModalDialog>
+    <ModalDialog :open="Boolean(deletingUser)" title="永久删除用户" :description="deletingUser ? `${deletingUser.email} · #${deletingUser.id}` : ''" :busy="deletionBusy" @close="closeDeletion">
+      <p>硬删除登录账号、外部身份及访问凭证，无法恢复。历史订单、结算和流量账本保留，原账号将无法登录。</p>
+      <p v-if="deletionLoading" role="status">正在检查订阅和资金状态…</p>
+      <PageAlert v-if="deletionError" tone="danger" title="删除未完成">{{ deletionError }}</PageAlert>
+      <PageAlert v-if="deletionPreview && !deletionPreview.allowed" tone="warning" title="请先处理以下条件"><ul><li v-for="reason in deletionPreview.blockers" :key="reason">{{ reason }}</li></ul></PageAlert>
+      <FormField v-if="deletionPreview?.allowed" v-slot="{ controlAttrs }" label="输入用户邮箱确认永久删除" name="delete-user-email"><UiInput v-model="deletionConfirmation" v-bind="controlAttrs" autocomplete="off" /></FormField>
+      <template #footer>
+        <UiButton variant="secondary" :disabled="deletionBusy" @click="closeDeletion">取消</UiButton>
+        <UiButton variant="secondary" :disabled="deletionBusy || deletionLoading" @click="loadDeletionPreview">重新检查</UiButton>
+        <UiButton variant="danger" :loading="deletionBusy" :disabled="deletionLoading || !deletionPreview?.allowed || deletionConfirmation !== deletingUser?.email" @click="removeUser">永久删除</UiButton>
+      </template>
+    </ModalDialog>
   </section>
 </template>
 
@@ -106,7 +119,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
 import { sameRecoveryBaseline, userAccountBaseline, userAccountRecovery } from '../utils/adminAssetRecovery'
 import { useRoute, useRouter } from 'vue-router'
-import { createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
+import { deleteAdminUser, fetchUserDeletionPreview, type UserDeletionPreview, createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
 import AdminWalletPanel from '../components/AdminWalletPanel.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
@@ -173,6 +186,34 @@ const detailResource = useRemoteResource<AdminUserDetail | null>({
   errorMessage: '用户详情加载失败。',
 })
 const { data: selectedUserDetail, loading: detailLoading, error: detailError } = detailResource
+const deletingUser = ref<UserItem | null>(null)
+const deletionPreview = ref<UserDeletionPreview | null>(null)
+const deletionError = ref(''), deletionConfirmation = ref('')
+const deletionBusy = ref(false), deletionLoading = ref(false)
+let deletionGeneration = 0
+function closeDeletion() { if (deletionBusy.value) return; deletionGeneration++; deletingUser.value = null; deletionPreview.value = null; deletionError.value = ''; deletionConfirmation.value = '' }
+async function openDeletion(user: UserItem) { deletingUser.value = user; deletionConfirmation.value = ''; await loadDeletionPreview() }
+async function loadDeletionPreview() {
+  if (!deletingUser.value) return
+  const id = deletingUser.value.id, generation = ++deletionGeneration
+  deletionPreview.value = null; deletionError.value = ''; deletionLoading.value = true
+  try { const preview = await fetchUserDeletionPreview(id); if (generation === deletionGeneration) deletionPreview.value = preview }
+  catch (cause: any) { if (generation === deletionGeneration) deletionError.value = cause?.response?.data?.message || '删除条件检查失败，请重试。' }
+  finally { if (generation === deletionGeneration) deletionLoading.value = false }
+}
+async function removeUser() {
+  const user = deletingUser.value
+  if (!user || !deletionPreview.value?.allowed || deletionConfirmation.value !== user.email || deletionBusy.value) return
+  deletionBusy.value = true; deletionError.value = ''
+  try {
+    await deleteAdminUser(user.id)
+    deletionBusy.value = false; closeDeletion()
+    if (detailID.value === user.id) await closeDetail()
+    message.value = `用户 ${user.email} 已永久删除。`
+    await refresh()
+  } catch (cause: any) { deletionError.value = cause?.response?.data?.message || '删除失败，请重新检查账号状态后重试。' }
+  finally { deletionBusy.value = false }
+}
 const currentUserId = computed(() => app.user.id)
 const form = reactive({ email: '', password: '', isAdmin: false, status: 'active' })
 const editDraft = reactive({ is_admin: false, status: 'active', password: '' })

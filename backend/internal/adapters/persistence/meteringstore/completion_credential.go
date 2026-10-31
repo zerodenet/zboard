@@ -32,12 +32,19 @@ func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecrypto
 	if err != nil {
 		return model.ProtocolCredential{}, err
 	}
-	// Commerce locks the user before the subscription. Traffic-record foreign
-	// keys acquire a user SHARE lock too; acquire it before the subscription to
-	// avoid retaining a subscription while waiting for a commerce user lock.
+	// Keep commerce's live-owner-before-subscription order while an account
+	// exists. Physical deletion must not revoke historical reporting identity;
+	// after deletion the immutable numeric subject is the ledger parent.
 	var owner model.User
 	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id").First(&owner, candidate.UserID).Error; err != nil {
-		return model.ProtocolCredential{}, err
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.ProtocolCredential{}, err
+		}
+		var subject model.AccountSubject
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&subject, candidate.UserID).Error; err != nil {
+			return model.ProtocolCredential{}, err
+		}
+		owner.ID = subject.ID
 	}
 	// Fulfillment, retirement and reconciliation lock subscription before
 	// credential. Re-read both after acquiring these same locks.

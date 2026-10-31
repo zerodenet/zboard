@@ -57,6 +57,12 @@ func ValidateSettingValue(key, value string) error {
 		}
 	}
 	switch key {
+	case identity.CleanupDaysKey:
+		_, err := identity.ParseCleanupDays(value)
+		return err
+	case SubscriptionPrefixKey:
+		_, err := SubscriptionPrefix(value)
+		return err
 	case metering.DiagnosticCollectionKey:
 		return metering.ValidateDiagnosticCollection(value, time.Now().UTC())
 	case entitlements.RecoveryGraceDaysKey:

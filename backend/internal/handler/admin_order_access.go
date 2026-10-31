@@ -31,7 +31,10 @@ func (h *handlers) AdminOrderSubscriptionAccessHandler(w http.ResponseWriter, r 
 	case err != nil:
 		writeCommercePersistenceFailure(w, "订阅地址读取失败，请稍后重试。")
 	default:
-		completeAccessURL(&out)
+		if err := h.completeAccessURL(r.Context(), &out); err != nil {
+			writeCommercePersistenceFailure(w, "订阅地址配置读取失败，请稍后重试。")
+			return
+		}
 		out.Token = ""
 		OK(w, out)
 	}

@@ -30,11 +30,11 @@ type SubscriptionAutomaticRenewal struct {
 	NextAttemptAt    time.Time `gorm:"not null;index:idx_automatic_renewal_due,priority:2"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	Subscription     *Subscription `gorm:"foreignKey:SubscriptionID;constraint:OnDelete:RESTRICT"`
-	User             *User         `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
-	SKU              *PlanSKU      `gorm:"foreignKey:PlanSKUID;constraint:OnDelete:RESTRICT"`
-	RootOrder        *Order        `gorm:"foreignKey:RootOrderID;constraint:OnDelete:RESTRICT"`
-	LastOrder        *Order        `gorm:"foreignKey:LastOrderID;constraint:OnDelete:RESTRICT"`
+	Subscription     *Subscription   `gorm:"foreignKey:SubscriptionID;constraint:OnDelete:RESTRICT"`
+	User             *AccountSubject `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
+	SKU              *PlanSKU        `gorm:"foreignKey:PlanSKUID;constraint:OnDelete:RESTRICT"`
+	RootOrder        *Order          `gorm:"foreignKey:RootOrderID;constraint:OnDelete:RESTRICT"`
+	LastOrder        *Order          `gorm:"foreignKey:LastOrderID;constraint:OnDelete:RESTRICT"`
 }
 
 // Each settlement locks this row before choosing the current first due

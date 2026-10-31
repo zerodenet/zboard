@@ -72,7 +72,7 @@ func discountSQLiteFixture(t *testing.T) (*gorm.DB, OrderCreation, *checkoutQuot
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&model.User{}, &model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Order{}, &model.Subscription{}, &model.SystemConfig{}); err != nil {
+	if err := db.AutoMigrate(&model.AccountSubject{}, &model.User{}, &model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Order{}, &model.Subscription{}, &model.SystemConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{"ALTER TABLE plans ADD COLUMN archived_at DATETIME", "ALTER TABLE plan_skus ADD COLUMN archived_at DATETIME", "ALTER TABLE orders ADD COLUMN change_snapshot TEXT NOT NULL DEFAULT ''", "ALTER TABLE orders ADD COLUMN entitlement_value_snapshot TEXT NOT NULL DEFAULT ''", "ALTER TABLE subscriptions ADD COLUMN entitlement_epoch INTEGER NOT NULL DEFAULT 0"} {

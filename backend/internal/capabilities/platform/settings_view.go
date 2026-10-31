@@ -3,6 +3,7 @@ package platform
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"strconv"
 	"time"
 )
@@ -99,7 +100,13 @@ func SettingInputSchemaFor(config Setting) SettingInputSchema {
 		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "填写 HTTP/HTTPS URL 或上传本地图片"}
 	case "subscribe_url":
 		maxBytes := 2048
-		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时使用站点地址生成"}
+		schema = SettingInputSchema{Control: "text", MaxBytes: &maxBytes, Placeholder: "旧配置，不再生成订阅入口"}
+	case identity.CleanupDaysKey:
+		minimum, maximum, step := int64(0), int64(36500), int64(1)
+		schema = SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
+	case SubscriptionPrefixKey:
+		maxBytes := 2048
+		schema = SettingInputSchema{Control: "text", MaxBytes: &maxBytes, Placeholder: "/自定义路径"}
 	case "subscription_camouflage_url":
 		maxBytes := 2048
 		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时跳转到站点公开访问地址"}

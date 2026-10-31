@@ -101,6 +101,8 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodPut, "/api/v1/admin/tickets/:id/status", h.AdminTicketStatusHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/users", h.AdminUsersListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/users/:id", h.AdminUserGetHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/users/:id/deletion-preview", h.AdminUserDeletionPreviewHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/users/:id", h.AdminUserDeleteHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/settings", h.AdminSettingsUpdateHandler),
 		newRoute(http.MethodGet, "/api/v1/system/configs", h.PublicSystemConfigsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-configs", h.AdminSystemConfigsListHandler),
@@ -420,6 +422,7 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 	h.StartDiscountRedemptionWorker()
 	h.StartWalletReservationWorker()
 	h.StartAutomaticRenewalWorker()
+	h.StartUserCleanupWorker()
 	h.StartUsageProjectionWorker()
 	h.StartPrincipalStatisticsWorker()
 	h.StartNodeObservationWorker()

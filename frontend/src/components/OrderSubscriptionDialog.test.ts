@@ -11,7 +11,7 @@ let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
   vi.resetAllMocks()
   vi.stubGlobal('navigator', { clipboard: { writeText: api.write } })
-  api.access.mockImplementation(async id => ({ configured: true, subscription_id: id + 100, subscription_url: `/api/v1/client/subscription/token-${id}` }))
+  api.access.mockImplementation(async id => ({ configured: true, subscription_id: id + 100, subscription_url: `/private-feed/token-${id}` }))
 })
 afterEach(() => { wrapper?.unmount(); vi.unstubAllGlobals() })
 async function render(orderId = 7) {
@@ -27,7 +27,7 @@ it('loads only on explicit selection and copies that order’s scoped link', asy
   expect(api.access).toHaveBeenCalledWith(7, expect.objectContaining({ signal: expect.any(AbortSignal) }))
   expect(api.write).not.toHaveBeenCalled()
   await w.findAll('button').find(b => b.text() === '复制订阅地址')!.trigger('click'); await flushPromises()
-  expect(api.write).toHaveBeenCalledWith(`${window.location.origin}/api/v1/client/subscription/token-7`)
+  expect(api.write).toHaveBeenCalledWith(`${window.location.origin}/private-feed/token-7`)
   expect(w.text()).toContain('已复制')
 })
 
@@ -36,7 +36,7 @@ it('discards a late response after switching orders and clears credentials on cl
   api.access.mockReturnValueOnce(new Promise(done => { resolve = done }))
   const w = await render(7)
   await w.setProps({ orderId: 8 }); await flushPromises()
-  resolve({ configured: true, subscription_id: 107, subscription_url: '/api/v1/client/subscription/old-secret' }); await flushPromises()
+  resolve({ configured: true, subscription_id: 107, subscription_url: '/private-feed/old-secret' }); await flushPromises()
   expect((w.get('input').element as HTMLInputElement).value).toContain('token-8')
   await w.setProps({ orderId: 0 }); await flushPromises()
   expect(w.find('input').exists()).toBe(false)
@@ -74,4 +74,12 @@ it('copies the selected address on HTTP when the clipboard API is unavailable', 
     if (previous) Object.defineProperty(document, 'execCommand', previous)
     else Reflect.deleteProperty(document, 'execCommand')
   }
+})
+
+it('shows the administrator configuration notice when no delivery prefix exists', async () => {
+  api.access.mockResolvedValue({ configured: false, delivery_configured: false, notice: '管理员尚未配置订阅地址前缀，请联系管理员。' })
+  const w = await render()
+  expect(w.text()).toContain('管理员尚未配置订阅地址前缀')
+  expect(w.find('input').exists()).toBe(false)
+  expect(w.findAll('button').some(button => button.text() === '复制订阅地址')).toBe(false)
 })

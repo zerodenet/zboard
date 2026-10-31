@@ -20,12 +20,12 @@ type WalletAdjustment struct {
 	ExternalStatus  string `gorm:"size:24;not null;default:pending"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
-	User            *User        `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
-	Actor           *User        `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
-	ReversalActor   *User        `gorm:"foreignKey:ReversalActorID;constraint:OnDelete:RESTRICT"`
-	Ticket          *Ticket      `gorm:"foreignKey:TicketID;constraint:OnDelete:RESTRICT"`
-	Entry           *WalletEntry `gorm:"foreignKey:EntryID;constraint:OnDelete:RESTRICT"`
-	ReversalEntry   *WalletEntry `gorm:"foreignKey:ReversalEntryID;constraint:OnDelete:RESTRICT"`
+	User            *AccountSubject `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
+	Actor           *AccountSubject `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
+	ReversalActor   *AccountSubject `gorm:"foreignKey:ReversalActorID;constraint:OnDelete:RESTRICT"`
+	Ticket          *Ticket         `gorm:"foreignKey:TicketID;constraint:OnDelete:RESTRICT"`
+	Entry           *WalletEntry    `gorm:"foreignKey:EntryID;constraint:OnDelete:RESTRICT"`
+	ReversalEntry   *WalletEntry    `gorm:"foreignKey:ReversalEntryID;constraint:OnDelete:RESTRICT"`
 }
 type WalletPayoutResult struct {
 	ID           uint      `gorm:"primaryKey;index:idx_wallet_payout_history,priority:2"`
@@ -39,5 +39,5 @@ type WalletPayoutResult struct {
 	OccurredAt   time.Time `gorm:"not null"`
 	CreatedAt    time.Time
 	Adjustment   *WalletAdjustment `gorm:"foreignKey:AdjustmentID;constraint:OnDelete:RESTRICT"`
-	Actor        *User             `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
+	Actor        *AccountSubject   `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
 }

@@ -3,16 +3,16 @@ package model
 import "time"
 
 // Wallet balances and ledger entries are currency minor units, never traffic.
-// Financial evidence restricts hard deletion of its owner and source order.
+// Financial evidence protects its immutable subject and source order.
 type WalletAccount struct {
-	UserID        uint      `json:"-" gorm:"primaryKey;autoIncrement:false;not null"`
-	Currency      string    `json:"currency" gorm:"primaryKey;size:16;not null"`
-	BalanceMinor  int64     `json:"balance_minor" gorm:"not null;default:0;check:ck_wallet_available,balance_minor >= 0 AND reserved_minor >= 0 AND reserved_minor <= balance_minor"`
-	ReservedMinor int64     `json:"reserved_minor" gorm:"not null;default:0"`
-	Revision      uint64    `json:"revision" gorm:"not null;default:1"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	User          *User     `json:"-" gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
+	UserID        uint            `json:"-" gorm:"primaryKey;autoIncrement:false;not null"`
+	Currency      string          `json:"currency" gorm:"primaryKey;size:16;not null"`
+	BalanceMinor  int64           `json:"balance_minor" gorm:"not null;default:0;check:ck_wallet_available,balance_minor >= 0 AND reserved_minor >= 0 AND reserved_minor <= balance_minor"`
+	ReservedMinor int64           `json:"reserved_minor" gorm:"not null;default:0"`
+	Revision      uint64          `json:"revision" gorm:"not null;default:1"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	User          *AccountSubject `json:"-" gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
 }
 
 type WalletEntry struct {

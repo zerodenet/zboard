@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
 	"net/http"
 )
 
@@ -47,12 +49,30 @@ func (h *handlers) accountAccess(w http.ResponseWriter, r *http.Request, operati
 	case err != nil:
 		ServerError(w, errors.New("subscription access operation failed"))
 	default:
-		completeAccessURL(&out)
+		if err := h.completeAccessURL(r.Context(), &out); err != nil {
+			ServerError(w, errors.New("subscription delivery setting unavailable"))
+			return
+		}
 		OK(w, out)
 	}
 }
-func completeAccessURL(view *entitlements.AccessView) {
-	if view.Configured && view.Token != "" {
-		view.SubscriptionURL = "/api/v1/client/subscription/" + view.Token
+func (h *handlers) completeAccessURL(ctx context.Context, view *entitlements.AccessView) error {
+	row, err := h.services.Settings.Get(ctx, platform.SubscriptionPrefixKey)
+	if err != nil && !errors.Is(err, platform.ErrSettingNotFound) {
+		return err
 	}
+	view.DeliveryConfigured = row.Value != ""
+	if !view.DeliveryConfigured {
+		view.Configured = false
+		view.Token = ""
+		view.Notice = "管理员尚未配置订阅地址前缀，请联系管理员。"
+		return nil
+	}
+	if view.Configured && view.Token != "" {
+		view.SubscriptionURL, err = platform.SubscriptionDeliveryURL(row.Value, view.Token)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

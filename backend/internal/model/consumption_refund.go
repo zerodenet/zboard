@@ -19,8 +19,8 @@ type ConsumptionRefund struct {
 	CreatedAt   time.Time
 	Order       *Order            `gorm:"foreignKey:OrderID;constraint:OnDelete:RESTRICT"`
 	Budget      *OrderValueBudget `gorm:"belongsTo:OrderValueBudget;foreignKey:OrderID;references:OrderID;constraint:OnDelete:RESTRICT"`
-	User        *User             `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
-	Actor       *User             `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
+	User        *AccountSubject   `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
+	Actor       *AccountSubject   `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`
 	Ticket      *Ticket           `gorm:"foreignKey:TicketID;constraint:OnDelete:RESTRICT"`
 	Entry       *WalletEntry      `gorm:"foreignKey:EntryID;constraint:OnDelete:RESTRICT"`
 }

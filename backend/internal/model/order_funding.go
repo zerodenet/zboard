@@ -20,6 +20,6 @@ type OrderFunding struct {
 	ReleaseReason    string `gorm:"size:64;not null;default:''"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	Order            *Order `gorm:"foreignKey:OrderID;constraint:OnDelete:RESTRICT"`
-	User             *User  `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
+	Order            *Order          `gorm:"foreignKey:OrderID;constraint:OnDelete:RESTRICT"`
+	User             *AccountSubject `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
 }

@@ -125,8 +125,8 @@ func assertWalletTopUp(t *testing.T, f orderFixture, mysql bool) {
 	if err := f.h.db.Exec("DELETE FROM orders WHERE id = ?", order.ID).Error; err == nil {
 		t.Fatal("source order deletion erased financial evidence")
 	}
-	if err := f.h.db.Exec("DELETE FROM users WHERE id = ?", 1).Error; err == nil {
-		t.Fatal("owner deletion erased financial evidence")
+	if err := f.h.db.Exec("DELETE FROM account_subjects WHERE id = ?", 1).Error; err == nil {
+		t.Fatal("accounting subject deletion erased financial evidence")
 	}
 	// Canceling an unpaid top-up cannot make a later verified receipt disappear.
 	late := createTopUp(t, f, 500, "topup-intent-late")

@@ -31,7 +31,7 @@ const error = ref(''), feedback = ref(''), loading = ref(false), copying = ref(f
 let generation = 0, controller: AbortController | undefined
 const url = computed(() => {
   const path = access.value?.configured ? access.value.subscription_url : ''
-  return path?.startsWith('/api/v1/client/subscription/') ? new URL(path, window.location.origin).toString() : ''
+  return path ? new URL(path, window.location.origin).toString() : ''
 })
 async function load() {
   const request = ++generation
