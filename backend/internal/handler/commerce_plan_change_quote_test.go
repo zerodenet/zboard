@@ -142,7 +142,7 @@ func TestLegacyPendingPlanChangeCarriesOnlyPaidAndTransferredValue(t *testing.T)
 func TestLegacyPendingExhaustedPlanChangeCandidatesAndSettlementUseSameEligibility(t *testing.T) {
 	for _, status := range []string{"active", "expired"} {
 		t.Run(status, func(t *testing.T) {
-			f := newOrderFixture(t)
+			f := newOrderAccessFixture(t)
 			endpoint := attachOrderPublishEndpoint(t, f)
 			f, sub, root := preparePricedChangeFixture(t, f, 100*quoteGB, 15)
 			if err := f.h.db.Model(&sub).Update("status", status).Error; err != nil {

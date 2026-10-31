@@ -65,7 +65,9 @@ func (h *handlers) completeAccessURL(ctx context.Context, view *entitlements.Acc
 	if !view.DeliveryConfigured {
 		view.Configured = false
 		view.Token = ""
-		view.Notice = "管理员尚未配置订阅地址前缀，请联系管理员。"
+		if view.Notice == "" {
+			view.Notice = "管理员尚未配置订阅地址前缀，请联系管理员。"
+		}
 		return nil
 	}
 	if view.Configured && view.Token != "" {
