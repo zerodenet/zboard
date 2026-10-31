@@ -16,13 +16,14 @@ type TrafficTrendAggregate struct {
 }
 
 type TrafficTrendPoint struct {
-	Date            string `json:"date"`
-	Label           string `json:"label"`
-	UploadBytes     int64  `json:"upload_bytes"`
-	DownloadBytes   int64  `json:"download_bytes"`
-	UsedBytes       int64  `json:"used_bytes"`
-	PeakConnections *int64 `json:"peak_connections"`
-	RecordCount     int64  `json:"record_count"`
+	ConnectionResolutionSeconds int64  `json:"connection_resolution_seconds,omitempty"`
+	Date                        string `json:"date"`
+	Label                       string `json:"label"`
+	UploadBytes                 int64  `json:"upload_bytes"`
+	DownloadBytes               int64  `json:"download_bytes"`
+	UsedBytes                   int64  `json:"used_bytes"`
+	PeakConnections             *int64 `json:"peak_connections"`
+	RecordCount                 int64  `json:"record_count"`
 }
 
 func BuildTrafficTrendPoints(from time.Time, days int, rows []TrafficTrendAggregate) ([]TrafficTrendPoint, int64) {

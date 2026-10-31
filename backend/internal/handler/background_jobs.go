@@ -51,6 +51,7 @@ func (h *handlers) startScheduledJob(id string, interval time.Duration, run func
 		External:           id == "admin_tasks" || strings.HasPrefix(id, "node_publish_"),
 		ReconcileAfterLoss: id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
 		RetryFailures:      id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
+		CompactHistory:     id == "registration_messages" || id == "event_consumer",
 		Ready:              h.jobReadiness(id),
 		Run:                run,
 	})

@@ -79,8 +79,8 @@ var trafficReadIndexes = []trafficReadIndexDefinition{
 }
 
 // ReconcileTrafficReadSchema installs the composite indexes used by bounded
-// traffic and Principal-flow timelines. Existing single-column indexes remain
-// useful to other read paths, while these indexes prevent trend queries from
+// traffic and Principal-flow timelines. The index budget removes redundant single-column indexes after these
+// canonical scoped access paths are present. These indexes prevent trends from
 // scanning a user's or dimension's complete history before applying time.
 // The narrow subscription/usage index lets reconciliation aggregate the ledger
 // without fetching every full record (including event metadata) from the table.
@@ -101,7 +101,10 @@ func ReconcileTrafficReadSchema(db *gorm.DB) error {
 		if err := reconcileSQLiteTrafficBuckets(db); err != nil {
 			return err
 		}
-		return reconcileSQLiteLedgerRevision(db)
+		if err := reconcileSQLiteLedgerRevision(db); err != nil {
+			return err
+		}
+		return reconcileMeteringIndexBudget(db)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -130,7 +133,7 @@ func ReconcileTrafficReadSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	return nil
+	return reconcileMeteringIndexBudget(db)
 }
 
 func ensureTrafficReadIndexes(sqlDB *sql.DB, table string, indexes []trafficReadIndexDefinition) error {

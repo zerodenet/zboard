@@ -16,7 +16,7 @@
       <p v-else-if="registeredJobs && !registeredJobs.length" class="registry-unavailable">当前进程没有已注册任务。</p>
       <div v-if="registeredJobs?.length" class="registered-list">
         <div v-for="job in registeredJobs" :key="job.id" class="registered-row">
-          <div class="registered-name"><strong>{{ job.name }}</strong><small :title="job.id">{{ registeredOwner(job.owner) }}</small></div>
+          <div class="registered-name"><strong>{{ job.name }}</strong><small v-if="job.compact_history">累计状态 · 保留异常记录</small><small :title="job.id">{{ registeredOwner(job.owner) }}</small></div>
           <span class="registered-cadence">{{ registeredCadence(job.interval_seconds) }}</span>
           <StatusBadge v-if="registeredStatus(job.id)" :tone="tone(registeredStatus(job.id)!.state)">{{ state(registeredStatus(job.id)!.state) }}</StatusBadge>
           <span v-else class="registered-unknown">状态未取得</span>
@@ -42,7 +42,7 @@
         <div class="runtime-heading"><h2>任务执行情况</h2><span>共享执行名额 {{ data.execution_concurrency ?? '—' }} 个 · 外部操作最多占用 {{ data.external_execution_concurrency ?? '—' }} 个</span></div>
         <DataTable caption="后台任务执行情况" :row-count="data.jobs.length" :min-width="1000">
           <thead><tr><th>任务</th><th>执行周期</th><th>运行状态</th><th>最近结果</th><th>最近完成 / 耗时</th><th>下次扫描</th><th>执行 / 失败</th></tr></thead>
-          <tbody><tr v-for="job in data.jobs" :key="job.id"><td><strong>{{ job.name }}</strong><small v-if="job.last_error" class="job-error">{{ job.last_error }}</small></td><td>{{ interval(job) }}<small v-if="job.timezone">{{ job.timezone }} · {{ job.misfire_policy === 'skip' ? '错过跳过' : '错过合并一次' }}</small></td><td><StatusBadge :tone="tone(job.state)">{{ state(job.state) }}<template v-if="job.running"> · {{ job.running }}</template></StatusBadge></td><td><StatusBadge :tone="tone(job.last_result)">{{ state(job.last_result) }}</StatusBadge></td><td><TimeBadge :value="job.last_finished_at" /><small v-if="job.last_finished_at">{{ duration(job.last_duration_ms) }}</small></td><td><TimeBadge v-if="job.next_scan_at" :value="job.next_scan_at" /><span v-else>{{ job.state === 'running' ? '已保留下次计划' : '等待事件或扫描' }}</span></td><td>{{ job.runs }} / {{ job.failures }}<small v-if="job.missed_runs">跳过 {{ job.missed_runs }}</small></td></tr></tbody>
+          <tbody><tr v-for="job in data.jobs" :key="job.id"><td><strong>{{ job.name }}</strong><small v-if="job.compact_history">累计状态 · 保留异常记录</small><small v-if="job.last_error" class="job-error">{{ job.last_error }}</small></td><td>{{ interval(job) }}<small v-if="job.timezone">{{ job.timezone }} · {{ job.misfire_policy === 'skip' ? '错过跳过' : '错过合并一次' }}</small></td><td><StatusBadge :tone="tone(job.state)">{{ state(job.state) }}<template v-if="job.running"> · {{ job.running }}</template></StatusBadge></td><td><StatusBadge :tone="tone(job.last_result)">{{ state(job.last_result) }}</StatusBadge></td><td><TimeBadge :value="job.last_finished_at" /><small v-if="job.last_finished_at">{{ duration(job.last_duration_ms) }}</small></td><td><TimeBadge v-if="job.next_scan_at" :value="job.next_scan_at" /><span v-else>{{ job.state === 'running' ? '已保留下次计划' : '等待事件或扫描' }}</span></td><td>{{ job.runs }} / {{ job.failures }}<small v-if="job.missed_runs">跳过 {{ job.missed_runs }}</small></td></tr></tbody>
         </DataTable>
         <p v-if="sectionIssue('execution')" class="detail-note">执行统计未取得。</p>
         <p v-else-if="!data.jobs.length">暂无执行记录。</p>

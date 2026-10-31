@@ -2,7 +2,7 @@ package meteringstore
 
 import (
 	"fmt"
-	"strings"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -30,12 +30,22 @@ func ResetNodeProjection(tx *gorm.DB, nodeID uint, coreInstanceID, eventID strin
 	if err := tx.Where("node_id = ?", nodeID).Delete(&PrincipalFlowCurrent{}).Error; err != nil {
 		return err
 	}
-	for userID := range users {
+	userIDs := make([]uint, 0, len(users))
+	for id := range users {
+		userIDs = append(userIDs, id)
+	}
+	sort.Slice(userIDs, func(i, j int) bool { return userIDs[i] < userIDs[j] })
+	for _, userID := range userIDs {
 		if err := RefreshScope(tx, ScopeUser, userID, nodeID, coreInstanceID, 0, eventID, observedAt, source); err != nil {
 			return err
 		}
 	}
-	for subscriptionID := range subscriptions {
+	subscriptionIDs := make([]uint, 0, len(subscriptions))
+	for id := range subscriptions {
+		subscriptionIDs = append(subscriptionIDs, id)
+	}
+	sort.Slice(subscriptionIDs, func(i, j int) bool { return subscriptionIDs[i] < subscriptionIDs[j] })
+	for _, subscriptionID := range subscriptionIDs {
 		if err := RefreshScope(tx, ScopeSubscription, subscriptionID, nodeID, coreInstanceID, 0, eventID, observedAt, source); err != nil {
 			return err
 		}
@@ -63,24 +73,8 @@ func RefreshScope(tx *gorm.DB, scopeType string, scopeID, nodeID uint, coreInsta
 		return err
 	}
 	now := time.Now().UTC()
-	observation := PrincipalFlowScopeObservation{
-		ScopeType:               scopeType,
-		ScopeID:                 scopeID,
-		ActiveFlows:             total.ActiveFlows,
-		NodeID:                  nodeID,
-		CoreInstanceID:          strings.TrimSpace(coreInstanceID),
-		SessionRegistryRevision: revision,
-		EventID:                 strings.TrimSpace(eventID),
-		Source:                  source,
-		ObservedAt:              observedAt.UTC(),
-		CreatedAt:               now,
-	}
-	known := false
-	if err := persistPrincipalScopeObservation(tx, &observation, &known); err != nil {
+	if err := recordPrincipalBucket(tx, scopeType, scopeID, observedAt, total.ActiveFlows, 1, now); err != nil {
 		return err
-	}
-	if known {
-		return nil
 	}
 	current := PrincipalFlowScopeCurrent{ScopeType: scopeType, ScopeID: scopeID, ActiveFlows: total.ActiveFlows, UpdatedAt: now}
 	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "scope_type"}, {Name: "scope_id"}}, DoUpdates: clause.AssignmentColumns([]string{"active_flows", "updated_at"})}).Create(&current).Error

@@ -20,9 +20,10 @@ type PeriodicJob struct {
 	ReconcileAfterLoss bool
 	// RetryFailures is restricted to reconcilers whose durable domain state
 	// makes a repeated scan idempotent. Unknown outcomes are never retried.
-	RetryFailures bool
-	Ready         func(context.Context) (bool, error)
-	Run           func(context.Context) error
+	CompactHistory bool
+	RetryFailures  bool
+	Ready          func(context.Context) (bool, error)
+	Run            func(context.Context) error
 }
 
 // RegisterPeriodicJob keeps persisted scheduling policy in the application
@@ -48,7 +49,7 @@ func (s *Services) RegisterPeriodicJob(job PeriodicJob) error {
 		Interval: job.Interval, Timeout: job.Timeout, Immediate: job.Immediate,
 		TimeZone: job.TimeZone, MisfirePolicy: job.MisfirePolicy, FirstPlannedAt: job.FirstPlannedAt,
 		MaxAttempts: maxAttempts, RetryBackoff: retryBackoff,
-		ReconcileAfterLoss: job.ReconcileAfterLoss,
+		ReconcileAfterLoss: job.ReconcileAfterLoss, CompactHistory: job.CompactHistory,
 	}, func(ctx context.Context, _ jobs.Run) error {
 		err := job.Run(ctx)
 		if err != nil && job.RetryFailures && !jobs.IsContinuation(err) {

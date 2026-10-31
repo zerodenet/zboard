@@ -183,6 +183,7 @@ var explicitModelOwners = map[string]string{
 	"PrincipalStatisticsState":           "metering",
 	"PrincipalStatisticsPending":         "metering",
 	"PrincipalStatisticsSample":          "metering",
+	"PrincipalStatisticsMinute":          "metering",
 	"PrincipalStatisticsHourly":          "metering",
 	"TrafficMetaArchive":                 "metering",
 	"User":                               "identity",

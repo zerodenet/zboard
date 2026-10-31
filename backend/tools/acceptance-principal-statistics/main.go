@@ -378,7 +378,7 @@ func run() (exitCode int) {
 func experiment(ctx context.Context, db *gorm.DB, trace *traceCounter, loc *time.Location, o options, r *summary) error {
 	now := time.Now().UTC()
 	base := now.Truncate(24*time.Hour).AddDate(0, 0, -o.windows-1)
-	r.Clock = map[string]any{"source_created_at": "actual DB-persisted wall clock from RefreshScope; never backdated", "observed_from": base, "retention_now": "set after seeding to actual wall clock plus16days; explicit simulation only", "live_soak": false}
+	r.Clock = map[string]any{"source_created_at": "actual wall clock from explicit legacy fixture; never backdated", "observed_from": base, "retention_now": "set after seeding to actual wall clock plus16days; explicit simulation only", "live_soak": false}
 	user := model.User{AccountName: "principal-acceptance", Email: "principal-acceptance@example.invalid", Password: "isolated-unused", Status: "active"}
 	if err := db.Create(&user).Error; err != nil {
 		return err
@@ -398,7 +398,24 @@ func experiment(ctx context.Context, db *gorm.DB, trace *traceCounter, loc *time
 	}
 	refresh := func(id string, at time.Time) error {
 		return db.Transaction(func(tx *gorm.DB) error {
-			return meteringstore.RefreshScope(tx, "user", user.ID, node.ID, core, 1, id, at, "acceptance")
+			// Legacy-only fixture: the runtime now writes bounded metric buckets.
+			var existing model.PrincipalStatisticsSample
+			if q := tx.Where("scope_type = ? AND scope_id = ? AND event_id = ?", "user", user.ID, id).Limit(1).Find(&existing); q.Error != nil {
+				return q.Error
+			} else if q.RowsAffected > 0 {
+				return nil
+			}
+			var raw meteringstore.PrincipalFlowScopeObservation
+			if q := tx.Where("scope_type = ? AND scope_id = ? AND event_id = ?", "user", user.ID, id).Limit(1).Find(&raw); q.Error != nil {
+				return q.Error
+			} else if q.RowsAffected > 0 {
+				return nil
+			}
+			raw = meteringstore.PrincipalFlowScopeObservation{ScopeType: "user", ScopeID: user.ID, NodeID: node.ID, CoreInstanceID: core, SessionRegistryRevision: 1, EventID: id, Source: "acceptance", ObservedAt: at, CreatedAt: time.Now().UTC(), ActiveFlows: 5}
+			if err := tx.Create(&raw).Error; err != nil {
+				return err
+			}
+			return meteringstore.EnqueuePrincipalStatistics(tx, raw)
 		})
 	}
 	local := base.In(loc)

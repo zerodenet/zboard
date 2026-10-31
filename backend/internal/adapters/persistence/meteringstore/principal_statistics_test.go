@@ -95,7 +95,7 @@ func TestPrincipalStatisticsSourceAndProjectionRollbackThenResume(t *testing.T) 
 		t.Fatal("idle replay", n)
 	}
 }
-func TestPrincipalStatisticsExactCalendarEdgesAndNonZeroMax(t *testing.T) {
+func TestPrincipalStatisticsCalendarResolutionAndNonZeroMax(t *testing.T) {
 	db := trafficAggregateDB(t)
 	locations := []string{"Asia/Kathmandu", "America/New_York"}
 	for _, name := range locations {
@@ -137,19 +137,23 @@ func TestPrincipalStatisticsExactCalendarEdgesAndNonZeroMax(t *testing.T) {
 			start := time.Date(d[0], time.Month(d[1]), d[2], 0, 0, 0, 0, loc)
 			buckets := []metering.TrendBucket{{Key: start.Format("2006-01-02"), StartUTC: start.UTC(), EndUTC: start.AddDate(0, 0, 1).UTC()}, {Key: start.AddDate(0, 0, 1).Format("2006-01-02"), StartUTC: start.AddDate(0, 0, 1).UTC(), EndUTC: start.AddDate(0, 0, 2).UTC()}}
 			got, err := readPrincipalStatistics(db, ScopeUser, 7, buckets)
-			if err != nil || len(got) != 2 || got[0].Peak != 11 || got[0].SampleCount != 2 || got[1].Peak != 88 || got[1].SampleCount != 1 {
+			wantPeak, wantSecondCount := int64(11), int64(1)
+			if name == "Asia/Kathmandu" {
+				wantPeak, wantSecondCount = 99, 2
+			} // expired minute edges use adjacent UTC hours
+			if err != nil || len(got) != 2 || got[0].Peak != wantPeak || got[0].SampleCount != 2 || got[1].Peak != 88 || got[1].SampleCount != wantSecondCount {
 				t.Fatal(name, d, got, err)
 			}
 		}
 	}
-	// Second offsets and SQLite sub-millisecond boundaries remain exact, too.
+	// Sub-minute display boundaries are deliberately quantized to minutes.
 	start := time.Date(2026, 12, 1, 0, 0, 17, 123456789, time.UTC)
 	statisticsSource(t, db, "nanosecond-out", start.Add(-time.Nanosecond), 99)
 	statisticsSource(t, db, "nanosecond-in", start, 5)
 	statisticsSource(t, db, "nanosecond-end", start.Add(time.Hour), 88)
 	statisticsDrain(t, db, 200)
 	got, err := readPrincipalStatistics(db, ScopeUser, 7, []metering.TrendBucket{{Key: "2026-12-01", StartUTC: start, EndUTC: start.Add(time.Hour)}})
-	if err != nil || len(got) != 1 || got[0].Peak != 5 || got[0].SampleCount != 1 {
+	if err != nil || len(got) != 1 || got[0].Peak != 99 || got[0].SampleCount != 2 || got[0].ResolutionSeconds != 60 {
 		t.Fatal("fractional boundary", got, err)
 	}
 }

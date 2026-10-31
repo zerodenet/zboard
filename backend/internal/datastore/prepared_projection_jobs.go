@@ -19,7 +19,7 @@ func projectionJobColumns(db *gorm.DB, tables map[string]bool) error {
 		{"job_dispatch_lanes", "lane", "lane:s200,virtual_finish:u"},
 		{"job_runs", "id", "id:s36,timeout_ms:n,attempt_count:j,max_attempts:j,retry_backoff_ms:n,execution_group:s160,dispatch_lane:s200,owner:s200,key:s160,handler:s320,resource:s200,payload:s,fingerprint:s64,state:s24,not_before:t,created_at:t,finished_at:t?,token:s36,worker:s160,expires_at:t?,schedule_id:s320,planned_at:t?"},
 		{"job_attempts", "token", "token:s36,run_id:s36,attempt_number:j,worker:s160,state:s24,started_at:t,expires_at:t,finished_at:t?"},
-		{"job_schedules", "id", "id:s320,owner:s200,name:s160,handler:s320,resource:s200,execution_group:s160,revision:s160,interval_ms:n,timeout_ms:n,max_attempts:j,retry_backoff_ms:n,timezone:s64,misfire_policy:s24,dispatch_lane:s200,anchor_at:t?,next_at:t,sequence:u,run_id:s36,runs:u,failures:u,missed_runs:u,state:s24,last_state:s24,last_started_at:t?,last_finished_at:t?"},
+		{"job_schedules", "id", "id:s320,owner:s200,name:s160,handler:s320,resource:s200,execution_group:s160,revision:s160,interval_ms:n,timeout_ms:n,max_attempts:j,retry_backoff_ms:n,timezone:s64,misfire_policy:s24,dispatch_lane:s200,anchor_at:t?,next_at:t,sequence:u,run_id:s36,runs:u,failures:u,missed_runs:u,state:s24,last_state:s24,last_started_at:t?,last_finished_at:t?,compact_history:b,compact_run_id:s36"},
 	}
 	for _, contract := range contracts {
 		if !tables[contract.table] {
@@ -64,6 +64,8 @@ func projectionJobColumns(db *gorm.DB, tables map[string]bool) error {
 				if !IsSQLite(db) {
 					valid = column.kind == "datetime(3)"
 				}
+			case kind == "b":
+				valid = column.kind == "numeric" || column.kind == "tinyint(1)"
 			case kind == "n":
 				valid = strings.Contains(column.kind, "int")
 				if !IsSQLite(db) {

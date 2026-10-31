@@ -1,11 +1,11 @@
 import { authenticatedAPI as api } from './client'
 export interface RuntimeJob {
   id: string; name: string; kind: string; interval_seconds: number; concurrency: number
-  state: string; running: number; runs: number; failures: number; missed_runs?: number; timezone?: string; misfire_policy?: string; last_started_at: string | null
+  compact_history?: boolean; state: string; running: number; runs: number; failures: number; missed_runs?: number; timezone?: string; misfire_policy?: string; last_started_at: string | null
   last_finished_at: string | null; last_duration_ms: number; last_result: string; last_error: string; next_scan_at: string | null
 }
 export interface PluginTask extends RuntimeJob { plugin_id: string; plugin_name: string; task_id: string; timeout_seconds: number }
-export interface RegisteredJob { id: string; name: string; owner: string; interval_seconds: number; timeout_seconds: number }
+export interface RegisteredJob { compact_history?: boolean; id: string; name: string; owner: string; interval_seconds: number; timeout_seconds: number }
 export interface RuntimeQueue { oldest_at?: string | null; id: string; name: string; pending: number; running: number; delayed: number; stale: number; drafts: number; failed: number }
 export interface QueueItem { id: number; kind: string; state: string; attempts: number; created_at: string; next_attempt_at: string | null; lease_until: string | null; last_error: string }
 export interface QueuePage { items: QueueItem[]; total: number; offset: number; limit: number }

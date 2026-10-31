@@ -9,6 +9,9 @@ import (
 )
 
 func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
+	if id == "registration_messages" {
+		return h.services.RegistrationMessages(h.credentialCipher).Pending
+	}
 	if id == application.FlowStartStatisticsJobID {
 		return h.services.FlowStartStatisticsJob().Ready
 	}

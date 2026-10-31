@@ -534,20 +534,20 @@ type ProtocolCredential struct {
 // flow is active and settle any missing delta from the final completed event.
 type FlowUsage struct {
 	ID                   uint       `json:"id" gorm:"primaryKey"`
-	NodeID               uint       `json:"node_id" gorm:"uniqueIndex:ux_flow_usage_node_flow,priority:1;index;not null"`
+	NodeID               uint       `json:"node_id" gorm:"uniqueIndex:ux_flow_usage_node_flow,priority:1;not null"`
 	FlowID               string     `json:"flow_id" gorm:"size:128;uniqueIndex:ux_flow_usage_node_flow,priority:2;not null"`
 	ProtocolCredentialID uint       `json:"protocol_credential_id" gorm:"index;not null"`
 	SubscriptionID       uint       `json:"subscription_id" gorm:"index;not null"`
-	ProtocolEndpointID   uint       `json:"protocol_endpoint_id" gorm:"index;index:idx_flow_usages_endpoint_active,priority:1;not null"`
-	PrincipalKey         string     `json:"principal_key" gorm:"size:128;index;not null"`
+	ProtocolEndpointID   uint       `json:"protocol_endpoint_id" gorm:"index:idx_flow_usages_endpoint_active,priority:1;not null"`
+	PrincipalKey         string     `json:"principal_key" gorm:"size:128;not null"`
 	Revision             uint64     `json:"revision" gorm:"not null;default:0"`
 	RawBytes             int64      `json:"raw_bytes" gorm:"not null;default:0"`
 	UploadBytes          int64      `json:"upload_bytes" gorm:"not null;default:0"`
 	DownloadBytes        int64      `json:"download_bytes" gorm:"not null;default:0"`
 	UsedBytes            int64      `json:"used_bytes" gorm:"not null;default:0"`
-	Status               string     `json:"status" gorm:"size:20;index;index:idx_flow_usages_endpoint_active,priority:2;not null;default:active"`
+	Status               string     `json:"status" gorm:"size:20;index:idx_flow_usages_endpoint_active,priority:2;not null;default:active"`
 	LastEventID          string     `json:"last_event_id" gorm:"size:191;not null"`
-	LastSeenAt           time.Time  `json:"last_seen_at" gorm:"index;index:idx_flow_usages_endpoint_active,priority:3;not null"`
+	LastSeenAt           time.Time  `json:"last_seen_at" gorm:"index:idx_flow_usages_endpoint_active,priority:3;not null"`
 	CompletedAt          *time.Time `json:"completed_at,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
@@ -556,10 +556,10 @@ type FlowUsage struct {
 type TrafficRecord struct {
 	EntitlementEpoch        uint64    `json:"-" gorm:"not null;default:0;-:migration"`
 	ID                      uint      `json:"id" gorm:"primaryKey"`
-	UserID                  uint      `json:"user_id" gorm:"index"`
-	SubscriptionID          uint      `json:"subscription_id,omitempty" gorm:"index"`
-	NodeID                  uint      `json:"node_id" gorm:"index;uniqueIndex:ux_traffic_node_report,priority:1;uniqueIndex:ux_traffic_node_nonce,priority:1"`
-	ProtocolEndpointID      uint      `json:"protocol_endpoint_id" gorm:"index"`
+	UserID                  uint      `json:"user_id"`
+	SubscriptionID          uint      `json:"subscription_id,omitempty"`
+	NodeID                  uint      `json:"node_id" gorm:"uniqueIndex:ux_traffic_node_report,priority:1;uniqueIndex:ux_traffic_node_nonce,priority:1"`
+	ProtocolEndpointID      uint      `json:"protocol_endpoint_id"`
 	ReportID                string    `json:"report_id,omitempty" gorm:"size:191;uniqueIndex:ux_traffic_node_report,priority:2"`
 	FlowID                  string    `json:"flow_id,omitempty" gorm:"size:128;index"`
 	EventType               string    `json:"event_type,omitempty" gorm:"size:32;index"`

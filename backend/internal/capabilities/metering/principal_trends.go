@@ -13,6 +13,7 @@ type TrendBucket struct {
 	StartUTC, EndUTC time.Time
 }
 type PrincipalTrendRow struct {
+	ResolutionSeconds int64
 	Day               string
 	Peak, SampleCount int64
 }

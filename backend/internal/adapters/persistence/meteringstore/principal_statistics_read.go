@@ -49,13 +49,23 @@ func readPrincipalStatistics(db *gorm.DB, scope string, id uint, buckets []meter
 	var parts []string
 	var args []interface{}
 	for _, b := range buckets {
-		source := principalStatisticsBucket(db, scope, id, b.StartUTC, b.EndUTC)
-		query := db.Table("(?) AS principal_bucket", source).Select("? AS day,COALESCE(MAX(active_flows),0) AS peak,COALESCE(SUM(sample_count),0) AS sample_count", b.Key).Having("SUM(sample_count) > 0")
+		resolution := int64(60)
+		from, to := b.StartUTC.UTC().Truncate(time.Minute), b.EndUTC.UTC().Truncate(time.Minute)
+		var source *gorm.DB
+		if from.Before(time.Now().UTC().Add(-PrincipalMinuteHorizon).Truncate(time.Hour)) {
+			resolution = 3600
+			// Adjacent calendar buckets share the same rounded boundary, avoiding
+			// duplicate attribution. Older off-hour local boundaries have hour precision.
+			source = db.Model(&model.PrincipalStatisticsHourly{}).Select("hour_at AS observed_at,peak AS active_flows,sample_count").Where("scope_type = ? AND scope_id = ? AND hour_at >= ? AND hour_at < ?", scope, id, from.Truncate(time.Hour), to.Truncate(time.Hour))
+		} else {
+			source = principalStatisticsBucket(db, scope, id, from, to)
+		}
+		query := db.Table("(?) AS principal_bucket", source).Select("? AS day,COALESCE(MAX(active_flows),0) AS peak,COALESCE(SUM(sample_count),0) AS sample_count,? AS resolution_seconds", b.Key, resolution).Having("SUM(sample_count) > 0")
 		parts = append(parts, "?")
 		args = append(args, query)
 	}
 	var out []metering.PrincipalTrendRow
-	err := db.Table("("+strings.Join(parts, " UNION ALL ")+") AS principal_statistics", args...).Select("day,peak,sample_count").Order("day").Scan(&out).Error
+	err := db.Table("("+strings.Join(parts, " UNION ALL ")+") AS principal_statistics", args...).Select("day,peak,sample_count,resolution_seconds").Order("day").Scan(&out).Error
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +82,9 @@ func readPrincipalStatistics(db *gorm.DB, scope string, id uint, buckets []meter
 // Peak=max(hour peaks,partial exact samples), count=sum(hour counts,partials).
 func principalStatisticsBucket(db *gorm.DB, scope string, id uint, from, to time.Time) *gorm.DB {
 	points := func(a, b time.Time) *gorm.DB {
-		return db.Model(&model.PrincipalStatisticsSample{}).Select("observed_at,active_flows,1 AS sample_count").Where("scope_type = ? AND scope_id = ? AND observed_at >= ? AND observed_at < ?", scope, id, a, b)
+		legacy := db.Model(&model.PrincipalStatisticsSample{}).Select("observed_at,active_flows,1 AS sample_count").Where("scope_type = ? AND scope_id = ? AND observed_at >= ? AND observed_at < ?", scope, id, a, b)
+		minute := db.Model(&model.PrincipalStatisticsMinute{}).Select("minute_at AS observed_at,peak AS active_flows,sample_count").Where("scope_type = ? AND scope_id = ? AND minute_at >= ? AND minute_at < ?", scope, id, a, b)
+		return db.Table("(? UNION ALL ?) AS minute_sources", legacy, minute)
 	}
 	start := from.UTC().Truncate(time.Hour)
 	if start.Before(from) {

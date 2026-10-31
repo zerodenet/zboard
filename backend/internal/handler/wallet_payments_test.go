@@ -150,7 +150,7 @@ func assertFundingRelease(t *testing.T, f orderFixture, reason string) {
 			t.Fatal(err)
 		}
 	default:
-		if err := f.h.db.Model(&model.OrderFunding{}).Where("order_id = ?", order.ID).Update("expires_at", time.Now().Add(-time.Minute)).Error; err != nil {
+		if err := f.h.db.Model(&model.OrderFunding{}).Where("order_id = ?", order.ID).Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 			t.Fatal(err)
 		}
 		if reason == "expired" {
@@ -598,7 +598,7 @@ func TestWalletReservationExpiryReleasesInactiveOwnerFunds(t *testing.T) {
 	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("status", "disabled").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := f.h.db.Model(&model.OrderFunding{}).Where("order_id = ?", order.ID).Update("expires_at", time.Now().Add(-time.Minute)).Error; err != nil {
+	if err := f.h.db.Model(&model.OrderFunding{}).Where("order_id = ?", order.ID).Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	count, err := service.Expire(t.Context(), time.Now().UTC(), 200)

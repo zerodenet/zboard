@@ -267,6 +267,11 @@ func validatePrincipalStatisticsPrepared(db *gorm.DB) error {
 	}
 	// The source must retain its complete durable primary key and original scope
 	// event uniqueness. Reads never accept a view or a missing raw source table.
+	if db.Migrator().HasTable("principal_statistics_minutes") {
+		if err := validatePrincipalMinuteSchema(db); err != nil {
+			return err
+		}
+	}
 	return validatePrincipalStatisticsSource(db)
 }
 func ValidatePreparedPrincipalStatisticsSchema(ctx context.Context, db *gorm.DB) error {
@@ -281,7 +286,17 @@ func ValidatePreparedPrincipalStatisticsSchema(ctx context.Context, db *gorm.DB)
 	if count != 1 {
 		return errors.New("principal statistics migration receipt missing; owned preparation required")
 	}
-	return validatePrincipalStatisticsPrepared(db)
+	if err := validatePrincipalStatisticsPrepared(db); err != nil {
+		return err
+	}
+	var minuteReceipt int64
+	if err := db.Table("schema_migrations").Where("version = ?", principalMinuteVersion).Count(&minuteReceipt).Error; err != nil {
+		return err
+	}
+	if minuteReceipt != 1 {
+		return errors.New("principal minute statistics migration receipt missing")
+	}
+	return validatePrincipalMinuteSchema(db)
 }
 func reconcilePrincipalStatisticsSchema(db *gorm.DB) error {
 	if err := preflightPrincipalStatisticsSchema(db); err != nil {

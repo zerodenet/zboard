@@ -80,7 +80,7 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	// unsafe. Extra history (including the retained development chain accepted
 	// by preparePreReleaseMigrationHistory) is not reinterpreted or rewritten.
 	// This validator does not certify whole-database or future-binary compatibility.
-	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeArchiveSchemaVersion, protocolDeletionSchemaVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion, observationRetirementVersion}
+	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeArchiveSchemaVersion, protocolDeletionSchemaVersion, compactPeriodicVersion, principalMinuteVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion, observationRetirementVersion}
 	for _, v := range required {
 		if !seen[v] {
 			return projectionError("required migration receipt missing: "+v, nil)
@@ -307,7 +307,7 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 func projectionDependencyTables() []string {
-	return []string{"flow_start_statistics_state", "flow_start_statistics_pending", "flow_start_statistics_points", "flow_start_statistics_minutes", "subscription_flow_start_events", "principal_statistics_state", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly", "principal_flow_scope_observations", "job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "system_configs", "node_observation_intents", "node_observation_parts", "node_observation_states", "node_observation_material_budget", "node_observation_retirements", "node_observation_retirement_parts"}
+	return []string{"flow_start_statistics_state", "flow_start_statistics_pending", "flow_start_statistics_points", "flow_start_statistics_minutes", "subscription_flow_start_events", "principal_statistics_state", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly", "principal_statistics_minutes", "principal_flow_scope_observations", "job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules", "metering_usage_projection_pending", "protocol_endpoint_usage_daily", "system_configs", "node_observation_intents", "node_observation_parts", "node_observation_states", "node_observation_material_budget", "node_observation_retirements", "node_observation_retirement_parts"}
 }
 
 type projectionColumn struct {

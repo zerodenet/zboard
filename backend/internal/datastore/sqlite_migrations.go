@@ -356,7 +356,7 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",
 		"subscription_fair_use_states", "subscription_fair_use_events",
 		"node_observation_intents", "node_observation_parts", "node_observation_states", "node_observation_material_budget", "node_observation_retirements", "node_observation_retirement_parts",
-		"principal_statistics_state", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly",
+		"principal_statistics_state", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly", "principal_statistics_minutes",
 		"flow_start_statistics_state", "flow_start_statistics_pending", "flow_start_statistics_points", "flow_start_statistics_minutes",
 		"zero_event_node_cursors", "principal_flow_node_generations", "principal_flow_observations",
 		"principal_flow_currents", "principal_flow_scope_currents", "principal_flow_scope_observations",

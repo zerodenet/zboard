@@ -312,6 +312,7 @@ func applyPrincipalFlowTrendRows(response *trafficTrendResponse, rows []principa
 		}
 		value := row.Peak
 		response.Points[index].PeakConnections = &value
+		response.Points[index].ConnectionResolutionSeconds = row.ResolutionSeconds
 	}
 	response.ConnectionSampleCount = samples
 	response.PeakConnections = peak

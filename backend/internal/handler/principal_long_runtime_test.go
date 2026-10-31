@@ -114,18 +114,17 @@ func assertPrincipalLongRuntime(t *testing.T, h *handlers, c model.ProtocolCrede
 	if err := h.db.First(&current, "node_id = ? AND principal_key = ?", c.NodeID, c.PrincipalKey).Error; err != nil || current.CoreInstanceID != literal {
 		t.Fatal("current identity was substituted by hash", err)
 	}
-	// Model a persisted digest/raw mismatch, not a pretend SHA256 collision.
-	// A unique-key hit must compare full original evidence and roll back any
-	// generation/current update instead of treating it as idempotent success.
-	if err := h.db.Model(&meteringstore.PrincipalFlowObservation{}).Where("node_id = ? AND event_id = ?", c.NodeID, "long-first").Update("core_instance_sha256", metering.RuntimeIdentityDigest(b)).Error; err != nil {
-		t.Fatal(err)
+	// Raw diagnostic identities are no longer copied per event. The current
+	// full runtime and revision fence still ignore stale snapshot content.
+	if len(rows) != 0 {
+		t.Fatal("snapshot ingress recreated event history", len(rows))
 	}
-	event = metering.PrincipalEvent{CoreInstanceID: b, EventID: "conflicting-proof", Sequence: 9, ObservedAt: at.Add(4 * time.Second)}
+	event = metering.PrincipalEvent{CoreInstanceID: literal, EventID: "conflicting-snapshot", Sequence: 9, ObservedAt: at.Add(4 * time.Second)}
 	observation.ObservedAt = event.ObservedAt
-	observation.SessionRegistryRevision = 5
+	observation.SessionRegistryRevision = 1
 	observation.ActiveFlows = 99
-	if err := h.services.PrincipalCollection.Observe(t.Context(), c.NodeID, event, observation); err == nil {
-		t.Fatal("corrupt digest/raw collision accepted as successful duplicate")
+	if err := h.services.PrincipalCollection.Observe(t.Context(), c.NodeID, event, observation); err != nil {
+		t.Fatal("stale diagnostic snapshot blocked ingestion", err)
 	}
 	scope(7)
 	var retained meteringstore.PrincipalFlowCurrent

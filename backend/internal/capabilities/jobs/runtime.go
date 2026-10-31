@@ -32,6 +32,7 @@ type registration struct {
 // RegisteredJob describes a handler attached to this process. It is independent
 // of durable schedules and run history, which may be temporarily unavailable.
 type RegisteredJob struct {
+	CompactHistory  bool   `json:"compact_history"`
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 	Owner           string `json:"owner"`
@@ -96,7 +97,7 @@ func (r *Runtime) RegisterWhen(d Definition, h Handler, ready func(context.Conte
 	return r.register(d, h, ready, false)
 }
 func (r *Runtime) register(d Definition, h Handler, ready func(context.Context) (bool, error), maintenance bool) error {
-	if d.ID == "" || d.Handler != d.ID || h == nil || d.Timeout <= 0 {
+	if d.ID == "" || d.Handler != d.ID || h == nil || d.Timeout <= 0 || (d.CompactHistory && (d.Owner != "system" || !d.ReconcileAfterLoss || d.ExecutionGroup != "" || maintenance)) {
 		return ErrInvalid
 	}
 	r.mu.Lock()
@@ -221,7 +222,7 @@ func (r *Runtime) RegisteredJobs() []RegisteredJob {
 		if name == "" {
 			name = d.ID
 		}
-		out = append(out, RegisteredJob{ID: d.ID, Name: name, Owner: d.Owner, IntervalSeconds: int64(d.Interval.Seconds()), TimeoutSeconds: int64(d.Timeout.Seconds())})
+		out = append(out, RegisteredJob{CompactHistory: d.CompactHistory, ID: d.ID, Name: name, Owner: d.Owner, IntervalSeconds: int64(d.Interval.Seconds()), TimeoutSeconds: int64(d.Timeout.Seconds())})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Owner == out[j].Owner {

@@ -3,7 +3,6 @@ package meteringstore
 import (
 	"context"
 	"errors"
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -102,27 +101,6 @@ func (s PrincipalCollection) Observe(ctx context.Context, nodeID uint, event met
 			raw.ProtocolCredentialID = credential.ID
 			raw.ProtocolEndpointID = credential.ProtocolEndpointID
 		}
-		if tx.Dialector.Name() == "mysql" {
-			// RowsAffected for a noop upsert is1 with clientFoundRows=true.
-			// Only the driver's explicit duplicate error enters reconciliation;
-			// malformed values, deadlocks and permission failures stay errors.
-			err := tx.Create(&raw).Error
-			if err != nil {
-				var duplicate *mysqldriver.MySQLError
-				if errors.As(err, &duplicate) && duplicate.Number == 1062 {
-					return verifyPrincipalDuplicate(tx, raw, &budget)
-				}
-				return err
-			}
-		} else {
-			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&raw)
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				return verifyPrincipalDuplicate(tx, raw, &budget)
-			}
-		}
 
 		if !currentGeneration {
 			return nil
@@ -133,6 +111,7 @@ func (s PrincipalCollection) Observe(ctx context.Context, nodeID uint, event met
 		if currentErr != nil && !errors.Is(currentErr, gorm.ErrRecordNotFound) {
 			return currentErr
 		}
+
 		if currentErr == nil && !metering.SupersedesPrincipalSnapshot(current.CoreInstanceID, current.SessionRegistryRevision, raw.CoreInstanceID, raw.SessionRegistryRevision) {
 			return nil
 		}

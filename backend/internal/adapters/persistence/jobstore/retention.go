@@ -2,6 +2,7 @@ package jobstore
 
 import (
 	"context"
+	"database/sql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,7 +25,8 @@ func (s *Store) PrunePeriodicOutcome(ctx context.Context, before time.Time, succ
 }
 func periodicCandidates(db *gorm.DB, before time.Time, state jobs.State) *gorm.DB {
 	return db.Model(&Record{}).Where("schedule_id <> '' AND finished_at < ? AND state = ?", before, state).
-		Where("id NOT IN (?)", db.Model(&Schedule{}).Select("run_id").Where("run_id <> ''"))
+		Where("id NOT IN (?)", db.Model(&Schedule{}).Select("run_id").Where("run_id <> ''")).
+		Where("id NOT IN (?)", db.Model(&Schedule{}).Select("compact_run_id").Where("compact_run_id <> ''"))
 }
 func (s *Store) prunePeriodicStates(ctx context.Context, before time.Time, states []jobs.State) (int64, error) {
 	var deleted int64
@@ -41,6 +43,18 @@ func (s *Store) prunePeriodicStates(ctx context.Context, before time.Time, state
 			continue
 		}
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Scheduling holds its plan before touching a reusable run. Pin only these
+			// plans in the same order, never the global execution/admission budget.
+			var plans []string
+			if err := tx.Model(&Record{}).Where("id IN ?", candidates).Distinct("schedule_id").Order("schedule_id").Pluck("schedule_id", &plans).Error; err != nil {
+				return err
+			}
+			if len(plans) > 0 {
+				var pinned []Schedule
+				if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id").Where("id IN ?", plans).Order("id").Find(&pinned).Error; err != nil {
+					return err
+				}
+			}
 			var ids []string
 			if err := periodicCandidates(tx, before, state).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", candidates).Order("id").Pluck("id", &ids).Error; err != nil {
 				return err
@@ -63,7 +77,7 @@ func (s *Store) prunePeriodicStates(ctx context.Context, before time.Time, state
 			}
 			deleted += res.RowsAffected
 			return nil
-		})
+		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 		if err != nil {
 			return deleted, err
 		}

@@ -42,6 +42,10 @@ type Definition struct {
 	// Ephemeral admission hint from the domain's read-only work-availability
 	// probe. Plans remain visible without writing empty execution records.
 	SuppressDispatch bool
+	// CompactHistory keeps only the latest clean successful execution of a core
+	// reconciler. Schedule counters remain cumulative. Failed, retried and lost
+	// executions retain their original evidence; plugin/manual jobs never opt in.
+	CompactHistory bool
 }
 
 type ScheduleView struct {

@@ -9,6 +9,7 @@ import (
 )
 
 type Snapshot struct {
+	CompactHistory  bool       `json:"compact_history,omitempty"`
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
 	Kind            string     `json:"kind"`

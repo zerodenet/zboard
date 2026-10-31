@@ -30,7 +30,7 @@ func capturePrincipalStatisticsCopyProof(tx *gorm.DB) (*gorm.DB, error) {
 			state := states[0]
 			proof.Initialized = validatePrincipalStatisticsState(state) == nil && state.CreatedAt.Equal(state.UpdatedAt) && state.ID == 1 && state.LegacyUpperID == 0 && state.LegacyAfterID == 0 && state.LegacyExpectedRows == 0 && state.LegacyProjectedRows == 0 && state.ProjectedHead == 0 && state.Revision == 1
 		}
-		for _, table := range []string{"principal_flow_scope_observations", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly"} {
+		for _, table := range []string{"principal_flow_scope_observations", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly", "principal_statistics_minutes"} {
 			if !tables[table] {
 				proof.Initialized = false
 				continue
@@ -39,7 +39,7 @@ func capturePrincipalStatisticsCopyProof(tx *gorm.DB) (*gorm.DB, error) {
 			if table == "principal_flow_scope_observations" {
 				column = "id"
 			}
-			if table == "principal_statistics_hourly" {
+			if table == "principal_statistics_hourly" || table == "principal_statistics_minutes" {
 				column = "scope_id"
 			}
 			var heads []map[string]interface{}

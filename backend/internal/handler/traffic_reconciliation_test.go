@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,6 +50,9 @@ type trafficReadFixture struct {
 func newTrafficReadFixture(t *testing.T) trafficReadFixture {
 	t.Helper()
 	h, token := newAnnouncementTestHandlers(t)
+	if err := datastore.ReconcileTrafficReadSchema(h.db); err != nil {
+		t.Fatal(err)
+	}
 	user := model.User{ID: 99, Email: "traffic-admin@example.test", Password: "unused", Status: userStatusActive, IsAdmin: true}
 	if err := h.db.Create(&user).Error; err != nil {
 		t.Fatal(err)
@@ -209,7 +213,7 @@ func assertTrafficScopeIndexPlan(t *testing.T, f trafficReadFixture, query strin
 	usesIndex := false
 	for _, step := range plan {
 		t.Log(step.Detail)
-		if strings.Contains(step.Detail, "SEARCH traffic_records USING INDEX") {
+		if (strings.Contains(step.Detail, "SEARCH traffic_records USING INDEX") || strings.Contains(step.Detail, "SEARCH traffic_records USING COVERING INDEX")) && strings.Contains(step.Detail, "subscription_id=?") {
 			usesIndex = true
 		}
 	}

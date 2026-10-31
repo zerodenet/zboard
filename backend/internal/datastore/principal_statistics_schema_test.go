@@ -107,16 +107,16 @@ func principalStatisticsLegacy(t *testing.T, mysql bool) {
 		t.Fatal("failed recovery wrote receipt", receipts, err)
 	}
 }
-func TestSQLitePrincipalStatisticsSourcePendingCommitTogether(t *testing.T) {
+func TestSQLitePrincipalStatisticsCurrentAndMinuteCommitTogether(t *testing.T) {
 	principalStatisticsPendingAtomic(t, false)
 }
-func TestMySQLPrincipalStatisticsSourcePendingCommitTogether(t *testing.T) {
+func TestMySQLPrincipalStatisticsCurrentAndMinuteCommitTogether(t *testing.T) {
 	principalStatisticsPendingAtomic(t, true)
 }
 func principalStatisticsPendingAtomic(t *testing.T, mysql bool) {
 	db := diagnosticSchemaDB(t, mysql)
 	if err := db.Callback().Create().Before("gorm:create").Register("reject_statistics_pending", func(tx *gorm.DB) {
-		if tx.Statement.Table == "principal_statistics_pending" {
+		if tx.Statement.Table == "principal_statistics_minutes" {
 			tx.AddError(fmt.Errorf("injected durable wake failure"))
 		}
 	}); err != nil {
@@ -126,12 +126,12 @@ func principalStatisticsPendingAtomic(t *testing.T, mysql bool) {
 		return meteringstore.RefreshScope(tx, "user", 7, 3, "core", 1, "source-wake", time.Now().UTC(), "native")
 	})
 	if err == nil {
-		t.Fatal("scope committed without durable wake")
+		t.Fatal("scope committed without minute bucket")
 	}
 	if err := db.Callback().Create().Remove("reject_statistics_pending"); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"principal_flow_scope_observations", "principal_flow_scope_currents", "principal_statistics_pending"} {
+	for _, table := range []string{"principal_flow_scope_observations", "principal_flow_scope_currents", "principal_statistics_pending", "principal_statistics_minutes", "principal_statistics_hourly"} {
 		var count int64
 		if err := db.Table(table).Count(&count).Error; err != nil || count != 0 {
 			t.Fatal(table, count, err)
@@ -142,8 +142,12 @@ func principalStatisticsPendingAtomic(t *testing.T, mysql bool) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := (meteringstore.PrincipalStatistics{DB: db}).Drain(context.Background(), 200); err != nil || n != 1 {
+	if n, err := (meteringstore.PrincipalStatistics{DB: db}).Drain(context.Background(), 200); err != nil || n != 0 {
 		t.Fatal(n, err)
+	}
+	var buckets int64
+	if err := db.Table("principal_statistics_minutes").Count(&buckets).Error; err != nil || buckets != 1 {
+		t.Fatal(buckets, err)
 	}
 }
 func TestMySQLPrincipalStatisticsInvisibleIndexRefusesPreparedWorker(t *testing.T) {

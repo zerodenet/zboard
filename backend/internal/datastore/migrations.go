@@ -156,6 +156,12 @@ func RunMigrations(db *gorm.DB) error {
 	if err := preflightNodeObservationSchema(db); err != nil {
 		return err
 	}
+	if err := preflightPrincipalMinuteSchema(db); err != nil {
+		return err
+	}
+	if err := preflightCompactPeriodicSchema(db); err != nil {
+		return err
+	}
 	if err := preflightProtocolDeletionSchema(db); err != nil {
 		return err
 	}
@@ -282,6 +288,12 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileNodeAssetSchema(db); err != nil {
 		return err
 	}
+	if err := reconcilePrincipalMinuteSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileCompactPeriodicSchema(db); err != nil {
+		return err
+	}
 	if err := reconcileProtocolDeletionSchema(db); err != nil {
 		return err
 	}
@@ -404,6 +416,18 @@ func runMigrations(db *gorm.DB) error {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied > 0 {
+			continue
+		}
+		if version == principalMinuteVersion {
+			if err := reconcilePrincipalMinuteSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == compactPeriodicVersion {
+			if err := reconcileCompactPeriodicSchema(db); err != nil {
+				return err
+			}
 			continue
 		}
 		if version == historyRetentionIndexVersion {

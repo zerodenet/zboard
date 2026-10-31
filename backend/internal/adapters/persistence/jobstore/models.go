@@ -68,6 +68,8 @@ type Attempt struct {
 func (Attempt) TableName() string { return "job_attempts" }
 
 type Schedule struct {
+	CompactHistory bool   `gorm:"not null;default:false"`
+	CompactRunID   string `gorm:"size:36;not null;default:''"`
 	ID             string `gorm:"primaryKey;size:160"`
 	Owner          string `gorm:"size:160;not null"`
 	Name           string `gorm:"size:160;not null"`

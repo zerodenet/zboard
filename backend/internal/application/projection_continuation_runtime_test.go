@@ -134,8 +134,15 @@ func assertProjectionContinuation(t *testing.T, driver string) {
 	if err := db.Table("job_runs").Where("handler = ? AND state = ?", job.ID, jobs.Succeeded).Count(&succeeded).Error; err != nil {
 		t.Fatal(err)
 	}
-	if yielded != 2 || succeeded != 1 {
-		t.Fatal("bounded jobs did not yield twice and finish once", yielded, succeeded)
+	var schedule struct {
+		Runs           uint64
+		CompactHistory bool
+	}
+	if err := db.Table("job_schedules").Where("id = ?", job.ID).Take(&schedule).Error; err != nil {
+		t.Fatal(err)
+	}
+	if yielded != 0 || succeeded != 1 || schedule.Runs != 3 || !schedule.CompactHistory {
+		t.Fatal("bounded continuation did not preserve cumulative executions in compact history", yielded, succeeded, schedule)
 	}
 	var totals struct{ Raw, Used, Records int64 }
 	if err := db.Table("traffic_usage_hourly").Select("COALESCE(SUM(raw_bytes),0) AS raw,COALESCE(SUM(used_bytes),0) AS used,COALESCE(SUM(record_count),0) AS records").Scan(&totals).Error; err != nil || totals.Raw != 1203 || totals.Used != 2005 || totals.Records != 401 {

@@ -29,6 +29,7 @@ export interface TrafficTrendPoint {
   upload_bytes: number
   download_bytes: number
   used_bytes: number
+  connection_resolution_seconds?: number
   peak_connections: number | null
   record_count: number
 }

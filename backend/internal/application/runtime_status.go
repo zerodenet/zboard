@@ -75,7 +75,7 @@ func runtimeScheduleSnapshots(rows []jobs.ScheduleView) []jobrun.Snapshot {
 		if row.Owner != "system" {
 			continue
 		}
-		view := jobrun.Snapshot{ID: row.ID, Name: row.Name, Kind: "periodic", IntervalSeconds: row.Interval.Seconds(), Concurrency: 1, Runs: row.Runs, Failures: row.Failures, MissedRuns: row.MissedRuns, TimeZone: row.TimeZone, MisfirePolicy: string(row.MisfirePolicy), State: "idle", LastResult: string(row.LastState), LastStartedAt: row.LastStartedAt, LastFinishedAt: row.LastFinishedAt}
+		view := jobrun.Snapshot{CompactHistory: row.CompactHistory, ID: row.ID, Name: row.Name, Kind: "periodic", IntervalSeconds: row.Interval.Seconds(), Concurrency: 1, Runs: row.Runs, Failures: row.Failures, MissedRuns: row.MissedRuns, TimeZone: row.TimeZone, MisfirePolicy: string(row.MisfirePolicy), State: "idle", LastResult: string(row.LastState), LastStartedAt: row.LastStartedAt, LastFinishedAt: row.LastFinishedAt}
 		if view.LastResult == "" {
 			view.LastResult = "never"
 		}

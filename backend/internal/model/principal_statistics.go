@@ -58,3 +58,15 @@ type PrincipalStatisticsHourly struct {
 }
 
 func (PrincipalStatisticsHourly) TableName() string { return "principal_statistics_hourly" }
+
+// PrincipalStatisticsMinute is a peak per scope and UTC minute, not an event log.
+// The bounded minute window serves calendar edges; old trends use UTC hours.
+type PrincipalStatisticsMinute struct {
+	ScopeType   string    `gorm:"primaryKey"`
+	ScopeID     uint      `gorm:"primaryKey;autoIncrement:false"`
+	MinuteAt    time.Time `gorm:"primaryKey"`
+	Peak        uint64
+	SampleCount uint64
+}
+
+func (PrincipalStatisticsMinute) TableName() string { return "principal_statistics_minutes" }

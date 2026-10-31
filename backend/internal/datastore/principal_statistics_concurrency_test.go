@@ -3,7 +3,6 @@ package datastore_test
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -12,6 +11,7 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	gormmysql "gorm.io/driver/mysql"
@@ -40,21 +40,6 @@ func statisticsFoundRowsDB(t *testing.T, source *gorm.DB) *gorm.DB {
 	t.Cleanup(func() { _ = pool.Close() })
 	return db
 }
-func statisticsRefresh(t *testing.T, db *gorm.DB, event string, at time.Time) {
-	t.Helper()
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		return meteringstore.RefreshScope(tx, "user", 7, 3, "same-source-core", 1, event, at, "native")
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-func statisticsSeedCurrent(t *testing.T, db *gorm.DB, at time.Time) {
-	t.Helper()
-	current := meteringstore.PrincipalFlowCurrent{NodeID: 3, PrincipalKey: "statistics-concurrent-principal", UserID: 7, SubscriptionID: 9, CoreInstanceID: "same-source-core", SessionRegistryRevision: 1, ActiveFlows: 5, ObservedAt: at, UpdatedAt: at}
-	if err := db.Create(&current).Error; err != nil {
-		t.Fatal(err)
-	}
-}
 func statisticsFacts(t *testing.T, db *gorm.DB) []model.PrincipalStatisticsHourly {
 	t.Helper()
 	var out []model.PrincipalStatisticsHourly
@@ -63,153 +48,107 @@ func statisticsFacts(t *testing.T, db *gorm.DB) []model.PrincipalStatisticsHourl
 	}
 	return out
 }
-func TestMySQLPrincipalStatisticsOldRRSnapshotAndRetiredReplayUseCurrentFacts(t *testing.T) {
+func TestMySQLPrincipalMinuteConcurrentSnapshotsAndFoundRowsReplay(t *testing.T) {
 	db := diagnosticSchemaDB(t, true)
 	found := statisticsFoundRowsDB(t, db)
 	at := time.Now().UTC().Truncate(time.Millisecond)
-	statisticsSeedCurrent(t, db, at)
-	old := found.Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead})
-	if old.Error != nil {
-		t.Fatal(old.Error)
+	credential := model.ProtocolCredential{UserID: 7, SubscriptionID: 9, NodeID: 3, ProtocolEndpointID: 11, CredentialID: "bucket", PrincipalKey: "principal", Secret: "opaque", Status: "active", ExpiresAt: at.Add(time.Hour)}
+	if err := db.Create(&credential).Error; err != nil {
+		t.Fatal(err)
 	}
-	defer old.Rollback()
-	var before int64
-	if err := old.Model(&meteringstore.PrincipalFlowScopeObservation{}).Count(&before).Error; err != nil || before != 0 {
-		t.Fatal(before, err)
+	event := metering.PrincipalEvent{CoreInstanceID: "core", EventID: "snapshot", Sequence: 1, ObservedAt: at}
+	if err := (meteringstore.PrincipalCollection{DB: db}).Boundary(t.Context(), 3, event, false); err != nil {
+		t.Fatal(err)
 	}
-	statisticsRefresh(t, db, "after-snapshot", at)
-	statisticsRefresh(t, db, "pinned-anchor", at.Add(time.Second))
-	if n, err := (meteringstore.PrincipalStatistics{DB: db}).Drain(t.Context(), 200); err != nil || n != 2 {
-		t.Fatal(n, err)
+	point := metering.PrincipalObservation{PrincipalKey: "principal", ActiveFlows: 5, SessionRegistryRevision: 1, ObservedAt: at}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, conn := range []*gorm.DB{db, found} {
+		wg.Add(1)
+		go func(conn *gorm.DB) {
+			defer wg.Done()
+			errs <- (meteringstore.PrincipalCollection{DB: conn}).Observe(t.Context(), 3, event, point)
+		}(conn)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	frozen := statisticsFacts(t, db)
-	var stale int64
-	if err := old.Model(&meteringstore.PrincipalFlowScopeObservation{}).Count(&stale).Error; err != nil || stale != 0 {
-		t.Fatal("RR snapshot was not retained", stale, err)
+	if len(frozen) != 2 || frozen[0].Peak != 5 || frozen[0].SampleCount != 1 {
+		t.Fatal(frozen)
 	}
-	if err := meteringstore.RefreshScope(old, "user", 7, 3, "same-source-core", 1, "after-snapshot", at, "native"); err != nil {
-		t.Fatal("legitimate same-event replay used stale snapshot", err)
+	old := found.Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	defer old.Rollback()
+	var n int64
+	if err := old.Table("principal_flow_scope_observations").Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := (meteringstore.PrincipalCollection{DB: old}).Observe(t.Context(), 3, event, point); err != nil {
+		t.Fatal(err)
 	}
 	if err := old.Commit().Error; err != nil {
 		t.Fatal(err)
 	}
 	if after := statisticsFacts(t, db); !reflect.DeepEqual(frozen, after) {
-		t.Fatal("RR duplicate changed hourly count", frozen, after)
+		t.Fatal("duplicate snapshot changed minute/hour counters", after, frozen)
 	}
-	retention := meteringstore.PrincipalScopeRetention{DB: db, Now: func() time.Time { return at.Add(16 * 24 * time.Hour) }}
-	if n, err := retention.Retire(t.Context(), 32, 8*1024*1024); err != nil || n != 1 {
-		t.Fatal(n, err)
-	}
-	statisticsRefresh(t, found, "after-snapshot", at)
-	if after := statisticsFacts(t, db); !reflect.DeepEqual(frozen, after) {
-		t.Fatal("retired replay changed statistics", after)
-	}
-	var raw, pending int64
-	if err := db.Model(&meteringstore.PrincipalFlowScopeObservation{}).Count(&raw).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&model.PrincipalStatisticsPending{}).Count(&pending).Error; err != nil || raw != 1 || pending != 0 {
-		t.Fatal("retired replay rebuilt committed body/intent", raw, pending, err)
-	}
-	// Corrupt receipt must fail closed even when the driver counts matched rows.
-	var receipt model.PrincipalStatisticsSample
-	if err := db.Where("event_id=?", "after-snapshot").First(&receipt).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&model.PrincipalStatisticsSample{}).Where("observation_id=?", receipt.ObservationID).Update("source_digest", "changed").Error; err != nil {
-		t.Fatal(err)
-	}
-	err := found.Transaction(func(tx *gorm.DB) error {
-		return meteringstore.RefreshScope(tx, "user", 7, 3, "same-source-core", 1, "after-snapshot", at, "native")
-	})
-	if err == nil {
-		t.Fatal("found-rows accepted conflicting retained proof")
-	}
-	if after := statisticsFacts(t, db); !reflect.DeepEqual(frozen, after) {
-		t.Fatal("rejected proof changed accounting projection")
+	for _, table := range []string{"principal_flow_observations", "principal_flow_scope_observations", "principal_statistics_pending", "principal_statistics_samples"} {
+		if err := db.Table(table).Count(&n).Error; err != nil || n != 0 {
+			t.Fatal(table, n, err)
+		}
 	}
 }
-func TestMySQLPrincipalStatisticsProjectorAndDuplicateFollowOneLockOrder(t *testing.T) {
+
+func TestMySQLPrincipalBucketMaintenanceAndIngressDoNotDoubleCount(t *testing.T) {
 	db := diagnosticSchemaDB(t, true)
 	writer := statisticsFoundRowsDB(t, db)
-	projector := statisticsFoundRowsDB(t, db)
+	worker := statisticsFoundRowsDB(t, db)
 	at := time.Now().UTC().Truncate(time.Millisecond)
-	statisticsSeedCurrent(t, db, at)
-	statisticsRefresh(t, db, "concurrent-original", at)
+	c := model.ProtocolCredential{UserID: 7, SubscriptionID: 9, NodeID: 3, ProtocolEndpointID: 11, CredentialID: "bucket", PrincipalKey: "principal", Secret: "opaque", Status: "active", ExpiresAt: at.Add(time.Hour)}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy := meteringstore.PrincipalFlowScopeObservation{ScopeType: "user", ScopeID: 7, NodeID: 3, EventID: "legacy", CoreInstanceID: "old", Source: "native", ActiveFlows: 5, ObservedAt: at, CreatedAt: at}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&legacy).Error; err != nil {
+			return err
+		}
+		return meteringstore.EnqueuePrincipalStatistics(tx, legacy)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := (meteringstore.PrincipalStatistics{DB: db}).Drain(t.Context(), 200); err != nil || n != 1 {
+		t.Fatal(n, err)
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	rawLocked := make(chan struct{})
-	sampleRequested := make(chan struct{})
-	release := make(chan struct{})
-	var rawOnce, sampleOnce, releaseOnce sync.Once
-	unblock := func() { releaseOnce.Do(func() { close(release) }) }
-	defer unblock()
-	if err := projector.Callback().Query().After("gorm:query").Register("statistics_after_source", func(tx *gorm.DB) {
-		if tx.Statement.Table == "principal_flow_scope_observations" && tx.Error == nil {
-			rawOnce.Do(func() {
-				close(rawLocked)
-				select {
-				case <-release:
-				case <-ctx.Done():
-					tx.AddError(ctx.Err())
-				}
-			})
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	defer projector.Callback().Query().Remove("statistics_after_source")
-	if err := writer.Callback().Query().Before("gorm:query").Register("statistics_before_receipt", func(tx *gorm.DB) {
-		if tx.Statement.Table == "principal_statistics_samples" {
-			sampleOnce.Do(func() { close(sampleRequested) })
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	defer writer.Callback().Query().Remove("statistics_before_receipt")
-	projected := make(chan error, 1)
+	errs := make(chan error, 2)
+	go func() { _, err := (meteringstore.PrincipalBucketMaintenance{DB: worker}).Drain(ctx, 200); errs <- err }()
 	go func() {
-		n, err := (meteringstore.PrincipalStatistics{DB: projector}).Drain(ctx, 200)
-		if err == nil && n != 1 {
-			err = fmt.Errorf("projected %d, expected1", n)
-		}
-		projected <- err
+		errs <- (meteringstore.PrincipalCollection{DB: writer}).Observe(ctx, 3, metering.PrincipalEvent{CoreInstanceID: "core", EventID: "new", Sequence: 1, ObservedAt: at}, metering.PrincipalObservation{PrincipalKey: "principal", ActiveFlows: 9, SessionRegistryRevision: 1, ObservedAt: at})
 	}()
-	select {
-	case <-rawLocked:
-	case <-ctx.Done():
-		t.Fatal("projector never acquired actual raw lock", ctx.Err())
-	}
-	replayed := make(chan error, 1)
-	go func() {
-		replayed <- writer.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return meteringstore.RefreshScope(tx, "user", 7, 3, "same-source-core", 1, "concurrent-original", at, "native")
-		})
-	}()
-	select {
-	case <-sampleRequested:
-	case <-ctx.Done():
-		unblock()
-		t.Fatal("writer could not reach sample under raw->pending order", ctx.Err())
-	}
-	unblock()
-	for name, result := range map[string]<-chan error{"projector": projected, "duplicate": replayed} {
-		select {
-		case err := <-result:
-			if err != nil {
-				t.Fatal(name, err)
-			}
-		case <-ctx.Done():
-			t.Fatal(name, "did not finish", ctx.Err())
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
 		}
+	}
+	var minute model.PrincipalStatisticsMinute
+	if err := db.Where("scope_type = ? AND scope_id = ?", "user", 7).First(&minute).Error; err != nil || minute.Peak != 9 || minute.SampleCount != 2 {
+		t.Fatal(minute, err)
 	}
 	facts := statisticsFacts(t, db)
-	if len(facts) != 1 || facts[0].SampleCount != 1 || facts[0].Peak != 5 {
-		t.Fatal("concurrent duplicate changed exact statistical fact", facts)
+	var user model.PrincipalStatisticsHourly
+	for _, row := range facts {
+		if row.ScopeType == "user" {
+			user = row
+		}
 	}
-	var pending int64
-	if err := db.Model(&model.PrincipalStatisticsPending{}).Count(&pending).Error; err != nil || pending != 0 {
-		t.Fatal(pending, err)
+	if user.Peak != 9 || user.SampleCount != 2 {
+		t.Fatal(facts)
 	}
 }
 

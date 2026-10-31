@@ -6,6 +6,7 @@
         <p>按时间查看计费、上下行和连接峰值；移动指针可查看对应时间点详情。</p>
       </div>
       <div class="observability-status">
+        <span v-if="hasConnectionSamples">连接峰值按{{ points.some(point => (point.connection_resolution_seconds ?? 0) >= 3600) ? '小时' : '分钟' }}统计</span>
         <span v-if="recordCount">已汇总 {{ recordCount.toLocaleString('zh-CN') }} 条原始记录</span>
         <span v-if="truncated" class="observability-warning">当前范围数据已截断</span>
         <span v-if="snapshotAvailable && asOf">完整统计时间：<TimeBadge :value="asOf" /></span>

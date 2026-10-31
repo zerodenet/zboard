@@ -306,14 +306,18 @@ func TestNodeRemovalRefreshesSharedScopesAndRetainsHistory(t *testing.T) {
 			t.Fatal("surviving node excluded", scope)
 		}
 	}
-	var observations []meteringstore.PrincipalFlowScopeObservation
-	if err := db.Find(&observations).Error; err != nil || len(observations) != 2 {
-		t.Fatal(observations, err)
+	var minutes []model.PrincipalStatisticsMinute
+	if err := db.Find(&minutes).Error; err != nil || len(minutes) != 2 {
+		t.Fatal(minutes, err)
 	}
-	for _, row := range observations {
-		if row.ActiveFlows != 6 || row.Source != "node_deleted" || row.NodeID != 1 {
-			t.Fatal(row)
+	for _, row := range minutes {
+		if row.Peak != 6 || row.SampleCount != 1 {
+			t.Fatal("surviving scopes not reflected in minute buckets", row)
 		}
+	}
+	var scopeHistory int64
+	if err := db.Model(&meteringstore.PrincipalFlowScopeObservation{}).Count(&scopeHistory).Error; err != nil || scopeHistory != 0 {
+		t.Fatal("node removal recreated per-event scope history", scopeHistory, err)
 	}
 	if err := db.First(&history, history.ID).Error; err != nil {
 		t.Fatal("historical observation removed", err)

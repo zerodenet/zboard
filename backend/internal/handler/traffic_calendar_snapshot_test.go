@@ -137,8 +137,11 @@ func TestTrafficProductionTrendUsesBoundedPrincipalScopeProjection(t *testing.T)
 	f.capture()
 	var kathmandu trafficTrendResponse
 	f.get(t, "/api/v1/traffic/trends?from=2026-09-01&to=2026-09-01", false, f.h.TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler, &kathmandu)
-	if kathmandu.PeakConnections == nil || *kathmandu.PeakConnections != 12 || kathmandu.ConnectionSampleCount != 5 || len(kathmandu.Points) != 1 || kathmandu.Points[0].PeakConnections == nil || *kathmandu.Points[0].PeakConnections != 12 {
-		t.Fatalf("fractional calendar edges were omitted or included outside [start,end): %+v", kathmandu)
+	if kathmandu.PeakConnections == nil || *kathmandu.PeakConnections != 90 || kathmandu.ConnectionSampleCount != 5 || len(kathmandu.Points) != 1 || kathmandu.Points[0].PeakConnections == nil || *kathmandu.Points[0].PeakConnections != 90 {
+		t.Fatalf("old calendar edges must use hour precision without double counting: %+v", kathmandu)
 	}
-	assertProjectionQueries(true)
+	assertProjectionQueries(false)
+	if kathmandu.Points[0].ConnectionResolutionSeconds != 3600 {
+		t.Fatal("older metric precision hidden", kathmandu.Points)
+	}
 }
