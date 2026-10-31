@@ -50,7 +50,7 @@ func reconcileOrderFundingSchema(db *gorm.DB) error {
 		return err
 	}
 	if !db.Migrator().HasTable("order_fundings") {
-		if err := db.Exec(statements[0]).Error; err != nil {
+		if err := createHistoricalTable(db, "order_fundings", statements[0]); err != nil {
 			return err
 		}
 	}

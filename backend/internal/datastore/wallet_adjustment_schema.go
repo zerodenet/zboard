@@ -73,7 +73,7 @@ func reconcileWalletAdjustmentSchema(db *gorm.DB) error {
 	}
 	for i, table := range []string{"wallet_adjustments", "wallet_payout_results"} {
 		if !db.Migrator().HasTable(table) {
-			if err := db.Exec(statements[i]).Error; err != nil {
+			if err := createHistoricalTable(db, table, statements[i]); err != nil {
 				return err
 			}
 		}

@@ -127,7 +127,7 @@ func RunMigrations(db *gorm.DB) error {
 			return err
 		}
 		if applied > 0 {
-			if err := validateAccountSubjectSchema(db); err != nil {
+			if err := preflightAccountSubjectSchema(db); err != nil {
 				return err
 			}
 		}

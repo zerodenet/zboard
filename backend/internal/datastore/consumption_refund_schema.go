@@ -78,7 +78,7 @@ func reconcileConsumptionRefundSchema(db *gorm.DB) error {
 		return err
 	}
 	if !db.Migrator().HasTable("consumption_refunds") {
-		if err := db.Exec(statements[0]).Error; err != nil {
+		if err := createHistoricalTable(db, "consumption_refunds", statements[0]); err != nil {
 			return err
 		}
 	}

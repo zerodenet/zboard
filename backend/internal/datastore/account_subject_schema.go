@@ -26,6 +26,36 @@ var subjectReferences = map[string][]string{
 	"payment_receipts": {"resolved_by"}, "subscription_automatic_renewals": {"user_id"}, "consumption_refunds": {"user_id", "actor_id"},
 }
 
+// These domains already own the proof required to recover an interrupted,
+// unrecorded empty-table creation. Missing recorded journals remain fatal.
+var subjectTableVersions = map[string]string{
+	"wallet_accounts":                 walletSchemaVersion,
+	"payment_receipts":                paymentReceiptSchemaVersion,
+	"order_fundings":                  orderFundingSchemaVersion,
+	"wallet_adjustments":              walletAdjustmentSchemaVersion,
+	"wallet_payout_results":           walletAdjustmentSchemaVersion,
+	"order_value_budgets":             subscriptionValueSchemaVersion,
+	"subscription_value_settlements":  subscriptionValueSchemaVersion,
+	"subscription_automatic_renewals": automaticRenewalSchemaVersion,
+	"consumption_refunds":             consumptionRefundSchemaVersion,
+}
+
+// Domain preflights run before this helper. When they permit a new empty table,
+// use the current ownership contract instead of replaying an obsolete live-user
+// dependency from its original CREATE statement. Existing tables are untouched.
+func createHistoricalTable(db *gorm.DB, table, statement string) error {
+	if _, historical := subjectReferences[table]; historical && db.Migrator().HasTable("schema_migrations") {
+		var applied int64
+		if err := db.Table("schema_migrations").Where("version = ?", accountSubjectVersion).Count(&applied).Error; err != nil {
+			return err
+		}
+		if applied > 0 {
+			statement = sqliteUserReference.ReplaceAllString(statement, "REFERENCES account_subjects(id) ON DELETE RESTRICT")
+		}
+	}
+	return db.Exec(statement).Error
+}
+
 func reconcileAccountSubjectSchema(db *gorm.DB) error {
 	var applied int64
 	if err := db.Table("schema_migrations").Where("version = ?", accountSubjectVersion).Count(&applied).Error; err != nil {
@@ -65,6 +95,14 @@ func reconcileAccountSubjectSchema(db *gorm.DB) error {
 }
 
 func validateAccountSubjectSchema(db *gorm.DB) error {
+	return checkAccountSubjectSchema(db, false)
+}
+
+func preflightAccountSubjectSchema(db *gorm.DB) error {
+	return checkAccountSubjectSchema(db, true)
+}
+
+func checkAccountSubjectSchema(db *gorm.DB, allowUnappliedTables bool) error {
 	if !db.Migrator().HasTable("account_subjects") {
 		return errors.New("immutable account subjects missing; restore accounting identities before startup")
 	}
@@ -101,6 +139,15 @@ func validateAccountSubjectSchema(db *gorm.DB) error {
 			return err
 		}
 		for table, columns := range subjectReferences {
+			if allowUnappliedTables && subjectTableVersions[table] != "" && !db.Migrator().HasTable(table) {
+				var applied int64
+				if err := db.Table("schema_migrations").Where("version = ?", subjectTableVersions[table]).Count(&applied).Error; err != nil {
+					return err
+				}
+				if applied == 0 {
+					continue
+				} // Owning domain preflight must still approve recovery.
+			}
 			for _, column := range columns {
 				count := 0
 				for _, key := range keys {

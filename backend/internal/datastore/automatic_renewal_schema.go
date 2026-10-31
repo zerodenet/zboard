@@ -90,7 +90,7 @@ func reconcileAutomaticRenewalSchema(db *gorm.DB) error {
 	}
 	for i, table := range []string{"subscription_automatic_renewals", "automatic_renewal_scans"} {
 		if !db.Migrator().HasTable(table) {
-			if err := db.Exec(statements[i]).Error; err != nil {
+			if err := createHistoricalTable(db, table, statements[i]); err != nil {
 				return err
 			}
 		}

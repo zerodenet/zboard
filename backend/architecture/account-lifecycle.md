@@ -46,6 +46,10 @@ retargeted with session checks temporarily disabled and restored before pooling.
 Canonical FK names remain shared with the existing domain reconcilers. Each
 replacement keeps a temporary subject FK until the canonical FK is installed,
 then removes the temporary FK; either intermediate layout resumes after a crash.
+Financial domains retain ownership of interrupted empty-table recovery: only an
+unrecorded creation that passes the domain's evidence checks may be completed.
+Recovered tables use subject foreign keys immediately; recorded lost journals or
+missing ownership enforcement on existing tables still stop startup.
 Stop account-creation writers during schema cutover. Normal deletion keeps
 constraints enabled. SQLite rebuilds affected
 financial tables transactionally, preserving checks/indexes/triggers and checking

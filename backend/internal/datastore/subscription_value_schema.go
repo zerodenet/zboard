@@ -84,7 +84,7 @@ func reconcileSubscriptionValueSchema(db *gorm.DB) error {
 	}
 	for i, table := range []string{"order_value_budgets", "subscription_value_settlements", "subscription_value_settlement_sources"} {
 		if !db.Migrator().HasTable(table) {
-			if err := db.Exec(statements[i]).Error; err != nil {
+			if err := createHistoricalTable(db, table, statements[i]); err != nil {
 				return err
 			}
 		}

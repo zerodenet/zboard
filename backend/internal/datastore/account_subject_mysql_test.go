@@ -59,4 +59,15 @@ func TestMySQLAccountSubjectCanonicalForeignKeysResume(t *testing.T) {
 		t.Fatal("repeat restart", err)
 	}
 	assertCanonical()
+	// An existing table with lost enforcement is not an interrupted empty-table
+	// creation. Do not silently attach unchecked history to the new authority.
+	if err := db.Exec("ALTER TABLE wallet_accounts DROP FOREIGN KEY fk_wallet_accounts_user").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.RunMigrations(db); err == nil {
+		t.Fatal("missing historical ownership enforcement silently repaired")
+	}
+	if db.Migrator().HasConstraint(&model.WalletAccount{}, "User") {
+		t.Fatal("preflight mutated broken historical ownership")
+	}
 }
