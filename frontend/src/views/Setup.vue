@@ -1,5 +1,6 @@
 <template>
   <div class="setup-shell">
+    <AppearanceSwitch floating />
     <aside class="setup-aside">
       <div class="auth-brand"><span class="brand-mark">Z</span><span>zboard</span></div>
       <div>
@@ -91,6 +92,7 @@
 </template>
 
 <script setup lang="ts">
+import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { installZboard } from '../api/client'
@@ -221,7 +223,7 @@ async function submit() {
 
 <style scoped>
 .setup-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 38%) minmax(0, 1fr); background: var(--page); }
-.setup-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 40px; overflow: hidden; padding: 46px; color: var(--sidebar-text); background: var(--sidebar); }
+.setup-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 40px; overflow: hidden; padding: 46px; color: var(--text-inverse); background: var(--auth-aside-background); }
 .setup-aside::before { content: ''; position: absolute; inset: 0; opacity: .25; background-image: linear-gradient(var(--auth-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--auth-grid-line) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom right, var(--color-black), transparent 76%); pointer-events: none; }.setup-aside > * { position: relative; z-index: 1; }
 .setup-aside h1 { margin: 0 0 14px; color: var(--text-inverse); font-size: clamp(32px, 4vw, 48px); line-height: 1.12; }.setup-aside > div > p:last-child { max-width: 500px; color: var(--setup-muted-soft); line-height: 1.7; }
 .setup-steps { display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; }.setup-steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; opacity: .48; }.setup-steps li > span { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--setup-muted-strong); border-radius: 50%; font-size: 12px; }.setup-steps li div { display: grid; gap: 2px; }.setup-steps strong { color: var(--info-soft); font-size: 13px; }.setup-steps small { color: var(--setup-muted); }.setup-steps li.active, .setup-steps li.complete { opacity: 1; }.setup-steps li.active > span { border-color: var(--focus-border); background: var(--primary); color: var(--text-inverse); }.setup-steps li.complete > span { border-color: var(--success-accent); color: var(--success-accent-soft); }

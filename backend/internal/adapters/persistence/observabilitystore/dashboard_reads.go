@@ -10,19 +10,19 @@ import (
 // Current state deliberately uses the authority pool and never reads history.
 func loadDashboardCurrentOperations(db *gorm.DB, now time.Time, operational *dashboardOperationalAggregate) error {
 	if err := db.Raw(`SELECT
- (SELECT COUNT(*) FROM nodes) AS nodes_total,
- (SELECT COUNT(*) FROM nodes WHERE is_enabled = ?) AS nodes_enabled,
- (SELECT COUNT(*) FROM nodes WHERE is_enabled = ? AND connector_last_seen_at >= ?) AS connector_online,
- (SELECT COUNT(*) FROM nodes WHERE ssh_verified_at IS NOT NULL AND ssh_host_key_fingerprint <> '') AS ssh_verified,
- (SELECT COUNT(*) FROM nodes WHERE traffic_secret_prefix <> '' AND traffic_secret_revoked_at IS NULL) AS traffic_ready,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+`) AS nodes_total,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND is_enabled = ?) AS nodes_enabled,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND is_enabled = ? AND connector_last_seen_at >= ?) AS connector_online,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND ssh_verified_at IS NOT NULL AND ssh_host_key_fingerprint <> '') AS ssh_verified,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND traffic_secret_prefix <> '' AND traffic_secret_revoked_at IS NULL) AS traffic_ready,
  (SELECT COUNT(*) FROM principal_flow_scope_currents WHERE scope_type = ?) AS observed_scopes,
  (SELECT COUNT(*) FROM principal_flow_scope_currents WHERE scope_type = ? AND active_flows > 0) AS active_subscriptions,
  (SELECT COALESCE(SUM(active_flows),0) FROM principal_flow_scope_currents WHERE scope_type = ?) AS active_flows,
- (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND node_id NOT IN (SELECT id FROM nodes WHERE lifecycle_status = 'archived')) AS protocol_endpoints,
- (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND is_active = ?) AS active_protocol_endpoints,
+ (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND node_id IN (SELECT id FROM nodes WHERE `+currentNodeSQL+`)) AS protocol_endpoints,
+ (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND is_active = ? AND node_id IN (SELECT id FROM nodes WHERE `+currentNodeSQL+`)) AS active_protocol_endpoints,
  (SELECT COUNT(*) FROM plans WHERE is_active = ?) AS published_plans,
  (SELECT COUNT(*) FROM tickets WHERE status IN (?,?)) AS pending_tickets,
- (SELECT COUNT(*) FROM protocol_deployments WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = ?) AS unresolved_deployments`,
+ (SELECT COUNT(*) FROM protocol_deployments WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = ? AND `+currentDeploymentEndpointSQL+`) AS unresolved_deployments`,
 		true, true, now.Add(-2*time.Minute),
 		"subscription", "subscription", "subscription", true, true, "open", "pending_admin", "failed").Scan(operational).Error; err != nil {
 		return err

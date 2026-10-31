@@ -1,8 +1,8 @@
 :root {
   font-family: Inter, "SF Pro Text", "Segoe UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
   --font-mono: Consolas, "Cascadia Mono", "Liberation Mono", monospace;
-  color: #172033;
-  background: #f3f5f8;
+  color: var(--text);
+  background: var(--page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
@@ -119,6 +119,8 @@
   --neutral-avatar: #64748b;
   --neutral-dot: #d0d5dd;
   --neutral-divider: #b8c2d0;
+
+  --auth-aside-background: #182032;
 
   /* Terminal */
   --terminal-bg: #0b1020;
@@ -289,4 +291,62 @@
   --sidebar-user: #f2f3f5;
   --sidebar-badge: #9ec2ff;
   --sidebar-badge-bg: #25354f;
+
+  /* Legacy pages, charts and shared components share the semantic palette. */
+  --surface-raised: #242830;
+  --surface-muted: #242830;
+  --surface-neutral: #242830;
+  --surface-selected: #29263d;
+  --surface-selection: #29263d;
+  --surface-batch: #252338;
+  --surface-canvas: #191c21;
+  --surface-preview: #242830;
+  --surface-track: #343a43;
+  --subtle: #a5adba;
+  --line-soft: #32373f;
+  --line-subtle: #2b3038;
+  --line-tinted: #45405e;
+  --scrollbar: #596270;
+  --scrollbar-hover: #8792a2;
+  --primary-strong: #b9afff;
+  --primary-bright: #b8aaff;
+  --primary-deep: #8170df;
+  --primary-soft: #29243f;
+  --primary-soft-alt: #252238;
+  --primary-muted: #393155;
+  --primary-border: #594c89;
+  --primary-on-dark: #c7beff;
+  --focus-ring: rgb(190 181 255 / .2);
+  --success-soft: #163429;
+  --success-soft-bright: #214637;
+  --success-border: #36694e;
+  --warning-soft: #382b1c;
+  --warning-border: #73552f;
+  --danger: #f58278;
+  --danger-bright: #ff9a90;
+  --danger-soft: #3c2428;
+  --danger-hover: #512c30;
+  --danger-border: #784247;
+  --info-soft: #1e2d43;
+  --info-soft-alt: #202c40;
+  --info-canvas: #1a2332;
+  --info-strong: #a9caff;
+  --info-emphasis: #a9caff;
+  --info-border: #3d5d83;
+  --info-border-strong: #5a7eaf;
+  --code-text: #cab3ff;
+  --code-soft: #2d2543;
+  --admin-accent: #bea0ff;
+  --separator: #596270;
+  --neutral-dot: #596270;
+  --neutral-divider: #596270;
+  --surface-glass: rgb(21 23 27 / .92);
+  --surface-glass-strong: rgb(29 32 37 / .96);
+  --surface-glass-public: rgb(21 23 27 / .9);
+  --surface-glass-border: rgb(53 58 67 / .85);
+  --dialog-overlay: rgb(0 0 0 / .65);
+  --dialog-scrim: rgb(0 0 0 / .65);
+  --shadow-md: 0 12px 32px rgb(0 0 0 / .35);
+  --public-footer-muted: #a7aeb9;
+  --auth-aside-background: #11151c;
 }

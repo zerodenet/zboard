@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHistory, isNavigationFailure, NavigationFailureType, type RouteLocationNormalized } from 'vue-router'
 import App from './App.vue'
+import { useAppearance } from './theme/appearance'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
 import { installAuthSessionNavigation } from './utils/authSessionNavigation'
@@ -32,6 +33,8 @@ import UiSection from './components/UiSection.vue'
 import UiTabs from './components/UiTabs.vue'
 import FormField from './components/FormField.vue'
 import TimeBadge from './components/TimeBadge.vue'
+
+useAppearance()
 
 const router = createRouter({
   history: createWebHistory(),

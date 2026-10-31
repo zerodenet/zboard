@@ -44,12 +44,13 @@
     </PageAlert>
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing" :density="density" show-density @update:density="setDensity">
       <template #filters>
-        <WorkbenchFilterBar v-if="!orderingOpen" :active="Boolean(filters.q || filters.protocol || filters.active || filters.node || filters.group)" @clear="resetFilters">
+        <WorkbenchFilterBar v-if="!orderingOpen" :active="Boolean(filters.q || filters.protocol || filters.active || filters.node || filters.group || filters.deployment)" @clear="resetFilters">
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="服务名称或对外地址" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.protocol" label="协议类型" :options="protocolFilterOptions" @apply="applyFilters" />
           <WorkbenchFilterLookup v-model="filters.node" kind="node" label="服务器" placeholder="搜索服务器" @apply="applyFilters" />
           <WorkbenchFilterLookup v-model="filters.group" kind="group" label="节点组" placeholder="搜索节点组" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.active" label="服务状态" :options="activeFilterOptions" @apply="applyFilters" />
+          <WorkbenchFilterSelect v-model="filters.deployment" label="配置发布" :options="deploymentFilterOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
       <template #actions><UiButton v-if="!orderingOpen" :variant="groupedByNode ? 'secondary' : 'ghost'" size="sm" type="button" @click="setGroupedView(!groupedByNode)"><UiIcon name="nodes" />{{ groupedByNode ? '节点分组' : '按节点分组' }}</UiButton><RouterLink v-if="!orderingOpen" class="button button-ghost button-sm" :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看发布任务</RouterLink></template>
@@ -88,7 +89,7 @@
             </template>
           </tbody>
       </DataTable>
-      <EmptyState v-else-if="!initialLoading && !loading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.node || filters.group ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.node || filters.group ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.node && !filters.group"  type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!initialLoading && !loading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.node || filters.group || filters.deployment ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.node || filters.group || filters.deployment ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.node && !filters.group && !filters.deployment"  type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
       <template #footer><TablePager variant="stripe" :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
@@ -392,6 +393,8 @@ const protocolOptions = computed(() => protocols.map(value => ({
   disabled: !protocolCapabilities[value]?.supported,
 })))
 const protocolFilterOptions = [{ label: '全部协议', value: '' }, ...protocols.map(value => ({ label: protocolLabel(value), value }))]
+const deploymentFilterOptions = [{ label: '全部发布状态', value: '' }, { label: '发布失败', value: 'failed' }, { label: '发布中', value: 'running' }, { label: '等待发布', value: 'queued' }, { label: '发布成功', value: 'succeeded' }, { label: '尚未发布', value: 'never' }]
+function deploymentFilter(value: unknown) { return deploymentFilterOptions.some(option => option.value === value) ? String(value) : '' }
 const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label: '已启用', value: 'active' }, { label: '已停用', value: 'inactive' }]
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
@@ -430,6 +433,7 @@ const filters = reactive({
   q: typeof route.query.q === 'string' ? route.query.q : '',
   protocol: typeof route.query.protocol === 'string' ? route.query.protocol : '',
   active: typeof route.query.active === 'string' ? route.query.active : '',
+  deployment: deploymentFilter(route.query.deployment),
 })
 type ProtocolSortField = 'sort_order' | 'id' | 'name' | 'node_id' | 'protocol' | 'multiplier' | 'updated_at'
 const protocolSortFields = new Set<ProtocolSortField>(['sort_order', 'id', 'name', 'node_id', 'protocol', 'multiplier', 'updated_at'])
@@ -566,6 +570,7 @@ const { items: endpoints, total, loading, initialLoading, refreshing, error, loa
     q: filters.q || undefined,
     protocol: filters.protocol || undefined,
     active: filters.active ? filters.active === 'active' : undefined,
+    ...(filters.deployment ? { deploymentStatus: filters.deployment } : {}),
     serviceKind: serviceKind.value,
     nodeId: filters.node || undefined, groupId: filters.group || undefined,
     sort: groupedByNode.value ? 'node_id' : sortField.value,
@@ -598,7 +603,7 @@ const {
   togglePage: toggleCurrentEndpointPage,
   selectAllMatching,
   clear: clearSelection,
-} = useSelectionScope({ items: computed(()=>endpoints.value.filter(item=>item.service_kind!=='forward')), total: computed(()=>serviceKind.value === 'listener' && !filters.node && !filters.group ? total.value : endpoints.value.filter(item=>item.service_kind!=='forward').length), key: endpoint => endpoint.id })
+} = useSelectionScope({ items: computed(()=>endpoints.value.filter(item=>item.service_kind!=='forward')), total: computed(()=>serviceKind.value === 'listener' && !filters.node && !filters.group && !filters.deployment ? total.value : endpoints.value.filter(item=>item.service_kind!=='forward').length), key: endpoint => endpoint.id })
 const { items: deployments, total: deploymentTotal, loading: deploymentLoading, error: deploymentError, load: loadDeployments } = useRemoteTable<any>({
   offset: deploymentOffset,
   limit: deploymentLimit,
@@ -827,6 +832,7 @@ async function syncURL(replace = false) {
     ...(filters.node ? {node:String(filters.node)} : {}), ...(filters.group ? {group:String(filters.group)} : {}),
     ...(filters.protocol ? { protocol: filters.protocol } : {}),
     ...(filters.active ? { active: filters.active } : {}),
+    ...(filters.deployment ? { deployment: filters.deployment } : {}),
     ...(groupedByNode.value ? { view: 'nodes' } : {}),
     ...(sortField.value !== 'sort_order' ? { sort: sortField.value } : {}),
     ...(sortField.value !== 'sort_order' || sortDirection.value !== 'asc' ? { direction: sortDirection.value } : {}),
@@ -840,7 +846,7 @@ async function syncURL(replace = false) {
   await (replace ? router.replace(location) : router.push(location))
 }
 async function applyFilters() { clearSelection(); offset.value = 0; await syncURL(); await refresh() }
-async function resetFilters() { Object.assign(filters, { q: '', protocol: '', active: '', node:0,group:0 }); await applyFilters() }
+async function resetFilters() { Object.assign(filters, { q: '', protocol: '', active: '', node:0,group:0, deployment:'' }); await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setGroupedView(grouped: boolean) { groupedByNode.value = grouped; offset.value = 0; clearSelection(); await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, protocolSortFields, 'sort_order'); const currentField = groupedByNode.value ? 'node_id' : sortField.value; const currentDirection = groupedByNode.value ? 'asc' : sortDirection.value; sortDirection.value = nextSortDirection(currentField, next, currentDirection, next === 'name' || next === 'protocol' || next === 'node_id' ? 'asc' : 'desc'); sortField.value = next; groupedByNode.value = false; offset.value = 0; clearSelection(); await syncURL(); await refresh() }
@@ -1430,6 +1436,7 @@ watch(() => route.fullPath, async () => {
     group: Number(route.query.group) || 0,
     protocol: typeof route.query.protocol === 'string' ? route.query.protocol : '',
     active: typeof route.query.active === 'string' ? route.query.active : '',
+    deployment: deploymentFilter(route.query.deployment),
   }
   const nextGroupedByNode = route.query.view === 'nodes'
   const nextSortField = resolveSortField(route.query.sort, protocolSortFields, 'sort_order')

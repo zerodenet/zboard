@@ -19,6 +19,9 @@ import { computed } from 'vue'
 const props = defineProps<{ name: string }>()
 
 const icons: Record<string, string[]> = {
+  sun: ['M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8', 'M12 2v2', 'M12 20v2', 'M2 12h2', 'M20 12h2', 'm5 5 1.5 1.5', 'm17.5 17.5 1.5 1.5', 'm5 19 1.5-1.5', 'm17.5 6.5 1.5-1.5'],
+  moon: ['M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z'],
+  monitor: ['M3 4h18v13H3z', 'M8 21h8', 'M12 17v4'],
   dashboard: ['M4 4h6v6H4z', 'M14 4h6v10h-6z', 'M4 14h6v6H4z', 'M14 18h6v2h-6z'],
   nodes: ['M5 4h14v5H5z', 'M5 15h14v5H5z', 'M8 6.5h.01', 'M8 17.5h.01', 'M12 9v6'],
   plans: ['M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z', 'M4.5 7.7 12 12l7.5-4.3', 'M12 12v9'],

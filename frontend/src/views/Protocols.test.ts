@@ -38,9 +38,9 @@ const Button = defineComponent({ template: '<button><slot /></button>' })
 const Select = defineComponent({ name: 'UiSelect', props: ['modelValue', 'options'], emits: ['update:modelValue'], template: '<select />' })
 const Checkbox = defineComponent({ name: 'UiCheckbox', props: ['modelValue'], emits: ['update:modelValue'], template: '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', !modelValue)" />' })
 const Dialog = defineComponent({ props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" :requestClose="() => {}" /></div>' })
-async function render() {
+async function render(query: Record<string, string> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: Protocols }] })
-  await router.push('/')
+  await router.push({ path: '/', query })
   await router.isReady()
   const wrapper = shallowMount(Protocols, { global: { plugins: [router], renderStubDefaultSlot: true, stubs: {
     FormField, NodeGroupMembershipEditor, NodeGroupLookup, UiButton: Button, ModalDialog: Dialog, UiInput: true, UiSelect: Select, UiTextarea: true, UiCheckbox: Checkbox, PageRefreshButton: true, TimeBadge: true,
@@ -422,5 +422,20 @@ it('keeps applied configuration separate from pending existing connection revoca
   expect(wrapper.text()).toContain('配置已应用；旧连接撤权待核验')
   expect(wrapper.text()).not.toContain('发布失败')
   expect(vi.mocked(deployProtocolEndpoint)).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+
+it('opens the dashboard failure link with a visible filter and can clear it', async () => {
+  const wrapper = await render({ deployment: 'failed' })
+  expect(fetchProtocolEndpointsPage).toHaveBeenLastCalledWith(expect.objectContaining({ deploymentStatus: 'failed' }), expect.anything())
+  const filter = wrapper.findAllComponents({ name: 'WorkbenchFilterSelect' }).find(item => item.attributes('label') === '配置发布' || item.props('label') === '配置发布')
+  expect(filter).toBeTruthy()
+  const state = (wrapper.vm as any).$.setupState
+  expect(state.filters.deployment).toBe('failed')
+  await state.resetFilters()
+  await flushPromises()
+  expect(vi.mocked(fetchProtocolEndpointsPage).mock.calls.at(-1)![0]).not.toHaveProperty('deploymentStatus')
+  expect(wrapper.vm.$route.query.deployment).toBeUndefined()
   wrapper.unmount()
 })

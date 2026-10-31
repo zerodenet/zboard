@@ -24,7 +24,7 @@
           <AdminQuickSearch />
           <nav class="topbar-breadcrumb" aria-label="当前位置"><span class="topbar-context">{{ currentSection }}</span><span class="topbar-breadcrumb-separator" aria-hidden="true">/</span><strong>{{ currentTitle }}</strong></nav>
         </div>
-        <DropdownMenuRoot>
+        <div class="topbar-actions"><AppearanceSwitch /><DropdownMenuRoot>
           <DropdownMenuTrigger as-child>
             <button type="button" class="topbar-account-trigger" aria-label="账户菜单" :title="app.user.email || '账户菜单'">
               <span class="topbar-account-avatar" aria-hidden="true">{{ userInitial }}</span>
@@ -42,7 +42,7 @@
               <DropdownMenuItem class="ui-dropdown-item" @select="logout"><UiIcon name="logout" />退出登录</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenuPortal>
-        </DropdownMenuRoot>
+        </DropdownMenuRoot></div>
       </header>
       <AdminPageNavigation v-if="mobile" class="mobile-section-navigation" />
       <nav v-if="returnTarget" class="context-return-bar" aria-label="跨资源返回">
@@ -59,6 +59,7 @@
 import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from 'reka-ui'
+import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import AdminNavigation from '../components/AdminNavigation.vue'
 import AdminPageNavigation from '../components/AdminPageNavigation.vue'
 import NavigationNotice from '../components/NavigationNotice.vue'
@@ -95,6 +96,7 @@ function logout() { app.clear(); router.push('/') }
 </script>
 
 <style scoped>
+.topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
 .admin-shell { grid-template-columns: 248px minmax(0, 1fr); background: var(--background); }
 .admin-sidebar { height: 100dvh; color: var(--foreground); background: var(--surface-subtle); border-right-color: var(--border); }
 .admin-sidebar .brand-block { min-height: 64px; padding: 11px 16px; border-color: var(--border); }

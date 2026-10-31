@@ -673,7 +673,7 @@
 
 .storefront-sku-grid > button.active .storefront-sku-grid__check {
   border-color: var(--primary);
-  color: var(--text-inverse);
+  color: var(--primary-foreground);
   background: var(--primary);
 }
 
@@ -848,7 +848,7 @@
 
 .purchase-checkout__steps .active span {
   border-color: var(--primary);
-  color: var(--text-inverse);
+  color: var(--primary-foreground);
   background: var(--primary);
 }
 

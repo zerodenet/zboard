@@ -40,7 +40,7 @@
 .commerce-subscription-grid > button,.commerce-sku-choice-grid > button { position: relative; display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); color: var(--text); background: var(--surface); text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
 .commerce-subscription-grid > button:hover,.commerce-sku-choice-grid > button:hover { border-color: var(--primary-border); background: var(--surface-soft); }
 .commerce-subscription-grid > button.selected,.commerce-sku-choice-grid > button.selected { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 1px var(--primary); }
-.commerce-selection-marker { position: absolute; right: 12px; top: 12px; width: 22px; height: 22px; display: none; place-items: center; border-radius: 50%; color: var(--text-inverse); background: var(--primary); font-size: 11px; }
+.commerce-selection-marker { position: absolute; right: 12px; top: 12px; width: 22px; height: 22px; display: none; place-items: center; border-radius: 50%; color: var(--primary-foreground); background: var(--primary); font-size: 11px; }
 .selected > .commerce-selection-marker { display: grid; }
 .commerce-subscription-grid > button > div { display: grid; gap: 3px; padding-right: 28px; }
 .commerce-subscription-grid strong { font-size: 13px; }
