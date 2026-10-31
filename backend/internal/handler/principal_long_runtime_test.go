@@ -239,7 +239,7 @@ func TestMySQLPrincipalRuntimeDuplicateUsesCurrentReadAfterOldRRSnapshot(t *test
 		t.Fatal("duplicate replay rewrote current observation", err)
 	}
 	var count int64
-	if err := h.db.Model(&meteringstore.PrincipalFlowObservation{}).Where("node_id = ?", c.NodeID).Count(&count).Error; err != nil || count != 1 {
-		t.Fatal("duplicate acquired a second observation", count, err)
+	if err := h.db.Model(&meteringstore.PrincipalFlowObservation{}).Where("node_id = ?", c.NodeID).Count(&count).Error; err != nil || count != 0 {
+		t.Fatal("new ingress unexpectedly recreated raw observations", count, err)
 	}
 }

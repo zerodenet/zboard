@@ -64,13 +64,13 @@ func persistReportReceipts(tx *gorm.DB, records []model.TrafficRecord) error {
 			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("node_id = ? AND report_id IN ?", node, ids).Order("report_id").Find(&stored).Error; err != nil {
 				return err
 			}
-			actual := make(map[uint]model.MeteringReportReceipt, len(stored))
+			actual := make(map[string]model.MeteringReportReceipt, len(stored))
 			for _, row := range stored {
-				actual[row.TrafficRecordID] = row
+				actual[row.ReportID] = row
 			}
 			for _, row := range chunk {
-				found, ok := actual[row.TrafficRecordID]
-				if !ok || found.NodeID != row.NodeID || found.ReportID != row.ReportID || found.ProtocolEndpointID != row.ProtocolEndpointID {
+				found, ok := actual[row.ReportID]
+				if !ok || found.TrafficRecordID != row.TrafficRecordID || found.NodeID != row.NodeID || found.ReportID != row.ReportID || found.ProtocolEndpointID != row.ProtocolEndpointID {
 					return ErrReportReceiptConflict
 				}
 			}
@@ -115,7 +115,7 @@ func readReportReceipts(tx *gorm.DB, nodeID uint, ids []string) ([]model.Meterin
 	var legacy []model.TrafficRecord
 	// The existing unique node/report index resolves old collation semantics.
 	// No Meta, amount, per-connection detail or timestamps are loaded here.
-	if err := tx.Select("id,node_id,report_id,protocol_endpoint_id").Where("node_id = ? AND report_id IN ?", nodeID, wanted).Find(&legacy).Error; err != nil {
+	if err := tx.Select("id,node_id,report_id,protocol_endpoint_id").Where("node_id = ? AND report_id IN ?", nodeID, wanted).Where("(event_type IS NULL OR event_type <> ?)", nativeSettlementType).Find(&legacy).Error; err != nil {
 		return nil, err
 	}
 	byLedger := make(map[uint]bool, len(rows))

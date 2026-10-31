@@ -37,6 +37,8 @@ type RecordsSnapshot struct {
 // TrafficRecordSummary is the explicit public raw-page projection. Full reads
 // keep TrafficRecord, including its accounting evidence and provenance fields.
 type TrafficRecordSummary struct {
+	IsAggregate             bool      `json:"is_aggregate,omitempty"`
+	RecordCount             int64     `json:"record_count,omitempty"`
 	ID                      uint      `json:"id"`
 	UserID                  uint      `json:"user_id"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty"`

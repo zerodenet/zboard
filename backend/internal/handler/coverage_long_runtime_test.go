@@ -89,13 +89,18 @@ func assertCoverageLongRuntime(t *testing.T, h *handlers, c model.ProtocolCreden
 	}
 	assertAccountingTotal(t, h, c.SubscriptionID, 60, subStatusActive)
 	var facts []model.TrafficRecord
-	if err := h.db.Where("subscription_id = ?", c.SubscriptionID).Find(&facts).Error; err != nil || len(facts) != 2 {
+	if err := h.db.Where("subscription_id = ?", c.SubscriptionID).Find(&facts).Error; err != nil || len(facts) == 0 {
 		t.Fatal("replay changed authoritative facts", len(facts), err)
 	}
+	var reports int64
 	for _, fact := range facts {
-		if !strings.Contains(fact.Meta, coreA) {
-			t.Fatal("financial proof core was rewritten")
+		reports += fact.RecordCount
+		if !fact.IsAggregate || strings.Contains(fact.Meta, coreA) {
+			t.Fatal("minute settlement retained runtime bodies")
 		}
+	}
+	if reports != 2 {
+		t.Fatal("accepted contribution count changed", reports)
 	}
 }
 

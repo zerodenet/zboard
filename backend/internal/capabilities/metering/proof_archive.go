@@ -17,6 +17,11 @@ var ErrProofReadBudget = errors.New("full metering evidence exceeds its read bud
 // preparation use this same definition; material storage is the only omission.
 func ProofFactDigest(record TrafficRecord) string {
 	record.Meta = ""
+	// Existing proof digests predate minute settlement. A legacy count of one
+	// is implicit and must not change an already sealed financial identity.
+	if !record.IsAggregate {
+		record.RecordCount = 0
+	}
 	record.At = record.At.UTC()
 	record.CreatedAt = record.CreatedAt.UTC()
 	record.UpdatedAt = record.UpdatedAt.UTC()

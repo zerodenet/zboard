@@ -156,6 +156,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := preflightNodeObservationSchema(db); err != nil {
 		return err
 	}
+	if err := preflightNativeSettlementSchema(db); err != nil {
+		return err
+	}
 	if err := preflightPrincipalMinuteSchema(db); err != nil {
 		return err
 	}
@@ -224,6 +227,14 @@ func RunMigrations(db *gorm.DB) error {
 	}
 	if err := preflightWalletSchema(db); err != nil {
 		return err
+	}
+	// A stopped 0078 DDL may have committed ledger columns before the pending
+	// deltas. Repair that owned partial layout before any hourly recovery reads
+	// it; a fresh pre-0078 installation still follows normal migration order.
+	if db.Migrator().HasColumn("traffic_records", "is_aggregate") {
+		if err := reconcileNativeSettlementSchema(db); err != nil {
+			return err
+		}
 	}
 	if err := runMigrations(db); err != nil {
 		return err
@@ -371,6 +382,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileHistoryRetentionIndexes(db); err != nil {
 		return err
 	}
+	if err := reconcileNativeSettlementSchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -416,6 +430,12 @@ func runMigrations(db *gorm.DB) error {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied > 0 {
+			continue
+		}
+		if version == nativeSettlementVersion {
+			if err := reconcileNativeSettlementSchema(db); err != nil {
+				return err
+			}
 			continue
 		}
 		if version == principalMinuteVersion {

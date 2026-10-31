@@ -541,7 +541,7 @@ func assertPlanQuotaSyncMeteringRace(t *testing.T, fixture func(*testing.T) orde
 				t.Fatalf("sync lost original accounting or original cycle %+v", after)
 			}
 			var facts []model.TrafficRecord
-			if err := f.db.Where("node_id = ? AND report_id = ?", event.NodeID, event.EventID).Find(&facts).Error; err != nil || len(facts) != 1 || facts[0].RawBytes != 25 || facts[0].UsedBytes != 25 {
+			if err := f.db.Where("id IN (?)", f.db.Model(&model.MeteringReportReceipt{}).Select("traffic_record_id").Where("node_id = ? AND report_id = ?", event.NodeID, event.EventID)).Find(&facts).Error; err != nil || len(facts) != 1 || facts[0].RawBytes != before.FlowUsed+25 || facts[0].UsedBytes != before.FlowUsed+25 || facts[0].RecordCount != 2 {
 				t.Fatalf("duplicate/lost metering ledger %+v %v", facts, err)
 			}
 			var invalid *commerce.ValidationError

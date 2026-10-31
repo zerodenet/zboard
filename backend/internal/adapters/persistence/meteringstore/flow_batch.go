@@ -125,12 +125,17 @@ func (s *flowBatch) recordedEndpoint(tx *gorm.DB, key zeroFlowReportKey) (uint, 
 	return records[0].ProtocolEndpointID, true, nil
 }
 
-func (s *flowBatch) appendRecord(tx *gorm.DB, record model.TrafficRecord) error {
+func (s *flowBatch) appendRecord(tx *gorm.DB, record model.TrafficRecord, anchor time.Time) error {
 	if s.batchReports {
 		s.records = append(s.records, record)
 	} else {
 		// Preserve database-equivalent duplicates later in this same batch.
-		if err := tx.Create(&record).Error; err != nil {
+		if err := storeNativeSettlement(tx, &record, anchor); err != nil {
+			return err
+		}
+		// Database-equivalent IDs later in this MySQL batch must see the original
+		// report receipt even though the stored ledger row now represents a minute.
+		if err := persistReportReceipts(tx, []model.TrafficRecord{record}); err != nil {
 			return err
 		}
 	}
@@ -181,15 +186,24 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 	// Ledger rows and the final balance commit together. Chunk inserts to keep
 	// SQL parameter counts bounded on both supported database engines.
 	if len(s.records) > 0 {
-		if err := tx.CreateInBatches(&s.records, 100).Error; err != nil {
+		anchors := make(map[uint]time.Time, len(s.subscriptions))
+		for id, sub := range s.subscriptions {
+			anchors[id] = sub.StartAt
+		}
+		if err := storeNativeSettlementBatch(tx, s.records, anchors); err != nil {
 			return err
 		}
 		// SQLite defers inserts to this boundary. Use the copies populated
 		// with real ledger IDs when persisting daily projection intents.
 		s.usageRecords = s.records
 	}
-	if err := RecordUsageProjections(tx, s.usageRecords); err != nil {
+	if err := EnqueueUsageProjections(tx, s.usageRecords); err != nil {
 		return err
+	}
+	if s.batchReports {
+		if err := persistReportReceipts(tx, s.usageRecords); err != nil {
+			return err
+		}
 	}
 	subscriptionIDs := make([]uint, 0, len(s.dirtySubscriptions))
 	for id := range s.dirtySubscriptions {

@@ -12,11 +12,16 @@ type MeteringUsageProjectionPending struct {
 	CreatedAt          time.Time `gorm:"not null"`
 	// False on pre-0054 intents: their hourly delta was already written by
 	// the synchronous accounting path. New facts explicitly set this true.
-	HourlyPending  bool       `gorm:"not null;default:false"`
-	UserID         uint       `gorm:"not null;default:0"`
-	SubscriptionID uint       `gorm:"not null;default:0"`
-	NodeID         uint       `gorm:"not null;default:0"`
-	RecordAt       *time.Time // Actual projected UTC hour; raw time remains in TrafficRecord.
+	HourlyPending      bool       `gorm:"not null;default:false"`
+	UserID             uint       `gorm:"not null;default:0"`
+	SubscriptionID     uint       `gorm:"not null;default:0"`
+	NodeID             uint       `gorm:"not null;default:0"`
+	DeltaRawBytes      int64      `gorm:"not null;default:0;-:migration"`
+	DeltaUploadBytes   int64      `gorm:"not null;default:0;-:migration"`
+	DeltaDownloadBytes int64      `gorm:"not null;default:0;-:migration"`
+	DeltaUsedBytes     int64      `gorm:"not null;default:0;-:migration"`
+	DeltaRecordCount   int64      `gorm:"not null;default:0;-:migration"`
+	RecordAt           *time.Time // Actual projected UTC hour; raw time remains in TrafficRecord.
 }
 
 func (MeteringUsageProjectionPending) TableName() string {

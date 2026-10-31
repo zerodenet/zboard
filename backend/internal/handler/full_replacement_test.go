@@ -339,7 +339,7 @@ func TestFullReplacementOldFlowOnlyConsumesClosedQuota(t *testing.T) {
 		t.Fatal("late old flow consumed new service", used, sub.Status)
 	}
 	var records []model.TrafficRecord
-	if err := f.db.Where("subscription_id = ? AND report_id = ?", f.subscription, "late-old-flow").Find(&records).Error; err != nil || len(records) != 1 || records[0].RawBytes != 30 || records[0].UsedBytes != 20 {
+	if err := f.db.Where("id IN (?)", f.db.Model(&model.MeteringReportReceipt{}).Select("traffic_record_id").Where("node_id = ? AND report_id = ?", event.NodeID, event.EventID)).Find(&records).Error; err != nil || len(records) != 1 || records[0].RawBytes != 110 || records[0].UsedBytes != 100 || records[0].RecordCount != 2 {
 		t.Fatal("raw/charged late usage lost or duplicated", records, err)
 	}
 	var old model.ClosedEntitlement

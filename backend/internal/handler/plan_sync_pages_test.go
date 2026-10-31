@@ -458,7 +458,7 @@ func assertPlanSyncPagesMeteringRace(t *testing.T, base orderFixture) {
 	}
 	assertPlanSyncPagedRows(t, f, false, true, quota, 25)
 	var records int64
-	if err := f.db.Model(&model.TrafficRecord{}).Where("report_id = ?", event.EventID).Count(&records).Error; err != nil || records != 1 {
+	if err := f.db.Model(&model.MeteringReportReceipt{}).Where("report_id = ?", event.EventID).Count(&records).Error; err != nil || records != 1 {
 		t.Fatal("cross-page metering replay was lost or duplicated", records, err)
 	}
 }

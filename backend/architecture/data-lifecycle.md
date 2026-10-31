@@ -18,15 +18,17 @@ at the operator's request; this change does not create local or offsite backups.
 | Legacy scope diagnostics | Remove bounded expired primary-key prefixes after legacy coverage and pending checks; 24-hour grace, retaining the original highest-ID allocator anchor. |
 | High-frequency core reconcilers | Reuse one latest clean successful/yielded run and attempt; keep cumulative schedule counters. Failure, retry, unknown, interruption, explicit requests and plugin execution retain their own evidence under existing outcome policies. |
 | Registration polling | Read-only work probe; empty queues create no execution history. |
-| Financial ledger / report identities / live-node cumulative cursors | Exact amounts, per-report rounding, quota caps and indefinite replay remain authoritative. No age-based deletion or display rounding is applied to them. |
+| Native financial settlement | One minute row per user/subscription/epoch/node/endpoint/calculation-mode/rate, occurred UTC minute and received UTC minute/reset phase. Add already settled deltas; never re-round the minute's raw total. Fixed-size arithmetic proof replaces event bodies. |
+| Report identities / live-node cumulative cursors | Permanent replay identities and exact cumulative counters. No age cutoff for historical financial reports. Multiple original receipts may reference one settlement ID. |
+| Existing financial history | Retain old rows and sealed proof compatibility unchanged; no startup financial rewrite or bulk deletion. |
 
 Minute rows are bounded by active scopes times 43,200 minutes, plus the current
 hour and temporary maintenance lag. Future diagnostic timestamps are clamped
 to the receiving clock. Hourly rows still grow with elapsed time.
 This is not a constant-size promise for billing history or indefinitely delayed
-reports. Long-term financial compaction must preserve exact settled sums, epoch,
-pricing and reset boundaries, together with replay identity and cumulative
-counters; dropping cursors or simply summing raw bytes and re-rounding is invalid.
+reports. The minute writer preserves exact settled sums, epoch, pricing and reset
+boundaries. Required report identities and flow counters still grow with business
+history; indefinite exact replay cannot be implemented by expiring that authority.
 
 ## Read semantics
 
@@ -94,3 +96,37 @@ rows and unique/FK lookup contracts across upgrade/restart.
 These measurements establish row and access-path behavior, not a production I/O
 or disk-growth forecast. Source tests, actual MySQL acceptance, image publication,
 deployment and production growth measurements are separate delivery states.
+
+## Minute settlement and upgrades
+
+Migration 0078 adds two ledger columns and five pending-delta columns. MySQL uses
+INSTANT metadata changes, no large-table index build, history scan or backfill;
+partial DDL resumes after validating types, defaults and nullability. Existing
+rows implicitly have contribution count one and remain unaggregated. Old sealed
+proof digests remain byte-compatible. SQLite preserves nanosecond receive clocks;
+MySQL uses its existing millisecond storage precision.
+
+Each original charge is calculated first, with its multiplier ceiling and quota
+cap, inside the existing authoritative transaction. The minute writer then sums
+charged/raw/directional bytes, contribution count, accounting sample count and
+rounding numerators. It keeps no list of flow IDs, credentials, event sequences
+or per-event timestamps. Live flow cursors and independent receipts still fence
+older cumulative snapshots and arbitrary historical replay.
+
+Received-minute keys split at the subscription anniversary's sub-minute offset;
+epoch and rate are separate dimensions. This preserves exact reset carry queries
+on created_at, including reports arriving on opposite sides of a reset. The owned
+transaction clock, rather than a second wall clock, supplies receive time.
+
+The durable projection checkpoint accumulates only NEW deltas. A worker locks
+that checkpoint, applies the increment exactly once and deletes it atomically.
+A concurrent writer recreates/updates the next checkpoint after the worker;
+it never projects the whole mutable minute twice. Recovery builds hourly totals
+from settlement totals minus outstanding increments, leaving those increments
+for the normal worker. Page totals count physical displayed rows, while usage
+charts weight contribution counts. Statistics continue to use exact byte sums.
+
+Once minute settlements exist, deploy only a compatible writer. Additive schema
+columns stay in place; a pre-0078 binary cannot recover discarded event bodies
+or understand the new delta checkpoint contract. No automatic downgrade or
+reconstruction of per-event history is offered.

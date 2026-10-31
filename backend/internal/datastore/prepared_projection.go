@@ -80,7 +80,7 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 	// unsafe. Extra history (including the retained development chain accepted
 	// by preparePreReleaseMigrationHistory) is not reinterpreted or rewritten.
 	// This validator does not certify whole-database or future-binary compatibility.
-	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeArchiveSchemaVersion, protocolDeletionSchemaVersion, compactPeriodicVersion, principalMinuteVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion, observationRetirementVersion}
+	required := []string{"0001_init.up.sql", "0007_jobs.up.sql", "0008_job_timeouts.up.sql", "0014_job_attempt_retries.up.sql", "0015_job_schedule_planning.up.sql", "0016_protocol_endpoint_usage_daily.up.sql", "0024_traffic_usage_hourly.up.sql", "0025_traffic_hourly_application.up.sql", usageProjectionSchemaVersion, hourlyProjectionSchemaVersion, nodeAssetSchemaVersion, nodeArchiveSchemaVersion, protocolDeletionSchemaVersion, compactPeriodicVersion, principalMinuteVersion, nativeSettlementVersion, nodeObservationSchemaVersion, nodeObservationMaterialVersion, observationRetirementVersion}
 	for _, v := range required {
 		if !seen[v] {
 			return projectionError("required migration receipt missing: "+v, nil)
@@ -298,6 +298,9 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 			return projectionError("dependency read completion: "+table, e)
 		}
 	}
+	if err := validateNativeSettlementSchema(db); err != nil {
+		return projectionError("native settlement dependencies", err)
+	}
 	if err := ValidatePreparedFlowStartStatisticsSchema(ctx, db); err != nil {
 		return projectionError("flow-start statistics dependencies", err)
 	}
@@ -311,9 +314,10 @@ func projectionDependencyTables() []string {
 }
 
 type projectionColumn struct {
-	kind      string
-	nullable  bool
-	collation string
+	defaultSQL string
+	kind       string
+	nullable   bool
+	collation  string
 }
 
 func projectionColumns(db *gorm.DB, table string) (columns map[string]projectionColumn, primary []string, err error) {
@@ -332,7 +336,7 @@ func projectionColumns(db *gorm.DB, table string) (columns map[string]projection
 			if e = rows.Scan(&cid, &name, &kind, &required, &def, &pk); e != nil {
 				break
 			}
-			columns[strings.ToLower(name)] = projectionColumn{kind: strings.ToLower(kind), nullable: required == 0 && pk == 0}
+			columns[strings.ToLower(name)] = projectionColumn{kind: strings.ToLower(kind), nullable: required == 0 && pk == 0, defaultSQL: fmt.Sprint(def)}
 			if pk > 0 {
 				keys[pk] = strings.ToLower(name)
 			}
@@ -348,17 +352,17 @@ func projectionColumns(db *gorm.DB, table string) (columns map[string]projection
 		if !engine.Valid || !strings.EqualFold(engine.String, "InnoDB") || kind != "BASE TABLE" {
 			return nil, nil, errors.New("transactional base table required")
 		}
-		rows, e := db.Raw("SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?", table).Rows()
+		rows, e := db.Raw("SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLLATION_NAME,COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?", table).Rows()
 		if e != nil {
 			return nil, nil, e
 		}
 		for rows.Next() {
 			var name, kind, nullable string
-			var collation sql.NullString
-			if e = rows.Scan(&name, &kind, &nullable, &collation); e != nil {
+			var collation, def sql.NullString
+			if e = rows.Scan(&name, &kind, &nullable, &collation, &def); e != nil {
 				break
 			}
-			columns[strings.ToLower(name)] = projectionColumn{kind: strings.ToLower(kind), nullable: nullable == "YES", collation: collation.String}
+			columns[strings.ToLower(name)] = projectionColumn{kind: strings.ToLower(kind), nullable: nullable == "YES", collation: collation.String, defaultSQL: def.String}
 		}
 		err = errors.Join(e, rows.Err(), rows.Close())
 		if err != nil {

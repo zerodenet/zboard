@@ -88,7 +88,7 @@ func (s Usage) Read(ctx context.Context, actor uint, q metering.UsageQuery) (met
 			COALESCE(SUM(download_bytes), 0) AS download_bytes,
 			COALESCE(SUM(used_bytes), 0) AS used_bytes,
 			` + bucket.Expression + ` AS record_at,
-			COUNT(*) AS record_count
+			SUM(record_count) AS record_count
 		`).
 		Group(bucket.Group())
 

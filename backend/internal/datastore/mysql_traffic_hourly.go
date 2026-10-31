@@ -127,6 +127,9 @@ func RebuildMySQLTrafficHourly(tx *gorm.DB) error {
 // worker. Rebuilding them early and then consuming their intents would double
 // project already settled usage. The pending rows are never cleared here.
 func RebuildTrafficHourly(tx *gorm.DB) error {
+	if tx.Migrator().HasColumn("traffic_records", "record_count") && tx.Migrator().HasColumn(usageProjectionTable, "delta_record_count") {
+		return rebuildMinuteAwareHourly(tx)
+	}
 	if IsSQLite(tx) {
 		if !tx.Migrator().HasColumn(usageProjectionTable, "hourly_pending") {
 			return nil

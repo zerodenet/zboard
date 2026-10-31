@@ -575,6 +575,8 @@ type TrafficRecord struct {
 	Meta                    string    `json:"meta" gorm:"type:text"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
+	IsAggregate             bool      `json:"is_aggregate,omitempty" gorm:"not null;default:false;-:migration"`
+	RecordCount             int64     `json:"record_count,omitempty" gorm:"not null;default:1;-:migration"`
 }
 
 // ProtocolEndpointUsageDaily is the bounded read projection for endpoint

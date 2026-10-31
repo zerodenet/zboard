@@ -27,7 +27,7 @@ func BackfillReportReceipts(ctx context.Context, db *gorm.DB, after, through uin
 	out := metering.ReportReceiptBackfillResult{AfterID: after, ThroughID: through, NextAfterID: after}
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var records []model.TrafficRecord
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id,node_id,report_id,protocol_endpoint_id").Where("id > ? AND id <= ?", after, through).Order("id").Limit(limit).Find(&records).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id,node_id,report_id,protocol_endpoint_id").Where("id > ? AND id <= ?", after, through).Where("(event_type IS NULL OR event_type <> ?)", nativeSettlementType).Order("id").Limit(limit).Find(&records).Error; err != nil {
 			return err
 		}
 		if err := persistReportReceipts(tx, records); err != nil {

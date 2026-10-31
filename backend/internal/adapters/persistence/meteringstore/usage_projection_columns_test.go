@@ -90,7 +90,7 @@ func TestUsageProjectionReadsOnlyRequiredColumnsAndPreservesMetadata(t *testing.
 	if err != nil || count != len(records) {
 		t.Fatal(count, err)
 	}
-	wantColumns := []string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "record_at", "raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "protocol_multiplier_milli"}
+	wantColumns := []string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "record_at", "raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "protocol_multiplier_milli", "is_aggregate", "record_count"}
 	if sourceReads != 1 || metaRead || !reflect.DeepEqual(columns, wantColumns) {
 		t.Fatalf("projection loaded unrelated source data: reads=%d meta=%t columns=%v", sourceReads, metaRead, columns)
 	}

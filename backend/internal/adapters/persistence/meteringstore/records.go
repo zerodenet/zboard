@@ -18,14 +18,14 @@ func (s Records) ReadSummaryPage(ctx context.Context, actor uint, q metering.Rec
 	if !q.Paged {
 		return metering.RecordsSummaryPage{}, &metering.PolicyValidation{Fields: map[string]string{"query": "summary requires pagination"}}
 	}
-	full, err := s.read(ctx, actor, q, []string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "raw_bytes", "upload_bytes", "download_bytes", "protocol_multiplier_milli", "used_bytes", "record_at"})
+	full, err := s.read(ctx, actor, q, []string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "raw_bytes", "upload_bytes", "download_bytes", "protocol_multiplier_milli", "used_bytes", "record_at", "is_aggregate", "record_count"})
 	if err != nil {
 		return metering.RecordsSummaryPage{}, err
 	}
 	out := metering.RecordsSummaryPage{Records: make([]metering.TrafficRecordSummary, 0, len(full.Records)), Total: full.Total, Aggregates: full.Aggregates, HasMore: full.HasMore}
 	for _, record := range full.Records {
 		out.Records = append(out.Records, metering.TrafficRecordSummary{
-			ID: record.ID, UserID: record.UserID, SubscriptionID: record.SubscriptionID,
+			IsAggregate: record.IsAggregate, RecordCount: record.RecordCount, ID: record.ID, UserID: record.UserID, SubscriptionID: record.SubscriptionID,
 			NodeID: record.NodeID, ProtocolEndpointID: record.ProtocolEndpointID,
 			RawBytes: record.RawBytes, UploadBytes: record.UploadBytes, DownloadBytes: record.DownloadBytes,
 			ProtocolMultiplierMilli: record.ProtocolMultiplierMilli, UsedBytes: record.UsedBytes, At: record.At,

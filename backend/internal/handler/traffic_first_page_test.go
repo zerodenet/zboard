@@ -25,7 +25,7 @@ id INTEGER PRIMARY KEY, record_at DATETIME NOT NULL, user_id INTEGER,
 subscription_id INTEGER, node_id INTEGER, protocol_multiplier_milli INTEGER,
 used_bytes BIGINT NOT NULL, raw_bytes BIGINT NOT NULL DEFAULT 0,
 upload_bytes BIGINT NOT NULL DEFAULT 0, download_bytes BIGINT NOT NULL DEFAULT 0,
-protocol_endpoint_id INTEGER NOT NULL DEFAULT 1)`).Error; err != nil {
+protocol_endpoint_id INTEGER NOT NULL DEFAULT 1, record_count BIGINT NOT NULL DEFAULT 1)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	type row struct {

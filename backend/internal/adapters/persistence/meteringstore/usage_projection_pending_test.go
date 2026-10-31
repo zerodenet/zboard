@@ -34,6 +34,16 @@ func usageProjectionDB(t testing.TB, path string) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
+	for _, spec := range []struct{ table, name, kind, initial string }{
+		{"traffic_records", "is_aggregate", "numeric", "false"}, {"traffic_records", "record_count", "integer", "1"},
+		{"metering_usage_projection_pending", "delta_raw_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_upload_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_download_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_used_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_record_count", "integer", "0"},
+	} {
+		if !db.Migrator().HasColumn(spec.table, spec.name) {
+			if err := db.Exec("ALTER TABLE " + spec.table + " ADD COLUMN " + spec.name + " " + spec.kind + " NOT NULL DEFAULT " + spec.initial).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if !db.Migrator().HasTable("traffic_usage_hourly") {
 		if err := datastore.RebuildTrafficHourly(db); err != nil {
 			t.Fatal(err)

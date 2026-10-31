@@ -66,7 +66,7 @@
         </thead>
         <tbody>
           <tr v-for="record in records" :key="record.id">
-            <td class="table-primary-column"><TimeBadge :value="record.record_at" /></td>
+            <td class="table-primary-column"><TimeBadge :value="record.record_at" mode="exact" /></td>
             <td data-column-priority="3"><EntityReference :reference="userReference(record.user_id)" :fallback-id="record.user_id" fallback-kind="user" compact /></td>
             <td>
               <EntityReference

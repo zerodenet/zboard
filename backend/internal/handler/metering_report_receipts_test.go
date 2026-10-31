@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,8 +99,13 @@ func assertMeteringReportReceipts(t *testing.T, f orderFixture) {
 	if err != nil || string(before) != string(after) || unchanged.Nonce != fact.Nonce || unchanged.EntitlementEpoch != fact.EntitlementEpoch {
 		t.Fatal("receipt replay rewrote original billing or proof", err)
 	}
-	// Simulate a pre-0063 report by removing only this new test's receipt. The
-	// historical ledger stays intact and is lazily classified in one transaction.
+	// A genuine pre-0063 fact carries its original report ID. A minute bucket
+	// cannot recover erased report identities from its synthetic grouping key.
+	// This fixture has exactly one contribution, so model that legacy row before
+	// removing only its receipt; amounts and quota remain unchanged.
+	if err := h.db.Model(&model.TrafficRecord{}).Where("id = ?", fact.ID).Updates(map[string]any{"report_id": events[0].ID, "nonce": meteringstoreReceiptNonce(events[0].ID), "is_aggregate": false, "event_type": "flow.updated", "flow_id": events[0].FlowID}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := h.db.Where("node_id = ? AND report_id = ?", receipt.NodeID, receipt.ReportID).Delete(&model.MeteringReportReceipt{}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -127,4 +134,9 @@ func assertMeteringReportReceipts(t *testing.T, f orderFixture) {
 	}
 	assertAccountingTotal(t, h, c.SubscriptionID, 30, subStatusActive)
 	drainUsageProjections(t, h.db)
+}
+
+func meteringstoreReceiptNonce(report string) string {
+	sum := sha256.Sum256([]byte(report))
+	return hex.EncodeToString(sum[:])
 }

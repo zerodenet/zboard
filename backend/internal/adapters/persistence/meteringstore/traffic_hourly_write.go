@@ -44,7 +44,7 @@ func addTrafficHourly(tx *gorm.DB, records []model.TrafficRecord) error {
 			rows[key] = row
 			keys = append(keys, key)
 		}
-		for column, value := range map[string]int64{"raw_bytes": record.RawBytes, "upload_bytes": record.UploadBytes, "download_bytes": record.DownloadBytes, "used_bytes": record.UsedBytes, "record_count": 1} {
+		for column, value := range map[string]int64{"raw_bytes": record.RawBytes, "upload_bytes": record.UploadBytes, "download_bytes": record.DownloadBytes, "used_bytes": record.UsedBytes, "record_count": trafficRecordCount(record)} {
 			previous := row[column].(int64)
 			if (value > 0 && previous > math.MaxInt64-value) || (value < 0 && previous < math.MinInt64-value) {
 				return fmt.Errorf("traffic hourly %s overflow", column)

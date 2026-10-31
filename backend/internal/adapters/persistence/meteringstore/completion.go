@@ -51,10 +51,14 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 		record = model.TrafficRecord{}
 		exhausted = false
 		err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Where("node_id = ? AND report_id = ?", in.NodeID, event.EventID).First(&record).Error; err == nil {
-				return nil
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			receipts, err := readReportReceipts(tx, in.NodeID, []string{event.EventID})
+			if err != nil {
 				return err
+			}
+			if len(receipts) > 0 {
+				// Replay returns the linked authoritative record. New native records are
+				// explicitly marked minute aggregates; no per-report amount is invented.
+				return tx.First(&record, "id = ?", receipts[0].TrafficRecordID).Error
 			}
 			credential, credentialErr := ResolveCompletionCredential(tx, s.Cipher, in.NodeID, flow.PrincipalKey)
 			if credentialErr != nil {
@@ -145,7 +149,7 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 				At:                      recordAt,
 				Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"continued_flow":%t}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID, continues),
 			}
-			if err := tx.Create(&record).Error; err != nil {
+			if err := storeNativeSettlement(tx, &record, subscription.StartAt); err != nil {
 				return err
 			}
 			if err := RecordUsageProjections(tx, []model.TrafficRecord{record}); err != nil {

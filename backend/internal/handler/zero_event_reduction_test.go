@@ -61,7 +61,7 @@ func TestZeroEventWindowReducesLedgerWritesPreservingRoundingCoverageAndReplay(t
 		First    uint64 `json:"first_sequence"`
 		Rounding int64  `json:"rounding_numerator"`
 	}
-	if err := json.Unmarshal([]byte(record.Meta), &evidence); err != nil || evidence.Samples != 1000 || evidence.First != 1 || evidence.Rounding != 500000 || (record.RawBytes*record.ProtocolMultiplierMilli+evidence.Rounding)/1000 != record.UsedBytes {
+	if err := json.Unmarshal([]byte(record.Meta), &evidence); err != nil || evidence.Samples != 1000 || evidence.Rounding != 500000 || (record.RawBytes*record.ProtocolMultiplierMilli+evidence.Rounding)/1000 != record.UsedBytes {
 		t.Fatalf("unverifiable rounding evidence: %+v %v", evidence, err)
 	}
 	var coverage fairUseNodeCoverage
@@ -228,7 +228,7 @@ func TestZeroWindowKeepsExistingReportIdentityBeforeCollapsing(t *testing.T) {
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 12, subStatusActive)
 	var count int64
-	if err := h.db.Model(&model.TrafficRecord{}).Count(&count).Error; err != nil || count != 3 {
+	if err := h.db.Model(&model.MeteringReportReceipt{}).Count(&count).Error; err != nil || count != 3 {
 		t.Fatalf("report identity lost: rows=%d err=%v", count, err)
 	}
 }

@@ -2,6 +2,7 @@ package metering
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -28,7 +29,7 @@ type FlowAccountingResult struct {
 }
 
 func ValidateFlowSample(in FlowSample) error {
-	if in.NodeID == 0 || in.EventID == "" || in.FlowID == "" || in.PrincipalKey == "" || in.BytesUp < 0 || in.BytesDown < 0 {
+	if in.NodeID == 0 || (in.EventID == "" || strings.HasPrefix(in.EventID, "bucket:v1:")) || in.FlowID == "" || in.PrincipalKey == "" || in.BytesUp < 0 || in.BytesDown < 0 {
 		return errors.New("invalid cumulative flow sample")
 	}
 	if len(in.Checkpoints) == 0 {

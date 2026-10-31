@@ -1954,6 +1954,8 @@ export async function fetchTrafficRecords(params: { userId?: number; nodeId?: nu
 }
 
 export type TrafficRecordSummary = {
+  is_aggregate?: boolean
+  record_count?: number
   id: number
   user_id: number
   subscription_id?: number

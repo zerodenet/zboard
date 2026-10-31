@@ -34,7 +34,7 @@ func TrafficAggregateSource(db *gorm.DB, from, to time.Time, scope TrafficScope)
 		return query
 	}
 	columns := "record_at, user_id, subscription_id, node_id, protocol_endpoint_id, protocol_multiplier_milli, raw_bytes, upload_bytes, download_bytes, used_bytes"
-	ledger := apply(db.Table("traffic_records").Select(columns+", 1 AS record_count").Where("record_at >= ? AND record_at < ?", from, to))
+	ledger := apply(db.Table("traffic_records").Select(columns+", record_count").Where("record_at >= ? AND record_at < ?", from, to))
 	if !start.Before(end) {
 		return db.Table("(?) AS traffic_aggregate", ledger)
 	}
@@ -43,11 +43,11 @@ func TrafficAggregateSource(db *gorm.DB, from, to time.Time, scope TrafficScope)
 	queries := []interface{}{hourly}
 	if from.Before(start) {
 		parts = append(parts, "?")
-		queries = append(queries, apply(db.Table("traffic_records").Select(columns+", 1 AS record_count").Where("record_at >= ? AND record_at < ?", from, start)))
+		queries = append(queries, apply(db.Table("traffic_records").Select(columns+", record_count").Where("record_at >= ? AND record_at < ?", from, start)))
 	}
 	if end.Before(to) {
 		parts = append(parts, "?")
-		queries = append(queries, apply(db.Table("traffic_records").Select(columns+", 1 AS record_count").Where("record_at >= ? AND record_at < ?", end, to)))
+		queries = append(queries, apply(db.Table("traffic_records").Select(columns+", record_count").Where("record_at >= ? AND record_at < ?", end, to)))
 	}
 	return db.Table("("+strings.Join(parts, " UNION ALL ")+") AS traffic_aggregate", queries...)
 }

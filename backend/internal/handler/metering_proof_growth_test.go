@@ -112,14 +112,14 @@ func assertNativeProofFiniteGrowth(t *testing.T, h *handlers, c model.ProtocolCr
 				t.Fatal("bounded archive did not advance", cursor, through)
 			}
 			result, err := archive.Archive(t.Context(), metering.ProofArchiveRequest{AfterID: cursor, ThroughID: through, Before: now.Add(-7 * 24 * time.Hour), Limit: archiveBatch})
-			if err != nil || result.NextAfterID <= cursor || result.Held != 0 || result.NoSaving != 0 {
+			if err != nil || result.NextAfterID <= cursor || result.Held != result.Scanned || result.Archived != 0 || result.NoSaving != 0 {
 				t.Fatal("archive checkpoint", result, err)
 			}
-			sealed += result.Archived
+			sealed += result.Held
 			cursor = result.NextAfterID
 		}
 		if sealed != 4 {
-			t.Fatal("archive failed to seal four real window proofs", sealed)
+			t.Fatal("legacy archive must leave all four minute proofs inline", sealed)
 		}
 		snapshot("after_archive", window+1)
 		page, err := (meteringstore.Records{DB: h.db}).Read(t.Context(), c.UserID, metering.RecordsQuery{Paged: true, Limit: 200, From: originals[0].At.Add(-time.Hour), To: record.At.Add(time.Hour), SubscriptionID: c.SubscriptionID})
@@ -173,7 +173,7 @@ func assertNativeProofFiniteGrowth(t *testing.T, h *handlers, c model.ProtocolCr
 	assertAccountingTotal(t, h, c.SubscriptionID, windows*samples*5, subStatusActive)
 	snapshot("after_reverse_replay_and_unseen_late", windows)
 	last := snapshots[len(snapshots)-1]
-	if last.Rows["traffic_records"] != windows || last.Rows["metering_report_receipts"] != windows || last.Rows["traffic_record_meta_archives"] != windows || last.Rows["metering_usage_projection_pending"] != 0 || last.RawBytes != windows*samples*3 || last.UsedBytes != windows*samples*5 {
+	if last.Rows["traffic_records"] != windows || last.Rows["metering_report_receipts"] != windows || last.Rows["traffic_record_meta_archives"] != 0 || last.Rows["metering_usage_projection_pending"] != 0 || last.RawBytes != windows*samples*3 || last.UsedBytes != windows*samples*5 {
 		t.Fatal("financial growth/replay boundary", last)
 	}
 	result := struct {
@@ -184,7 +184,7 @@ func assertNativeProofFiniteGrowth(t *testing.T, h *handlers, c model.ProtocolCr
 		ReplayBatch      int                   `json:"replay_batch_limit"`
 		Caveat           string                `json:"measurement_scope"`
 		Snapshots        []proofGrowthSnapshot `json:"snapshots"`
-	}{h.db.Dialector.Name(), windows, samples, archiveBatch, samples, "Finite synthetic minute windows; not elapsed long-duration/capacity acceptance. Ledger/receipt/archive authority grows linearly; no fact deletion. Byte fields cover named variable bodies, not total encoded row/index cost. SQLite pages/files cover whole isolated fixture including observation intents; MySQL information_schema bytes are estimates and can remain stale. No VACUUM, ANALYZE, TRUNCATE or physical shrink is requested.", snapshots}
+	}{h.db.Dialector.Name(), windows, samples, archiveBatch, samples, "Finite synthetic minute windows; not elapsed long-duration/capacity acceptance. Minute settlement and required replay identities grow with accepted history; no native event bodies or new archives. Byte fields cover named variable bodies, not total encoded row/index cost. SQLite pages/files cover whole isolated fixture including observation intents; MySQL information_schema bytes are estimates and can remain stale. No VACUUM, ANALYZE, TRUNCATE or physical shrink is requested.", snapshots}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)

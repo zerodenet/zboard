@@ -3,6 +3,7 @@ package metering
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,8 @@ type TrafficRecord struct {
 	Meta                    string    `json:"meta"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
+	IsAggregate             bool      `json:"is_aggregate,omitempty"`
+	RecordCount             int64     `json:"record_count,omitempty"`
 }
 
 type CredentialDecryptor interface{ Decrypt(string) (string, error) }
@@ -49,7 +52,7 @@ type CompletionRepository interface {
 type CompletionAccounting struct{ Repository CompletionRepository }
 
 func (s CompletionAccounting) Complete(ctx context.Context, in CompletedFlow) (TrafficRecord, bool, error) {
-	if in.NodeID == 0 || in.EventType != "flow.completed" || in.EventID == "" || in.FlowID == "" || in.PrincipalKey == "" {
+	if in.NodeID == 0 || in.EventType != "flow.completed" || (in.EventID == "" || strings.HasPrefix(in.EventID, "bucket:v1:")) || in.FlowID == "" || in.PrincipalKey == "" {
 		return TrafficRecord{}, false, errors.New("invalid completed flow")
 	}
 	if in.BytesUp < 0 || in.BytesDown < 0 {

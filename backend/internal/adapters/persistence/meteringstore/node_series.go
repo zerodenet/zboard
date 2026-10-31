@@ -44,7 +44,7 @@ func (s NodeSeries) Read(ctx context.Context, actor uint, q metering.NodeSeriesQ
 		}
 		query := TrafficAggregateSource(tx, q.From, q.To, TrafficScope{UserID: q.UserID, SubscriptionID: q.SubscriptionID, NodeID: q.NodeID, ProtocolEndpointID: q.ProtocolEndpointID})
 		if q.Bucket == "minute" {
-			query = tx.Model(&model.TrafficRecord{}).Where("record_at >= ? AND record_at < ?", q.From, q.To).Select("*, 1 AS record_count")
+			query = tx.Model(&model.TrafficRecord{}).Where("record_at >= ? AND record_at < ?", q.From, q.To).Select("*")
 			for _, f := range []struct {
 				column string
 				id     uint

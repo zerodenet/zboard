@@ -105,7 +105,7 @@ func checkTrafficRecordsSummary(t *testing.T, h *handlers) {
 	capture = true
 	first, err := s.ReadSummaryPage(ctx, actor, q)
 	capture = false
-	wantColumns := []string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "raw_bytes", "upload_bytes", "download_bytes", "protocol_multiplier_milli", "used_bytes", "record_at"}
+	wantColumns := []string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "raw_bytes", "upload_bytes", "download_bytes", "protocol_multiplier_milli", "used_bytes", "record_at", "is_aggregate", "record_count"}
 	if err != nil || sourceReads != 1 || !reflect.DeepEqual(selected, wantColumns) || first.Total != full.Total || first.Aggregates != full.Aggregates || !first.HasMore || len(first.Records) != 2 {
 		t.Fatalf("summary page columns=%v reads=%d result=%+v error=%v", selected, sourceReads, first, err)
 	}

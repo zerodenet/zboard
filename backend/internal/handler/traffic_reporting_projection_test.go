@@ -176,7 +176,7 @@ func assertTrafficRecordScanContract(t testing.TB, captured []string, full bool,
 				t.Fatal("core summary touched full proof, metadata preflight or archive material", captured)
 			}
 		}
-		if !strings.HasPrefix(queries[1], "select id,user_id,subscription_id,node_id,protocol_endpoint_id,raw_bytes,upload_bytes,download_bytes,protocol_multiplier_milli,used_bytes,record_at from traffic_records ") {
+		if !strings.HasPrefix(queries[1], "select id,user_id,subscription_id,node_id,protocol_endpoint_id,raw_bytes,upload_bytes,download_bytes,protocol_multiplier_milli,used_bytes,record_at,is_aggregate,record_count from traffic_records ") {
 			t.Fatal("summary no longer selects its explicit narrow projection", captured)
 		}
 	}

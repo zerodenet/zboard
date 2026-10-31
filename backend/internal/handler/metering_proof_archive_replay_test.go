@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -51,6 +52,25 @@ func assertNativeProofArchiveReplay(t *testing.T, h *handlers, c model.ProtocolC
 	}
 	if original.RawBytes != 9 || original.UsedBytes != 15 {
 		t.Fatal("native per-sample rounding fixture changed", original)
+	}
+	// Explicit pre-0078 fixture: upgrades must still read and safely restore
+	// sealed legacy event proofs. New native writers produce minute arithmetic
+	// proofs and never create this event-body layout.
+	original.IsAggregate, original.RecordCount = false, 1
+	original.EventType, original.FlowID = "flow.updated", events[0].FlowID
+	original.ReportID = events[len(events)-1].ID
+	original.Nonce = meteringstoreReceiptNonce(original.ReportID)
+	legacyProof, err := json.Marshal(map[string]any{"source_id": events[0].SourceID, "core_instance_id": events[0].CoreInstanceID, "sequence": events[len(events)-1].Sequence, "credential_id": c.CredentialID, "buffered": true, "accounting_samples": 3, "first_sequence": events[0].Sequence, "rounding_numerator": 1500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original.Meta = string(legacyProof)
+	if err := h.db.Model(&model.TrafficRecord{}).Where("id = ?", original.ID).UpdateColumns(map[string]any{"is_aggregate": false, "record_count": 1, "event_type": original.EventType, "flow_id": original.FlowID, "report_id": original.ReportID, "nonce": original.Nonce, "meta": original.Meta}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The same pending charge now represents one legacy ledger record.
+	if err := h.db.Model(&model.MeteringUsageProjectionPending{}).Where("traffic_record_id = ?", original.ID).UpdateColumns(map[string]any{"delta_raw_bytes": 0, "delta_upload_bytes": 0, "delta_download_bytes": 0, "delta_used_bytes": 0, "delta_record_count": 0}).Error; err != nil {
+		t.Fatal(err)
 	}
 	var cursors []model.FlowUsage
 	if err := h.db.Where("subscription_id = ?", c.SubscriptionID).Order("id").Find(&cursors).Error; err != nil {

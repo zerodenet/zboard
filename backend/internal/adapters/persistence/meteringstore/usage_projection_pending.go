@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -18,22 +19,65 @@ const UsageProjectionBatchLimit = 200
 // settlement failure, never a successful in-memory acknowledgement. Call only
 // for newly inserted ledger records, after the database assigns their IDs.
 func EnqueueUsageProjections(tx *gorm.DB, records []model.TrafficRecord) error {
-	rows := make([]model.MeteringUsageProjectionPending, 0, len(records))
+	legacy := make([]model.MeteringUsageProjectionPending, 0, len(records))
+	canonical := map[uint]*model.MeteringUsageProjectionPending{}
 	now := time.Now().UTC()
 	for _, record := range records {
 		if record.ID == 0 {
 			return errors.New("usage projection requires a persisted traffic record ID")
 		}
-		recordAt := record.At.UTC().Truncate(time.Hour)
-		rows = append(rows, model.MeteringUsageProjectionPending{TrafficRecordID: record.ID, ProtocolEndpointID: record.ProtocolEndpointID, CreatedAt: now,
-			HourlyPending: true, UserID: record.UserID, SubscriptionID: record.SubscriptionID, NodeID: record.NodeID, RecordAt: &recordAt})
+		hour := record.At.UTC().Truncate(time.Hour)
+		row := model.MeteringUsageProjectionPending{TrafficRecordID: record.ID, ProtocolEndpointID: record.ProtocolEndpointID, CreatedAt: now, HourlyPending: true, UserID: record.UserID, SubscriptionID: record.SubscriptionID, NodeID: record.NodeID, RecordAt: &hour}
+		if !record.IsAggregate {
+			legacy = append(legacy, row)
+			continue
+		}
+		target := canonical[record.ID]
+		if target == nil {
+			target = &row
+			canonical[record.ID] = target
+		}
+		for _, pair := range [][2]*int64{{&target.DeltaRawBytes, &record.RawBytes}, {&target.DeltaUploadBytes, &record.UploadBytes}, {&target.DeltaDownloadBytes, &record.DownloadBytes}, {&target.DeltaUsedBytes, &record.UsedBytes}} {
+			v, err := checkedProjectionSum(*pair[0], *pair[1])
+			if err != nil {
+				return err
+			}
+			*pair[0] = v
+		}
+		v, err := checkedProjectionSum(target.DeltaRecordCount, trafficRecordCount(record))
+		if err != nil {
+			return err
+		}
+		target.DeltaRecordCount = v
 	}
-	if len(rows) == 0 {
+	if len(legacy) > 0 {
+		if err := tx.CreateInBatches(&legacy, 100).Error; err != nil {
+			return err
+		}
+	}
+	ids := make([]uint, 0, len(canonical))
+	for id := range canonical {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	pending := make([]model.MeteringUsageProjectionPending, 0, len(ids))
+	for _, id := range ids {
+		pending = append(pending, *canonical[id])
+	}
+	if len(pending) == 0 {
 		return nil
 	}
-	// No conflict-ignore: enqueueing an already projected fact would apply its
-	// delta twice. Idempotency belongs to the authoritative report insertion.
-	return tx.CreateInBatches(&rows, 100).Error
+	incoming := func(c string) string {
+		if tx.Dialector.Name() == "sqlite" {
+			return "excluded." + c
+		}
+		return "VALUES(" + c + ")"
+	}
+	updates := map[string]any{"hourly_pending": true}
+	for _, column := range []string{"delta_raw_bytes", "delta_upload_bytes", "delta_download_bytes", "delta_used_bytes", "delta_record_count"} {
+		updates[column] = gorm.Expr(column + " + " + incoming(column))
+	}
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "traffic_record_id"}}, DoUpdates: clause.Assignments(updates)}).CreateInBatches(&pending, 100).Error
 }
 
 type UsageProjectionWorker struct{ DB *gorm.DB }
@@ -73,7 +117,7 @@ func (s UsageProjectionWorker) Drain(ctx context.Context, limit int) (int, error
 		var records []model.TrafficRecord
 		// Projection needs only immutable scope, time and settled deltas. In
 		// particular, do not load each fact's unrelated, variable-size Meta.
-		if err := tx.Select([]string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "record_at", "raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "protocol_multiplier_milli"}).Where("id IN ?", ids).Order("id").Find(&records).Error; err != nil {
+		if err := tx.Select([]string{"id", "user_id", "subscription_id", "node_id", "protocol_endpoint_id", "record_at", "raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "protocol_multiplier_milli", "is_aggregate", "record_count"}).Where("id IN ?", ids).Order("id").Find(&records).Error; err != nil {
 			return err
 		}
 		if len(records) != len(pending) {
@@ -83,6 +127,18 @@ func (s UsageProjectionWorker) Drain(ctx context.Context, limit int) (int, error
 		for i, record := range records {
 			if record.ID != pending[i].TrafficRecordID || record.ProtocolEndpointID != pending[i].ProtocolEndpointID {
 				return errors.New("pending usage projection source identity changed")
+			}
+			if record.IsAggregate {
+				p := pending[i]
+				if !p.HourlyPending || p.DeltaRawBytes < 0 || p.DeltaUploadBytes < 0 || p.DeltaDownloadBytes < 0 || p.DeltaUsedBytes < 0 || p.DeltaRecordCount <= 0 || p.DeltaRecordCount > record.RecordCount || p.DeltaRawBytes > record.RawBytes || p.DeltaUploadBytes > record.UploadBytes || p.DeltaDownloadBytes > record.DownloadBytes || p.DeltaUsedBytes > record.UsedBytes {
+					return errors.New("canonical projection delta exceeds committed settlement")
+				}
+				record.RawBytes = p.DeltaRawBytes
+				record.UploadBytes = p.DeltaUploadBytes
+				record.DownloadBytes = p.DeltaDownloadBytes
+				record.UsedBytes = p.DeltaUsedBytes
+				record.RecordCount = p.DeltaRecordCount
+				records[i] = record
 			}
 			if pending[i].HourlyPending {
 				p := pending[i]

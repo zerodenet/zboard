@@ -42,7 +42,7 @@ func AddProtocolEndpointUsage(tx *gorm.DB, records []model.TrafficRecord) error 
 		row.UploadBytes += record.UploadBytes
 		row.DownloadBytes += record.DownloadBytes
 		row.UsedBytes += record.UsedBytes
-		row.RecordCount++
+		row.RecordCount += uint64(trafficRecordCount(record))
 		if recordAt.After(row.LastRecordAt) {
 			row.LastRecordAt = recordAt
 		}

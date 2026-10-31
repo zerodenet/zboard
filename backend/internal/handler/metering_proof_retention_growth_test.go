@@ -104,7 +104,7 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 				t.Fatal("archive cursor did not advance")
 			}
 			out, err := archive.Archive(t.Context(), metering.ProofArchiveRequest{AfterID: archiveCursor, ThroughID: record.ID, Before: now.Add(-7 * 24 * time.Hour), Limit: 3})
-			if err != nil || out.NextAfterID <= archiveCursor || out.Held != 0 || out.NoSaving != 0 {
+			if err != nil || out.NextAfterID <= archiveCursor || out.Held != out.Scanned || out.Archived != 0 || out.NoSaving != 0 {
 				t.Fatal("native proof archive", out, err)
 			}
 			archiveCursor = out.NextAfterID
@@ -204,7 +204,7 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 		}
 	}
 	final := checkpoints[len(checkpoints)-1]
-	if final.Rows["traffic_records"] != windows || final.Rows["metering_report_receipts"] != windows || final.Rows["traffic_record_meta_archives"] != windows || final.Rows["metering_usage_projection_pending"] != 0 || final.Rows["node_observation_intents"] != windows*samples+3 || final.Rows["node_observation_parts"] != 2 {
+	if final.Rows["traffic_records"] != windows || final.Rows["metering_report_receipts"] != windows || final.Rows["traffic_record_meta_archives"] != 0 || final.Rows["metering_usage_projection_pending"] != 0 || final.Rows["node_observation_intents"] != windows*samples+3 || final.Rows["node_observation_parts"] != 2 {
 		t.Fatal("final independent authority growth", final)
 	}
 	encoded, err := json.Marshal(struct {

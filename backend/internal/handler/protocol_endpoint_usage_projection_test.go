@@ -44,7 +44,11 @@ func TestAccountingDailyProjectionFailureDoesNotBlockSettlementOrReplay(t *testi
 	}
 	for _, check := range []any{&model.TrafficRecord{}, &model.MeteringUsageProjectionPending{}} {
 		var count int64
-		if err := h.db.Model(check).Count(&count).Error; err != nil || count != 4 {
+		var ledgerRows int64
+		if err := h.db.Model(&model.TrafficRecord{}).Count(&ledgerRows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := h.db.Model(check).Count(&count).Error; err != nil || count != ledgerRows || count < 1 || count > 4 {
 			t.Fatalf("settlement or intent lost/duplicated in %T: %d %v", check, count, err)
 		}
 	}

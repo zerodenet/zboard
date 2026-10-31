@@ -121,10 +121,10 @@ func TestSQLiteCursorCohort32ReadsOnceWithoutAdditionalWrites(t *testing.T) {
 		if err := applyCohort(db.Session(&gorm.Session{Logger: count}), samples); err != nil {
 			t.Fatal(err)
 		}
-		// Keep the original cohort's 37 writes/99 affected rows exactly. The
-		// separate identity authority adds one bounded insert of 32 receipts.
-		if count.usageReads != 1 || count.writes-count.receiptWrites != 37 || count.affected-count.receiptRows != 99 || count.receiptWrites != 1 || count.receiptRows != 32 {
-			t.Fatalf("batch%d reads=%d original-writes=%d original-rows=%d receipt-writes=%d receipt-rows=%d want1/37/99/1/32", batch, count.usageReads, count.writes-count.receiptWrites, count.affected-count.receiptRows, count.receiptWrites, count.receiptRows)
+		// One cursor cohort read remains; minute ledger and pending rows now
+		// coalesce instead of creating 32 financial/projection source rows.
+		if count.usageReads != 1 || count.writes-count.receiptWrites != 37 || count.affected-count.receiptRows != 37 || count.receiptWrites != 1 || count.receiptRows != 32 {
+			t.Fatalf("batch%d reads=%d original-writes=%d original-rows=%d receipt-writes=%d receipt-rows=%d want1/37/37/1/32", batch, count.usageReads, count.writes-count.receiptWrites, count.affected-count.receiptRows, count.receiptWrites, count.receiptRows)
 		}
 		cohortTotal(t, db, int64(batch+1)*960)
 	}

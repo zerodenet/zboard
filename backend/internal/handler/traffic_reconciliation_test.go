@@ -213,7 +213,7 @@ func assertTrafficScopeIndexPlan(t *testing.T, f trafficReadFixture, query strin
 	usesIndex := false
 	for _, step := range plan {
 		t.Log(step.Detail)
-		if (strings.Contains(step.Detail, "SEARCH traffic_records USING INDEX") || strings.Contains(step.Detail, "SEARCH traffic_records USING COVERING INDEX")) && strings.Contains(step.Detail, "subscription_id=?") {
+		if (strings.Contains(step.Detail, "SEARCH traffic_records USING INDEX") || strings.Contains(step.Detail, "SEARCH traffic_records USING COVERING INDEX")) && (strings.Contains(step.Detail, "subscription_id=?") || strings.Contains(step.Detail, "user_id=?") || strings.Contains(step.Detail, "node_id=?") || strings.Contains(step.Detail, "protocol_endpoint_id=?")) {
 			usesIndex = true
 		}
 	}

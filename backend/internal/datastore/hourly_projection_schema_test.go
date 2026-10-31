@@ -32,7 +32,7 @@ func TestSQLiteHourlyProjectionCutoverPreservesHistoricalAndPendingBoundaries(t 
 	}
 	at := time.Date(2026, 10, 20, 1, 0, 0, 0, time.UTC)
 	old := model.TrafficRecord{ID: 1, NodeID: 3, UserID: 7, ProtocolEndpointID: 9, ReportID: "old", Nonce: "old", At: at, RawBytes: 7, UsedBytes: 11}
-	if err := db.Create(&old).Error; err != nil {
+	if err := db.Omit("is_aggregate", "record_count").Create(&old).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Table(usageProjectionTable).Create(map[string]any{"traffic_record_id": old.ID, "protocol_endpoint_id": old.ProtocolEndpointID, "created_at": at}).Error; err != nil {
@@ -58,6 +58,9 @@ func TestSQLiteHourlyProjectionCutoverPreservesHistoricalAndPendingBoundaries(t 
 	var triggers int64
 	if err := db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'traffic_hourly_%'").Scan(&triggers).Error; err != nil || triggers != 0 {
 		t.Fatal(triggers, err)
+	}
+	if err := reconcileNativeSettlementSchema(db); err != nil {
+		t.Fatal(err)
 	}
 	current := old
 	current.ID = 2
@@ -156,7 +159,7 @@ func TestSQLiteHourlyProjectionPendingStorageSample(t *testing.T) {
 				key := fmt.Sprint(i)
 				records[i] = model.TrafficRecord{UserID: uint(i%64 + 1), SubscriptionID: uint(i%128 + 1), NodeID: uint(i%16 + 1), ProtocolEndpointID: uint(i%8 + 1), ReportID: key, Nonce: key, At: at.Add(time.Duration(i) * time.Second), UsedBytes: 11}
 			}
-			if err := db.CreateInBatches(&records, 100).Error; err != nil {
+			if err := db.Omit("is_aggregate", "record_count").CreateInBatches(&records, 100).Error; err != nil {
 				t.Fatal(err)
 			}
 			if current {
@@ -165,7 +168,7 @@ func TestSQLiteHourlyProjectionPendingStorageSample(t *testing.T) {
 					hour := record.At.UTC().Truncate(time.Hour)
 					pending = append(pending, model.MeteringUsageProjectionPending{TrafficRecordID: record.ID, ProtocolEndpointID: record.ProtocolEndpointID, CreatedAt: record.CreatedAt, HourlyPending: true, UserID: record.UserID, SubscriptionID: record.SubscriptionID, NodeID: record.NodeID, RecordAt: &hour})
 				}
-				if err := db.CreateInBatches(&pending, 100).Error; err != nil {
+				if err := db.Omit("DeltaRawBytes", "DeltaUploadBytes", "DeltaDownloadBytes", "DeltaUsedBytes", "DeltaRecordCount").CreateInBatches(&pending, 100).Error; err != nil {
 					t.Fatal(err)
 				}
 			} else {

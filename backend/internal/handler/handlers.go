@@ -225,6 +225,8 @@ type trafficReconciliationItem = metering.ReconciliationItem
 type trafficReconciliationAggregates = metering.ReconciliationAggregates
 
 type trafficRecordListItem struct {
+	IsAggregate             bool      `json:"is_aggregate,omitempty"`
+	RecordCount             int64     `json:"record_count,omitempty"`
 	ID                      uint      `json:"id"`
 	UserID                  uint      `json:"user_id"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty"`
@@ -2697,6 +2699,7 @@ func trafficRecordSummaries(records []model.TrafficRecord) []trafficRecordListIt
 	items := make([]trafficRecordListItem, 0, len(records))
 	for _, record := range records {
 		items = append(items, trafficRecordListItem{
+			IsAggregate: record.IsAggregate, RecordCount: record.RecordCount,
 			ID:                      record.ID,
 			UserID:                  record.UserID,
 			SubscriptionID:          record.SubscriptionID,

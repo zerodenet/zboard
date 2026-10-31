@@ -52,6 +52,7 @@ func TestMySQLPrincipalMinuteConcurrentSnapshotsAndFoundRowsReplay(t *testing.T)
 	db := diagnosticSchemaDB(t, true)
 	found := statisticsFoundRowsDB(t, db)
 	at := time.Now().UTC().Truncate(time.Millisecond)
+	seedStatisticsIdentity(t, db, at)
 	credential := model.ProtocolCredential{UserID: 7, SubscriptionID: 9, NodeID: 3, ProtocolEndpointID: 11, CredentialID: "bucket", PrincipalKey: "principal", Secret: "opaque", Status: "active", ExpiresAt: at.Add(time.Hour)}
 	if err := db.Create(&credential).Error; err != nil {
 		t.Fatal(err)
@@ -108,6 +109,7 @@ func TestMySQLPrincipalBucketMaintenanceAndIngressDoNotDoubleCount(t *testing.T)
 	writer := statisticsFoundRowsDB(t, db)
 	worker := statisticsFoundRowsDB(t, db)
 	at := time.Now().UTC().Truncate(time.Millisecond)
+	seedStatisticsIdentity(t, db, at)
 	c := model.ProtocolCredential{UserID: 7, SubscriptionID: 9, NodeID: 3, ProtocolEndpointID: 11, CredentialID: "bucket", PrincipalKey: "principal", Secret: "opaque", Status: "active", ExpiresAt: at.Add(time.Hour)}
 	if err := db.Create(&c).Error; err != nil {
 		t.Fatal(err)
@@ -198,5 +200,33 @@ func TestMySQLPrincipalStatisticsRejectsFinerSQLiteTimeWithoutPartialCopy(t *tes
 	var retained meteringstore.PrincipalFlowScopeObservation
 	if err := source.First(&retained, row.ID).Error; err != nil || !retained.ObservedAt.Equal(at) {
 		t.Fatal("source precision was altered", retained.ObservedAt, err)
+	}
+}
+
+// Respect the published ownership graph rather than using orphan credentials.
+func seedStatisticsIdentity(t *testing.T, db *gorm.DB, at time.Time) {
+	t.Helper()
+	user := model.User{ID: 7, Email: "bucket@example.test", Password: "unused", Status: "active"}
+	group := model.NodeGroup{Name: "bucket", Code: "bucket", IsEnabled: true}
+	node := model.Node{ID: 3, Name: "bucket", Address: "127.0.0.1", Config: "{}"}
+	for _, row := range []any{&user, &group, &node} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := model.Plan{Name: "bucket", Slug: "bucket", NodeGroupID: group.ID, IsActive: true}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	sku := model.PlanSKU{PlanID: plan.ID, Name: "bucket", Currency: "CNY", BillingUnit: "month", BillingValue: 1, RenewalEffect: "extend_only", IsActive: true}
+	if err := db.Create(&sku).Error; err != nil {
+		t.Fatal(err)
+	}
+	sub := model.Subscription{ID: 9, UserID: user.ID, PlanID: plan.ID, PlanSKUID: sku.ID, NodeGroupID: group.ID, StartAt: at, EndAt: at.Add(time.Hour), Status: "active", Config: "{}"}
+	endpoint := model.ProtocolEndpoint{ID: 11, NodeID: node.ID, Name: "bucket", Protocol: "socks5", Address: "127.0.0.1", Port: 1080, RuntimeKey: "bucket", OptionalConfig: "{}", Tags: "[]"}
+	for _, row := range []any{&sub, &endpoint} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 }

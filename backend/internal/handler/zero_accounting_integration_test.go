@@ -50,7 +50,7 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 1920, subStatusActive)
 	var count int64
-	if err := h.db.Model(&model.TrafficRecord{}).Count(&count).Error; err != nil || count != 64 {
+	if err := h.db.Model(&model.MeteringReportReceipt{}).Count(&count).Error; err != nil || count != 64 {
 		t.Fatalf("replayed/old events persisted: count=%d error=%v", count, err)
 	}
 	var projected int64

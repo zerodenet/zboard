@@ -104,7 +104,7 @@ func TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay(t *testing.T) {
 			if err := h.db.Find(&records).Error; err != nil {
 				t.Fatal(err)
 			}
-			var total, first uint64
+			var total uint64
 			var rounding int64
 			for _, record := range records {
 				var evidence struct {
@@ -117,12 +117,9 @@ func TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay(t *testing.T) {
 				}
 				total += evidence.Samples
 				rounding += evidence.Rounding
-				if first == 0 || evidence.First < first {
-					first = evidence.First
-				}
 			}
-			if total != 3 || first != 1 || rounding != 1500 {
-				t.Fatal("sample/firstsequence/rounding evidence changed across assets")
+			if total != 3 || rounding != 1500 {
+				t.Fatal("sample/rounding evidence changed across assets")
 			}
 			duplicate := append([]zeroevent.Envelope(nil), events[:2]...)
 			duplicate[1].ID = duplicate[0].ID

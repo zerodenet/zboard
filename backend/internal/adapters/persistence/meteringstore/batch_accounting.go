@@ -123,7 +123,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if recordAt.IsZero() {
 		recordAt = now
 	}
-	record := model.TrafficRecord{
+	record := model.TrafficRecord{CreatedAt: tx.NowFunc().UTC(),
 		EntitlementEpoch:        credential.EntitlementEpoch,
 		UserID:                  subscription.UserID,
 		SubscriptionID:          subscription.ID,
@@ -143,7 +143,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		At:                      recordAt,
 		Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"buffered":true,"accounting_samples":%d,"first_sequence":%d,"rounding_numerator":%d}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID, charge.AccountingSamples, charge.FirstSequence, charge.RoundingNumerator),
 	}
-	if err := batch.appendRecord(tx, record); err != nil {
+	if err := batch.appendRecord(tx, record, subscription.StartAt); err != nil {
 		return result, err
 	}
 
