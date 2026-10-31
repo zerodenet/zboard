@@ -5,12 +5,14 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
+	"strings"
 )
 
 // Only real, non-revoked identities may discover the configured prefix through
 // the temporary legacy redirect. Random probes cannot enumerate the new path.
 func LegacySubscriptionIdentity(db *gorm.DB, ctx context.Context, token string) (bool, error) {
-	if len(token) != 43 {
+	token = strings.TrimSpace(token)
+	if token == "" || strings.Contains(token, "/") {
 		return false, nil
 	}
 	var rows []uint
