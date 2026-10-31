@@ -34,7 +34,7 @@ func reconcileAccountSubjectSchema(db *gorm.DB) error {
 	if err := db.Exec("CREATE TABLE IF NOT EXISTS account_cleanup_states (id BIGINT NOT NULL PRIMARY KEY, last_user_id BIGINT NOT NULL DEFAULT 0)").Error; err != nil {
 		return err
 	}
-	if applied > 0 {
+	if applied > 0 && IsSQLite(db) {
 		return validateAccountSubjectSchema(db)
 	}
 	if IsSQLite(db) {
@@ -42,30 +42,17 @@ func reconcileAccountSubjectSchema(db *gorm.DB) error {
 			return err
 		}
 	} else {
-		if err := db.Exec("CREATE TABLE IF NOT EXISTS account_subjects (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY) ENGINE=InnoDB").Error; err != nil {
-			return err
-		}
-		if err := db.Exec("INSERT IGNORE INTO account_subjects(id) SELECT id FROM users").Error; err != nil {
-			return err
+		if applied == 0 {
+			if err := db.Exec("CREATE TABLE IF NOT EXISTS account_subjects (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY) ENGINE=InnoDB").Error; err != nil {
+				return err
+			}
+			if err := db.Exec("INSERT IGNORE INTO account_subjects(id) SELECT id FROM users").Error; err != nil {
+				return err
+			}
 		}
 		for table, columns := range subjectReferences {
 			for _, column := range columns {
-				var keys []struct{ Name, Target string }
-				if err := db.Raw(`SELECT constraint_name AS name, referenced_table_name AS target FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND table_name=? AND column_name=? AND referenced_table_name IS NOT NULL`, table, column).Scan(&keys).Error; err != nil {
-					return err
-				}
-				if len(keys) != 1 || (keys[0].Target != "users" && keys[0].Target != "account_subjects") {
-					return fmt.Errorf("unexpected historical owner constraint: %s.%s", table, column)
-				}
-				if keys[0].Target == "account_subjects" {
-					continue
-				}
-				name := keys[0].Name
-				if strings.Contains(name, "`") {
-					return errors.New("invalid owner constraint name")
-				}
-				ddl := fmt.Sprintf("ALTER TABLE `%s` DROP FOREIGN KEY `%s`, ADD CONSTRAINT `%s` FOREIGN KEY (`%s`) REFERENCES account_subjects(id) ON DELETE RESTRICT", table, name, "as_"+table+"_"+column, column)
-				if err := retargetSubjectConstraint(db, ddl+", ALGORITHM=INPLACE, LOCK=NONE"); err != nil {
+				if err := reconcileSubjectReference(db, table, column, applied > 0); err != nil {
 					return err
 				}
 			}
@@ -109,8 +96,8 @@ func validateAccountSubjectSchema(db *gorm.DB) error {
 		if !strings.Contains(extra, "auto_increment") {
 			return errors.New("account subject ID allocator must be monotonic")
 		}
-		var keys []struct{ OwnerTable, OwnerColumn, Target string }
-		if err := db.Raw("SELECT table_name AS owner_table,column_name AS owner_column,referenced_table_name AS target FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND referenced_table_name IS NOT NULL").Scan(&keys).Error; err != nil {
+		var keys []struct{ OwnerTable, OwnerColumn, Target, ConstraintName string }
+		if err := db.Raw("SELECT table_name AS owner_table,column_name AS owner_column,referenced_table_name AS target,constraint_name FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND referenced_table_name IS NOT NULL").Scan(&keys).Error; err != nil {
 			return err
 		}
 		for table, columns := range subjectReferences {
@@ -121,10 +108,13 @@ func validateAccountSubjectSchema(db *gorm.DB) error {
 						if key.Target != "account_subjects" {
 							return fmt.Errorf("invalid historical owner target: %s.%s", table, column)
 						}
+						if key.ConstraintName != canonicalSubjectConstraint(table, column) && key.ConstraintName != "as_"+table+"_"+column {
+							return fmt.Errorf("unowned historical owner constraint: %s.%s", table, column)
+						}
 						count++
 					}
 				}
-				if count != 1 {
+				if count < 1 || count > 2 {
 					return fmt.Errorf("missing historical owner constraint: %s.%s", table, column)
 				}
 			}
@@ -142,6 +132,80 @@ func validateAccountSubjectSchema(db *gorm.DB) error {
 }
 
 var sqliteUserReference = regexp.MustCompile("(?i)REFERENCES\\s+[\"`]?users[\"`]?\\s*\\([\"`]?id[\"`]?\\)(?:\\s+ON DELETE (?:RESTRICT|CASCADE|SET NULL|NO ACTION))?")
+
+func canonicalSubjectConstraint(table, column string) string {
+	switch table {
+	case "audit_logs":
+		return "fk_audit_user"
+	case "orders":
+		return "fk_order_user"
+	case "subscriptions":
+		return "fk_sub_user"
+	case "traffic_records":
+		return "fk_traffic_user"
+	case "node_operations":
+		return "fk_node_operations_requester"
+	case "provider_accounts":
+		return "fk_provider_accounts_creator"
+	case "managed_dns_records":
+		return "fk_managed_dns_creator"
+	case "payment_receipts":
+		return "fk_payment_receipts_resolver"
+	}
+	return "fk_" + table + "_" + strings.TrimSuffix(column, "_id")
+}
+
+// MySQL cannot drop and add the same FK name in one ALTER. Keep an enforced
+// temporary subject FK while installing the canonical name expected by the
+// existing domain schema reconcilers, then remove the temporary FK. Every
+// committed intermediate layout retains owner integrity and can be resumed.
+func reconcileSubjectReference(db *gorm.DB, table, column string, recorded bool) error {
+	var keys []struct{ Name, Target string }
+	if err := db.Raw(`SELECT constraint_name AS name, referenced_table_name AS target FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND table_name=? AND column_name=? AND referenced_table_name IS NOT NULL`, table, column).Scan(&keys).Error; err != nil {
+		return err
+	}
+	canonical := canonicalSubjectConstraint(table, column)
+	temporary := "as_" + table + "_" + column
+	if len(keys) == 1 && keys[0].Target == "users" && !recorded {
+		if strings.Contains(keys[0].Name, "`") {
+			return errors.New("invalid owner constraint name")
+		}
+		ddl := fmt.Sprintf("ALTER TABLE `%s` DROP FOREIGN KEY `%s`, ADD CONSTRAINT `%s` FOREIGN KEY (`%s`) REFERENCES account_subjects(id) ON DELETE RESTRICT, ALGORITHM=INPLACE, LOCK=NONE", table, keys[0].Name, temporary, column)
+		if err := retargetSubjectConstraint(db, ddl); err != nil {
+			return err
+		}
+		keys = []struct{ Name, Target string }{{temporary, "account_subjects"}}
+	}
+	if len(keys) < 1 || len(keys) > 2 {
+		return fmt.Errorf("unexpected historical owner constraints: %s.%s", table, column)
+	}
+	hasCanonical, hasTemporary := false, false
+	for _, key := range keys {
+		if key.Target != "account_subjects" {
+			return fmt.Errorf("invalid historical owner target: %s.%s", table, column)
+		}
+		switch key.Name {
+		case canonical:
+			hasCanonical = true
+		case temporary:
+			hasTemporary = true
+		default:
+			return fmt.Errorf("unowned historical owner constraint: %s.%s", table, column)
+		}
+	}
+	if !hasCanonical {
+		ddl := fmt.Sprintf("ALTER TABLE `%s` ADD CONSTRAINT `%s` FOREIGN KEY (`%s`) REFERENCES account_subjects(id) ON DELETE RESTRICT, ALGORITHM=INPLACE, LOCK=NONE", table, canonical, column)
+		if err := retargetSubjectConstraint(db, ddl); err != nil {
+			return err
+		}
+	}
+	if hasTemporary {
+		if err := nativeSettlementDDL(db, fmt.Sprintf("ALTER TABLE `%s` DROP FOREIGN KEY `%s`, ALGORITHM=INPLACE, LOCK=NONE", table, temporary)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // The existing enforced FK proves that every owner is a user, and the complete
 // user ID set has just been copied to subjects. Retarget it without scanning or

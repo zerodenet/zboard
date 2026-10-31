@@ -43,7 +43,11 @@ uses explicit `INPLACE, LOCK=NONE` DDL with bounded metadata-lock waiting, witho
 a COPY fallback or a required database trigger/global privilege. On a dedicated
 connection, constraints proven by the existing FK and the copied owner-ID set are
 retargeted with session checks temporarily disabled and restored before pooling.
-Normal deletion keeps constraints enabled. SQLite rebuilds affected small
+Canonical FK names remain shared with the existing domain reconcilers. Each
+replacement keeps a temporary subject FK until the canonical FK is installed,
+then removes the temporary FK; either intermediate layout resumes after a crash.
+Stop account-creation writers during schema cutover. Normal deletion keeps
+constraints enabled. SQLite rebuilds affected
 financial tables transactionally, preserving checks/indexes/triggers and checking
 foreign keys before restoring the connection. Startup rejects missing identity
 storage/allocator or a historical FK still targeting live users. Deleted accounts
