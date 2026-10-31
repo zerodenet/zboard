@@ -103,8 +103,20 @@ func persistNativeSettlement(tx *gorm.DB, row *model.TrafficRecord) error {
 	if tx.Dialector.Name() == "mysql" {
 		updates["id"] = gorm.Expr("LAST_INSERT_ID(id)")
 	}
-	if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "node_id"}, {Name: "report_id"}}, DoUpdates: clause.Assignments(updates)}).Create(row).Error; err != nil {
-		return err
+	conflict := clause.OnConflict{Columns: []clause.Column{{Name: "node_id"}, {Name: "report_id"}}, DoUpdates: clause.Assignments(updates)}
+	if tx.Dialector.Name() == "sqlite" {
+		// SQLite promotes overflowing integer arithmetic to REAL. Refuse that
+		// transition before mutation instead of silently losing exact bytes.
+		for _, column := range []string{"raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "record_count"} {
+			conflict.Where.Exprs = append(conflict.Where.Exprs, clause.Expr{SQL: column + " <= ? - excluded." + column, Vars: []any{int64(math.MaxInt64)}})
+		}
+	}
+	result := tx.Clauses(conflict).Create(row)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("native settlement aggregate exceeds exact byte/count range")
 	}
 	if row.ID == 0 {
 		var stored struct{ ID uint }

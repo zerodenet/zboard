@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
+	"math"
 	"testing"
 	"time"
 )
@@ -85,5 +86,25 @@ func TestMinuteSchemaKeepsPreviouslySealedLegacyFactDigest(t *testing.T) {
 	r.RecordCount = 2
 	if proofFactDigest(r) == original {
 		t.Fatal("canonical count omitted from canonical identity")
+	}
+}
+
+func TestNativeMinuteExistingBucketRefusesSQLiteNumericPromotion(t *testing.T) {
+	db := trafficAggregateDB(t)
+	at := time.Now().UTC().Truncate(time.Minute)
+	record := model.TrafficRecord{UserID: 7, SubscriptionID: 9, EntitlementEpoch: 1, NodeID: 3, ProtocolEndpointID: 11, ReportID: "max", RawBytes: math.MaxInt64, UsedBytes: 1, ProtocolMultiplierMilli: 1, At: at, CreatedAt: at}
+	if err := db.Transaction(func(tx *gorm.DB) error { return storeNativeSettlement(tx, &record, at) }); err != nil {
+		t.Fatal(err)
+	}
+	next := record
+	next.ID = 0
+	next.ReportID = "overflow"
+	next.RawBytes = 1
+	if err := db.Transaction(func(tx *gorm.DB) error { return storeNativeSettlement(tx, &next, at) }); err == nil {
+		t.Fatal("integer overflow promoted to approximate storage")
+	}
+	var retained model.TrafficRecord
+	if err := db.First(&retained, record.ID).Error; err != nil || retained.RawBytes != math.MaxInt64 || retained.UsedBytes != 1 || retained.RecordCount != 1 {
+		t.Fatal(retained, err)
 	}
 }
