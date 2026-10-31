@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -262,4 +264,73 @@ func TestSQLiteNativeMinuteNewDeltaFailureRollsBackExistingBucket(t *testing.T) 
 		t.Fatal(err)
 	}
 	assertAccountingTotal(t, h, c.SubscriptionID, 20, subStatusActive)
+}
+
+func TestMySQLNativeMinuteConcurrentSameReportClaimsOnlyOneContribution(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprint("buffered=", batch), func(t *testing.T) { assertNativeMinuteConcurrentSameReport(t, batch) })
+	}
+}
+func assertNativeMinuteConcurrentSameReport(t *testing.T, batch bool) {
+	t.Helper()
+	h, c := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
+	at := time.Now().UTC().Truncate(time.Minute).Add(59 * time.Second)
+	h.db.NowFunc = func() time.Time { return at }
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	ready := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var reads atomic.Int32
+	const callback = "test:minute_simultaneous_report_admission"
+	if err := h.db.Callback().Query().After("gorm:query").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Table == "metering_report_receipts" && reads.Add(1) <= 2 {
+			ready <- struct{}{}
+			select {
+			case <-release:
+			case <-ctx.Done():
+				tx.AddError(ctx.Err())
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer h.db.Callback().Query().Remove(callback)
+	results := make(chan error, 2)
+	// Even mismatching flow bodies sharing one report identity must preserve the
+	// original first-writer authority. No second cursor or charge may survive.
+	for i := 0; i < 2; i++ {
+		go func(i int) {
+			flow := fmt.Sprint("different-body-", i)
+			var err error
+			if batch {
+				_, err = h.services.ProjectBufferedEvents(ctx, application.BufferedEventProjection{Flows: []metering.FlowSample{{NodeID: c.NodeID, PrincipalKey: c.PrincipalKey, CoreInstanceID: "same-report", FlowID: flow, EventID: "one-report-identity", EventType: "flow.updated", Sequence: 1, BytesUp: 7, OccurredAt: at}}}, h.credentialCipher)
+			} else {
+				_, _, err = h.services.CompletionAccounting(h.credentialCipher).Complete(ctx, metering.CompletedFlow{NodeID: c.NodeID, PrincipalKey: c.PrincipalKey, CoreInstanceID: "same-report", FlowID: flow, EventID: "one-report-identity", EventType: "flow.completed", Sequence: 1, BytesUp: 7, OccurredAt: at})
+			}
+			results <- err
+		}(i)
+	}
+	for range 2 {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			close(release)
+			t.Fatal("did not establish two old snapshots", ctx.Err())
+		}
+	}
+	close(release)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var total struct{ Rows, Reports, Raw, Used int64 }
+	if err := h.db.Model(&model.TrafficRecord{}).Select("COUNT(*) AS rows,SUM(record_count) AS reports,SUM(raw_bytes) AS raw,SUM(used_bytes) AS used").Scan(&total).Error; err != nil || total.Rows != 1 || total.Reports != 1 || total.Raw != 7 || total.Used != 7 {
+		t.Fatal("concurrent original report charged twice", total, err)
+	}
+	var cursors int64
+	if err := h.db.Model(&model.FlowUsage{}).Count(&cursors).Error; err != nil || cursors != 1 {
+		t.Fatal("losing report cursor survived rollback", cursors, err)
+	}
+	assertAccountingTotal(t, h, c.SubscriptionID, 7, subStatusActive)
 }

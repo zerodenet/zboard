@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"math"
 	"time"
 
@@ -34,7 +36,17 @@ func (s *Services) nativeAuthorityTransaction(ctx context.Context, input Buffere
 	}
 	returned := false
 	defer func() { collection.Finish(err, returned) }()
-	err = s.Identity.db.WithContext(observed).Transaction(apply)
+	// Retry only the owned report-identity race, after the entire failed
+	// authority transaction rolled back. Each attempt gets a fresh snapshot.
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = ctx.Err(); err != nil {
+			break
+		}
+		err = s.Identity.db.WithContext(observed).Transaction(apply)
+		if !errors.Is(err, meteringstore.ErrNativeReportClaimed) {
+			break
+		}
+	}
 	returned = true
 	return err
 }

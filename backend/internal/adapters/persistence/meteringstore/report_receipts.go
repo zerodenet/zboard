@@ -2,7 +2,11 @@ package meteringstore
 
 import (
 	"errors"
+	mysqldriver "github.com/go-sql-driver/mysql"
+	sqlite "modernc.org/sqlite"
+	sqlitelib "modernc.org/sqlite/lib"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/datastore"
@@ -11,6 +15,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var ErrNativeReportClaimed = errors.New("native report identity concurrently claimed")
+
 var ErrReportReceiptConflict = errors.New("metering report receipt conflicts with its committed ledger identity")
 
 // All current ledger writers already cross RecordUsageProjections in the same
@@ -18,8 +24,10 @@ var ErrReportReceiptConflict = errors.New("metering report receipt conflicts wit
 // nobody acknowledges an in-memory or separately committed identity.
 func persistReportReceipts(tx *gorm.DB, records []model.TrafficRecord) error {
 	rows := make([]model.MeteringReportReceipt, 0, len(records))
+	native := false
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	for _, record := range records {
+		native = native || record.IsAggregate
 		if record.NodeID == 0 || record.ReportID == "" {
 			continue
 		}
@@ -30,6 +38,22 @@ func persistReportReceipts(tx *gorm.DB, records []model.TrafficRecord) error {
 	}
 	if len(rows) == 0 {
 		return nil
+	}
+	if native {
+		// Every item here is a NEW accepted contribution. A duplicate identity
+		// must roll back its quota, cursor, shared bucket and pending delta even
+		// when the existing receipt points to that SAME bucket ID. DoNothing
+		// would silently admit concurrent duplicates after minute coalescing.
+		err := tx.CreateInBatches(&rows, 100).Error
+		if err != nil {
+			var my *mysqldriver.MySQLError
+			var sq *sqlite.Error
+			if (errors.As(err, &my) && my.Number == 1062 && (strings.Contains(my.Message, "metering_report_receipts.PRIMARY") || strings.HasSuffix(my.Message, "for key 'PRIMARY'"))) ||
+				(errors.As(err, &sq) && (sq.Code() == sqlitelib.SQLITE_CONSTRAINT_PRIMARYKEY || sq.Code() == sqlitelib.SQLITE_CONSTRAINT_UNIQUE) && strings.Contains(sq.Error(), "metering_report_receipts")) {
+				return errors.Join(ErrNativeReportClaimed, err)
+			}
+		}
+		return err
 	}
 	// A database-equivalent report later in this same MySQL batch may already
 	// have registered this very ledger row through the compatibility lookup.

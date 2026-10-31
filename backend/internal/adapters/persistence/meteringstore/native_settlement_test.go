@@ -1,6 +1,7 @@
 package meteringstore
 
 import (
+	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -106,5 +107,35 @@ func TestNativeMinuteExistingBucketRefusesSQLiteNumericPromotion(t *testing.T) {
 	var retained model.TrafficRecord
 	if err := db.First(&retained, record.ID).Error; err != nil || retained.RawBytes != math.MaxInt64 || retained.UsedBytes != 1 || retained.RecordCount != 1 {
 		t.Fatal(retained, err)
+	}
+}
+
+func TestNativeMinuteSharedBucketDoesNotAdmitDuplicateReceipt(t *testing.T) {
+	db := trafficAggregateDB(t)
+	at := time.Now().UTC().Truncate(time.Minute)
+	record := model.TrafficRecord{UserID: 7, SubscriptionID: 9, NodeID: 3, ProtocolEndpointID: 11, ReportID: "same-original-report", RawBytes: 7, UsedBytes: 7, ProtocolMultiplierMilli: 1000, At: at, CreatedAt: at}
+	commit := func(r *model.TrafficRecord) error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			if err := storeNativeSettlement(tx, r, at); err != nil {
+				return err
+			}
+			return RecordUsageProjections(tx, []model.TrafficRecord{*r})
+		})
+	}
+	if err := commit(&record); err != nil {
+		t.Fatal(err)
+	}
+	duplicate := record
+	duplicate.ID = 0
+	if err := commit(&duplicate); !errors.Is(err, ErrNativeReportClaimed) {
+		t.Fatal("duplicate receipt admitted another shared bucket delta", err)
+	}
+	var retained model.TrafficRecord
+	if err := db.First(&retained, record.ID).Error; err != nil || retained.RawBytes != 7 || retained.UsedBytes != 7 || retained.RecordCount != 1 {
+		t.Fatal(retained, err)
+	}
+	var pending model.MeteringUsageProjectionPending
+	if err := db.First(&pending).Error; err != nil || pending.DeltaUsedBytes != 7 || pending.DeltaRecordCount != 1 {
+		t.Fatal(pending, err)
 	}
 }

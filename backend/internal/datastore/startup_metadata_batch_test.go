@@ -128,8 +128,8 @@ func (c *startupMetadataConn) QueryContext(_ context.Context, q string, args []d
 	case strings.HasPrefix(sql, "select engine,table_type from information_schema.tables"):
 		names = []string{"ENGINE", "TABLE_TYPE"}
 		values = [][]driver.Value{{"InnoDB", "BASE TABLE"}}
-	case strings.HasPrefix(sql, "select column_name,column_type,is_nullable,collation_name from information_schema.columns"):
-		names = []string{"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLLATION_NAME"}
+	case strings.HasPrefix(sql, "select column_name,column_type,is_nullable,collation_name,column_default from information_schema.columns"):
+		names = []string{"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLLATION_NAME", "COLUMN_DEFAULT"}
 		var columns []string
 		for column := range c.columns[arg(0)] {
 			columns = append(columns, column)
@@ -137,7 +137,7 @@ func (c *startupMetadataConn) QueryContext(_ context.Context, q string, args []d
 		sort.Strings(columns)
 		for _, column := range columns {
 			v := c.columns[arg(0)][column]
-			values = append(values, []driver.Value{column, v.kind, v.nullable, v.collation})
+			values = append(values, []driver.Value{column, v.kind, v.nullable, v.collation, nil})
 		}
 	case strings.HasPrefix(sql, "select column_name from information_schema.columns"):
 		kind = "columns"

@@ -225,7 +225,7 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 		// Coverage can change after preparation when a concurrent grant retires
 		// credentials. Roll back first, recover within the same remaining row
 		// budget, and recheck ownership. Genuine ambiguity is never retried here.
-		if !errors.Is(err, credentialstore.ErrPrincipalIndexIncomplete) {
+		if !errors.Is(err, credentialstore.ErrPrincipalIndexIncomplete) && !errors.Is(err, ErrNativeReportClaimed) {
 			break
 		}
 	}
