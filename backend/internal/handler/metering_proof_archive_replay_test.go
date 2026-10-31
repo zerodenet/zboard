@@ -65,7 +65,7 @@ func assertNativeProofArchiveReplay(t *testing.T, h *handlers, c model.ProtocolC
 		t.Fatal(err)
 	}
 	original.Meta = string(legacyProof)
-	if err := h.db.Model(&model.TrafficRecord{}).Where("id = ?", original.ID).UpdateColumns(map[string]any{"is_aggregate": false, "record_count": 1, "event_type": original.EventType, "flow_id": original.FlowID, "report_id": original.ReportID, "nonce": original.Nonce, "meta": original.Meta}).Error; err != nil {
+	if err := h.db.Model(&model.TrafficRecord{}).Where("id = ?", original.ID).UpdateColumns(map[string]any{"is_aggregate": false, "record_count": 1, "event_type": original.EventType, "flow_id": original.FlowID, "report_id": original.ReportID, "nonce": original.Nonce, "meta": original.Meta, "updated_at": original.UpdatedAt}).Error; err != nil {
 		t.Fatal(err)
 	}
 	// The same pending charge now represents one legacy ledger record.
@@ -121,6 +121,12 @@ func assertNativeProofArchiveReplay(t *testing.T, h *handlers, c model.ProtocolC
 	compare := sealed
 	compare.Meta = original.Meta
 	if !reflect.DeepEqual(compare, original) || sealed.Meta == original.Meta || sealed.Nonce != original.Nonce || sealed.EntitlementEpoch != original.EntitlementEpoch {
+		before, after := reflect.ValueOf(original), reflect.ValueOf(compare)
+		for i := 0; i < before.NumField(); i++ {
+			if !reflect.DeepEqual(before.Field(i).Interface(), after.Field(i).Interface()) {
+				t.Logf("source field %s changed: %v -> %v", before.Type().Field(i).Name, before.Field(i).Interface(), after.Field(i).Interface())
+			}
+		}
 		t.Fatal("archive rewrote billing identity or chronology")
 	}
 	if repeat, err := archive.Archive(t.Context(), q); err != nil || repeat.AlreadySealed != 1 || repeat.Archived != 0 {

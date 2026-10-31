@@ -60,6 +60,9 @@ describe('formatters', () => {
 
   it('uses relative labels for recent timestamps', () => {
     const now = Date.UTC(2026, 6, 22, 10, 0, 0)
+    expect(formatRelativeTime(new Date(now - 59_000).toISOString(), now)).toBe('刚刚')
+    expect(formatRelativeTime(new Date(now + 59_000).toISOString(), now)).toBe('即将')
+    expect(formatCompactDateTime(new Date(now - 1_000).toISOString(), now)).toBe('刚刚')
     expect(formatRelativeTime(new Date(now - 60_000).toISOString(), now)).toContain('1分钟')
     expect(formatCompactDateTime(new Date(now - 60_000).toISOString(), now)).toContain('1分钟')
   })

@@ -103,9 +103,18 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 			if result.Error == nil {
 				row.SortOrder = last.SortOrder + 1
 			}
-			if err := tx.Create(&row).Error; err != nil {
+			// The capability already owns the creation default. Use a pointer for
+			// this explicitly supplied boolean so GORM cannot replace false with
+			// the model's legacy default:true before the INSERT and effect checks.
+			active := row.IsActive
+			insert := struct {
+				*model.ProtocolEndpoint `gorm:"embedded"`
+				Active                  *bool `gorm:"column:is_active"`
+			}{ProtocolEndpoint: &row, Active: &active}
+			if err := tx.Table("protocol_endpoints").Create(&insert).Error; err != nil {
 				return err
 			}
+			row.IsActive = active
 		} else {
 			row.ID, row.SortOrder, row.CreatedAt = previous.ID, previous.SortOrder, previous.CreatedAt
 			if err := validateAndMigrateProtocolEndpointCredentials(tx, previous, row); err != nil {

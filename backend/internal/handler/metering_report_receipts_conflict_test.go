@@ -23,6 +23,14 @@ func TestMySQLMeteringReportReceiptConflictCannotUseClientFoundRows(t *testing.T
 	if err := h.db.First(&original).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Pre-0078 receipt compatibility: a legacy row must still bind its own
+	// original report ID. Canonical minute rows intentionally share IDs across
+	// many legitimate receipts, so use the published legacy layout explicitly.
+	original.ReportID = accountingBenchmarkEvents(c, 0, 1)[0].ID
+	original.Nonce = meteringstoreReceiptNonce(original.ReportID)
+	if err := h.db.Model(&model.TrafficRecord{}).Where("id=?", original.ID).UpdateColumns(map[string]any{"is_aggregate": false, "record_count": 1, "report_id": original.ReportID, "nonce": original.Nonce, "event_type": "flow.updated", "flow_id": "legacy-report-conflict"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	// Explicit corruption fixture: a different report is falsely mapped to an
 	// existing financial row. The accounting transaction must reject it rather
 	// than accepting a no-op duplicate's CLIENT_FOUND_ROWS success count.

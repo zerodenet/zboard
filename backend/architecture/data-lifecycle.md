@@ -40,6 +40,8 @@ boundaries; fractional-offset local days therefore have hour precision. Adjacent
 days share exactly one boundary and never count one hour twice. Responses expose
 `connection_resolution_seconds`, and the chart labels minute/hour precision.
 No raw event body or full history scan is required by a trend request.
+Normal relative timestamps have minute precision (sub-minute values read
+“刚刚”/“即将”); exact tooltip times remain available for investigation.
 
 Accounting and entitlement calculations do not use rounded display metrics.
 Late principal snapshots retain the existing generation/revision rejection;

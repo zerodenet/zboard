@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -436,5 +437,48 @@ func TestProtocolEndpointMutationsMigrateUnifiedShadowsocksPorts(t *testing.T) {
 	}
 	if credential.ListenPort != 8443 || credential.PublicPort != 9443 {
 		t.Fatalf("credential ports=%d/%d", credential.ListenPort, credential.PublicPort)
+	}
+}
+
+func TestProtocolEndpointCreateKeepsExplicitInactiveAndDefaultActive(t *testing.T) {
+	assertProtocolEndpointCreateActiveFlag(t)
+}
+func TestMySQLProtocolEndpointCreateKeepsExplicitInactiveAndDefaultActive(t *testing.T) {
+	if os.Getenv("ZBOARD_TEST_MYSQL_DSN") == "" {
+		t.Skip("requires disposable MySQL")
+	}
+	assertProtocolEndpointCreateActiveFlag(t)
+}
+func assertProtocolEndpointCreateActiveFlag(t *testing.T) {
+	t.Helper()
+	db, _ := administrationFixture(t)
+	for _, row := range []any{&model.User{ID: 1, Email: "admin-inactive@example.test", Password: "unused", Status: "active", IsAdmin: true}, &model.Node{ID: 10, Name: "inactive-node", Address: "192.0.2.10", Config: "{}", LifecycleStatus: "active"}} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := protocolEndpointMutationService(db)
+	request := protocolEndpointMutationRequest(10)
+	active := false
+	request.IsActive = &active
+	result, err := service.Save(t.Context(), 1, nil, request)
+	if err != nil || result.ProtocolEndpoint.IsActive {
+		t.Fatal("explicitly inactive creation was enabled", result.ProtocolEndpoint, err)
+	}
+	var stored model.ProtocolEndpoint
+	if err := db.First(&stored, result.ProtocolEndpoint.ID).Error; err != nil || stored.IsActive {
+		t.Fatal("inactive value did not persist", stored.IsActive, err)
+	}
+	var queued int64
+	if err := db.Model(&model.NodeConfigPublish{}).Count(&queued).Error; err != nil || queued != 0 {
+		t.Fatal("inactive creation published runtime configuration", queued, err)
+	}
+	request.IsActive = nil
+	request.Name = "default-active"
+	request.Port++
+	request.PublicPort++
+	result, err = service.Save(t.Context(), 1, nil, request)
+	if err != nil || !result.ProtocolEndpoint.IsActive {
+		t.Fatal("omitted flag lost active default", err)
 	}
 }

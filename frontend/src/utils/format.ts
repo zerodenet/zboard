@@ -90,6 +90,7 @@ export function formatRelativeTime(value?: string | null, now = Date.now()) {
 
   const difference = timestamp - now
   const absolute = Math.abs(difference)
+  if (absolute < 60_000) return difference > 0 ? '即将' : '刚刚'
   const formatter = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
     ['year', 365 * 24 * 60 * 60 * 1000],
@@ -98,7 +99,7 @@ export function formatRelativeTime(value?: string | null, now = Date.now()) {
     ['hour', 60 * 60 * 1000],
     ['minute', 60 * 1000],
   ]
-  const [unit, milliseconds] = units.find(([, threshold]) => absolute >= threshold) || ['second', 1000]
+  const [unit, milliseconds] = units.find(([, threshold]) => absolute >= threshold) || ['minute', 60_000]
   return formatter.format(Math.round(difference / milliseconds), unit)
 }
 

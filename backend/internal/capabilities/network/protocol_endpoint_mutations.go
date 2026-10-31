@@ -257,6 +257,7 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 		OptionalConfig: normalizedEndpointJSON(request.OptionalConfig, "{}"), Tags: normalizedEndpointJSON(request.Tags, "[]"),
 	}
 	if before == nil {
+		record.IsActive = true
 		record.RuntimeKey = s.runtimeKey()
 		if request.IsActive != nil {
 			record.IsActive = *request.IsActive

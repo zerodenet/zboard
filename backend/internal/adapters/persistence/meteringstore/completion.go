@@ -58,7 +58,19 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			if len(receipts) > 0 {
 				// Replay returns the linked authoritative record. New native records are
 				// explicitly marked minute aggregates; no per-report amount is invented.
-				return tx.First(&record, "id = ?", receipts[0].TrafficRecordID).Error
+				receipt := receipts[0]
+				err := tx.Where("id = ? AND node_id = ? AND protocol_endpoint_id = ?", receipt.TrafficRecordID, receipt.NodeID, receipt.ProtocolEndpointID).
+					Where("is_aggregate = ? OR report_id = ?", true, event.EventID).First(&record).Error
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrReportReceiptConflict
+				}
+				if err != nil {
+					return err
+				}
+				if record.IsAggregate && (record.EventType != nativeSettlementType || !strings.HasPrefix(record.ReportID, nativeSettlementPrefix) || record.Nonce != completionNonce(record.ReportID)) {
+					return ErrReportReceiptConflict
+				}
+				return nil
 			}
 			credential, credentialErr := ResolveCompletionCredential(tx, s.Cipher, in.NodeID, flow.PrincipalKey)
 			if credentialErr != nil {
