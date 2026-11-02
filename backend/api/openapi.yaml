@@ -6811,14 +6811,14 @@ components:
         enabled: { type: boolean }
         inactive_days: { type: integer, minimum: 0, maximum: 36500 }
         state: { type: string, enum: [disabled, protected, subscribed, scheduled, eligible] }
-        eligible_at: { type: string, format: date-time, nullable: true, description: Earliest estimated eligibility; null when disabled, protected or on a perpetual entitlement. }
+        eligible_at: { type: string, format: date-time, nullable: true, description: "Earliest estimated eligibility; null when disabled, protected or on a perpetual entitlement." }
         reason: { type: string }
     AccountWalletBalance:
       type: object
       required: [currency, balance_minor, reserved_minor]
       properties:
         currency: { type: string }
-        balance_minor: { type: string, pattern: '^[0-9]+$', description: Currency minor units, serialized as a string to preserve precision. }
+        balance_minor: { type: string, pattern: '^[0-9]+$', description: "Currency minor units, serialized as a string to preserve precision." }
         reserved_minor: { type: string, pattern: '^[0-9]+$' }
     AdminUserDetail:
       allOf:
