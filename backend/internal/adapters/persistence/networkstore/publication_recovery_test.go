@@ -84,10 +84,10 @@ func TestRecoveryRestoresMissingQueueWithoutReplacingOwnedWork(t *testing.T) {
 	store, node, _ := configurationPublicationFixture(t)
 	now := time.Now().UTC()
 	for _, row := range []model.Node{
-		{ID: 2, Name: "already queued", IsEnabled: true},
-		{ID: 3, Name: "deleted", IsEnabled: true, LifecycleStatus: "archived", ArchivedAt: &now},
-		{ID: 4, Name: "fresh operation", IsEnabled: true},
-		{ID: 5, Name: "deletion pending", IsEnabled: true, LifecycleStatus: "deleting"},
+		{ID: 2, Name: "already queued", Config: "{}", IsEnabled: true},
+		{ID: 3, Name: "deleted", Config: "{}", IsEnabled: true, LifecycleStatus: "archived", ArchivedAt: &now},
+		{ID: 4, Name: "fresh operation", Config: "{}", IsEnabled: true},
+		{ID: 5, Name: "deletion pending", Config: "{}", IsEnabled: true, LifecycleStatus: "deleting"},
 	} {
 		if err := store.DB.Create(&row).Error; err != nil {
 			t.Fatal(err)
@@ -101,7 +101,7 @@ func TestRecoveryRestoresMissingQueueWithoutReplacingOwnedWork(t *testing.T) {
 	if err := store.DB.Create(&model.ProtocolDeployment{NodeID: 4, Status: "running", StartedAt: &now}).Error; err != nil {
 		t.Fatal(err)
 	}
-	owned := model.NodeConfigPublish{NodeID: 2, Generation: 42, Phase: "connections", LeaseToken: "other-owner", LeaseUntil: now.Add(time.Minute), Suspended: true}
+	owned := model.NodeConfigPublish{NodeID: 2, Generation: 42, Phase: "connections", LeaseToken: "other-owner", LeaseUntil: now.Add(time.Minute), NextAttemptAt: now, Suspended: true}
 	if err := store.DB.Create(&owned).Error; err != nil {
 		t.Fatal(err)
 	}

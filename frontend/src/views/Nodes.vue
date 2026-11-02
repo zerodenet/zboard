@@ -112,6 +112,11 @@
             <StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge>
           </header>
           <div class="panel-body kernel-body">
+            <PageAlert v-if="kernelState?.status === 'reconciling'" tone="warning" title="配置结果待核对">
+              <p>{{ kernelState.last_error || '正在核对节点实际运行状态和发布回执。' }}</p>
+              <p>后台会自动复查；核对完成后按最新设置同步配置。期间保留当前运行配置和连接凭据。</p>
+              <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看配置发布任务</RouterLink>
+            </PageAlert>
             <PageAlert tone="info" title="失联停服能力当前未提供">
               当前面板尚未接入可核验的授权租约、续期和到期执行能力，因此没有全局或节点失联停服设置。Connector 投递确认和普通心跳不会被当作授权续期。节点失联期间，面板无法确认远端已执行新的停用；恢复通信后才能继续交付和核验。
             </PageAlert>
@@ -132,12 +137,7 @@
               <template v-if="selectedNode.node_credential_prefix">本次自动化将复用现有连接凭证 <code>{{ selectedNode.node_credential_prefix }}…</code>，不会自动轮换。</template>
               <template v-else>ZBoard 会在 Zero 启动前自动生成并激活连接凭证；如果安装或验收失败，该凭证会随本次 generation 一起回滚，无需先到“连接凭证”手工生成。</template>
             </PageAlert>
-            <PageAlert v-if="kernelState?.status === 'reconciling'" tone="warning" title="配置结果待核对">
-              <p>{{ kernelState.last_error || '正在核对节点实际运行状态和发布回执。' }}</p>
-              <p>后台会自动复查；核对完成后按最新设置同步配置。期间保留当前运行配置和连接凭据。</p>
-              <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看配置发布任务</RouterLink>
-            </PageAlert>
-            <OutputBlock v-else-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="1200" />
+            <OutputBlock v-if="kernelState?.last_error && kernelState.status !== 'reconciling'" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="1200" />
             <UiTabs :model-value="kernelSource" :items="[{ value: 'online', label: '在线版本' }, { value: 'offline', label: '本地上传' }]" label="内核来源" @update:model-value="changeKernelSource" />
             <RemoteReadStatus v-if="kernelSource === 'online'" label="可用版本" :phase="releasesResource.phase.value" :error="releaseError" :last-success-at="releasesResource.lastSuccessAt.value" @retry="loadLatestRelease(true)" />
             <NodeKernelUpload v-if="kernelSource === 'offline'" :key="selectedNode.id" :node-id="selectedNode.id" :installed-version="kernelState?.installed_version" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @busy="offlineUploadBusy" @accepted="offlineUploadAccepted" />
