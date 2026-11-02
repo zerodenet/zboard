@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/application"
 	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -49,6 +50,15 @@ func (h *handlers) publishQueuedNode(ctx context.Context, item model.NodeConfigP
 }
 
 func (h *handlers) startNodePublishWorker(publish func(context.Context, model.NodeConfigPublish) error) {
+	h.startPeriodicJob(application.PeriodicJob{
+		ID: "node_publication_recovery", Name: "未结束配置发布恢复", Interval: time.Minute,
+		Timeout: 15 * time.Second, Immediate: true, RetryFailures: true,
+		ReconcileAfterLoss: true, CompactHistory: true,
+		Run: func(ctx context.Context) error {
+			_, err := h.services.RecoverNodePublications(ctx, time.Now().UTC())
+			return err
+		},
+	})
 	for index := 0; index < nodeConfigPublishWorkerCount; index++ {
 		id := fmt.Sprintf("node_publish_%d", index)
 		h.startScheduledJob(id, nodePublishPollInterval, func(ctx context.Context) error {
@@ -68,6 +78,7 @@ func (h *handlers) startNodePublishWorker(publish func(context.Context, model.No
 	}
 }
 func (h *handlers) CloseNodePublishWorker() {
+	h.closeScheduledJob("node_publication_recovery")
 	for index := 0; index < nodeConfigPublishWorkerCount; index++ {
 		h.closeScheduledJob(fmt.Sprintf("node_publish_%d", index))
 	}

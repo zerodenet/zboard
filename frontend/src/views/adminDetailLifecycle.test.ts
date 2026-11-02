@@ -55,6 +55,20 @@ const cases = [
   { name: 'subscriptions', component: Subscriptions, queryKey: 'subscription', title: (id: number) => `订阅 #${id}` },
   { name: 'nodes', component: Nodes, queryKey: 'node', title: (id: number) => `node-${id}` },
 ]
+
+it('shows the full reconciliation reason beside the node and links to all operation outcomes', async () => {
+  const reason = '核对发布 #197：节点已重启，配置回执属于旧进程，且没有匹配的已完成发布证据。'
+  mocks.kernel.mockResolvedValue({ state: { status: 'reconciling', phase: 'awaiting_configuration', last_error: reason }, operations: [] })
+  const { router, wrapper } = await render(cases.find(testCase => testCase.name === 'nodes')!)
+  await router.push({ query: { node: '1', tab: 'kernel' } }); await flushPromises()
+  expect(wrapper.text()).toContain(reason)
+  expect(wrapper.text()).toContain('后台会自动复查')
+  expect(wrapper.text()).toContain('期间保留当前运行配置和连接凭据')
+  const link = wrapper.findAllComponents({ name: 'RouterLink' }).find(item => item.text().includes('查看操作与核对记录'))!
+  expect(link.props('to')).toMatchObject({ path: '/admin/operation-logs' })
+  expect(link.props('to').query).not.toHaveProperty('status')
+})
+
 async function render(testCase: typeof cases[number]) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: testCase.component }] })
   await router.push({ path: '/', query: { [testCase.queryKey]: '1' } })

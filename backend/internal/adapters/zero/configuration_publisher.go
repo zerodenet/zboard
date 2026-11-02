@@ -108,6 +108,9 @@ func (p ConfigurationPublisher) Publish(ctx context.Context, request Configurati
 			return ConfigurationPublishResult{Output: strings.TrimSpace(output)}, fmt.Errorf("%w：%s", ErrConfigurationCapabilityUnavailable, truncateOutput(output))
 		}
 		cause := operationError(ctx, fmt.Errorf("apply Zero config without restarting the service: %w: %s", err, truncateOutput(output)))
+		if strings.Contains(output, "ZBOARD_CONFIG_RECONCILE_BLOCKED=") {
+			cause = operationError(ctx, configurationReconciliationError(output, err))
+		}
 		if !configurationConfirmedUnapplied(output) {
 			cause = network.ConfigurationOutcomeUnknown(cause)
 		}

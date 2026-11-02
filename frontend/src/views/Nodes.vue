@@ -108,7 +108,7 @@
 
         <article v-else-if="detailSection === 'kernel'" class="panel kernel-panel">
           <header class="panel-header">
-            <div><h2>Zero 内核自动化</h2><p>通过已验证的 SSH 安装、升级或对齐配置，失败自动回滚。</p></div>
+            <div><h2>Zero 内核自动化</h2><p>通过已验证的 SSH 安装、升级或对齐配置；结果不明时保留当前配置，核对后继续。</p></div>
             <StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge>
           </header>
           <div class="panel-body kernel-body">
@@ -132,7 +132,12 @@
               <template v-if="selectedNode.node_credential_prefix">本次自动化将复用现有连接凭证 <code>{{ selectedNode.node_credential_prefix }}…</code>，不会自动轮换。</template>
               <template v-else>ZBoard 会在 Zero 启动前自动生成并激活连接凭证；如果安装或验收失败，该凭证会随本次 generation 一起回滚，无需先到“连接凭证”手工生成。</template>
             </PageAlert>
-            <OutputBlock v-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="360" />
+            <PageAlert v-if="kernelState?.status === 'reconciling'" tone="warning" title="配置结果待核对">
+              <p>{{ kernelState.last_error || '正在核对节点实际运行状态和发布回执。' }}</p>
+              <p>后台会自动复查；核对完成后按最新设置同步配置。期间保留当前运行配置和连接凭据。</p>
+              <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看配置发布任务</RouterLink>
+            </PageAlert>
+            <OutputBlock v-else-if="kernelState?.last_error" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="1200" />
             <UiTabs :model-value="kernelSource" :items="[{ value: 'online', label: '在线版本' }, { value: 'offline', label: '本地上传' }]" label="内核来源" @update:model-value="changeKernelSource" />
             <RemoteReadStatus v-if="kernelSource === 'online'" label="可用版本" :phase="releasesResource.phase.value" :error="releaseError" :last-success-at="releasesResource.lastSuccessAt.value" @retry="loadLatestRelease(true)" />
             <NodeKernelUpload v-if="kernelSource === 'offline'" :key="selectedNode.id" :node-id="selectedNode.id" :installed-version="kernelState?.installed_version" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @busy="offlineUploadBusy" @accepted="offlineUploadAccepted" />
@@ -149,7 +154,7 @@
             <div class="kernel-actions">
               <UiButton variant="secondary" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @click="detectKernel"><UiIcon name="search" />{{ kernelBusy === 'detect' ? '检测中…' : '检测内核' }}</UiButton>
               <UiButton v-if="kernelSource === 'online'" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at || releaseLoading || !selectedReleaseVersion || !selectedReleaseCompatible || kernelState?.status === 'unsupported'" @click="reconcileKernel"><UiIcon name="play" />{{ kernelBusy === 'reconcile' ? kernelPhaseLabel(kernelState?.phase) : reconcileButtonLabel }}</UiButton>
-              <RouterLink v-if="kernelState?.last_error" class="button button-secondary button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'node_kernel', status: 'failed', node_id: String(selectedNode.id) })"><UiIcon name="terminal" />查看运行日志</RouterLink>
+              <RouterLink v-if="kernelState?.last_error" class="button button-secondary button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'node_kernel', node_id: String(selectedNode.id) })"><UiIcon name="terminal" />查看操作与核对记录</RouterLink>
               <small v-if="!selectedNode.ssh_verified_at">请先完成 SSH 验证，自动化不会绕过运维通道校验。</small>
               <small v-else-if="kernelSource === 'online'">现代 glibc 节点使用官方 GNU 制品，旧版 Linux 使用面板托管并校验 SHA-256 的 musl 制品；不会升级系统 libc，也不会自动降级内核。</small>
             </div>

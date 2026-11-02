@@ -52,8 +52,21 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 		}
 		// Reuse unresolved intent after timeouts or a panel crash. A restarted
 		// worker must reconcile it before creating a new remote transaction.
+		var active model.ProtocolDeployment
+		if err := tx.Select("id").Where("node_id = ? AND status = ? AND started_at > ?", node.ID, "running", now.Add(-network.PublicationLease)).Limit(1).Find(&active).Error; err != nil {
+			return err
+		}
+		if active.ID != 0 {
+			return network.ErrKernelOperationRunning
+		}
+		// An intent without a persisted digest never reached remote execution.
+		// End all such drafts before choosing the newest real transaction, so a
+		// newer empty draft cannot hide an older unknown configuration result.
+		if err := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status IN ? AND COALESCE(desired_config_sha256,'') = ''", node.ID, []string{"running", "reconciling"}).Updates(map[string]interface{}{"status": "interrupted", "finished_at": now}).Error; err != nil {
+			return err
+		}
 		var pending model.ProtocolDeployment
-		if err := tx.Where("node_id = ? AND status IN ?", node.ID, []string{"running", "reconciling"}).Order("id").Limit(1).Find(&pending).Error; err != nil {
+		if err := tx.Where("node_id = ? AND status IN ?", node.ID, []string{"running", "reconciling"}).Order("id DESC").Limit(1).Find(&pending).Error; err != nil {
 			return err
 		}
 		if pending.ID != 0 {
@@ -68,6 +81,14 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 					pending.Status = "reconciling"
 				}
 				out.Deployment = configurationDeploymentView(pending)
+				var later model.ProtocolDeployment
+				if err := tx.Where("node_id = ? AND id > ? AND status = ? AND desired_config_sha256 <> '' AND applied_config_sha256 = desired_config_sha256", node.ID, pending.ID, "succeeded").Order("id DESC").Limit(1).Find(&later).Error; err != nil {
+					return err
+				}
+				if later.ID != 0 {
+					view := configurationDeploymentView(later)
+					out.LaterCompleted = &view
+				}
 				return nil
 			}
 			// No desired digest was persisted; remote execution could not start.

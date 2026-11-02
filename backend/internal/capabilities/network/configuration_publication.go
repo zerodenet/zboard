@@ -41,6 +41,9 @@ type ConfigurationDeployment struct {
 type ConfigurationPublicationStart struct {
 	Deployment         ConfigurationDeployment
 	MieruFallbackCount int64
+	// LaterCompleted is evidence of a subsequent acknowledged publication, not
+	// permission to trust an old receipt without checking the live node.
+	LaterCompleted *ConfigurationDeployment
 }
 
 type ConfigurationPublicationCompletion struct {

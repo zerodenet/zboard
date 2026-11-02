@@ -16,7 +16,6 @@ func (s ConfigurationPublicationState) UncertainConfigurationPublication(ctx con
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND node_id = ? AND status IN ?", deployment.ID, deployment.NodeID, []string{"running", "reconciling"}).First(&row).Error; err != nil {
 			return err
 		}
-		first := row.Status == "running"
 		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "reconciling", "error": message, "output": output, "finished_at": nil}).Error; err != nil {
 			return err
 		}
@@ -28,16 +27,14 @@ func (s ConfigurationPublicationState) UncertainConfigurationPublication(ctx con
 		if err := tx.Model(&state).Updates(map[string]interface{}{"status": "reconciling", "phase": "awaiting_configuration", "last_error": message}).Error; err != nil {
 			return err
 		}
-		if first {
-			// Ensure a recovery check exists without replacing a newer intent,
-			// its generation, attribution or an active worker's lease.
-			queued := model.NodeConfigPublish{NodeID: row.NodeID, EndpointID: row.ProtocolEndpointID, Generation: 1, Reconciling: true, NextAttemptAt: now, LeaseUntil: publicationIdleLease}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&queued).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ?", row.NodeID).Update("reconciling", true).Error; err != nil {
-				return err
-			}
+		// Ensure a recovery check exists without replacing a newer intent,
+		// its generation, attribution or an active worker's lease.
+		queued := model.NodeConfigPublish{NodeID: row.NodeID, EndpointID: row.ProtocolEndpointID, Generation: 1, Reconciling: true, NextAttemptAt: now, LeaseUntil: publicationIdleLease}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&queued).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ?", row.NodeID).Update("reconciling", true).Error; err != nil {
+			return err
 		}
 
 		row.Status, row.Error, row.Output, row.FinishedAt = "reconciling", message, output, nil
@@ -53,10 +50,11 @@ func (s ConfigurationPublicationState) ResolveConfigurationPublication(ctx conte
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND node_id = ? AND status = ?", deployment.ID, deployment.NodeID, "reconciling").First(&row).Error; err != nil {
 			return err
 		}
-		updates := map[string]interface{}{"status": "superseded", "output": output, "error": "", "finished_at": now}
+		updates := map[string]interface{}{"status": "superseded", "output": output, "finished_at": now}
 		if applied {
 			updates["status"] = "succeeded"
 			updates["applied_config_sha256"] = row.DesiredConfigSHA256
+			updates["error"] = ""
 		}
 		if err := tx.Model(&row).Updates(updates).Error; err != nil {
 			return err
@@ -65,6 +63,12 @@ func (s ConfigurationPublicationState) ResolveConfigurationPublication(ctx conte
 			if err := confirmCredentialDelivery(tx, row, now); err != nil {
 				return err
 			}
+		}
+		// The newest unresolved intent is the recovery boundary. Older unfinished
+		// rows cannot own a later transaction; retain their errors as history and
+		// end them together, rather than recursively replaying an unbounded list.
+		if err := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND id < ? AND status IN ?", row.NodeID, row.ID, []string{"running", "reconciling"}).Updates(map[string]interface{}{"status": "superseded", "output": output, "finished_at": now}).Error; err != nil {
+			return err
 		}
 		// A subsequent publication recompiles the latest intent and commits its
 		// readiness. An old acknowledgement must not enable newly added endpoints.
@@ -75,6 +79,6 @@ func (s ConfigurationPublicationState) ResolveConfigurationPublication(ctx conte
 		if err := tx.Model(&model.NodeKernelState{}).Where("node_id = ?", row.NodeID).Updates(stateUpdates).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.NodeOperation{}).Where("node_id = ? AND status = ?", row.NodeID, "reconciling").Updates(map[string]interface{}{"status": "superseded", "phase": "completed", "finished_at": now}).Error
+		return tx.Model(&model.NodeOperation{}).Where("node_id = ? AND status = ?", row.NodeID, "reconciling").Updates(map[string]interface{}{"status": "superseded", "phase": "completed", "result_summary": "旧发布已完成核对并结束，后续发布将按最新设置同步配置。", "finished_at": now}).Error
 	})
 }

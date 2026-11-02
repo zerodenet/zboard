@@ -17,6 +17,10 @@ func (s *Services) NodePublication(executor network.PublicationExecutor) network
 	}
 }
 
+func (s *Services) RecoverNodePublications(ctx context.Context, now time.Time) (int, error) {
+	return (networkstore.PublicationQueue{DB: s.Identity.db}).RecoverUnqueuedPublications(ctx, now)
+}
+
 func (s *Services) NodePublicationTargets() network.PublicationTargets {
 	return network.PublicationTargets{Repository: networkstore.PublicationTargets{DB: s.Identity.db}}
 }

@@ -33,16 +33,8 @@ runtime_identity
 before_core=$core
 before_revision=$revision
 file_sha=$(sha256sum /etc/zerodenet/current.json | awk '{print $1}')
-if [ -f "$pending" ]; then
-  read_pending || { printf 'ZBOARD_CONFIG_OUTCOME_UNKNOWN=1\n'; exit 1; }
-  if [ "$pending_core" = "$core" ] && [ "$pending_phase" != prepared ]; then
-    if ! receipt_matches "$pending_sha" || [ "$recorded_revision" -le "$pending_revision" ]; then
-      printf 'ZBOARD_CONFIG_OUTCOME_UNKNOWN=1\n'
-      exit 1
-    fi
-  fi
-  rm -f "$pending"
-fi
+check_pending
+if [ -f "$pending" ]; then rm -f "$pending"; fi
 printf '%%s %%s %%s prepared\n' "$core" "$revision" "$expected_sha" > "$pending.next"
 chmod 0600 "$pending.next"
 mv -f "$pending.next" "$pending"

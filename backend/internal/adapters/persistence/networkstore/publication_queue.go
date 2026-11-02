@@ -95,6 +95,11 @@ func (s PublicationQueue) Complete(ctx context.Context, item network.Publication
 		}
 		return db.Model(&model.NodeConfigPublish{}).Where("node_id = ? AND lease_token = ?", item.NodeID, item.LeaseToken).Updates(map[string]interface{}{"lease_token": "", "lease_until": publicationIdleLease, "next_attempt_at": now}).Error
 
+	} else if errors.Is(failure, network.ErrConfigurationReapplyRequired) {
+		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
+			"phase": "", "applied_config_sha256": "", "reconciling": true,
+			"last_error": message, "next_attempt_at": now.Add(network.PublicationRecheckInterval), "lease_token": "", "lease_until": publicationIdleLease,
+		})
 	} else if errors.Is(failure, network.ErrConnectionRevocationPending) {
 		result = owned.Model(&model.NodeConfigPublish{}).Updates(map[string]interface{}{
 			"last_error": message, "next_attempt_at": now.Add(network.PublicationRecheckInterval), "lease_token": "", "lease_until": publicationIdleLease,

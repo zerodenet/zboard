@@ -17,8 +17,8 @@ import (
 func TestConfigurationReconciliationRequiresMatchingCompletedReceipt(t *testing.T) {
 	sha := strings.Repeat("a", 64)
 	for _, tc := range []struct {
-		name, pending, receipt, core string
-		applied, safe                bool
+		name, pending, receipt, core, later string
+		applied, safe, drift                bool
 	}{
 		{name: "lost SSH reply after commit", receipt: sha + " " + sha + " core 2\n", core: "core", applied: true},
 		{name: "healthy process still applying", pending: "core 1 " + sha + "\n", core: "core"},
@@ -29,6 +29,13 @@ func TestConfigurationReconciliationRequiresMatchingCompletedReceipt(t *testing.
 		{name: "legacy unknown without a guard", core: "core"},
 		{name: "staging never submitted", pending: "core 1 " + sha + " prepared\n", core: "core", safe: true},
 		{name: "malformed guard retained", pending: "bad guard\n", core: "core"},
+		{name: "later confirmed configuration supersedes legacy intent", receipt: strings.Repeat("b", 64) + " " + sha + " core 2\n", core: "core", later: strings.Repeat("b", 64), safe: true},
+		{name: "reboot after later confirmed publication", receipt: strings.Repeat("b", 64) + " " + sha + " old-core 6\n", core: "new-core", later: strings.Repeat("b", 64), safe: true},
+		{name: "lost acknowledgement then reboot", receipt: sha + " " + sha + " old-core 6\n", core: "new-core", safe: true},
+		{name: "reboot without matching completed evidence", receipt: strings.Repeat("b", 64) + " " + sha + " old-core 6\n", core: "new-core"},
+		{name: "later DB success cannot bypass changed file", receipt: strings.Repeat("b", 64) + " " + strings.Repeat("c", 64) + " old-core 6\n", core: "new-core", later: strings.Repeat("b", 64)},
+		{name: "later DB success cannot bypass unfinished same core", pending: "core 2 " + sha + " applying\n", receipt: strings.Repeat("b", 64) + " " + sha + " core 2\n", core: "core", later: strings.Repeat("b", 64)},
+		{name: "restart during evidence read cannot confirm", receipt: sha + " " + sha + " core 2\n", core: "core", drift: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -47,6 +54,10 @@ func TestConfigurationReconciliationRequiresMatchingCompletedReceipt(t *testing.
 				filepath.Join(bin, "zero"):         "#!/bin/sh\n[ \"$1\" = status ] || { echo UNEXPECTED_MUTATION; exit 9; }\nprintf '{\\n  \"runtime\": {\\n    \"core_instance_id\": \"" + tc.core + "\",\\n    \"config_revision\": 2\\n  }\\n}\\n'\n",
 				filepath.Join(etc, "current.json"): "{}",
 			}
+			if tc.drift {
+				counter := shellQuote(filepath.Join(bin, "status-count"))
+				files[filepath.Join(bin, "zero")] = "#!/bin/sh\nn=0; [ ! -f " + counter + " ] || n=$(cat " + counter + "); n=$((n+1)); echo $n > " + counter + "; core=core; [ $((n%2)) -eq 1 ] || core=restarted\nprintf '{\\n  \"runtime\": {\\n    \"core_instance_id\": \"%s\",\\n    \"config_revision\": 2\\n  }\\n}\\n' \"$core\"\n"
+			}
 			if tc.pending != "" {
 				files[filepath.Join(state, "zboard-config.pending")] = tc.pending
 			}
@@ -59,7 +70,7 @@ func TestConfigurationReconciliationRequiresMatchingCompletedReceipt(t *testing.
 				}
 			}
 			replace := strings.NewReplacer("/usr/local/bin/zero", filepath.Join(bin, "zero"), "/etc/zerodenet", etc, "/var/lib/zerodenet", state)
-			script := replace.Replace(buildConfigurationReconciliationScript(sha))
+			script := replace.Replace(buildConfigurationReconciliationScript(sha, tc.later))
 			for pass := 0; pass < 2; pass++ {
 				cmd := exec.Command("bash")
 				cmd.Stdin = strings.NewReader(script)
@@ -102,6 +113,31 @@ func TestConfigurationReconciliationRequiresMatchingCompletedReceipt(t *testing.
 				}
 			}
 		})
+	}
+}
+
+func TestConfigurationReconciliationDisplaysClassifiedReasonWithoutStatusDump(t *testing.T) {
+	cause := errors.New("Process exited with status 1")
+	for marker, reason := range map[string]string{
+		"publication_lock_busy": "持有锁", "invalid_pending": "记录损坏",
+		"same_process_applying": "未确认的配置应用", "persisted_config_changed": "摘要不一致",
+		"restart_without_evidence": "节点已重启", "missing_receipt": "缺少配置完成回执",
+		"receipt_not_matching": "回执与待核对发布不匹配", "runtime_changed": "核对期间",
+	} {
+		t.Run(marker, func(t *testing.T) {
+			err := configurationReconciliationError("ZBOARD_CONFIG_RECONCILE_BLOCKED="+marker+"\nsecret-status-dump", cause)
+			if !errors.Is(err, cause) || !strings.Contains(err.Error(), reason) || strings.Contains(err.Error(), "secret-status-dump") {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestReconciliationCarriesReasonAndRawReceiptSeparately(t *testing.T) {
+	session := &kernelRemoteSessionStub{runErrorAt: 1, runErrorOutput: "ZBOARD_CONFIG_RECONCILE_BLOCKED=restart_without_evidence\n"}
+	result, err := (ConfigurationPublisher{Dialer: &kernelRemoteDialerStub{session: session}}).Reconcile(context.Background(), ConfigurationReconciliationRequest{DesiredSHA256: strings.Repeat("a", 64)})
+	if !errors.Is(err, network.ErrConfigurationOutcomeUnknown) || !strings.Contains(err.Error(), "节点已重启") || !strings.Contains(result.Output, "restart_without_evidence") {
+		t.Fatalf("result=%+v error=%v", result, err)
 	}
 }
 

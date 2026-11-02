@@ -38,8 +38,10 @@ func (h *handlers) revokeNodeConnections(parent context.Context, nodeID uint, ex
 		return pending("native socket access unavailable; configuration remains applied")
 	}
 	authority := h.services.ConnectionRevocation(h.credentialCipher)
+	runtimeReplaced := false
 	_, err = zeroadapter.DrainRevokedFlows(ctx, conn, func(ctx context.Context) error {
-		remote, err := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: h, node: node}}).Reconcile(ctx, expectedSHA)
+		remote, err := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: h, node: node}}).Reconcile(ctx, zeroadapter.ConfigurationReconciliationRequest{DesiredSHA256: expectedSHA})
+		runtimeReplaced = err == nil && remote.RetrySafe
 		if err != nil || !remote.Applied {
 			return zeroadapter.ErrFlowControlEvidence
 		}
@@ -51,6 +53,9 @@ func (h *handlers) revokeNodeConnections(parent context.Context, nodeID uint, ex
 		defer stop()
 		return authority.WithRevokedPrincipal(commandCtx, nodeID, principal, close)
 	})
+	if runtimeReplaced {
+		return network.ErrConfigurationReapplyRequired
+	}
 	if err != nil {
 		return pending(err.Error())
 	}

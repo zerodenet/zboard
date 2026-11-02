@@ -91,10 +91,15 @@ func (h *handlers) publishNodeConfigWithOwnerLocked(ctx context.Context, nodeID,
 	}
 	if publication.Deployment.Status == "reconciling" {
 		pending := publication.Deployment
-		remote, reconcileErr := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: h, node: node}}).Reconcile(ctx, pending.DesiredConfigSHA256)
+		check := zeroadapter.ConfigurationReconciliationRequest{DesiredSHA256: pending.DesiredConfigSHA256}
+		if publication.LaterCompleted != nil {
+			check.LaterCompletedSHA256 = publication.LaterCompleted.AppliedConfigSHA256
+		}
+		remote, reconcileErr := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: h, node: node}}).Reconcile(ctx, check)
 		finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), network.KernelDetectionFinalizeTimeout)
 		defer cancel()
 		if reconcileErr != nil {
+			reconcileErr = fmt.Errorf("核对发布 #%d：%w", pending.ID, reconcileErr)
 			retained, err := state.Uncertain(finalizeCtx, pending, reconcileErr, remote.Output)
 			return configurationDeploymentModel(retained), time.Since(started), err
 		}
