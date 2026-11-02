@@ -3,6 +3,16 @@ import { describe, expect, it } from 'vitest'
 import WorkbenchFilterInput from './WorkbenchFilterInput.vue'
 
 describe('WorkbenchFilterInput', () => {
+  it('offers an always visible search field and commits only on explicit submission', async () => {
+    const wrapper = mount(WorkbenchFilterInput, { props: { label: '搜索用户', inline: true, modelValue: '' } })
+    await wrapper.get('input').setValue('  owner@example.test  ')
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    expect(wrapper.find('[aria-haspopup]').exists()).toBe(false)
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['owner@example.test'])
+    expect(wrapper.emitted('apply')).toHaveLength(1)
+    wrapper.unmount()
+  })
   it('keeps text in the popover draft until the user applies it', async () => {
     const wrapper = mount(WorkbenchFilterInput, {
       props: {

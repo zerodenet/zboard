@@ -76,6 +76,7 @@ async function render(testCase: typeof cases[number]) {
   wrapper = shallowMount(defineComponent({ components: { RouterView }, template: '<RouterView />' }), { global: {
     plugins: [router], renderStubDefaultSlot: true,
     stubs: {
+      RowActions: { template: '<div><slot name="primary"/><slot/></div>' },
       PageHeader: false, RouterView: false, Orders: false, Users: false, Subscriptions: false, Nodes: false, RemoteReadStatus: false,
       DetailDrawer: drawer, ModalDialog: hiddenModal, ConfirmDialog: hiddenModal,
       NodeRetirementDialog: hiddenModal, NodeRuntimeDiagnosticsModal: hiddenModal, UiButton: true, TimeBadge: true, PageRefreshButton: true,

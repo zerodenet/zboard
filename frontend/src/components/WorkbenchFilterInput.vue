@@ -1,5 +1,9 @@
 <template>
-  <WorkbenchFilterChip
+  <form v-if="inline" class="workbench-inline-search" role="search" :aria-label="label" @submit.prevent="apply()">
+    <UiInput v-model="draft" v-bind="$attrs" type="search" :aria-label="fieldLabel || label" :placeholder="placeholder || label" />
+    <UiButton variant="secondary" size="sm" type="submit">搜索</UiButton>
+  </form>
+  <WorkbenchFilterChip v-else
     :label="label"
     :active="active"
     :value-label="displayValue"
@@ -39,10 +43,12 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   valuePrefix?: string
   fieldLabel?: string
+  inline?: boolean
 }>(), {
   placeholder: '',
   valuePrefix: '',
   fieldLabel: '',
+  inline: false,
 })
 
 const model = defineModel<string>({ default: '' })
@@ -76,3 +82,8 @@ async function clear() {
   emit('apply')
 }
 </script>
+
+<style scoped>
+.workbench-inline-search { display: flex; align-items: center; gap: 6px; flex: 0 1 320px; min-width: 0; }
+.workbench-inline-search .ui-input { flex: 1; min-width: 0; }
+</style>

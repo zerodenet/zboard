@@ -29,6 +29,10 @@ fixtures no longer install PrimeVue, and it is absent from the package manifest.
 - Use `DataTable` and `TablePager` for data lists. Numeric cells align right;
   table identity stays visible at narrow widths. Use `EmptyState` and
   skeletons for first-load and empty states.
+  Keep entity names directly navigable. In `RowActions`, the `primary` slot
+  exposes frequent actions beside the menu; the default slot contains secondary
+  actions. Compact tables should not require opening a menu to view or edit
+  every entity. `WorkbenchFilterInput inline` keeps frequent search visible.
 - Use `notify` for short operation feedback and `PageAlert` for page-level
   failures. Field validation stays at the field. Destructive operations use
   `confirmAction` and `ConfirmDialog`.

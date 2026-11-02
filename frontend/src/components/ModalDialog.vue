@@ -12,6 +12,7 @@
         @escape-key-down="handleDismiss"
         @pointer-down-outside="handleDismiss"
         @close-auto-focus="handleCloseAutoFocus"
+        @open-auto-focus="handleOpenAutoFocus"
       >
         <header class="app-dialog-header">
           <div class="app-dialog-heading">
@@ -44,7 +45,8 @@ const props = withDefaults(defineProps<{
   discardTitle?: string
   discardMessage?: string
   returnFocusSelector?: string
-}>(), { size: 'md', busy: false, fixedBody: false, dirty: false, discardTitle: '放弃未保存的修改？', discardMessage: '当前表单包含尚未保存的内容，关闭后这些修改将丢失。', returnFocusSelector: '' })
+  initialFocusSelector?: string
+}>(), { size: 'md', busy: false, fixedBody: false, dirty: false, discardTitle: '放弃未保存的修改？', discardMessage: '当前表单包含尚未保存的内容，关闭后这些修改将丢失。', returnFocusSelector: '', initialFocusSelector: '' })
 const emit = defineEmits<{ close: [] }>()
 const widths = { sm: '27.5rem', md: '40rem', lg: '51.25rem', xl: '65rem' }
 const dialogStyle = computed(() => ({ width: widths[props.size], maxHeight: '88vh' }))
@@ -83,6 +85,12 @@ function restoreFocus() {
 function handleCloseAutoFocus(event: Event) {
   event.preventDefault()
   restoreFocus()
+}
+function handleOpenAutoFocus(event: Event) {
+  const target = props.initialFocusSelector ? document.querySelector<HTMLElement>(props.initialFocusSelector) : null
+  if (!target) return
+  event.preventDefault()
+  target.focus({ preventScroll: true })
 }
 defineExpose({ requestClose, restoreFocus })
 </script>

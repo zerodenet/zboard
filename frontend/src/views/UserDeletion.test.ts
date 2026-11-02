@@ -23,6 +23,7 @@ async function render() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/users', component: Users }] })
   await router.push('/admin/users')
   wrapper = shallowMount(Users, { global: { plugins: [router], components: { FormField, UiInput }, renderStubDefaultSlot: true, stubs: {
+      RowActions: { template: '<div><slot name="primary"/><slot/></div>' },
     ModalDialog: modal, DetailDrawer: true, UiInput: false, FormField: false,
     UiButton: defineComponent({ template: '<button><slot/></button>' }),
     PageAlert: { template: '<aside><slot/></aside>' },

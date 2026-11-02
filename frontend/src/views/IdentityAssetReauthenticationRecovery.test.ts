@@ -33,7 +33,8 @@ afterEach(() => { view?.unmount(); view = undefined; clearReauthenticationDrafts
 async function open(path: string, component: typeof Users | typeof Providers | typeof Protocols) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/users', component: Users }, { path: '/admin/providers', component: Providers }, { path: '/admin/protocols', component: Protocols }] })
   await router.push(path); await router.isReady()
-  view = shallowMount(component, { global: { plugins: [router], renderStubDefaultSlot: true, components: { UiInput: input, UiTextarea: input, UiSelect: input, UiCheckbox: checkbox, UiButton: defineComponent({ template: '<button><slot /></button>' }), FormField }, stubs: { UiInput: false, UiTextarea: false, UiSelect: false, UiCheckbox: false, UiButton: defineComponent({ template: '<button><slot /></button>' }), FormField: false, ModalDialog: modal, DetailDrawer: modal, DataTable: { template: '<div><slot /></div>' }, PageHeader: { template: '<header><slot /><slot name="actions" /></header>' }, PageAlert: { template: '<aside><slot /><slot name="actions" /></aside>' }, NodeGroupMembershipEditor: true, NodeLookup: true, NetworkEntries: true } } })
+  view = shallowMount(component, { global: { plugins: [router], renderStubDefaultSlot: true, components: { UiInput: input, UiTextarea: input, UiSelect: input, UiCheckbox: checkbox, UiButton: defineComponent({ template: '<button><slot /></button>' }), FormField }, stubs: {
+      RowActions: { template: '<div><slot name="primary"/><slot/></div>' }, UiInput: false, UiTextarea: false, UiSelect: false, UiCheckbox: false, UiButton: defineComponent({ template: '<button><slot /></button>' }), FormField: false, ModalDialog: modal, DetailDrawer: modal, DataTable: { template: '<div><slot /></div>' }, PageHeader: { template: '<header><slot /><slot name="actions" /></header>' }, PageAlert: { template: '<aside><slot /><slot name="actions" /></aside>' }, NodeGroupMembershipEditor: true, NodeLookup: true, NetworkEntries: true } } })
   await flushPromises()
 }
 async function click(label: string) { await view!.findAll('button').find(button => button.text().includes(label))!.trigger('click'); await flushPromises() }
@@ -62,7 +63,7 @@ it('restores a provider name with the original CAS version and sends only after 
 it.each(['user', 'provider', 'protocol'] as const)('retains %s draft on fresh conflict and rejects programmatic submission', async kind => {
   const path = kind === 'user' ? '/admin/users' : kind === 'provider' ? '/admin/providers' : '/admin/protocols?kind=listener'
   await open(path, kind === 'user' ? Users : kind === 'provider' ? Providers : Protocols)
-  if (kind === 'user') { await click('账户与权限'); await view!.get('#edit-user-status').setValue('suspended') }
+  if (kind === 'user') { await click('编辑'); await view!.get('#edit-user-status').setValue('suspended') }
   else if (kind === 'provider') { await click('编辑'); await view!.get('#provider-name').setValue('Draft DNS') }
   else { await view!.get('[aria-label="编辑协议服务 Edge protocol"]').trigger('click'); await flushPromises(); await view!.get('#protocol-name').setValue('Draft protocol') }
   capture(path)
@@ -85,7 +86,7 @@ it('restores an endpoint name using fresh unchanged server config without persis
   expect((view!.vm as any).$.setupState.form.config).toContain('SERVER_SECRET'); noWrites()
 })
 it('does not apply a late user draft detail after a new local editor opens', async () => {
-  const path = '/admin/users'; await open(path, Users); await click('账户与权限'); await view!.get('#edit-user-status').setValue('suspended'); capture(path)
+  const path = '/admin/users'; await open(path, Users); await click('编辑'); await view!.get('#edit-user-status').setValue('suspended'); capture(path)
   let resolve!: (value: typeof user) => void
   mocks.user.mockImplementationOnce(() => new Promise(done => { resolve = done }))
   await open(path, Users); await click('创建用户'); await view!.get('#create-user-email').setValue('new-local@example.test')
@@ -94,7 +95,7 @@ it('does not apply a late user draft detail after a new local editor opens', asy
   expect(view!.find('#edit-user-form').exists()).toBe(false); expect(sessionStorage.length).toBeGreaterThan(0); noWrites()
 })
 it('refuses resource-permission restoration', async () => {
-  const path = '/admin/users'; await open(path, Users); await click('账户与权限'); await view!.get('#edit-user-status').setValue('suspended'); capture(path)
+  const path = '/admin/users'; await open(path, Users); await click('编辑'); await view!.get('#edit-user-status').setValue('suspended'); capture(path)
   mocks.user.mockRejectedValue({ response: { status: 403 } }); await open(path, Users)
   expect(view!.find('#edit-user-form').exists()).toBe(false); expect(sessionStorage.length).toBe(0); noWrites()
 })

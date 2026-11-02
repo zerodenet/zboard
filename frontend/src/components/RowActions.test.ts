@@ -7,6 +7,17 @@ afterEach(() => {
 })
 
 describe('RowActions', () => {
+  it('keeps frequent actions visible while placing even one secondary action in the menu', async () => {
+    const wrapper = mount(RowActions, {
+      attachTo: document.body,
+      slots: { primary: '<button>编辑</button><button>重置密码</button>', default: '<button>删除</button>' },
+    })
+    expect(wrapper.findAll('button').map(button => button.text()).slice(0, 2)).toEqual(['编辑', '重置密码'])
+    expect(wrapper.text()).not.toContain('删除')
+    await wrapper.get('[aria-haspopup="menu"]').trigger('keydown', { key: 'ArrowDown' })
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('删除')
+    wrapper.unmount()
+  })
   it('renders one available action directly', () => {
     const wrapper = mount(RowActions, {
       slots: { default: '<button type="button">查看</button>' },

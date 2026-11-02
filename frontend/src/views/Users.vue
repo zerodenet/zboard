@@ -1,15 +1,15 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="用户与权限" description="查找账户、管理权限与状态，直接查看关联订阅和订单。">
+    <PageHeader title="用户管理" description="点击用户查看详情，或直接编辑账户。">
       <template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/settings/runtime#account-cleanup">自动清理规则</RouterLink></UiButton><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
     </PageHeader>
 
-    <TransientFeedback :success="message" :error="error" success-title="用户信息已更新" error-title="用户操作失败" />
+    <TransientFeedback :success="message" :error="error || (!detailID ? actionError : '')" success-title="用户信息已更新" error-title="用户操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="activeFilterCount > 0" :active-count="activeFilterCount" :advanced-count="advancedFilterCount" :loading="loading" @clear="clearFilters">
-          <WorkbenchFilterInput v-model="search" label="搜索" placeholder="邮箱或账户名称" @apply="applyFilters" />
+          <WorkbenchFilterInput v-model="search" inline label="搜索用户" placeholder="邮箱或账户名称" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="statusFilter" label="账户状态" :options="filterStatusOptions" @apply="applyFilters" />
           <template #advanced>
             <WorkbenchFilterSelect v-model="adminFilter" label="管理权限" :options="adminOptions" @apply="applyFilters" />
@@ -18,17 +18,16 @@
         </WorkbenchFilterBar>
       </template>
       <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="7" />
-      <DataTable v-else-if="users.length" caption="用户与权限列表" :row-count="total" :min-width="980">
-          <thead><tr><th class="table-primary-column">用户</th><th data-column-priority="2">管理权限</th><th>状态</th><th class="numeric-column" data-column-priority="2">订阅（有效/全部）</th><th class="numeric-column" data-column-priority="3">订单（待处理/全部）</th><SortableHeader field="created_at" label="创建时间" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" /><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="880">
+          <thead><tr><th class="table-primary-column">用户</th><th>状态</th><th class="numeric-column" data-column-priority="2">订阅（有效/全部）</th><th class="numeric-column" data-column-priority="3">订单（待处理/全部）</th><SortableHeader field="created_at" label="注册时间" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" /><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
           <tbody>
             <tr v-for="user in users" :key="user.id">
-              <td class="table-primary-column"><div class="user-cell"><span class="user-avatar">{{ user.email.slice(0, 1).toUpperCase() }}</span><div class="cell-title"><strong>{{ user.email }}</strong><span class="mono">#{{ user.id }}</span></div></div></td>
-              <td data-column-priority="2"><StatusBadge :tone="permissionTone(user.is_admin)">{{ permissionName(user.is_admin) }}</StatusBadge></td>
+              <td class="table-primary-column"><div class="cell-title"><RouterLink :to="{ query: { ...route.query, user: String(user.id) } }" :data-user-detail-trigger="user.id" :aria-label="`查看用户 ${user.email}`" class="user-detail-link">{{ user.email }}</RouterLink><span><span class="mono">#{{ user.id }}</span><template v-if="user.is_admin"> · 管理员</template></span></div></td>
               <td><StatusBadge :tone="statusTone(user.status)">{{ statusName(user.status) }}</StatusBadge></td>
               <td class="numeric-column" data-column-priority="2"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订阅`">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</RouterLink></td>
               <td class="numeric-column" data-column-priority="3"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订单`">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</RouterLink></td>
               <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${user.email} 的操作`" :trigger-key="`user-${user.id}`"><UiButton variant="secondary" size="sm" type="button" :data-user-detail-trigger="user.id" @click="openDetail(user.id)">查看详情</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })">查看订阅</RouterLink></UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id) })">查看订单</RouterLink></UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="ghost" size="sm" type="button" @click="openEdit(user)"><UiIcon name="edit" />账户与权限</UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><template #primary><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :loading="openingUserID === user.id" @click="openEdit(user)">编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton></template><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
             </tr>
           </tbody>
       </DataTable>
@@ -36,13 +35,28 @@
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <DetailDrawer :open="Boolean(detailID)" :title="selectedUserDetail?.email || '用户详情'" :description="selectedUserDetail ? `账户 #${selectedUserDetail.id}` : '正在加载账户业务概览'" :return-focus-selector="detailID ? `[data-row-action-trigger='user-${detailID}']` : ''" @close="closeDetail">
+    <DetailDrawer :open="Boolean(detailID)" :title="selectedUserDetail?.email || '用户详情'" :description="selectedUserDetail ? `账户 #${selectedUserDetail.id}` : '正在加载账户业务概览'" :return-focus-selector="detailID ? `[data-user-detail-trigger='${detailID}']` : ''" @close="closeDetail">
       <PageAlert v-if="detailError" tone="danger" title="用户详情加载失败">{{ detailError }}</PageAlert>
       <div v-if="detailLoading" class="detail-loading" role="status">正在加载用户详情…</div>
-      <main v-else-if="selectedUserDetail" class="business-detail stack">
+      <main v-else-if="selectedUserDetail" class="business-detail stack user-detail">
+        <PageAlert v-if="actionError" tone="danger" title="用户操作未完成">{{ actionError }}</PageAlert>
+        <div class="user-detail-actions">
+          <RowActions label="用户更多操作" :trigger-key="`user-detail-${selectedUserDetail.id}`">
+            <template #primary>
+              <UiButton variant="secondary" size="sm" type="button" :data-user-edit-trigger="`detail-${selectedUserDetail.id}`" :loading="openingUserID === selectedUserDetail.id" @click="openEdit(selectedUserDetail)">编辑账户</UiButton>
+              <UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`detail-${selectedUserDetail.id}`" @click="openPasswordReset(selectedUserDetail)">重置密码</UiButton>
+              <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">订阅</RouterLink></UiButton>
+              <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">订单</RouterLink></UiButton>
+            </template>
+            <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink></UiButton>
+            <UiButton variant="danger" size="sm" type="button" @click="openDeletion(selectedUserDetail)">删除用户</UiButton>
+          </RowActions>
+        </div>
+        <UiTabs v-model="userDetailSection" :items="[{ label: '账户', value: 'account' }, { label: '余额', value: 'wallet' }, { label: '外部账号', value: 'identities' }]" label="用户详情分区" />
+        <template v-if="userDetailSection === 'account'">
         <section class="detail-status-strip" aria-label="用户状态">
           <StatusBadge :tone="statusTone(selectedUserDetail.status)">{{ statusName(selectedUserDetail.status) }}</StatusBadge>
-          <StatusBadge :tone="permissionTone(selectedUserDetail.is_admin)">{{ permissionName(selectedUserDetail.is_admin) }}</StatusBadge>
+          <StatusBadge v-if="selectedUserDetail.is_admin" tone="info">管理员</StatusBadge>
           <StatusBadge :tone="selectedUserDetail.email_verified_at ? 'success' : 'warning'">{{ selectedUserDetail.email_verified_at ? '邮箱已验证' : '邮箱未验证' }}</StatusBadge>
         </section>
         <section class="detail-metrics" aria-label="关联业务数量">
@@ -59,15 +73,12 @@
           <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
           <div><span>邮箱验证</span><TimeBadge :value="selectedUserDetail.email_verified_at" /></div>
         </section>
-        <AdminWalletPanel :user-id="selectedUserDetail.id" />
-        <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
-        <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
-        <div class="detail-action-row">
-          <UiButton as-child variant="secondary" size="sm"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">查看订阅</RouterLink></UiButton>
-          <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">查看订单</RouterLink></UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink></UiButton>
-          <UiButton variant="ghost" size="sm" type="button" @click="openEdit(selectedUserDetail)"><UiIcon name="edit" />账户与权限</UiButton>
-          <UiButton variant="danger" size="sm" type="button" @click="openDeletion(selectedUserDetail)">删除用户</UiButton>
-        </div>
+        </template>
+        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :user-id="selectedUserDetail.id" />
+        <template v-else-if="userDetailSection === 'identities'">
+          <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
+          <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
+        </template>
       </main>
     </DetailDrawer>
 
@@ -85,19 +96,26 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="create-user-form" type="submit" :loading="saving">创建用户</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="管理用户账户" :description="selectedUser ? selectedUser.email : ''" size="lg" :busy="saving" @close="closeEdit">
+    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑用户" :description="selectedUser ? selectedUser.email : ''" :return-focus-selector="selectedUser ? `[data-user-edit-trigger='${detailID === selectedUser.id ? 'detail' : 'list'}-${selectedUser.id}']` : ''" :busy="saving" @close="closeEdit">
       <form id="edit-user-form" ref="editFormElement" class="stack" novalidate @submit.prevent="saveUser">
-        <PageAlert v-if="editDraft.password" tone="warning" title="密码草稿仅留在本页">未保存的密码不会暂存；请留在本页完成认证后再继续。</PageAlert>
         <PageAlert v-if="editErrors.formError.value" tone="danger" title="无法保存账户">{{ editErrors.formError.value }}</PageAlert>
         <div class="form-grid">
           <FormField v-slot="{ controlAttrs }" label="邮箱身份" full><UiInput :value="selectedUser?.email" v-bind="controlAttrs" disabled /></FormField>
           <FormField v-slot="{ controlAttrs }" label="账户状态" name="edit-user-status" :error="editErrors.fields.status"><UiSelect v-model="editDraft.status" v-bind="controlAttrs" :options="userStatusOptions" /></FormField>
           <label class="check-field"><UiCheckbox v-model="editDraft.is_admin" /><span><strong>授予管理员权限</strong><br /><small class="field-hint">关闭后仅移除管理能力，不改变用户身份和个人数据。</small></span></label>
         </div>
-        <div class="password-section"><div><strong>重置密码</strong><p>如不需要修改密码，请保持为空。</p></div><FormField v-slot="{ controlAttrs }" label="新密码" name="edit-user-password" hint="长度为 12–72 个 UTF-8 字节；留空则不修改。" :error="editErrors.fields.password"><UiInput v-model="editDraft.password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" placeholder="留空则不修改" /></FormField></div>
         <PageAlert v-if="selectedUser?.id === currentUserId" tone="warning" title="当前登录用户">请谨慎变更管理员权限或账户状态。</PageAlert>
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="edit-user-form" type="submit" :disabled="accountRecoveryConflict" :loading="saving">保存账户</UiButton></template>
+    </ModalDialog>
+    <ModalDialog :open="Boolean(passwordResetUser)" title="重置密码" :description="passwordResetUser?.email" :dirty="passwordResetState.dirty.value" :busy="passwordResetBusy" :return-focus-selector="passwordResetReturnSelector" initial-focus-selector="#reset-user-password" @close="closePasswordReset">
+      <form id="reset-user-password-form" ref="passwordResetFormElement" novalidate @submit.prevent="resetPassword">
+        <PageAlert v-if="passwordResetErrors.formError.value" tone="danger" title="密码重置失败">{{ passwordResetErrors.formError.value }}</PageAlert>
+        <FormField v-slot="{ controlAttrs }" label="新密码" name="reset-user-password" hint="12–72 个 UTF-8 字节。只修改密码，账户状态、权限和订阅保持不变。" :error="passwordResetErrors.fields.password" required>
+          <UiInput v-model="passwordResetDraft.password" v-bind="controlAttrs" type="password" autocomplete="new-password" minlength="12" maxlength="72" />
+        </FormField>
+      </form>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" :disabled="passwordResetBusy" @click="requestClose">取消</UiButton><UiButton type="submit" form="reset-user-password-form" :loading="passwordResetBusy">保存新密码</UiButton></template>
     </ModalDialog>
     <ModalDialog :open="Boolean(deletingUser)" title="永久删除用户" :description="deletingUser ? `${deletingUser.email} · #${deletingUser.id}` : ''" :busy="deletionBusy" @close="closeDeletion">
       <p>硬删除登录账号、外部身份及访问凭证，无法恢复。历史订单、结算和流量账本保留，原账号将无法登录。</p>
@@ -136,6 +154,7 @@ import TablePager from '../components/TablePager.vue'
 import TimeBadge from '../components/TimeBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
+import UiTabs from '../components/UiTabs.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
@@ -171,6 +190,8 @@ const userSortFields = new Set<UserSortField>(['id', 'email', 'created_at'])
 const sortField = ref(resolveSortField(route.query.sort, userSortFields, 'created_at'))
 const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direction, 'desc'))
 const message = ref('')
+const actionError = ref('')
+const openingUserID = ref(0)
 const saving = ref(false)
 const createOpen = ref(false)
 const editOpen = ref(false)
@@ -178,8 +199,51 @@ const createFormElement = ref<HTMLElement | null>(null)
 const editFormElement = ref<HTMLElement | null>(null)
 const createErrors = useFormErrors()
 const editErrors = useFormErrors()
+const passwordResetUser = ref<UserItem | null>(null)
+const passwordResetDraft = reactive({ password: '' })
+const passwordResetBusy = ref(false)
+const passwordResetReturnSelector = ref('')
+const passwordResetFormElement = ref<HTMLElement | null>(null)
+const passwordResetErrors = useFormErrors()
+const passwordResetState = useDirtyForm(() => passwordResetDraft)
+let passwordResetGeneration = 0
+function openPasswordReset(user: UserItem) {
+  if (passwordResetBusy.value) return
+  accountEditorGeneration++; openingUserID.value = 0; actionError.value = ''
+  passwordResetGeneration++
+  passwordResetDraft.password = ''; passwordResetErrors.clear(); passwordResetState.markClean()
+  passwordResetReturnSelector.value = `[data-user-password-trigger='${detailID.value === user.id ? 'detail' : 'list'}-${user.id}']`
+  passwordResetUser.value = user
+}
+function closePasswordReset() {
+  if (passwordResetBusy.value) return
+  passwordResetGeneration++
+  passwordResetDraft.password = ''; passwordResetUser.value = null; passwordResetErrors.clear(); passwordResetState.markClean()
+}
+async function resetPassword() {
+  const user = passwordResetUser.value
+  if (!user || passwordResetBusy.value) return
+  const generation = passwordResetGeneration, actor = app.user.id, token = app.token
+  const valid = await passwordResetErrors.applyValidation(collectFieldErrors({
+    password: !isUtf8LengthInRange(passwordResetDraft.password, 12, 72) && '密码必须为 12–72 个 UTF-8 字节。',
+  }), passwordResetFormElement, '请填写有效的新密码。')
+  if (!valid || passwordResetBusy.value || generation !== passwordResetGeneration || actor !== app.user.id || token !== app.token || app.reauthRequired) return
+  passwordResetBusy.value = true
+  try {
+    await updateAdminUser(user.id, { password: passwordResetDraft.password })
+    if (generation !== passwordResetGeneration || actor !== app.user.id) return
+    passwordResetBusy.value = false; closePasswordReset()
+    message.value = `${user.email} 的密码已重置。`
+  } catch (cause: any) {
+    if (generation === passwordResetGeneration && actor === app.user.id) await passwordResetErrors.applyApiError(cause, '密码重置失败，请重试。', passwordResetFormElement, { password: 'password' })
+  } finally { if (generation === passwordResetGeneration) passwordResetBusy.value = false }
+}
+watch(() => app.user.id, () => {
+  passwordResetGeneration++; passwordResetBusy.value = false; closePasswordReset()
+})
 const selectedUser = ref<UserItem | null>(null)
 const detailID = ref(0)
+const userDetailSection = ref('account')
 const detailResource = useRemoteResource<AdminUserDetail | null>({
   initial: () => null,
   fetch: ({ signal }) => fetchAdminUserDetail(detailID.value, { signal }),
@@ -216,16 +280,17 @@ async function removeUser() {
 }
 const currentUserId = computed(() => app.user.id)
 const form = reactive({ email: '', password: '', isAdmin: false, status: 'active' })
-const editDraft = reactive({ is_admin: false, status: 'active', password: '' })
+const editDraft = reactive({ is_admin: false, status: 'active' })
 let accountEditorGeneration = 0
 const accountRecoveryConflict = ref(false)
 const accountOriginal = ref<ReturnType<typeof userAccountBaseline>>()
 const accountRecovered = ref(false)
 const accountRecovery = useReauthenticationDraft({
-  scope: 'admin.users.editor', permission: 'admin', ready: () => !saving.value,
+  scope: 'admin.users.editor', permission: 'admin', ready: () => !saving.value && !passwordResetBusy.value,
   read: () => {
+    if (passwordResetUser.value && passwordResetDraft.password) throw new Error('密码草稿不能安全暂存；请留在原页完成认证。')
     if (!createOpen.value && !editOpen.value) return null
-    if (form.password && createOpen.value || editDraft.password && editOpen.value) throw new Error('密码草稿不能安全暂存；请留在原页完成认证。')
+    if (form.password && createOpen.value) throw new Error('密码草稿不能安全暂存；请留在原页完成认证。')
     return createOpen.value
       ? { id: 0, baseline: null, fields: { email: form.email, status: form.status, is_admin: form.isAdmin } }
       : { id: selectedUser.value?.id, baseline: accountOriginal.value, fields: { email: accountOriginal.value?.email || selectedUser.value?.email, status: editDraft.status, is_admin: editDraft.is_admin } }
@@ -235,14 +300,14 @@ const accountRecovery = useReauthenticationDraft({
     const generation = accountEditorGeneration
     const fresh = draft.id ? await fetchAdminUserDetail(draft.id) : null
     if (!isCurrent()) return false
-    if (generation !== accountEditorGeneration || createOpen.value || editOpen.value) throw new Error('已有新的本地编辑，原草稿保留待恢复。')
+    if (generation !== accountEditorGeneration || createOpen.value || editOpen.value || passwordResetUser.value) throw new Error('已有新的本地编辑，原草稿保留待恢复。')
     accountRecoveryConflict.value = Boolean(draft.id && !sameRecoveryBaseline(draft.baseline, userAccountBaseline(fresh)))
     accountRecovered.value = Boolean(draft.id)
     accountOriginal.value = draft.baseline || undefined
     if (fresh) {
       selectedUser.value = fresh
-      Object.assign(editDraft, { status: fresh.status, is_admin: fresh.is_admin, password: '' }); editState.markClean()
-      Object.assign(editDraft, { status: draft.fields.status, is_admin: draft.fields.is_admin, password: '' }); editOpen.value = true
+      Object.assign(editDraft, { status: fresh.status, is_admin: fresh.is_admin }); editState.markClean()
+      Object.assign(editDraft, { status: draft.fields.status, is_admin: draft.fields.is_admin }); editOpen.value = true
     } else {
       Object.assign(form, { email: '', status: 'active', isAdmin: false, password: '' }); createState.markClean()
       Object.assign(form, { email: draft.fields.email, status: draft.fields.status, isAdmin: draft.fields.is_admin }); createOpen.value = true
@@ -252,7 +317,7 @@ const accountRecovery = useReauthenticationDraft({
 const createState = useDirtyForm(() => form)
 const editState = useDirtyForm(() => editDraft)
 useUnsavedChangesGuard(
-  () => (createOpen.value && createState.dirty.value) || (editOpen.value && editState.dirty.value),
+  () => (createOpen.value && createState.dirty.value) || (editOpen.value && editState.dirty.value) || (Boolean(passwordResetUser.value) && passwordResetState.dirty.value),
   async () => {
     if (createOpen.value && !await createState.confirmDiscard({
       title: '放弃新用户草稿？',
@@ -264,6 +329,7 @@ useUnsavedChangesGuard(
       message: '离开用户管理后，尚未保存的账户修改将丢失。',
       confirmText: '离开页面',
     })) return false
+    if (passwordResetUser.value && !await passwordResetState.confirmDiscard({ title: '放弃密码修改？', message: '离开后未保存的新密码将丢失。', confirmText: '离开页面' })) return false
     return true
   },
 )
@@ -272,7 +338,7 @@ watch(() => form.email, () => createErrors.clear('email'))
 watch(() => form.password, () => createErrors.clear('password'))
 watch(() => form.status, () => createErrors.clear('status'))
 watch(() => editDraft.status, () => editErrors.clear('status'))
-watch(() => editDraft.password, () => editErrors.clear('password'))
+watch(() => passwordResetDraft.password, () => passwordResetErrors.clear('password'))
 const filterStatusOptions = [
   { label: '全部状态', value: '' },
   { label: '正常', value: 'active' },
@@ -297,8 +363,6 @@ const { items: users, total, loading, refreshing, error, load: refresh } = useRe
   onOffsetCorrected: () => syncURL(true),
 })
 
-function permissionName(isAdmin: boolean) { return isAdmin ? '管理员权限' : '无额外权限' }
-function permissionTone(isAdmin: boolean): 'info' | 'neutral' { return isAdmin ? 'info' : 'neutral' }
 function statusName(status: string) { return ({ active: '正常', suspended: '已暂停', deactivated: '已停用' } as Record<string, string>)[status] || `未知状态（${status || '空'}）` }
 function statusTone(status: string): 'success' | 'warning' | 'danger' { return status === 'active' ? 'success' : status === 'suspended' ? 'warning' : 'danger' }
 
@@ -308,8 +372,7 @@ async function applyFilters() { offset.value = 0; await syncURL(); await refresh
 async function clearFilters() { search.value = ''; statusFilter.value = ''; adminFilter.value = ''; verifiedFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, userSortFields, 'created_at'); sortDirection.value = nextSortDirection(sortField.value, next, sortDirection.value, next === 'email' ? 'asc' : 'desc'); sortField.value = next; offset.value = 0; await syncURL(); await refresh() }
-async function openDetail(id: number) { await router.push({ query: { ...route.query, user: String(id) } }) }
-async function closeDetail() { detailResource.reset(); detailID.value = 0; const { user: _user, ...query } = route.query; await router.push({ query }) }
+async function closeDetail() { detailResource.reset(); detailID.value = 0; actionError.value = ''; const { user: _user, ...query } = route.query; await router.push({ query }) }
 async function syncDetailFromRoute() {
   const id = Number(route.query.user)
   if (!Number.isInteger(id) || id <= 0) {
@@ -319,6 +382,7 @@ async function syncDetailFromRoute() {
   if (detailID.value === id && (selectedUserDetail.value?.id === id || detailLoading.value)) return
   detailResource.reset()
   detailID.value = id
+  userDetailSection.value = 'account'
   await detailResource.load()
 }
 
@@ -343,13 +407,15 @@ function openCreate() { accountEditorGeneration++; accountRecoveryConflict.value
 function closeCreate() { if (!saving.value) { accountEditorGeneration++; createErrors.clear(); createOpen.value = false } }
 async function openEdit(user: UserItem) {
   const generation = ++accountEditorGeneration, actor = app.user.id, token = app.token
+  openingUserID.value = user.id; actionError.value = ''
   try {
     const fresh = await fetchAdminUserDetail(user.id)
     if (generation !== accountEditorGeneration || actor !== app.user.id || token !== app.token || app.reauthRequired) return
     selectedUser.value = fresh; accountOriginal.value = userAccountBaseline(fresh)
     accountRecoveryConflict.value = false; accountRecovered.value = false; editErrors.clear()
-    Object.assign(editDraft, { is_admin: fresh.is_admin, status: fresh.status, password: '' }); editState.markClean(); editOpen.value = true
-  } catch (cause: any) { message.value = cause?.response?.data?.message || '账户详情暂时无法核对，未打开编辑器。' }
+    Object.assign(editDraft, { is_admin: fresh.is_admin, status: fresh.status }); editState.markClean(); editOpen.value = true
+  } catch (cause: any) { if (generation === accountEditorGeneration) actionError.value = cause?.response?.data?.message || '账户详情读取失败，请重试。' }
+  finally { if (generation === accountEditorGeneration) openingUserID.value = 0 }
 }
 function closeEdit() { if (!saving.value) { accountEditorGeneration++; editErrors.clear(); editOpen.value = false } }
 async function saveUser() {
@@ -364,13 +430,12 @@ async function saveUser() {
   }
   const valid = await editErrors.applyValidation(collectFieldErrors({
     status: !isOneOf(editDraft.status, validUserStatuses) && '请选择有效的账户状态。',
-    password: Boolean(editDraft.password) && !isUtf8LengthInRange(editDraft.password, 12, 72) && '密码必须为 12–72 个 UTF-8 字节；留空则不修改。',
   }), editFormElement, '请更正标记字段后再保存账户。')
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    await updateAdminUser(selectedUser.value.id, { is_admin: editDraft.is_admin, status: editDraft.status, password: editDraft.password || undefined })
-    editDraft.password = ''; editOpen.value = false; message.value = `${selectedUser.value.email} 已更新。`; await refresh()
+    await updateAdminUser(selectedUser.value.id, { is_admin: editDraft.is_admin, status: editDraft.status })
+    editOpen.value = false; message.value = `${selectedUser.value.email} 已更新。`; await refresh()
     if (detailID.value === selectedUser.value.id) { selectedUserDetail.value = null; await syncDetailFromRoute() }
     if (selectedUser.value.id === app.user.id) await app.loadMe()
   } catch (e: any) { await editErrors.applyApiError(e, '账户保存失败，请检查表单内容。', editFormElement, { status: 'status', password: 'password' }) }
@@ -395,8 +460,11 @@ onMounted(() => { void refresh(); void syncDetailFromRoute() })
 </script>
 
 <style scoped>
-.page-alert { margin-bottom: 14px; }.user-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }.user-summary > div { display: flex; align-items: center; gap: 11px; padding: 16px 18px; }.user-summary > div + div { border-left: 1px solid var(--line); }.summary-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.summary-icon.success { color: var(--success); background: var(--success-soft); }.summary-icon.admin { color: var(--admin-accent); background: var(--code-soft); }.summary-icon.warning { color: var(--warning); background: var(--warning-soft); }.user-summary > div > div { display: grid; }.user-summary strong { font-size: 20px; }.user-summary span:not(.summary-icon) { color: var(--muted); font-size:12px; }.user-cell { display: flex; align-items: center; gap: 10px; }.user-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: var(--info); background: var(--info-soft); font-size: 12px; font-weight:600; }.password-section { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(240px, 1.3fr); gap: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.password-section strong { font-size: 13px; }.password-section p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-@media (max-width: 900px) { .user-summary { grid-template-columns: repeat(2, 1fr); }.user-summary > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }.user-summary > div:nth-child(4) { border-top: 1px solid var(--line); } }
-@media (max-width: 560px) { .user-summary { grid-template-columns: 1fr; }.user-summary > div + div { border-left: 0; border-top: 1px solid var(--line); }.password-section { grid-template-columns: 1fr; } }
-.user-summary{border-inline:0;border-radius:0}
+.page-alert { margin-bottom: 14px; }
+.user-detail-link { color: var(--foreground); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.user-detail-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.user-detail-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
+.user-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.user-detail .detail-metrics span, .user-detail .detail-facts span { font-size: 12px; }
+.user-detail .detail-facts strong { font-size: 13px; }
 </style>
