@@ -26,12 +26,14 @@ func TestAccountCleanupOverviewMatchesWorker(t *testing.T) {
 	early := now.AddDate(0, 0, -2)
 	subs := []model.Subscription{{UserID: expired.ID, EndAt: now.AddDate(0, 0, -3), Status: "expired"}, {UserID: active.ID, EndAt: now.AddDate(0, 0, 5), Status: "active"}, {UserID: ended.ID, EndAt: now.AddDate(0, 0, 10), EndedAt: &early, Status: "canceled"}, {UserID: admin.ID, EndAt: now.AddDate(0, 0, 4), Status: "active"}}
 	for i := range subs {
+		subs[i].StartAt = now.AddDate(0, 0, -60)
 		if err := db.Create(&subs[i]).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	removedAt := now.AddDate(0, 0, -1)
 	for _, m := range []model.SubscriptionMember{{UserID: shared.ID, SubscriptionID: subs[3].ID, Status: "active"}, {UserID: removed.ID, SubscriptionID: subs[3].ID, Status: "removed", RemovedAt: &removedAt}} {
+		m.JoinedAt = now.AddDate(0, 0, -30)
 		if err := db.Create(&m).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -43,7 +45,7 @@ func TestAccountCleanupOverviewMatchesWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	perpetual := create("perpetual", 90)
-	if err := db.Create(&model.Subscription{UserID: perpetual.ID, EndAt: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), Status: "active"}).Error; err != nil {
+	if err := db.Create(&model.Subscription{UserID: perpetual.ID, StartAt: now.AddDate(0, 0, -60), EndAt: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), Status: "active"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	repo := AccountDirectory{DB: db}
