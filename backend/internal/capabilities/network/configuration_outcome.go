@@ -14,3 +14,12 @@ var ErrConfigurationReapplyRequired = errors.New("节点运行实例已变化，
 func ConfigurationOutcomeUnknown(cause error) error {
 	return errors.Join(ErrConfigurationOutcomeUnknown, cause)
 }
+
+// Acknowledging configuration completes configuration work only; a separate
+// binary upgrade/repair recommendation must remain visible.
+func ConfirmedConfigurationAction(action string) string {
+	if action == "reconcile_configuration" || action == "configure" {
+		return "none"
+	}
+	return action
+}

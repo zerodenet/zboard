@@ -195,5 +195,12 @@ func kernelStateView(row model.NodeKernelState) network.KernelState {
 		operationID := *row.ActiveOperationID
 		out.ActiveOperationID = &operationID
 	}
+	// RecommendedAction is advisory projection, not independent authority.
+	// Older panels could persist a reconciliation action after acknowledging
+	// configuration. Derive completed configuration work from confirmed facts
+	// on reads as well, without requiring another remote publication.
+	if row.Status == "healthy" && row.Phase == "idle" && row.LastError == "" && row.ActiveOperationID == nil && row.AppliedConfigSHA256 != "" && row.AppliedConfigSHA256 == row.DesiredConfigSHA256 && row.ServiceStatus == "active" && row.ControlStatus == "healthy" {
+		out.RecommendedAction = network.ConfirmedConfigurationAction(row.RecommendedAction)
+	}
 	return out
 }

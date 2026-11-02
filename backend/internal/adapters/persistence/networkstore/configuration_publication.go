@@ -237,6 +237,7 @@ func (s ConfigurationPublicationState) CompleteConfigurationPublication(ctx cont
 		}
 		if err := tx.Model(&state).Updates(map[string]interface{}{
 			"status": "healthy", "phase": "idle", "desired_config_sha256": completion.ConfigSHA,
+			"recommended_action":    network.ConfirmedConfigurationAction(state.RecommendedAction),
 			"applied_config_sha256": completion.ConfigSHA, "service_status": "active", "control_status": "healthy",
 			"last_error": "", "last_healthy_at": completion.LastHealthyAt,
 		}).Error; err != nil {

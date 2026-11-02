@@ -47,6 +47,9 @@ func TestConfigurationPublicationPersistsLifecycleAndReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	finished := startedAt.Add(time.Minute)
+	if err := store.DB.Model(&model.NodeKernelState{}).Where("node_id = ?", node.ID).Update("recommended_action", "reconcile_configuration").Error; err != nil {
+		t.Fatal(err)
+	}
 	completed, err := store.CompleteConfigurationPublication(ctx, deployment, network.ConfigurationPublicationCompletion{
 		ConfigSHA: strings.Repeat("a", 64), Output: "applied", LastHealthyAt: finished,
 		MieruAccess: true, ManagedPrincipalAccess: true, MieruFallbackCount: 1, SuppressMieruFallback: true,
@@ -69,7 +72,7 @@ func TestConfigurationPublicationPersistsLifecycleAndReadiness(t *testing.T) {
 	if err := store.DB.First(&storedNode, node.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if state.Status != "healthy" || state.AppliedConfigSHA256 != strings.Repeat("a", 64) || !storedEndpoint.MieruPrincipalReady || storedNode.NodeCredential != "new" || storedNode.LastSyncAt == nil {
+	if state.Status != "healthy" || state.RecommendedAction != "none" || state.AppliedConfigSHA256 != strings.Repeat("a", 64) || !storedEndpoint.MieruPrincipalReady || storedNode.NodeCredential != "new" || storedNode.LastSyncAt == nil {
 		t.Fatalf("state=%+v endpoint=%+v node=%+v", state, storedEndpoint, storedNode)
 	}
 }

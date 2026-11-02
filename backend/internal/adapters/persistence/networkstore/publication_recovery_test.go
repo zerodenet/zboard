@@ -164,3 +164,28 @@ func TestRestartDuringConnectionVerificationReentersOnlyOwnedConfiguration(t *te
 		t.Fatal(row)
 	}
 }
+
+func TestKernelRecommendationUsesConfirmedStateWithoutRepublishing(t *testing.T) {
+	confirmed := model.NodeKernelState{Status: "healthy", Phase: "idle", RecommendedAction: "reconcile_configuration", DesiredConfigSHA256: "same", AppliedConfigSHA256: "same", ServiceStatus: "active", ControlStatus: "healthy"}
+	for _, tc := range []struct {
+		name   string
+		change func(*model.NodeKernelState)
+		want   string
+	}{
+		{"already acknowledged", func(*model.NodeKernelState) {}, "none"},
+		{"binary upgrade still required", func(s *model.NodeKernelState) { s.RecommendedAction = "upgrade" }, "upgrade"},
+		{"pending different intent", func(s *model.NodeKernelState) { s.DesiredConfigSHA256 = "new" }, "reconcile_configuration"},
+		{"missing receipt identity", func(s *model.NodeKernelState) { s.DesiredConfigSHA256 = ""; s.AppliedConfigSHA256 = "" }, "reconcile_configuration"},
+		{"unknown result", func(s *model.NodeKernelState) { s.Status = "reconciling" }, "reconcile_configuration"},
+		{"current failure", func(s *model.NodeKernelState) { s.LastError = "probe failed" }, "reconcile_configuration"},
+		{"owned running operation", func(s *model.NodeKernelState) { id := uint(9); s.ActiveOperationID = &id }, "reconcile_configuration"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := confirmed
+			tc.change(&s)
+			if got := kernelStateView(s).RecommendedAction; got != tc.want {
+				t.Fatal(got, tc.want)
+			}
+		})
+	}
+}
