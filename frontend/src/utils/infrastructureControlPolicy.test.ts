@@ -111,11 +111,12 @@ describe('infrastructure control policy', () => {
     expect(read('components', 'TicketCenter.vue')).toContain('<PageRefreshButton')
   })
 
-  it('uses one adaptive row-action contract for dense administrator lists', () => {
+  it('keeps dense administrator lists on the shared row-action components', () => {
     const rowActions = read('components', 'RowActions.vue')
     const protocols = read('views', 'Protocols.vue')
 
-    expect(rowActions).toContain("actions.length === 1 ? 'single' : 'menu'")
+    // RowActions.test.ts checks the rendered single/menu/primary behavior.
+    // Ownership must not freeze an expression that hides frequent actions.
     expect(read('components', 'RowActionMenu.vue')).toContain('DropdownMenuItem')
     expect(rowActions).toContain('RowActionMenu')
     expect(protocols).toContain('<RowActions')
