@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import RowActionMenu from './RowActionMenu.vue'
 import UiButton from './UiButton.vue'
 import ModalDialog from './ModalDialog.vue'
@@ -11,6 +11,16 @@ afterEach(() => {
 })
 
 describe('RowActionMenu', () => {
+  it('keeps the floating menu anchored to its real button when a tooltip is present', async () => {
+    const wrapper = mount(RowActionMenu, { attachTo: document.body, slots: { default: '<button>查看详情</button>' } })
+    const trigger = wrapper.get('button')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({ x: 400, y: 200, left: 400, top: 200, right: 432, bottom: 232, width: 32, height: 32, toJSON: () => ({}) })
+    await trigger.trigger('click')
+    await flushPromises()
+    const menu = document.body.querySelector<HTMLElement>('[role="menu"]')!
+    expect(menu.parentElement?.style.getPropertyValue('--reka-popper-anchor-width')).toBe('32px')
+    wrapper.unmount()
+  })
   it('opens an action dialog without stealing its focus when the menu closes', async () => {
     const fixture = defineComponent({
       components: { RowActionMenu, UiButton, ModalDialog, DetailDrawer },

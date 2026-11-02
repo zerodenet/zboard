@@ -1,7 +1,7 @@
 <template>
   <DropdownMenuRoot>
-    <Tooltip :text="label"><DropdownMenuTrigger as-child>
-      <UiButton
+    <DropdownMenuTrigger as-child>
+      <Tooltip :text="label"><UiButton
         ref="trigger"
         variant="ghost"
         size="sm"
@@ -10,8 +10,8 @@
         :aria-label="label"
         :title="label"
         :data-row-action-trigger="triggerKey || undefined"
-      ><UiIcon name="more" /></UiButton>
-    </DropdownMenuTrigger></Tooltip>
+      ><UiIcon name="more" /></UiButton></Tooltip>
+    </DropdownMenuTrigger>
     <DropdownMenuPortal>
       <DropdownMenuContent class="ui-dropdown-content" align="end" :side-offset="5" @close-auto-focus="restoreFocus">
         <RowActionItems :actions="actions" />

@@ -27,7 +27,7 @@
               <td class="numeric-column" data-column-priority="2"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订阅`">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</RouterLink></td>
               <td class="numeric-column" data-column-priority="3"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订单`">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</RouterLink></td>
               <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><template #primary><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :loading="openingUserID === user.id" @click="openEdit(user)">编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton></template><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><template #primary><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :loading="openingUserID === user.id" @click="openEdit(user)">编辑</UiButton></template><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
             </tr>
           </tbody>
       </DataTable>
@@ -40,39 +40,44 @@
       <div v-if="detailLoading" class="detail-loading" role="status">正在加载用户详情…</div>
       <main v-else-if="selectedUserDetail" class="business-detail stack user-detail">
         <PageAlert v-if="actionError" tone="danger" title="用户操作未完成">{{ actionError }}</PageAlert>
-        <div class="user-detail-actions">
-          <RowActions label="用户更多操作" :trigger-key="`user-detail-${selectedUserDetail.id}`">
-            <template #primary>
-              <UiButton variant="secondary" size="sm" type="button" :data-user-edit-trigger="`detail-${selectedUserDetail.id}`" :loading="openingUserID === selectedUserDetail.id" @click="openEdit(selectedUserDetail)">编辑账户</UiButton>
-              <UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`detail-${selectedUserDetail.id}`" @click="openPasswordReset(selectedUserDetail)">重置密码</UiButton>
-              <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">订阅</RouterLink></UiButton>
-              <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">订单</RouterLink></UiButton>
-            </template>
-            <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink></UiButton>
-            <UiButton variant="danger" size="sm" type="button" @click="openDeletion(selectedUserDetail)">删除用户</UiButton>
-          </RowActions>
+        <div class="user-detail-heading">
+          <div class="detail-status-strip" aria-label="用户状态">
+            <StatusBadge :tone="statusTone(selectedUserDetail.status)">{{ statusName(selectedUserDetail.status) }}</StatusBadge>
+            <StatusBadge v-if="selectedUserDetail.is_admin" tone="info">管理员</StatusBadge>
+          </div>
+          <div class="user-detail-actions">
+            <RowActions label="用户更多操作" :trigger-key="`user-detail-${selectedUserDetail.id}`">
+              <template #primary>
+                <UiButton variant="secondary" size="sm" type="button" :data-user-edit-trigger="`detail-${selectedUserDetail.id}`" :loading="openingUserID === selectedUserDetail.id" @click="openEdit(selectedUserDetail)">编辑账户</UiButton>
+              </template>
+              <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink></UiButton>
+              <UiButton variant="danger" size="sm" type="button" @click="openDeletion(selectedUserDetail)">删除用户</UiButton>
+            </RowActions>
+          </div>
         </div>
         <UiTabs v-model="userDetailSection" :items="[{ label: '账户', value: 'account' }, { label: '余额', value: 'wallet' }, { label: '外部账号', value: 'identities' }]" label="用户详情分区" />
         <template v-if="userDetailSection === 'account'">
-        <section class="detail-status-strip" aria-label="用户状态">
-          <StatusBadge :tone="statusTone(selectedUserDetail.status)">{{ statusName(selectedUserDetail.status) }}</StatusBadge>
-          <StatusBadge v-if="selectedUserDetail.is_admin" tone="info">管理员</StatusBadge>
-          <StatusBadge :tone="selectedUserDetail.email_verified_at ? 'success' : 'warning'">{{ selectedUserDetail.email_verified_at ? '邮箱已验证' : '邮箱未验证' }}</StatusBadge>
-        </section>
-        <section class="detail-metrics" aria-label="关联业务数量">
-          <div><strong>{{ selectedUserDetail.active_subscription_count }}</strong><span>有效订阅</span></div>
-          <div><strong>{{ selectedUserDetail.total_subscription_count }}</strong><span>全部订阅</span></div>
-          <div><strong>{{ selectedUserDetail.pending_order_count }}</strong><span>待处理订单</span></div>
-          <div><strong>{{ selectedUserDetail.total_order_count }}</strong><span>全部订单</span></div>
-        </section>
-        <section class="detail-facts" aria-label="账户信息">
-          <div><span>账户名称</span><strong>{{ selectedUserDetail.account_name || '未设置' }}</strong></div>
-          <div><span>账户 ID</span><strong class="mono">#{{ selectedUserDetail.id }}</strong></div>
-          <div><span>最近登录</span><TimeBadge :value="selectedUserDetail.last_login_at" /></div>
-          <div><span>创建时间</span><TimeBadge :value="selectedUserDetail.created_at" /></div>
-          <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
-          <div><span>邮箱验证</span><TimeBadge :value="selectedUserDetail.email_verified_at" /></div>
-        </section>
+          <section class="detail-metrics" aria-label="关联业务数量">
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的有效订阅`" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id), status: 'active' })">{{ selectedUserDetail.active_subscription_count }}</RouterLink><span>有效订阅</span></div>
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的全部订阅`" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">{{ selectedUserDetail.total_subscription_count }}</RouterLink><span>全部订阅</span></div>
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的待处理订单`" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), status: 'pending' })">{{ selectedUserDetail.pending_order_count }}</RouterLink><span>待处理订单</span></div>
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的全部订单`" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">{{ selectedUserDetail.total_order_count }}</RouterLink><span>全部订单</span></div>
+          </section>
+          <section class="detail-facts" aria-label="账户信息">
+            <div><span>账户名称</span><strong>{{ selectedUserDetail.account_name || '未设置' }}</strong></div>
+            <div><span>账户 ID</span><strong class="mono">#{{ selectedUserDetail.id }}</strong></div>
+            <div><span>最近登录</span><TimeBadge :value="selectedUserDetail.last_login_at" /></div>
+            <div><span>创建时间</span><TimeBadge :value="selectedUserDetail.created_at" /></div>
+            <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
+            <div><span>邮箱验证</span><TimeBadge v-if="selectedUserDetail.email_verified_at" :value="selectedUserDetail.email_verified_at" /><strong v-else>未验证</strong></div>
+          </section>
+          <section class="user-security" aria-label="账户安全">
+            <h3>账户安全</h3>
+            <div class="user-security-row">
+              <div><strong>登录密码</strong><p>为此用户设置新的登录密码。</p></div>
+              <UiButton variant="secondary" size="sm" type="button" :data-user-password-trigger="`detail-${selectedUserDetail.id}`" @click="openPasswordReset(selectedUserDetail)">重置密码</UiButton>
+            </div>
+          </section>
         </template>
         <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :user-id="selectedUserDetail.id" />
         <template v-else-if="userDetailSection === 'identities'">
@@ -117,7 +122,7 @@
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" :disabled="passwordResetBusy" @click="requestClose">取消</UiButton><UiButton type="submit" form="reset-user-password-form" :loading="passwordResetBusy">保存新密码</UiButton></template>
     </ModalDialog>
-    <ModalDialog :open="Boolean(deletingUser)" title="永久删除用户" :description="deletingUser ? `${deletingUser.email} · #${deletingUser.id}` : ''" :busy="deletionBusy" @close="closeDeletion">
+    <ModalDialog :open="Boolean(deletingUser)" title="永久删除用户" :description="deletingUser ? `${deletingUser.email} · #${deletingUser.id}` : ''" :return-focus-selector="deletingUser ? `[data-row-action-trigger='${detailID === deletingUser.id ? 'user-detail' : 'user'}-${deletingUser.id}']` : ''" :busy="deletionBusy" @close="closeDeletion">
       <p>硬删除登录账号、外部身份及访问凭证，无法恢复。历史订单、结算和流量账本保留，原账号将无法登录。</p>
       <p v-if="deletionLoading" role="status">正在检查订阅和资金状态…</p>
       <PageAlert v-if="deletionError" tone="danger" title="删除未完成">{{ deletionError }}</PageAlert>
@@ -212,7 +217,7 @@ function openPasswordReset(user: UserItem) {
   accountEditorGeneration++; openingUserID.value = 0; actionError.value = ''
   passwordResetGeneration++
   passwordResetDraft.password = ''; passwordResetErrors.clear(); passwordResetState.markClean()
-  passwordResetReturnSelector.value = `[data-user-password-trigger='${detailID.value === user.id ? 'detail' : 'list'}-${user.id}']`
+  passwordResetReturnSelector.value = detailID.value === user.id ? `[data-user-password-trigger='detail-${user.id}']` : `[data-row-action-trigger='user-${user.id}']`
   passwordResetUser.value = user
 }
 function closePasswordReset() {
@@ -461,10 +466,19 @@ onMounted(() => { void refresh(); void syncDetailFromRoute() })
 
 <style scoped>
 .page-alert { margin-bottom: 14px; }
+.user-detail-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .user-detail-link { color: var(--foreground); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 .user-detail-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .user-detail-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
 .user-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .user-detail .detail-metrics span, .user-detail .detail-facts span { font-size: 12px; }
 .user-detail .detail-facts strong { font-size: 13px; }
+.user-related-count { color: var(--foreground); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-decoration: none; }
+.user-related-count:hover { text-decoration: underline; text-underline-offset: 3px; }
+.user-related-count:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.user-security { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+.user-security h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.user-security-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.user-security-row strong { font-size: 13px; font-weight: 500; }
+.user-security-row p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; }
 </style>
