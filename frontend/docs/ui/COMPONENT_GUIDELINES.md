@@ -10,6 +10,9 @@ fixtures no longer install PrimeVue, and it is absent from the package manifest.
 - Use `UiButton` with `primary`, `secondary`, `ghost`, `danger`, or
   `link`. Use `loading` for mutations. Give icon-only buttons an accessible
   name and a tooltip when the action is not self-explanatory.
+  Navigation actions use `UiButton as-child` around a `RouterLink` or `a`,
+  retaining real anchor semantics. Do not style links with legacy `button`
+  classes. Use size props instead of page CSS to change control dimensions.
 - Use `FormField` for labels, hints, required state, and nearby errors.
   Pass its `controlAttrs` into the control.
 - Use `UiSelect` for finite options and `UiAutocomplete` for remote choices.
@@ -18,6 +21,9 @@ fixtures no longer install PrimeVue, and it is absent from the package manifest.
 - Use `ModalDialog` for short forms and `DetailDrawer` for complex details.
   Both use Reka modal focus management. `ModalDialog` keeps dirty-form
   confirmation and explicit focus return.
+  A detail drawer already owns the entity title and metadata. Do not repeat
+  them in a second heading inside the body. Keep frequent actions visible;
+  place low-frequency actions in `RowActionMenu`, preserving confirmations.
 - Use `StatusBadge` only for textual state. Choose a semantic tone and avoid
   several badges in one cell.
 - Use `DataTable` and `TablePager` for data lists. Numeric cells align right;

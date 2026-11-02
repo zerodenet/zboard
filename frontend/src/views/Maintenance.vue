@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="系统维护" description="统一控制整站维护、数据库迁移与切换后的恢复步骤。" eyebrow="Operations" :show-section-navigation="false">
+    <PageHeader title="系统维护" description="统一控制整站维护、数据库迁移与切换后的恢复步骤。" :show-section-navigation="false">
       <template #actions><PageRefreshButton :loading="loading" label="刷新维护状态" @click="reload" /></template>
     </PageHeader>
     <TransientFeedback :success="success" :error="error" />

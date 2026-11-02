@@ -37,18 +37,18 @@ withDefaults(defineProps<{
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: var(--primary);
-  background: var(--primary-soft);
+  color: var(--muted-foreground);
+  background: var(--muted-surface);
   font-size: 14px;
 }
 .status-overview-copy { min-width: 0; }
-.status-overview-copy strong { font-size: 11px; line-height: 1.35; }
+.status-overview-copy strong { font-size: 13px; line-height: 1.35; }
 .status-overview-copy p {
   min-width: 0;
   margin: 2px 0 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -56,10 +56,7 @@ withDefaults(defineProps<{
 .status-overview-badge {
   max-width: 100%;
   justify-self: end;
-  padding: 3px 7px;
-  font-size: 10px;
 }
-.status-overview-badge :deep(.status-dot) { width: 5px; height: 5px; }
 
 @media (max-width: 520px) {
   .status-overview-item { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; }

@@ -1,17 +1,11 @@
 <template>
-  <div class="plugins-page plugin-configuration-page">
+  <div class="standard-page plugins-page plugin-configuration-page">
     <nav class="plugin-breadcrumb" aria-label="面包屑"><RouterLink to="/admin/plugins">插件管理</RouterLink><span>/</span><RouterLink :to="pluginDetailPath(String(route.params.pluginId))">{{ plugin?.name || '插件详情' }}</RouterLink><span>/</span><span>配置</span></nav>
     <PageAlert v-if="error" tone="danger">{{ error }}<template #actions><UiButton variant="secondary" @click="load">重试</UiButton></template></PageAlert>
     <p v-if="loading && !plugin" role="status">正在读取插件…</p>
     <section v-else-if="!plugin && !error" class="plugins-empty"><h1>未找到插件</h1><p>请返回插件管理检查。</p></section>
     <template v-if="plugin">
-      <header class="plugins-heading">
-        <div><p class="eyebrow">插件配置</p><h1>{{ plugin.name }}</h1><p>设置插件所需的参数，保存后由系统管理配置。</p></div>
-        <div v-if="configurable" class="plugins-actions">
-          <UiButton v-if="plugin.manifest.components.server" variant="secondary" :loading="testing" :disabled="testing || jsonOpen" @click="test">测试已保存配置</UiButton>
-          <UiButton variant="ghost" :disabled="testing || jsonOpen" @click="jsonOpen = true">高级 JSON 配置</UiButton>
-        </div>
-      </header>
+      <PageHeader :title="plugin.name" description="设置插件所需的参数，保存后由系统管理配置。" :show-section-navigation="false"><template #actions><template v-if="configurable"><UiButton v-if="plugin.manifest.components.server" variant="secondary" :loading="testing" :disabled="jsonOpen" @click="test">测试已保存配置</UiButton><UiButton variant="ghost" :disabled="testing || jsonOpen" @click="jsonOpen = true">高级 JSON 配置</UiButton></template></template></PageHeader>
       <AdminPageNavigation />
       <TransientFeedback :success="message" />
       <PageAlert v-if="testError" tone="danger">{{ testError }}</PageAlert>
@@ -25,6 +19,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import UiButton from '../components/UiButton.vue'

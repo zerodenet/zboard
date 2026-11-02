@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page runtime-jobs" :class="{ 'queue-focused': queueFocused }">
-    <PageHeader :title="queueFocused ? `${queueName}队列` : '后台任务'" eyebrow="Operations">
+    <PageHeader :title="queueFocused ? `${queueName}队列` : '后台任务'">
       <template #actions><RouterLink class="task-link" :to="queueFocused ? '/admin/runtime-jobs' : '/admin/tasks'">{{ queueFocused ? '全部后台任务' : '运营任务' }}</RouterLink><PageRefreshButton label="刷新后台任务" :loading="loading || (queueFocused && queueLoading)" @click="refresh" /></template>
     </PageHeader>
     <RemoteReadStatus v-if="!queueFocused" label="运行状态" :phase="runtimeResource.phase.value" :error="error" :last-success-at="runtimeResource.lastSuccessAt.value" @retry="runtimeResource.load()" />
@@ -9,21 +9,7 @@
       <RemoteReadStatus label="事件与进程诊断" :phase="diagnosticsResource.phase.value" :error="diagnosticsResource.error.value" :last-success-at="diagnosticsResource.lastSuccessAt.value" @retry="diagnosticsResource.load()" />
       <RemoteReadStatus label="插件状态" :phase="pluginsResource.phase.value" :error="pluginsResource.error.value" :last-success-at="pluginsResource.lastSuccessAt.value" @retry="pluginsResource.load()" />
     </template>
-    <section v-if="!queueFocused" class="registered-section" aria-label="已注册任务">
-      <div class="runtime-heading"><h2>已注册任务</h2><span v-if="registeredJobs">本实例 · {{ registeredJobs.length }} 个</span></div>
-      <p v-if="registryLoading && !registeredJobs" role="status">正在读取任务名录…</p>
-      <p v-else-if="registryError" class="registry-unavailable">{{ registryError }} <UiButton variant="ghost" size="sm" @click="refreshRegisteredJobs">重试</UiButton></p>
-      <p v-else-if="registeredJobs && !registeredJobs.length" class="registry-unavailable">当前进程没有已注册任务。</p>
-      <div v-if="registeredJobs?.length" class="registered-list">
-        <div v-for="job in registeredJobs" :key="job.id" class="registered-row">
-          <div class="registered-name"><strong>{{ job.name }}</strong><small v-if="job.compact_history">累计状态 · 保留异常记录</small><small :title="job.id">{{ registeredOwner(job.owner) }}</small></div>
-          <span class="registered-cadence">{{ registeredCadence(job.interval_seconds) }}</span>
-          <StatusBadge v-if="registeredStatus(job.id)" :tone="tone(registeredStatus(job.id)!.state)">{{ state(registeredStatus(job.id)!.state) }}</StatusBadge>
-          <span v-else class="registered-unknown">状态未取得</span>
-          <span v-if="registeredStatus(job.id)?.last_finished_at" class="registered-last">最近 <TimeBadge :value="registeredStatus(job.id)!.last_finished_at" /></span>
-        </div>
-      </div>
-    </section>
+
     <p v-if="!data && loading && !queueFocused" role="status">正在读取运行状态…</p>
     <template v-if="data || queueFocused || queuePage || queueLoading || queueError">
       <template v-if="data && !queueFocused">
@@ -31,10 +17,10 @@
       <section v-if="data.execution_queue" class="execution-strip" aria-label="全局执行队列"><strong>执行队列</strong><span>等待 {{ data.execution_queue.pending }}</span><span>执行中 {{ data.execution_queue.running }}</span><span>延后 {{ data.execution_queue.delayed }}</span><span v-if="data.execution_queue.unknown">待核验 {{ data.execution_queue.unknown }}</span><span v-if="data.execution_queue.maintenance_reserved">维护中</span></section>
       <div class="runtime-heading"><h2>待处理队列</h2></div>
       <section class="queue-grid" aria-label="业务待处理概览">
-        <button v-for="queue in data.queues" :key="queue.id" class="queue-card" :class="{ selected: selected === queue.id }" type="button" :aria-pressed="selected === queue.id" @click="selectQueue(queue.id)">
-          <span class="queue-title">{{ queue.name }}<span>→</span></span>
+        <article v-for="queue in data.queues" :key="queue.id" class="queue-card" :class="{ selected: selected === queue.id }">
+          <div class="queue-title"><UiButton variant="ghost" size="sm" :aria-pressed="selected === queue.id" @click="selectQueue(queue.id)">{{ queue.name }}<span aria-hidden="true">→</span></UiButton></div>
           <span class="queue-counts"><span><strong>{{ queue.pending }}</strong>{{ queue.id === 'registration_messages' ? '待处理' : '等待' }}</span><span v-if="queue.running"><strong>{{ queue.running }}</strong>执行中</span><span v-if="queue.delayed"><strong>{{ queue.delayed }}</strong>延后</span><span v-if="queue.failed || queue.stale"><strong>{{ queue.failed + queue.stale }}</strong>异常</span></span>
-        </button>
+        </article>
         <div class="queue-card spool-card"><span class="queue-title">流量事件入账</span><span v-if="data.runtime.event_spool" class="queue-counts"><span><strong>{{ data.runtime.event_spool.pending_events }}</strong>待入账</span><span><strong>{{ bytes(data.runtime.event_spool.pending_bytes) }}</strong>数据量</span></span><span v-else class="queue-foot">{{ sectionIssue('runtime') ? '状态未取得' : '未启用' }}</span></div>
       </section>
       <details class="runtime-diagnostics"><summary>执行明细与插件状态</summary>
@@ -69,7 +55,7 @@
         <PageAlert v-if="queueError || retryError" tone="danger" title="队列操作未完成">{{ retryError || queueError }}<template #actions><UiButton variant="secondary" size="sm" :loading="queueLoading" @click="reloadQueue">重新读取队列</UiButton></template></PageAlert>
         <DataTable v-if="queuePage?.items.length" caption="队列明细" :row-count="queuePage.total" :min-width="800">
           <thead><tr><th class="table-primary-column">任务 / 目标</th><th>状态</th><th v-if="selected !== 'registration_messages'" data-column-priority="2">尝试</th><th>{{ selected === 'registration_messages' ? '事件时间' : '下次领取' }}</th><th v-if="selected !== 'registration_messages'" data-column-priority="3">租约到期</th><th v-if="selected === 'node_publish'" class="table-action-column">操作</th></tr></thead>
-          <tbody><tr v-for="item in queuePage.items" :key="item.id"><td class="table-primary-column"><div class="queue-task"><span v-if="selected === 'registration_messages'">账户 #{{ item.id }} · 注册事件</span><RouterLink v-else :to="selected === 'admin_tasks' ? `/admin/tasks?task=${item.id}` : `/admin/nodes?node=${item.id}`">{{ selected === 'admin_tasks' ? '任务' : '节点' }} #{{ item.id }}</RouterLink><button v-if="item.last_error" type="button" class="queue-error-trigger" @click="queueFailure = { title: `${queueNames[selected] || '任务'} #${item.id}`, detail: item.last_error }">查看错误</button></div></td><td><StatusBadge :tone="tone(item.state)">{{ selected === 'registration_messages' ? '待处理' : state(item.state) }}</StatusBadge></td><td v-if="selected !== 'registration_messages'" data-column-priority="2">{{ item.attempts }}</td><td><TimeBadge :value="selected === 'registration_messages' ? item.created_at : item.next_attempt_at" /></td><td v-if="selected !== 'registration_messages'" data-column-priority="3"><TimeBadge :value="item.lease_until" /></td><td v-if="selected === 'node_publish'" class="table-action-column"><UiButton v-if="['delayed', 'stale'].includes(item.state)" size="sm" variant="secondary" :loading="retryingID === item.id" @click="retryPublication(item.id)">立即重试</UiButton></td></tr></tbody>
+          <tbody><tr v-for="item in queuePage.items" :key="item.id"><td class="table-primary-column"><div class="queue-task"><span v-if="selected === 'registration_messages'">账户 #{{ item.id }} · 注册事件</span><RouterLink v-else :to="selected === 'admin_tasks' ? `/admin/tasks?task=${item.id}` : `/admin/nodes?node=${item.id}`">{{ selected === 'admin_tasks' ? '任务' : '节点' }} #{{ item.id }}</RouterLink><UiButton v-if="item.last_error" variant="ghost" size="sm" @click="queueFailure = { title: `${queueNames[selected] || '任务'} #${item.id}`, detail: item.last_error }">查看错误</UiButton></div></td><td><StatusBadge :tone="tone(item.state)">{{ selected === 'registration_messages' ? '待处理' : state(item.state) }}</StatusBadge></td><td v-if="selected !== 'registration_messages'" data-column-priority="2">{{ item.attempts }}</td><td><TimeBadge :value="selected === 'registration_messages' ? item.created_at : item.next_attempt_at" /></td><td v-if="selected !== 'registration_messages'" data-column-priority="3"><TimeBadge :value="item.lease_until" /></td><td v-if="selected === 'node_publish'" class="table-action-column"><UiButton v-if="['delayed', 'stale'].includes(item.state)" size="sm" variant="secondary" :loading="retryingID === item.id" @click="retryPublication(item.id)">立即重试</UiButton></td></tr></tbody>
         </DataTable>
         <p v-else-if="queuePage && !queueLoading && !queueError">此队列暂无待处理任务。</p><p v-if="queueLoading" role="status">正在读取队列…</p>
         <TablePager v-if="queuePage" :total="queuePage.total" :offset="offset" :limit="25" :page-sizes="[25]" :loading="queueLoading" @change="changePage" />
@@ -81,6 +67,24 @@
       </details>
       </template>
     </template>
+    <details v-if="!queueFocused" class="runtime-diagnostics registered-catalog">
+      <summary>任务名录<span v-if="registeredJobs"> · {{ registeredJobs.length }} 个</span></summary>
+    <section class="registered-section" aria-label="已注册任务">
+      <div class="runtime-heading"><h2>已注册任务</h2><span v-if="registeredJobs">本实例 · {{ registeredJobs.length }} 个</span></div>
+      <p v-if="registryLoading && !registeredJobs" role="status">正在读取任务名录…</p>
+      <p v-else-if="registryError" class="registry-unavailable">{{ registryError }} <UiButton variant="ghost" size="sm" @click="refreshRegisteredJobs">重试</UiButton></p>
+      <p v-else-if="registeredJobs && !registeredJobs.length" class="registry-unavailable">当前进程没有已注册任务。</p>
+      <div v-if="registeredJobs?.length" class="registered-list">
+        <div v-for="job in registeredJobs" :key="job.id" class="registered-row">
+          <div class="registered-name"><strong>{{ job.name }}</strong><small v-if="job.compact_history">累计状态 · 保留异常记录</small><small :title="job.id">{{ registeredOwner(job.owner) }}</small></div>
+          <span class="registered-cadence">{{ registeredCadence(job.interval_seconds) }}</span>
+          <StatusBadge v-if="registeredStatus(job.id)" :tone="tone(registeredStatus(job.id)!.state)">{{ state(registeredStatus(job.id)!.state) }}</StatusBadge>
+          <span v-else class="registered-unknown">状态未取得</span>
+          <span v-if="registeredStatus(job.id)?.last_finished_at" class="registered-last">最近 <TimeBadge :value="registeredStatus(job.id)!.last_finished_at" /></span>
+        </div>
+      </div>
+    </section>
+    </details>
     <ModalDialog :open="Boolean(queueFailure)" :title="queueFailure?.title || '队列错误'" @close="queueFailure = null"><OutputBlock v-if="queueFailure" :value="queueFailure.detail" label="最近错误" tone="danger" /></ModalDialog>
   </section>
 </template>
@@ -213,7 +217,7 @@ onMounted(() => {
 onBeforeUnmount(() => { clearInterval(timer); runtimeViews.forEach(resource => resource.invalidate()); queueResource.invalidate(); registryResource.invalidate() })
 </script>
 <style scoped>
-.global-queue .queue-counts{flex-wrap:wrap;gap:1.5rem 3rem}.global-queue h2{font-size:1.05rem;margin:0}.runtime-jobs{display:grid;gap:1.5rem}.snapshot-note,.runtime-heading{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;align-items:center}.snapshot-note,.runtime-heading>span,.detail-note,.plugin-status p{color:var(--muted);font-size:.85rem}.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}.queue-card{display:flex;flex-direction:column;gap:1.25rem;text-align:left;padding:1.25rem;border:1px solid var(--line);border-radius:var(--radius-lg,12px);background:var(--surface);color:var(--text);font:inherit}.queue-card:is(button){cursor:pointer}.queue-card.selected{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}.queue-title{display:flex;justify-content:space-between;gap:.5rem;font-weight:600}.queue-title>span,.queue-foot{font-size:.78rem;color:var(--muted)}.queue-counts{display:flex;gap:1.5rem}.queue-counts>span{display:grid;gap:.3rem;font-size:.8rem}.queue-counts strong{font-size:1.6rem;font-weight:650}.runtime-section{display:grid;gap:1rem;min-width:0}.runtime-section h2{margin:0;font-size:1.05rem}.runtime-section td small{display:block;color:var(--muted);margin-top:.35rem}.runtime-section .job-error,.queue-error{max-width:26rem;white-space:normal;overflow-wrap:anywhere}.runtime-section .job-error{color:var(--danger)}.detail-note{line-height:1.7;margin:0}.plugin-status{padding:1.25rem;border:1px solid var(--line);border-radius:12px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center}.plugin-status .detail-note{grid-column:1/-1}.plugin-queue-summary{display:flex;flex-wrap:wrap;gap:1.25rem;color:var(--muted);font-size:.85rem}.plugin-queue-summary strong{color:var(--text)}.task-link{white-space:nowrap}@media(max-width:1000px){.queue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.spool-card{grid-column:1/-1}}@media(max-width:600px){.queue-grid,.plugin-status{grid-template-columns:1fr}.spool-card{grid-column:auto}.queue-counts{justify-content:space-between}.snapshot-note{font-size:.78rem}.runtime-heading{align-items:flex-start}.queue-card{padding:1rem}}
+.global-queue .queue-counts{flex-wrap:wrap;gap:1.5rem 3rem}.global-queue h2{font-size:1.05rem;margin:0}.runtime-jobs{display:grid;gap:1.5rem}.snapshot-note,.runtime-heading{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;align-items:center}.snapshot-note,.runtime-heading>span,.detail-note,.plugin-status p{color:var(--muted);font-size:.85rem}.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}.queue-card{display:flex;flex-direction:column;gap:1.25rem;text-align:left;padding:1.25rem;border:1px solid var(--line);border-radius:var(--radius-lg,12px);background:var(--surface);color:var(--text);font:inherit}.queue-card.selected{border-color:var(--line-strong);background:var(--muted-surface)}.queue-title{display:flex;justify-content:space-between;gap:.5rem;font-weight:600}.queue-title>span,.queue-foot{font-size:.78rem;color:var(--muted)}.queue-counts{display:flex;gap:1.5rem}.queue-counts>span{display:grid;gap:.3rem;font-size:.8rem}.queue-counts strong{font-size:1.6rem;font-weight:600}.runtime-section{display:grid;gap:1rem;min-width:0}.runtime-section h2{margin:0;font-size:1.05rem}.runtime-section td small{display:block;color:var(--muted);margin-top:.35rem}.runtime-section .job-error,.queue-error{max-width:26rem;white-space:normal;overflow-wrap:anywhere}.runtime-section .job-error{color:var(--danger)}.detail-note{line-height:1.7;margin:0}.plugin-status{padding:1rem 0;border-top:1px solid var(--line);grid-template-columns:repeat(2,minmax(0,1fr));align-items:center}.plugin-status .detail-note{grid-column:1/-1}.plugin-queue-summary{display:flex;flex-wrap:wrap;gap:1.25rem;color:var(--muted);font-size:.85rem}.plugin-queue-summary strong{color:var(--text)}.task-link{white-space:nowrap}@media(max-width:1000px){.queue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.spool-card{grid-column:1/-1}}@media(max-width:600px){.queue-grid,.plugin-status{grid-template-columns:1fr}.spool-card{grid-column:auto}.queue-counts{justify-content:space-between}.snapshot-note{font-size:.78rem}.runtime-heading{align-items:flex-start}.queue-card{padding:1rem}}
 </style>
 <style scoped>
 .queue-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
@@ -249,9 +253,6 @@ onBeforeUnmount(() => { clearInterval(timer); runtimeViews.forEach(resource => r
 .queue-grid .queue-counts strong { font-size: 1.15rem; }
 .queue-grid .spool-card { grid-column: auto; }
 .queue-task { display: grid; justify-items: start; gap: .25rem; min-width: 0; }
-.queue-error-trigger { padding: 0; border: 0; background: transparent; color: var(--danger); font: inherit; font-size: .75rem; cursor: pointer; }
-.queue-error-trigger:hover { text-decoration: underline; text-underline-offset: 2px; }
-.queue-error-trigger:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
 .runtime-diagnostics { min-width: 0; border-top: 1px solid var(--line); padding-top: .6rem; }
 .runtime-diagnostics summary { cursor: pointer; font-weight: 600; font-size: .85rem; }
 .runtime-diagnostics[open] { display: grid; gap: 1rem; }

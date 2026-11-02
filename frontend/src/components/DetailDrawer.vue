@@ -9,7 +9,7 @@
             <DialogTitle>{{ title }}</DialogTitle>
             <DialogDescription :class="{ 'sr-only': !description }">{{ description || title }}</DialogDescription>
           </div>
-          <UiButton ref="closeButton" variant="ghost" icon class="icon-button" type="button" aria-label="关闭详情" @click="emit('close')"><UiIcon name="close" /></UiButton>
+          <UiButton ref="closeButton" variant="ghost" size="sm" icon type="button" aria-label="关闭详情" title="关闭详情" @click="emit('close')"><UiIcon name="close" /></UiButton>
         </header>
         <div class="detail-drawer-body"><slot /></div>
         <div ref="taskTrayHost" class="task-tray-host" />

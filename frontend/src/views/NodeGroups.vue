@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="权限组" description="权限组（节点组）定义套餐可用的直连与前置入口；保存后同步订阅凭据和交付配置。" eyebrow="Delivery Boundary">
+    <PageHeader title="权限组" description="权限组（节点组）定义套餐可用的直连与前置入口；保存后同步订阅凭据和交付配置。">
       <template #actions><PageRefreshButton label="刷新权限组" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建权限组</UiButton></template>
     </PageHeader>
 
@@ -265,6 +265,6 @@ onMounted(refresh)
 </script>
 
 <style scoped>
-:deep(.group-table code) { color: var(--code-text); background: var(--code-soft); padding: 3px 6px; border-radius: 5px; }.group-editor { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(320px,.7fr); min-height: 520px; }.group-members,.group-fields { min-width: 0; padding: 20px; }.group-members { border-right: 1px solid var(--line); background: var(--surface-soft); }.group-members>header { margin-bottom: 14px; }.group-members>header strong { font-size: 13px; }.group-members>header p { margin: 4px 0 0; color: var(--muted); font-size: 10px; }.group-fields { display: grid; align-content: start; gap: 14px; }.group-editor-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }.check-field { min-height: var(--control-height); align-items: center; }
+:deep(.group-table code) { color: var(--code-text); background: var(--code-soft); padding: 3px 6px; border-radius: 5px; }.group-editor { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(320px,.7fr); min-height: 520px; }.group-members,.group-fields { min-width: 0; padding: 20px; }.group-members { border-right: 1px solid var(--line); background: var(--surface-soft); }.group-members>header { margin-bottom: 14px; }.group-members>header strong { font-size: 13px; }.group-members>header p { margin: 4px 0 0; color: var(--muted); font-size:12px; }.group-fields { display: grid; align-content: start; gap: 14px; }.group-editor-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }.check-field { min-height: var(--control-height); align-items: center; }
 @media(max-width:850px){.group-editor{grid-template-columns:1fr}.group-members{border-right:0;border-bottom:1px solid var(--line)}}
 </style>

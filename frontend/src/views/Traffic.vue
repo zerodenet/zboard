@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="流量与对账" description="按用户、节点、订阅和协议端点查看流量汇总与趋势，按需下钻计费明细和对账。" eyebrow="Usage Operations">
+    <PageHeader title="流量与对账" description="按用户、节点、订阅和协议端点查看流量汇总与趋势，按需下钻计费明细和对账。">
       <template #actions><PageRefreshButton label="刷新流量与对账" :loading="loading" @click="load" /></template>
     </PageHeader>
     <UiTabs :model-value="section" label="流量视图" :items="[{ value: 'summary', label: '统计概览' }, { value: 'details', label: '明细与对账' }]" @update:model-value="changeSection" />
@@ -126,7 +126,7 @@
             <td class="value-cell numeric-column" data-column-priority="2">{{ formatBytes(item.recorded_bytes) }}</td>
             <td class="value-cell numeric-column" :class="{ 'danger-text': item.difference }">{{ formatSignedBytes(item.difference) }}</td>
             <td><StatusBadge :tone="resultTone(item.result)">{{ resultName(item.result) }}</StatusBadge></td>
-            <td class="table-action-column"><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id), subscription: String(item.subscription_id) })">查看订阅</RouterLink></td>
+            <td class="table-action-column"><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id), subscription: String(item.subscription_id) })">查看订阅</RouterLink></UiButton></td>
           </tr>
         </tbody>
       </DataTable>
@@ -384,7 +384,7 @@ onMounted(async () => { if (!route.query.from || !route.query.to || route.query.
 .node-traffic + .data-workbench { margin-top: 16px; }
 .reconciliation-summary { margin-top: 16px; }
 .reconciliation-workbench { margin-top: 12px; }
-.workbench-note { color: var(--muted); font-size: 10px; }
+.workbench-note { color: var(--muted); font-size:12px; }
 .workbench-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.danger-text { color: var(--danger) !important; font-weight: 700; }
+.danger-text { color: var(--danger) !important; font-weight:600; }
 </style>

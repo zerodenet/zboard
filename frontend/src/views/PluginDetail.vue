@@ -1,19 +1,11 @@
 <template>
-  <div class="plugins-page">
+  <div class="standard-page plugins-page">
     <nav class="plugin-breadcrumb" aria-label="面包屑"><RouterLink to="/admin/plugins">插件管理</RouterLink><span>/</span><span>{{ plugin?.name || '插件详情' }}</span></nav>
     <PageAlert v-if="error" tone="danger">{{ error }}<template #actions><UiButton variant="secondary" @click="load">重试</UiButton></template></PageAlert>
     <p v-if="loading && !plugin" role="status">正在读取插件…</p>
     <section v-else-if="!plugin && !error" class="plugins-empty"><h1>未找到插件</h1><p>插件可能已移除，请返回列表检查。</p></section>
     <template v-if="plugin">
-      <header class="plugins-heading">
-        <div><p class="eyebrow">插件详情</p><h1>{{ plugin.name }}</h1><p>{{ plugin.id }} · v{{ plugin.version }} <span class="plugin-status" :class="plugin.state">{{ pluginStateLabel(plugin.state) }}</span></p></div>
-        <div class="plugins-actions">
-          <RouterLink class="button button-secondary" :to="`/admin/plugin-market/${encodeURIComponent(plugin.id)}`">切换发布版本</RouterLink>
-          <UiButton v-if="plugin.enabled" variant="secondary" :disabled="busy" @click="act(plugin, 'disable')">停用插件</UiButton>
-          <UiButton v-else-if="plugin.state !== 'uninstalled'" variant="secondary" :disabled="busy || !plugin.compatibility.compatible || !canPluginRun(plugin)" @click="act(plugin, 'enable')">启用插件</UiButton>
-          <RouterLink v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" class="button" :to="`${pluginDetailPath(plugin.id)}/configuration`">配置插件</RouterLink>
-        </div>
-      </header>
+      <PageHeader :title="plugin.name" :description="`${plugin.id} · v${plugin.version} · ${pluginStateLabel(plugin.state)}`" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink :to="`/admin/plugin-market/${encodeURIComponent(plugin.id)}`">切换发布版本</RouterLink></UiButton><UiButton v-if="plugin.enabled" variant="secondary" :loading="busy" @click="act(plugin, 'disable')">停用插件</UiButton><UiButton v-else-if="plugin.state !== 'uninstalled'" variant="secondary" :loading="busy" :disabled="!plugin.compatibility.compatible || !canPluginRun(plugin)" @click="act(plugin, 'enable')">启用插件</UiButton><UiButton v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" as-child><RouterLink :to="`${pluginDetailPath(plugin.id)}/configuration`">配置插件</RouterLink></UiButton></template></PageHeader>
       <AdminPageNavigation />
       <TransientFeedback :success="message" />
       <PageAlert v-if="!plugin.admission?.accepted" tone="warning">插件尚未通过宿主校验，无法运行。请查看操作记录。</PageAlert>
@@ -64,6 +56,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { computed, ref, watch } from 'vue'
 import { formatDateTime } from '../utils/format'
 import { useRoute } from 'vue-router'

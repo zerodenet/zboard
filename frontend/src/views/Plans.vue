@@ -3,7 +3,6 @@
     <PageHeader
       title="商品与套餐"
       description="查看商品的购买用途、价格与交付范围，进入详情管理销售规格。"
-      eyebrow="Catalog"
     >
       <template #actions>
         <PageRefreshButton label="刷新商品与套餐" :loading="loading" @click="refreshAll" />
@@ -1752,7 +1751,7 @@ onBeforeUnmount(() => {
 
 .detail-kv dt {
   color: var(--muted);
-  font-size: 9px;
+  font-size:12px;
 }
 
 .detail-kv dd {
@@ -1760,7 +1759,7 @@ onBeforeUnmount(() => {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
   font-size: 11px;
-  font-weight: 650;
+  font-weight:600;
 }
 
 .plan-description {
@@ -1793,7 +1792,7 @@ onBeforeUnmount(() => {
 .detail-section-heading p,
 .detail-section-heading > span {
   color: var(--muted);
-  font-size: 9px;
+  font-size:12px;
 }
 
 .detail-section-heading p {
@@ -1826,7 +1825,7 @@ onBeforeUnmount(() => {
   color: var(--text-inverse);
   background: var(--primary);
   font-size: 11px;
-  font-weight: 700;
+  font-weight:600;
 }
 
 .form-section-title h3 {

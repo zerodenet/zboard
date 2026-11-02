@@ -3,7 +3,6 @@
     <PageHeader
       title="审计日志"
       description="列表以操作发生关联的业务对象为主；内部目标值仅作为辅助定位信息。"
-      eyebrow="Audit Trail"
     >
       <template #actions>
         <PageRefreshButton label="刷新审计日志" :loading="loading" @click="load" />
@@ -482,8 +481,8 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   color: var(--info);
   background: var(--info-soft);
-  font-size: 10px;
-  font-weight: 750;
+  font-size:12px;
+  font-weight:600;
 }
 
 .actor-cell strong {
@@ -524,7 +523,7 @@ onBeforeUnmount(() => {
 
 .detail-kv dt {
   color: var(--muted);
-  font-size: 9px;
+  font-size:12px;
 }
 
 .detail-kv dd {
@@ -532,7 +531,7 @@ onBeforeUnmount(() => {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
   font-size: 11px;
-  font-weight: 650;
+  font-weight:600;
 }
 
 .detail-semantic-value {
@@ -563,11 +562,6 @@ onBeforeUnmount(() => {
   :deep(.audit-table .table-action-column) {
     width: 68px;
     min-width: 68px;
-  }
-
-  :deep(.audit-table .table-action-column .ui-button) {
-    min-width: 0;
-    padding-inline: 9px;
   }
 
   .detail-kv {

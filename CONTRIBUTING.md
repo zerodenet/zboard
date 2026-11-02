@@ -39,6 +39,13 @@ procedures, and engineering acceptance targets belong in their focused guides.
 
 ## Code conventions
 
+- Frontend changes must follow the [UI/UX Standard v2](frontend/docs/ui/STANDARD_V2.md)
+  and its [component](frontend/docs/ui/COMPONENT_GUIDELINES.md) and
+  [page patterns](frontend/docs/ui/PAGE_PATTERNS.md). New admin routes are covered
+  by `src/theme/uiStandards.test.ts`; run this check with frontend tests.
+  Review keyboard/focus behavior, light/dark appearance, and responsive layouts
+  against the standard before calling a UI change complete.
+
 - Follow [the project scope](https://docs.zerodenet.org/projects/zboard/): preserve
   the existing working flows, fix defects in small verified changes, measure
   performance, and expose narrow internal services for future extensions.

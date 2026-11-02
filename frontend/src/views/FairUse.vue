@@ -3,7 +3,6 @@
     <PageHeader
       title="Fair Use 观测"
       description="查看最近 15 天连接行为及其覆盖情况；当前阶段不通知、不限速、不暂停订阅，也不执行任何处罚。"
-      eyebrow="Observation"
     >
       <template #actions>
         <PageRefreshButton label="刷新 Fair Use 观测" :loading="loading" :disabled="!subscriptionID" @click="load" />
@@ -764,20 +763,20 @@ onBeforeUnmount(() => {
 .observation-selector :deep(.page-alert) { margin-top: 12px; }
 .selected-observation { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-soft); }
 .selected-observation-main { min-width: 0; display: grid; gap: 4px; }
-.selected-observation-label { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.selected-observation-label { color: var(--muted); font-size:12px; font-weight:600; letter-spacing: .08em; text-transform: uppercase; }
 .selected-observation-main strong { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
-.selected-observation-main small { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.selected-observation-main small { color: var(--muted); font-size:12px; overflow-wrap: anywhere; }
 .subscription-picker { margin-top: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); }
 .subscription-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
 .subscription-picker-heading > div { display: grid; gap: 3px; }
 .subscription-picker-heading strong { font-size: 11px; }
-.subscription-picker-heading span { color: var(--muted); font-size: 9px; }
+.subscription-picker-heading span { color: var(--muted); font-size:12px; }
 .subscription-picker :deep(.data-table-shell) { border: 0; border-radius: 0; }
 .observation-summary { margin: 16px 0; }
 .observation-context { margin-bottom: 16px; }
 .fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0 0 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--line); }
 .fact-grid > div { min-width: 0; display: grid; gap: 4px; padding: 12px; background: var(--surface); }
-.fact-grid span { color: var(--muted); font-size: 10px; }
+.fact-grid span { color: var(--muted); font-size:12px; }
 .fact-grid strong { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
 .compact-facts { margin-bottom: 0; }
 .experiment-score { display: flex; align-items: baseline; gap: 5px; padding: 18px 20px 4px; }
@@ -787,7 +786,7 @@ onBeforeUnmount(() => {
 .reason-cell { max-width: 420px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .evaluation-events { margin-top: 16px; }
 .evaluation-policy-action { display: grid; justify-items: start; gap: 10px; margin-top: 12px; }
-.evaluation-parameter-summary{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--line)}.evaluation-parameter-summary>div{display:grid;gap:3px;padding:10px;background:var(--surface)}.evaluation-parameter-summary span{color:var(--muted);font-size:9px}.evaluation-parameter-summary strong{font-size:10px}.evaluation-policy-buttons{display:flex;flex-wrap:wrap;gap:8px}.policy-editor-group{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.policy-editor-group header{display:grid;gap:3px}.policy-editor-group header strong{font-size:12px}.policy-editor-group header small{color:var(--muted);font-size:9px}
+.evaluation-parameter-summary{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--line)}.evaluation-parameter-summary>div{display:grid;gap:3px;padding:10px;background:var(--surface)}.evaluation-parameter-summary span{color:var(--muted);font-size:12px}.evaluation-parameter-summary strong{font-size:12px}.evaluation-policy-buttons{display:flex;flex-wrap:wrap;gap:8px}.policy-editor-group{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}.policy-editor-group header{display:grid;gap:3px}.policy-editor-group header strong{font-size:12px}.policy-editor-group header small{color:var(--muted);font-size:12px}
 @media (max-width: 760px) {
   .selected-observation { grid-template-columns: 1fr; align-items: start; }
   .selected-observation .button { justify-self: start; }

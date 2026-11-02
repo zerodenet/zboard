@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="运行日志" description="以紧凑摘要查看协议发布、节点内核和后台任务；输出与错误仅在打开详情时加载。" eyebrow="Operations">
+    <PageHeader title="运行日志" description="以紧凑摘要查看协议发布、节点内核和后台任务；输出与错误仅在打开详情时加载。">
       <template #actions><PageRefreshButton label="刷新运行日志" :loading="loading" @click="load" /></template>
     </PageHeader>
 
@@ -145,5 +145,5 @@ onBeforeUnmount(() => detailController?.abort())
 </script>
 
 <style scoped>
-:deep(.operation-table .cell-title strong){display:flex;align-items:center;gap:6px}:deep(.operation-table td:nth-child(5)){max-width:300px;color:var(--muted);white-space:normal}.detail-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;border:1px solid var(--line);border-radius:9px}.detail-kv>div{padding:11px}.detail-kv dt{color:var(--muted);font-size:9px}.detail-kv dd{margin:4px 0 0;font-size:11px;font-weight:650}.operation-summary{margin:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);font-size:11px;line-height:1.55}@media(max-width:620px){.detail-kv{grid-template-columns:1fr}}
+:deep(.operation-table .cell-title strong){display:flex;align-items:center;gap:6px}:deep(.operation-table td:nth-child(5)){max-width:300px;color:var(--muted);white-space:normal}.detail-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;border:1px solid var(--line);border-radius:9px}.detail-kv>div{padding:11px}.detail-kv dt{color:var(--muted);font-size:12px}.detail-kv dd{margin:4px 0 0;font-size:11px;font-weight:600}.operation-summary{margin:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);font-size:11px;line-height:1.55}@media(max-width:620px){.detail-kv{grid-template-columns:1fr}}
 </style>

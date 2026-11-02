@@ -1,19 +1,6 @@
 <template>
-  <div class="plugins-page">
-    <header class="plugins-heading">
-      <div>
-        <p class="eyebrow">扩展中心</p>
-        <h1>插件管理</h1>
-        <p>
-          查看已安装插件，管理启停与配置。
-        </p>
-      </div>
-      <div class="plugins-actions">
-        <RouterLink class="button button-secondary" to="/admin/plugin-market"
-          >浏览插件市场</RouterLink
-        ><UiButton :disabled="busy" @click="importOpen = true">离线导入</UiButton>
-      </div>
-    </header>
+  <div class="standard-page plugins-page">
+    <PageHeader title="插件管理" description="查看已安装插件，管理启停与配置。" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">浏览插件市场</RouterLink></UiButton><UiButton :loading="busy" @click="importOpen = true">离线导入</UiButton></template></PageHeader>
     <AdminPageNavigation />
     <TransientFeedback :success="message" />
     <p v-if="error || actionError" role="alert" class="plugins-error">
@@ -71,7 +58,7 @@
             @click="act(plugin, 'enable')"
             >启用</UiButton
           >
-          <RouterLink class="button button-secondary" :to="pluginDetailPath(plugin.id)">查看详情</RouterLink>
+          <UiButton as-child variant="secondary"><RouterLink :to="pluginDetailPath(plugin.id)">查看详情</RouterLink></UiButton>
           <RouterLink v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" class="plugin-text-link" :to="`${pluginDetailPath(plugin.id)}/configuration`">配置</RouterLink>
         </div>
       </article>
@@ -80,6 +67,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminPageNavigation from '../components/AdminPageNavigation.vue'

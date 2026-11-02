@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="订阅模板" description="管理用户可选的订阅格式、规则集和输出配置；列表只读取摘要，编辑时再加载详细配置。" eyebrow="Delivery">
+    <PageHeader title="订阅模板" description="管理用户可选的订阅格式、规则集和输出配置；列表只读取摘要，编辑时再加载详细配置。">
       <template #actions>
         <PageRefreshButton label="刷新订阅模板" :loading="loading" @click="load" />
         <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建模板</UiButton>
@@ -632,19 +632,19 @@ function hasPolicyGroupCycle(customization: SubscriptionTemplateCustomization) {
 .editor-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:9px;border-bottom:1px solid var(--line)}
 .editor-section-heading>div{display:grid;gap:3px}
 .editor-section-heading strong{color:var(--text-strong);font-size:12px}
-.editor-section-heading span{color:var(--muted);font-size:10px;line-height:1.5}
+.editor-section-heading span{color:var(--muted);font-size:12px;line-height:1.5}
 .standard-output-summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;padding:11px 12px;border:1px solid color-mix(in srgb,var(--success) 22%,var(--line));border-radius:9px;background:var(--success-soft)}
 .standard-output-icon{display:grid;width:30px;height:30px;place-items:center;border-radius:8px;color:var(--success);background:var(--surface)}
-.standard-output-summary>div{display:grid;gap:2px}.standard-output-summary strong{color:var(--text-strong);font-size:11px}.standard-output-summary span{color:var(--muted);font-size:9px;line-height:1.5}
+.standard-output-summary>div{display:grid;gap:2px}.standard-output-summary strong{color:var(--text-strong);font-size:11px}.standard-output-summary span{color:var(--muted);font-size:12px;line-height:1.5}
 .template-preview{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .template-preview>header{min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px 9px 13px;border-bottom:1px solid var(--line)}
-.template-preview>header>div{display:grid;gap:2px}.template-preview>header strong{color:var(--text-strong);font-size:11px}.template-preview>header span{color:var(--muted);font-size:9px}
-.preview-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:9px}
+.template-preview>header>div{display:grid;gap:2px}.template-preview>header strong{color:var(--text-strong);font-size:11px}.template-preview>header span{color:var(--muted);font-size:12px}
+.preview-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}
 .template-preview>.page-alert{margin:10px}
 .template-preview :deep(.output-block){margin:0;border:0;border-radius:0}
 .template-preview :deep(.output-block pre){max-height:330px}
 .preview-empty{min-height:112px;display:flex;align-items:center;justify-content:center;gap:10px;padding:20px;color:var(--muted);text-align:left}
-.preview-empty>div{display:grid;gap:3px}.preview-empty .ui-icon{width:24px;height:24px;color:var(--primary)}.preview-empty strong{color:var(--text-strong);font-size:11px}.preview-empty span{font-size:9px;line-height:1.55}
+.preview-empty>div{display:grid;gap:3px}.preview-empty .ui-icon{width:24px;height:24px;color:var(--primary)}.preview-empty strong{color:var(--text-strong);font-size:11px}.preview-empty span{font-size:12px;line-height:1.55}
 @media(max-width:900px){.editor-conflict{grid-template-columns:1fr;align-items:start}}
 @media(max-width:700px){.standard-output-summary{grid-template-columns:auto minmax(0,1fr)}.standard-output-summary>.status-badge{grid-column:2}}
 </style>

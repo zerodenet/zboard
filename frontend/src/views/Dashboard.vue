@@ -4,7 +4,6 @@
       class="dashboard-header"
       title="运营工作台"
       description="查看营收、订阅、服务运行与当前待处理异常。"
-      eyebrow="Operations"
     >
       <template #actions>
         <div class="dashboard-controls">
@@ -85,9 +84,9 @@
       <UiSection class="span-8" title="经营趋势" :description="trendDescription">
         <template #meta>
           <UiSegmentedControl label="趋势指标" :model-value="trendUsesRevenue ? 'revenue' : 'orders'" :options="trendMeasureOptions" @update:model-value="trendMeasure = $event as 'revenue' | 'orders'" />
-          <RouterLink class="button button-ghost button-sm" to="/admin/orders">
+          <UiButton as-child variant="ghost" size="sm"><RouterLink to="/admin/orders">
             订单明细<UiIcon name="chevron" />
-          </RouterLink>
+          </RouterLink></UiButton>
         </template>
 
         <RemoteReadStatus label="经营趋势" :phase="trendResource.phase.value" :error="trendResource.error.value" :last-success-at="trendResource.lastSuccessAt.value" @retry="trendResource.load()" />
@@ -224,9 +223,9 @@
       <TransientFeedback :error="deploymentsError" error-title="最近事件加载失败" />
       <div v-if="deploymentsLoading && !deployments.length" role="status">正在加载最近事件…</div>
       <template #actions>
-        <RouterLink class="button button-ghost button-sm" to="/admin/protocols">
+        <UiButton as-child variant="ghost" size="sm"><RouterLink to="/admin/protocols">
           协议服务<UiIcon name="chevron" />
-        </RouterLink>
+        </RouterLink></UiButton>
       </template>
 
       <DataTable
@@ -549,7 +548,7 @@ onBeforeUnmount(() => {
 .dashboard-group-heading p { margin: 0; color: var(--muted-foreground); font-size: 12px; }
 .dashboard-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .period-switch { flex: 0 0 auto; }
-.period-context { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 14px; color: var(--muted); font-size: 10px; }
+.period-context { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 14px; color: var(--muted); font-size:12px; }
 .business-metrics :deep(.metric-card) { min-width: 0; min-height: 126px; display: flex; flex-direction: column; gap: 10px; padding: 17px 18px; border: 0; background: var(--surface-subtle); box-shadow: none; }
 .business-metrics :deep(.overview-card-icon) { width: 25px; height: 25px; color: var(--text-secondary); background: transparent; }
 .business-metrics :deep(.overview-card-copy) { gap: 6px; }
@@ -562,7 +561,7 @@ onBeforeUnmount(() => {
 .service-metrics :deep(.overview-card-icon) { width: 28px; height: 28px; background: var(--surface-subtle); }
 .service-metrics :deep(.overview-card-label) { font-size: 11px; font-weight: 500; }
 .service-metrics :deep(.overview-card-value) { font-size: 21px; font-weight: 600; }
-.service-metrics :deep(.overview-card-description) { font-size: 10px; }
+.service-metrics :deep(.overview-card-description) { font-size:12px; }
 .trend-shell { min-width: 0; padding: 16px 20px 18px; }
 .trend-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-bottom: 18px; padding-block: 2px 16px; border-bottom: 1px solid var(--border); }
 .trend-summary > div { min-width: 0; padding: 3px 14px; }
@@ -599,7 +598,7 @@ onBeforeUnmount(() => {
 .readiness-list > a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 13px 4px; text-decoration: none; }
 .readiness-list strong { display: block; font-size: 12px; font-weight: 600; }
 .readiness-list p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
-.step-index { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 50%; background: var(--warning-soft); color: var(--warning); font-size: 10px; font-weight: 800; }
+.step-index { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 50%; background: var(--warning-soft); color: var(--warning); font-size:12px; font-weight:600; }
 .readiness-list > a.complete .step-index { background: var(--success-soft); color: var(--success); }
 @media (max-width: 900px) {
   .dashboard-controls { justify-content: flex-start; }

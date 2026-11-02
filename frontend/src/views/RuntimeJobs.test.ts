@@ -50,7 +50,7 @@ it('keeps long queue errors out of the table and opens the complete error on dem
  expect(table.text()).not.toContain(detail)
  expect(table.text()).toContain('查看错误')
  expect(table.findAll('th').map(header => header.text())).not.toContain('最近错误')
- await table.get('button.queue-error-trigger').trigger('click'); await flushPromises()
+ await table.get('button').trigger('click'); await flushPromises()
  expect(document.body.textContent).toContain(detail)
 })
 it('shows the registered catalog even if the summary request fails', async () => {
@@ -112,7 +112,7 @@ it('keeps usable sections visible when one runtime partition fails', async () =>
  expect(api.queue).toHaveBeenCalledWith('admin_tasks', 0, expect.any(AbortSignal))
 })
 it('clears previous queue details on queue selection and bounds polling after unmount', async () => {
- vi.useFakeTimers(); const w = await render(); await w.findAll('button.queue-card')[1].trigger('click'); await flushPromises()
+ vi.useFakeTimers(); const w = await render(); await w.findAll('.queue-card button')[1].trigger('click'); await flushPromises()
  expect(api.queue).toHaveBeenLastCalledWith('node_publish', 0, expect.any(AbortSignal))
  const calls = api.jobs.mock.calls.length; w.unmount(); wrapper = undefined; await vi.advanceTimersByTimeAsync(30000); expect(api.jobs).toHaveBeenCalledTimes(calls)
 })
@@ -138,7 +138,7 @@ it('shows exclusive maintenance admission and on-demand migration cadence', asyn
 it('shows registration backlog as events without node links or invented leases', async () => {
  const w = await render({ ...snapshot, queues: [...snapshot.queues, { id: 'registration_messages', name: '注册消息', pending: 1, running: 0, delayed: 0, stale: 0, drafts: 0, failed: 0, oldest_at: '2026-09-13T00:00:00Z' }] })
  api.queue.mockResolvedValue({ items: [{ id: 42, kind: 'registration_event', state: 'pending', created_at: '2026-09-13T00:00:00Z' }], total: 1, offset: 0, limit: 25 })
- await w.findAll('button.queue-card')[2].trigger('click'); await flushPromises()
+ await w.findAll('.queue-card button')[2].trigger('click'); await flushPromises()
  expect(api.queue).toHaveBeenLastCalledWith('registration_messages', 0, expect.any(AbortSignal))
  const details = w.get('section[aria-label="队列明细"]')
  expect(w.text()).toContain('注册消息队列'); expect(details.text()).toContain('账户 #42 · 注册事件')
@@ -150,7 +150,7 @@ it('retries a delayed node publication and refreshes its persisted queue state',
   const w = await render()
   api.retry.mockResolvedValue(undefined)
   api.queue.mockResolvedValue({ items: [{ id: 42, kind: 'node', state: 'delayed', attempts: 2, created_at: '2026-09-12T00:00:00Z', next_attempt_at: '2026-09-12T02:00:00Z', lease_until: null, last_error: 'timeout' }], total: 1, offset: 0, limit: 25 })
-  await w.findAll('button.queue-card')[1].trigger('click'); await flushPromises()
+  await w.findAll('.queue-card button')[1].trigger('click'); await flushPromises()
   await w.findAll('button').find(button => button.text() === '立即重试')!.trigger('click'); await flushPromises()
   expect(api.retry).toHaveBeenCalledWith(42)
   expect(api.queue).toHaveBeenCalledTimes(3)

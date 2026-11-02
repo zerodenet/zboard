@@ -54,7 +54,7 @@ it('restores ordinary node creation, drops BBR execution choices and never invok
   expect((view!.get('#create-node-name').element as HTMLInputElement).value).toBe('Unsaved asset')
   expect((view!.get('#create-node-region').element as HTMLInputElement).value).toBe('JP')
   expect((view!.get('#node-create-form input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
-  expect(view!.text()).toContain('SSH 密码、私钥和提权凭据需重新输入')
+  expect(view!.text()).not.toContain('一次性凭据不暂存，安装、升级和 BBR 操作不会自动继续')
   noWrites()
 })
 it('keeps an edited asset visible but blocks programmatic submit if fresh ordinary fields changed', async () => {

@@ -1,6 +1,6 @@
 <template>
   <DropdownMenuRoot>
-    <DropdownMenuTrigger as-child>
+    <Tooltip :text="label"><DropdownMenuTrigger as-child>
       <UiButton
         ref="trigger"
         variant="ghost"
@@ -11,7 +11,7 @@
         :title="label"
         :data-row-action-trigger="triggerKey || undefined"
       ><UiIcon name="more" /></UiButton>
-    </DropdownMenuTrigger>
+    </DropdownMenuTrigger></Tooltip>
     <DropdownMenuPortal>
       <DropdownMenuContent class="ui-dropdown-content" align="end" :side-offset="5" @close-auto-focus="restoreFocus">
         <RowActionItems :actions="actions" />
@@ -21,17 +21,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, Fragment, h, ref, useSlots, type VNode } from 'vue'
+import { computed, defineComponent, Fragment, h, nextTick, ref, useSlots, type VNode } from 'vue'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
+import Tooltip from './ui/Tooltip.vue'
 
 withDefaults(defineProps<{ label?: string; triggerKey?: string }>(), { label: '更多操作', triggerKey: '' })
 const slots = useSlots()
 const trigger = ref<InstanceType<typeof UiButton> | null>(null)
-function restoreFocus(event: Event) {
+async function restoreFocus(event: Event) {
   event.preventDefault()
-  ;(trigger.value?.$el as HTMLElement | undefined)?.focus()
+  // An action may have opened a dialog in this render. Let its focus scope
+  // mount before restoring focus, and never pull focus out of that dialog.
+  await nextTick()
+  const target = trigger.value?.$el as HTMLElement | undefined
+  const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')
+  if (Array.from(dialogs).some(dialog => target && !dialog.contains(target))) return
+  target?.focus()
 }
 function flatten(nodes: VNode[]): VNode[] {
   return nodes.flatMap(node => node.type === Fragment && Array.isArray(node.children)

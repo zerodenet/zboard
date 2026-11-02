@@ -35,7 +35,7 @@
             <RowActions :label="`${record.record_type} ${record.domain_name} 的操作`" :trigger-key="`dns-${record.id}`">
               <UiButton size="sm" variant="ghost" :disabled="record.status === 'syncing' || record.status === 'deleting'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton>
               <UiButton size="sm" variant="ghost" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing' || record.status === 'deleting'" @click="syncRecord(record)">同步</UiButton>
-              <RouterLink class="button button-ghost button-sm" :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink>
+              <UiButton as-child variant="ghost" size="sm"><RouterLink :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink></UiButton>
               <UiButton size="sm" variant="danger" :loading="deletingRecord === record.id" :disabled="record.status === 'syncing'" @click="removeRecord(record)"><UiIcon name="trash" />删除</UiButton>
             </RowActions>
           </td>
@@ -61,17 +61,17 @@
         <FormField v-slot="{ controlAttrs }" label="IPv4 地址（A）" name="dns-ipv4" hint="IPv4、IPv6 至少填写一个。" :error="createErrors.fields.ipv4_value">
           <UiInput v-model.trim="dnsForm.ipv4_value" v-bind="controlAttrs" placeholder="例如 1.1.1.1" @update:model-value="markCreateAddressEdited('ipv4')" />
           <div v-if="createAddressCandidates?.ipv4.length" class="address-candidates" aria-label="IPv4 地址候选">
-            <button v-for="candidate in createAddressCandidates.ipv4" :key="candidate.address" type="button" class="address-candidate" @click="applyCreateCandidate('ipv4', candidate.address)">
+            <UiButton variant="secondary" size="sm" v-for="candidate in createAddressCandidates.ipv4" :key="candidate.address" type="button" class="address-candidate" @click="applyCreateCandidate('ipv4', candidate.address)"><span class="address-candidate-content">
               <span>{{ candidate.address }}</span><small>{{ nodeAddressCandidateSourceLabel(candidate.source) }}</small>
-            </button>
+            </span></UiButton>
           </div>
         </FormField>
         <FormField v-slot="{ controlAttrs }" label="IPv6 地址（AAAA）" name="dns-ipv6" hint="同时填写时会创建两条记录。" :error="createErrors.fields.ipv6_value">
           <UiInput v-model.trim="dnsForm.ipv6_value" v-bind="controlAttrs" placeholder="例如 2606:4700:4700::1111" @update:model-value="markCreateAddressEdited('ipv6')" />
           <div v-if="createAddressCandidates?.ipv6.length" class="address-candidates" aria-label="IPv6 地址候选">
-            <button v-for="candidate in createAddressCandidates.ipv6" :key="candidate.address" type="button" class="address-candidate" @click="applyCreateCandidate('ipv6', candidate.address)">
+            <UiButton variant="secondary" size="sm" v-for="candidate in createAddressCandidates.ipv6" :key="candidate.address" type="button" class="address-candidate" @click="applyCreateCandidate('ipv6', candidate.address)"><span class="address-candidate-content">
               <span>{{ candidate.address }}</span><small>{{ nodeAddressCandidateSourceLabel(candidate.source) }}</small>
-            </button>
+            </span></UiButton>
           </div>
         </FormField>
         <div v-if="createAddressError || createAddressCandidates" class="address-discovery-feedback field-full" :class="{ 'is-error': createAddressError }" role="status">
@@ -102,9 +102,9 @@
         <FormField v-slot="{ controlAttrs }" :label="editForm.record_type === 'AAAA' ? 'IPv6 地址' : 'IPv4 地址'" name="edit-dns-address" :error="editErrors.fields.record_value" required>
           <UiInput v-model.trim="editForm.record_value" v-bind="controlAttrs" />
           <div v-if="editAddressCandidateItems.length" class="address-candidates" :aria-label="`${editForm.record_type} 地址候选`">
-            <button v-for="candidate in editAddressCandidateItems" :key="candidate.address" type="button" class="address-candidate" @click="editForm.record_value = candidate.address">
+            <UiButton variant="secondary" size="sm" v-for="candidate in editAddressCandidateItems" :key="candidate.address" type="button" class="address-candidate" @click="editForm.record_value = candidate.address"><span class="address-candidate-content">
               <span>{{ candidate.address }}</span><small>{{ nodeAddressCandidateSourceLabel(candidate.source) }}</small>
-            </button>
+            </span></UiButton>
           </div>
         </FormField>
         <div v-if="editAddressError || editAddressCandidates" class="address-discovery-feedback field-full" :class="{ 'is-error': editAddressError }" role="status">
@@ -590,10 +590,11 @@ onBeforeUnmount(() => {
 .check-field { min-height: var(--control-height); display: flex; align-items: center; gap: 8px; }
 .address-discovery-toolbar { display: flex; justify-content: flex-end; margin-top: 7px; }
 .address-candidates { display: grid; gap: 6px; margin-top: 8px; }
-.address-candidate { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface-soft); cursor: pointer; text-align: left; }
-.address-candidate:hover { border-color: var(--primary); background: var(--primary-soft); }
+.address-candidate { width: 100%; }
+.address-candidate-content { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; width: 100%; text-align: left; }
+
 .address-candidate span { min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 11px; }
-.address-candidate small { flex: 0 0 auto; color: var(--muted); font-size: 9px; }
+.address-candidate small { flex: 0 0 auto; color: var(--muted); font-size:12px; }
 .address-discovery-feedback { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--surface-soft); font-size: 11px; }
 .address-discovery-feedback.is-error { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); color: var(--danger); background: var(--danger-soft); }
 .address-discovery-feedback p { margin: 0; }

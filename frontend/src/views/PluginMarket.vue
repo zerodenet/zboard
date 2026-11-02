@@ -1,15 +1,6 @@
 <template>
-  <div class="plugins-page">
-    <header class="plugins-heading">
-      <div>
-        <p class="eyebrow">扩展中心</p>
-        <h1>插件市场</h1>
-        <p>发现前台与后台扩展，查看插件来源和发行状态，安装前验证签名和包内容。</p>
-      </div>
-      <RouterLink class="button button-secondary" to="/admin/plugins"
-        >管理插件 / 离线导入</RouterLink
-      >
-    </header>
+  <div class="standard-page plugins-page">
+    <PageHeader title="插件市场" description="查找扩展、选择版本并安装。" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugins">管理插件</RouterLink></UiButton></template></PageHeader>
     <AdminPageNavigation />
     <p v-if="error" role="alert" class="plugins-error">
       {{ error }}
@@ -56,12 +47,13 @@
             <dd>{{ entry.publisher }}</dd>
           </div>
         </dl>
-        <RouterLink class="button button-secondary" :to="`/admin/plugin-market/${encodeURIComponent(entry.id)}`">详情 / 下载 / 安装</RouterLink>
+        <UiButton as-child variant="secondary"><RouterLink :to="`/admin/plugin-market/${encodeURIComponent(entry.id)}`">详情 / 下载 / 安装</RouterLink></UiButton>
       </article>
     </div>
   </div>
 </template>
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { computed, onMounted, ref } from "vue";
 import { formatDateTime } from "../utils/format";
 import UiInput from '../components/UiInput.vue'

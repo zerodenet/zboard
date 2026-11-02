@@ -15,6 +15,9 @@ Use `PageHeader`, `WorkbenchFilterBar`, `DataWorkbench`, `DataTable`,
 List state belongs in the URL and server-side table reader. Keep current data
 visible during refresh, and show a small refresh state. Separate initial
 loading, empty results, API failure, and permission failure.
+Successful read indicators do not stay on the page. Keep refresh/stale/error
+feedback visible; put diagnostic registries and execution catalogs in collapsed
+details after the actionable content so they do not dominate the first screen.
 
 The node asset page is the reference data flow: it has search and filters,
 selection, table status, detail drawer, edit forms, destructive confirmation,
