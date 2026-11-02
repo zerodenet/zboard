@@ -277,6 +277,7 @@ var explicitRoutePrefixes = []struct {
 	{"/api/v1/commerce/discount-providers", "commerce"},
 	{"/api/v1/account/security", "identity"},
 	{"/api/v1/account/identities", "identity"},
+	{"/api/v1/account/cleanup-status", "identity"},
 	{"/api/v1/account/subscriptions", "entitlements"},
 	{"/api/v1/announcements", "experience"},
 	{"/api/v1/admin/announcements", "experience"},

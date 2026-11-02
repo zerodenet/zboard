@@ -62,6 +62,15 @@ func (s AccountDirectory) List(ctx context.Context, q identity.AccountDirectoryQ
 	if err := query.Order(order).Find(&users).Error; err != nil {
 		return identity.AccountDirectoryPage{}, err
 	}
+	// Legacy identity pickers return public accounts only. Do not load every
+	// owner's funds and lifecycle simply because an unpaged picker is opened.
+	if !q.Paged {
+		items := make([]identity.AccountDirectoryItem, 0, len(users))
+		for _, user := range users {
+			items = append(items, identity.AccountDirectoryItem{PublicAccount: publicAccount(user), CreatedAt: user.CreatedAt})
+		}
+		return identity.AccountDirectoryPage{Items: items}, nil
+	}
 	items, err := s.project(ctx, users, now)
 	return identity.AccountDirectoryPage{Items: items, Total: total}, err
 }
@@ -99,10 +108,18 @@ func (s AccountDirectory) project(ctx context.Context, users []model.User, now t
 	for _, row := range orders {
 		orderCounts[row.UserID] = accountBusinessCounts{Active: row.Active, Total: row.Total}
 	}
+	overviews, err := s.overview(ctx, users, now)
+	if err != nil {
+		return nil, err
+	}
 	for _, user := range users {
+		overview, exists := overviews[user.ID]
+		if !exists {
+			continue
+		}
 		subs, orders := subscriptionCounts[user.ID], orderCounts[user.ID]
 		items = append(items, identity.AccountDirectoryItem{
-			PublicAccount: publicAccount(user), CreatedAt: user.CreatedAt,
+			PublicAccount: publicAccount(user), AccountOverview: overview, CreatedAt: user.CreatedAt,
 			ActiveSubscriptionCount: subs.Active, TotalSubscriptionCount: subs.Total,
 			PendingOrderCount: orders.Active, TotalOrderCount: orders.Total,
 		})
@@ -132,8 +149,16 @@ func (s AccountDirectory) Detail(ctx context.Context, id uint, now time.Time) (i
 	if err != nil {
 		return identity.AccountBusinessDetail{}, err
 	}
+	overviews, err := s.overview(ctx, []model.User{user}, now)
+	if err != nil {
+		return identity.AccountBusinessDetail{}, err
+	}
+	overview, exists := overviews[user.ID]
+	if !exists {
+		return identity.AccountBusinessDetail{}, identity.ErrAccountNotFound
+	}
 	return identity.AccountBusinessDetail{
-		ID: user.ID, AccountName: user.AccountName, Email: user.Email, EmailVerifiedAt: user.EmailVerifiedAt,
+		AccountOverview: overview, ID: user.ID, AccountName: user.AccountName, Email: user.Email, EmailVerifiedAt: user.EmailVerifiedAt,
 		LastLoginAt: user.LastLoginAt, IsAdmin: user.IsAdmin, Status: user.Status,
 		ActiveSubscriptionCount: subs.Active, TotalSubscriptionCount: subs.Total,
 		PendingOrderCount: orders.Active, TotalOrderCount: orders.Total,

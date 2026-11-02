@@ -8,11 +8,12 @@
       </nav>
       <div class="account-identity"><AppearanceSwitch /><span class="avatar">{{ userInitial }}</span><div class="account-identity-details"><strong>{{ app.user.email }}</strong><span v-if="app.isAdmin">已授予管理员权限</span></div><UiButton variant="ghost" icon class="icon-button" type="button" aria-label="退出登录" title="退出登录" @click="logout"><UiIcon name="logout" /></UiButton></div>
     </header>
-    <main class="account-content"><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
+    <main class="account-content"><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><AccountCleanupNotice class="account-cleanup-notice" /><RouterView /></NavigationPage></main>
   </div>
 </template>
 
 <script setup lang="ts">
+import AccountCleanupNotice from '../components/AccountCleanupNotice.vue'
 import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import { useAppearance } from '../theme/appearance'
 import NavigationLinks from '../components/NavigationLinks.vue'
@@ -38,6 +39,7 @@ function logout() { app.clear(); router.push('/') }
 </script>
 
 <style scoped>
+.account-cleanup-notice { margin-bottom: 20px; }
 .account-logo { display: block; width: auto; max-width: 150px; height: 34px; object-fit: contain; }
 .nav-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 999px; background: var(--danger); color: var(--text-inverse); font-size: 9px; font-weight: 800; }
 </style>

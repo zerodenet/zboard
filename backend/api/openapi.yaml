@@ -478,6 +478,22 @@ paths:
                       expires_at: { type: string, description: Unix expiry in seconds }
         "400": { description: Incorrect password }
         "401": { description: Authentication required }
+  /api/v1/account/cleanup-status:
+    get:
+      tags: [auth]
+      summary: Read the current account's automatic deletion policy and eligibility
+      description: Owner is resolved from the current session. Read-only; dates are estimates and execution rechecks all guards. Returns no-store.
+      responses:
+        '200':
+          description: Current policy, protection reason and estimated eligibility date
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - properties:
+                      data: { $ref: '#/components/schemas/AccountCleanupStatus' }
+        '401': { $ref: '#/components/responses/Error' }
   /api/v1/account/identities/security:
     get:
       tags: [auth]
@@ -6788,11 +6804,29 @@ components:
           type: boolean
         status:
           type: string
+    AccountCleanupStatus:
+      type: object
+      required: [enabled, inactive_days, state, eligible_at, reason]
+      properties:
+        enabled: { type: boolean }
+        inactive_days: { type: integer, minimum: 0, maximum: 36500 }
+        state: { type: string, enum: [disabled, protected, subscribed, scheduled, eligible] }
+        eligible_at: { type: string, format: date-time, nullable: true, description: Earliest estimated eligibility; null when disabled, protected or on a perpetual entitlement. }
+        reason: { type: string }
+    AccountWalletBalance:
+      type: object
+      required: [currency, balance_minor, reserved_minor]
+      properties:
+        currency: { type: string }
+        balance_minor: { type: string, pattern: '^[0-9]+$', description: Currency minor units, serialized as a string to preserve precision. }
+        reserved_minor: { type: string, pattern: '^[0-9]+$' }
     AdminUserDetail:
       allOf:
         - $ref: "#/components/schemas/User"
         - type: object
           properties:
+            wallet_balances: { type: array, items: { $ref: '#/components/schemas/AccountWalletBalance' } }
+            cleanup: { $ref: '#/components/schemas/AccountCleanupStatus' }
             account_name: { type: string }
             email_verified_at: { type: string, format: date-time, nullable: true }
             last_login_at: { type: string, format: date-time, nullable: true }
@@ -6808,6 +6842,8 @@ components:
         - type: object
           required: [active_subscription_count, total_subscription_count, pending_order_count, total_order_count, created_at]
           properties:
+            wallet_balances: { type: array, items: { $ref: '#/components/schemas/AccountWalletBalance' } }
+            cleanup: { $ref: '#/components/schemas/AccountCleanupStatus' }
             active_subscription_count: { type: integer, format: int64, minimum: 0 }
             total_subscription_count: { type: integer, format: int64, minimum: 0 }
             pending_order_count: { type: integer, format: int64, minimum: 0 }

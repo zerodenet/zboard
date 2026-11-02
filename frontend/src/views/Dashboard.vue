@@ -13,16 +13,12 @@
       </template>
     </PageHeader>
 
-    <div class="dashboard-read-state">
-    <RemoteReadStatus label="当前服务状态" :phase="currentResource.phase.value" :error="currentResource.error.value" :last-success-at="currentResource.lastSuccessAt.value" @retry="currentResource.load()" />
-    <RemoteReadStatus label="经营统计" :phase="overviewResource.phase.value" :error="error" :last-success-at="overviewResource.lastSuccessAt.value" @retry="overviewResource.load()" />
-
+    <div class="dashboard-group-heading">
+      <div class="dashboard-group-copy"><h2>服务使用</h2><p>订阅、连接、流量与节点的当前状态</p></div>
+      <RemoteReadStatus compact label="当前服务状态" :phase="currentResource.phase.value" :error="currentResource.error.value" :last-success-at="currentResource.lastSuccessAt.value" @retry="currentResource.load()" />
     </div>
-    <div v-if="current" class="dashboard-group-heading">
-      <h2>服务使用</h2>
-      <p>订阅、连接、流量与节点的当前状态</p>
-    </div>
-    <UiMetricStrip v-if="current" class="dashboard-section service-metrics">
+    <UiMetricStrip class="dashboard-section service-metrics" :aria-busy="!current && currentResource.loading.value || undefined">
+      <template v-if="current">
       <MetricCard label="有效订阅" :value="formatNumber(current.active_subscriptions)" icon="plans" status="当前" :meta="`${formatNumber(current.subscriptions.expiring_within_3d)} 个将在 3 天内到期`" />
       <MetricCard
         label="已观测活跃订阅"
@@ -52,20 +48,22 @@
         icon-tone="neutral"
         meta="依据最近两分钟心跳"
       />
+      </template>
+      <template v-else><MetricCard v-for="metric in serviceMetricLabels" :key="metric.label" :label="metric.label" value="—" :icon="metric.icon" :loading="currentResource.loading.value" meta="尚未取得服务数据" /></template>
     </UiMetricStrip>
 
 
-    <div v-if="overview" class="period-context">
-      <span>{{ periodDescription }}</span>
-      <span>查询时区 {{ overview.period.timezone }}</span>
-      <TimeBadge :value="overview.as_of" mode="relative" />
+    <div class="dashboard-group-heading business-heading">
+      <div class="dashboard-group-copy"><h2>经营概览</h2><p class="dashboard-period-copy"><span :title="periodDescription">{{ overview ? periodDescription : '所选周期的经营统计' }}</span><span>查询时区 {{ overview?.period.timezone || '—' }}</span></p></div>
+      <RemoteReadStatus compact label="经营统计" :phase="overviewResource.phase.value" :error="error" :last-success-at="overviewResource.lastSuccessAt.value" @retry="overviewResource.load()" />
     </div>
 
-    <UiMetricStrip v-if="overview" :columns="3" class="dashboard-section business-metrics">
+    <UiMetricStrip :columns="3" class="dashboard-section business-metrics" :aria-busy="!overview && loading || undefined">
       <MetricCard
         v-for="metric in businessMetrics"
         :key="metric.label"
         :label="metric.label"
+        :loading="!overview && loading"
         :value="metric.value"
         :icon="metric.icon"
         :status="metric.label === '有效订阅' ? metric.status : undefined"
@@ -89,7 +87,7 @@
           </RouterLink></UiButton>
         </template>
 
-        <RemoteReadStatus label="经营趋势" :phase="trendResource.phase.value" :error="trendResource.error.value" :last-success-at="trendResource.lastSuccessAt.value" @retry="trendResource.load()" />
+        <div class="dashboard-trend-status"><RemoteReadStatus compact label="经营趋势" :phase="trendResource.phase.value" :error="trendResource.error.value" :last-success-at="trendResource.lastSuccessAt.value" @retry="trendResource.load()" /></div>
         <div v-if="trend?.trend.length" class="trend-shell">
           <div class="trend-summary">
             <div>
@@ -106,19 +104,29 @@
             </div>
           </div>
 
-          <div class="trend-chart" role="img" :aria-label="trendAriaLabel">
-            <div
+          <div class="trend-chart" role="group" :aria-label="trendAriaLabel">
+            <Tooltip
               v-for="point in trend.trend"
               :key="point.bucket_start"
-              class="trend-column"
-              :title="trendPointTitle(point)"
+              :text="trendPointTitle(point)"
+              :delay-duration="0"
             >
-              <div class="trend-bar-track">
-                <span class="trend-bar" :style="{ height: `${trendHeight(point)}%` }" />
+              <div class="trend-column" role="img" tabindex="0" :aria-label="trendPointTitle(point)">
+                <div class="trend-bar-track">
+                  <span class="trend-bar" :style="{ height: `${trendHeight(point)}%` }" />
+                </div>
+                <span class="trend-orders">{{ formatCompactCount(point.paid_orders) }}</span>
+                <span class="trend-label">{{ trendBucketLabel(point.bucket_start) }}</span>
               </div>
-              <span class="trend-orders">{{ formatCompactCount(point.paid_orders) }}</span>
-              <span class="trend-label">{{ trendBucketLabel(point.bucket_start) }}</span>
-            </div>
+              <template #content>
+                <div class="trend-point-detail">
+                  <time :datetime="point.bucket_start">{{ formatDashboardTime(point.bucket_start, trend.period.timezone) }}</time>
+                  <strong>{{ trendUsesRevenue ? trendPointRevenue(point) : `已支付订单 ${formatNumber(point.paid_orders)} 笔` }}</strong>
+                  <span>{{ trendUsesRevenue ? `已支付订单 ${formatNumber(point.paid_orders)} 笔` : trendPointRevenue(point) }}</span>
+                  <span>新购 {{ formatNumber(point.new_orders) }} · 续费 {{ formatNumber(point.renew_orders) }}</span>
+                </div>
+              </template>
+            </Tooltip>
           </div>
 
           <div class="trend-legend">
@@ -126,16 +134,20 @@
             <span>柱下数字：已支付订单数</span>
           </div>
         </div>
-        <EmptyState v-else-if="trend" icon="billing" title="当前周期暂无已支付订单" description="产生已支付订单后显示所选周期的经营趋势。" />
+        <div v-else class="trend-placeholder">
+          <EmptyState v-if="trend" icon="billing" title="当前周期暂无已支付订单" description="产生已支付订单后显示所选周期的经营趋势。" />
+          <div v-else-if="trendResource.loading.value" class="trend-loading" role="status"><Skeleton class="ui-skeleton" v-for="index in 7" :key="index" /><span class="sr-only">正在加载经营趋势</span></div>
+          <p v-else class="dashboard-section-placeholder">经营趋势暂不可用，请查看上方失败原因。</p>
+        </div>
       </UiSection>
 
       <UiSection
-        v-if="current"
         class="span-4"
         title="当前待办与异常"
         description="仅列出当前仍需处理的问题。"
       >
-        <div v-if="actionQueue.length" class="attention-list">
+        <div v-if="!current" class="dashboard-section-placeholder" role="status">{{ currentResource.error.value ? '当前待办暂不可用' : '正在读取当前待办…' }}</div>
+        <div v-else-if="actionQueue.length" class="attention-list">
           <RouterLink v-for="item in actionQueue" :key="item.key" :to="item.to" :class="item.tone">
             <span class="queue-icon"><UiIcon :name="item.icon" /></span>
             <div class="queue-copy">
@@ -155,9 +167,10 @@
       </UiSection>
     </div>
 
-    <div v-if="current" class="section-grid dashboard-section">
+    <div class="section-grid dashboard-section dashboard-health">
       <UiSection class="span-6" title="订阅健康" description="关注即将到期或当前不可用的订阅。">
-        <div class="health-list">
+        <div v-if="!current" class="health-placeholder" aria-label="正在加载订阅健康" role="status"><template v-if="currentResource.loading.value"><Skeleton class="ui-skeleton" v-for="index in 4" :key="index" /></template><p v-else>订阅健康暂不可用，请查看当前服务状态的失败原因。</p></div>
+        <div v-else class="health-list">
           <RouterLink v-for="item in subscriptionHealth" :key="item.label" to="/admin/subscriptions" class="health-row">
             <span class="health-copy">
               <strong>{{ item.label }}</strong>
@@ -171,7 +184,8 @@
       </UiSection>
 
       <UiSection class="span-6" title="服务基础设施" description="节点、运维通道与配置交付的当前状态。">
-        <div class="health-list">
+        <div v-if="!current" class="health-placeholder" aria-label="正在加载服务基础设施" role="status"><template v-if="currentResource.loading.value"><Skeleton class="ui-skeleton" v-for="index in 5" :key="index" /></template><p v-else>服务基础设施暂不可用，请查看当前服务状态的失败原因。</p></div>
+        <div v-else class="health-list">
           <RouterLink v-for="item in infrastructure" :key="item.label" :to="item.to" class="health-row">
             <span class="health-copy">
               <strong>{{ item.label }}</strong>
@@ -220,9 +234,9 @@
       <DashboardTrafficRanking class="span-6" title="用户流量排行" :items="userRankings?.users || []" :range="userRange" :comparison-label="rangeComparison(userRange)" :loading="usersLoading" :error="usersError" :as-of="userRankings?.as_of" @update:range="changeUserRange" @refresh="usersResource.load()" />
     </div>
     <UiSection class="dashboard-section" title="最近重要运营事件" description="最近的配置发布与关键运营记录。">
-      <TransientFeedback :error="deploymentsError" error-title="最近事件加载失败" />
-      <div v-if="deploymentsLoading && !deployments.length" role="status">正在加载最近事件…</div>
+      <TableSkeleton v-if="deploymentsLoading && !deployments.length" label="正在加载最近事件" :columns="4" :rows="4" />
       <template #actions>
+        <RemoteReadStatus compact label="最近事件" :phase="eventsResource.phase.value" :error="deploymentsError" :last-success-at="eventsResource.lastSuccessAt.value" @retry="eventsResource.load()" />
         <UiButton as-child variant="ghost" size="sm"><RouterLink to="/admin/protocols">
           协议服务<UiIcon name="chevron" />
         </RouterLink></UiButton>
@@ -279,10 +293,12 @@ import DashboardTrafficRanking from '../components/DashboardTrafficRanking.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TimeBadge from '../components/TimeBadge.vue'
-import TransientFeedback from '../components/TransientFeedback.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import UiIcon from '../components/UiIcon.vue'
 import UiButton from '../components/UiButton.vue'
 import UiSegmentedControl from '../components/UiSegmentedControl.vue'
+import { Skeleton } from '../components/ui/skeleton'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { formatBytes, formatCurrency, formatNumber, formatUnknownValue } from '../utils/format'
 import { buildDashboardAttention } from '../utils/dashboardHealth'
 import { useRemoteResource } from '../composables/useRemoteResource'
@@ -325,8 +341,9 @@ const revenueValue = computed(() => {
   return formatCurrency(overview.value.business.revenue_cents, overview.value.business.currency || 'CNY')
 })
 
+const serviceMetricLabels = [{ label: '有效订阅', icon: 'plans' }, { label: '已观测活跃订阅', icon: 'plans' }, { label: '已观测连接', icon: 'nodes' }, { label: '在线节点', icon: 'nodes' }]
 const businessMetrics = computed(() => {
-  if (!overview.value) return []
+  if (!overview.value) return [{ label: '本期实收', icon: 'dollar' }, { label: '已支付订单', icon: 'billing' }, { label: '新增订阅', icon: 'plans' }, { label: '续费成功', icon: 'refresh' }, { label: '新增用户', icon: 'users' }, { label: '本期流量', icon: 'traffic' }].map(metric => ({ ...metric, value: '—', status: '', meta: '尚未取得经营统计', comparison: undefined }))
   const business = overview.value.business
   return [
     {
@@ -468,11 +485,14 @@ function trendHeight(point: DashboardTrendPoint) {
   return Math.max(4, Math.min(100, (value / trendMax.value) * 100))
 }
 
-function trendPointTitle(point: DashboardTrendPoint) {
-  const revenue = trend.value?.mixed_currency
+function trendPointRevenue(point: DashboardTrendPoint) {
+  return trend.value?.mixed_currency
     ? '多币种金额不合并展示'
-    : formatCurrency(point.revenue_cents, trend.value?.currency || 'CNY')
-  return `${formatDashboardTime(point.bucket_start, trend.value?.period.timezone)} · 实收 ${revenue} · ${formatNumber(point.paid_orders)} 单（新购 ${formatNumber(point.new_orders)} / 续费 ${formatNumber(point.renew_orders)}）`
+    : `实收金额 ${formatCurrency(point.revenue_cents, trend.value?.currency || 'CNY')}`
+}
+function trendPointTitle(point: DashboardTrendPoint) {
+  const revenue = trendPointRevenue(point), orders = `已支付订单 ${formatNumber(point.paid_orders)} 笔`
+  return `${formatDashboardTime(point.bucket_start, trend.value?.period.timezone)} · ${trendUsesRevenue.value ? `${revenue} · ${orders}` : `${orders} · ${revenue}`}（新购 ${formatNumber(point.new_orders)} / 续费 ${formatNumber(point.renew_orders)}）`
 }
 
 function trendBucketLabel(value: string) {
@@ -543,9 +563,15 @@ onBeforeUnmount(() => {
 .span-6 { grid-column: span 6; }
 @media (max-width: 900px) { .span-6 { grid-column: 1 / -1; } }
 .dashboard-section { margin-bottom: 18px; }
-.dashboard-group-heading { display: flex; align-items: baseline; gap: 12px; margin-top: 4px; }
+.dashboard-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin-block: 4px 8px; }
+.dashboard-group-copy { min-width: 0; }
+.dashboard-period-copy { display: grid; grid-template-rows: 18px 18px; }
+.dashboard-period-copy span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.health-placeholder { display: grid; gap: 16px; min-height: 280px; padding: 18px; }
+.health-placeholder > :deep(.ui-skeleton) { height: 28px; }
+.dashboard-health :deep(.health-list) { min-height: 280px; }
 .dashboard-group-heading h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.dashboard-group-heading p { margin: 0; color: var(--muted-foreground); font-size: 12px; }
+.dashboard-group-heading p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; }
 .dashboard-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .period-switch { flex: 0 0 auto; }
 .period-context { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 14px; color: var(--muted); font-size:12px; }
@@ -556,13 +582,19 @@ onBeforeUnmount(() => {
 .business-metrics :deep(.overview-card-label) { color: var(--text-secondary); font-size: 12px; font-weight: 500; }
 .business-metrics :deep(.overview-card-value) { font-size: 25px; font-weight: 600; letter-spacing: -.035em; }
 .business-metrics :deep(.overview-card-description) { color: var(--muted-foreground); font-size: 11px; white-space: normal; }
+.business-metrics :deep(.metric-meta) { display: flex; align-items: baseline; min-height: 18px; }
 .business-metrics :deep(.overview-card-badge) { top: 16px; right: 14px; bottom: auto; }
 .service-metrics :deep(.metric-card) { min-height: 94px; padding: 12px 15px; border-color: var(--border); background: var(--card); box-shadow: none; }
 .service-metrics :deep(.overview-card-icon) { width: 28px; height: 28px; background: var(--surface-subtle); }
 .service-metrics :deep(.overview-card-label) { font-size: 11px; font-weight: 500; }
 .service-metrics :deep(.overview-card-value) { font-size: 21px; font-weight: 600; }
 .service-metrics :deep(.overview-card-description) { font-size:12px; }
-.trend-shell { min-width: 0; padding: 16px 20px 18px; }
+.dashboard-trend-status { display: flex; justify-content: flex-end; height: 32px; padding-inline: 20px; }
+.trend-placeholder { min-height: 365px; display: grid; align-items: center; }
+.trend-loading { display: flex; height: 220px; gap: 12px; padding: 20px; align-items: stretch; }
+.trend-loading > :deep(.ui-skeleton) { flex: 1; }
+.dashboard-section-placeholder { min-height: 180px; padding: 24px 18px; color: var(--muted-foreground); font-size: 13px; }
+.trend-shell { min-height: 365px; min-width: 0; padding: 16px 20px 18px; }
 .trend-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-bottom: 18px; padding-block: 2px 16px; border-bottom: 1px solid var(--border); }
 .trend-summary > div { min-width: 0; padding: 3px 14px; }
 .trend-summary > div:first-child { padding-left: 0; }
@@ -571,6 +603,10 @@ onBeforeUnmount(() => {
 .trend-summary strong { display: block; margin-top: 5px; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
 .trend-chart { height: 220px; display: flex; align-items: stretch; gap: clamp(3px, .7vw, 10px); padding: 8px 2px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .trend-column { min-width: 18px; flex: 1 0 18px; display: grid; grid-template-rows: minmax(120px, 1fr) 18px 24px; align-items: end; text-align: center; }
+.trend-column:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+.trend-point-detail { display: grid; gap: 4px; min-width: 170px; }
+.trend-point-detail time { color: var(--muted-foreground); font-size: 12px; }
+.trend-point-detail strong { font-size: 14px; font-weight: 600; }
 .trend-bar-track { width: 70%; max-width: 34px; height: 100%; justify-self: center; display: flex; align-items: end; border-radius: 5px 5px 0 0; background: var(--surface-subtle); overflow: hidden; }
 .trend-bar { width: 100%; min-height: 0; border-radius: 5px 5px 0 0; background: currentColor; color: var(--primary); opacity: .78; transition: height .18s ease; }
 .trend-orders { align-self: center; color: var(--text); font-size: 11px; font-weight: 600; }
@@ -608,7 +644,7 @@ onBeforeUnmount(() => {
   .trend-summary > div + div { border-left: 0; }
 }
 @media (max-width: 560px) {
-  .dashboard-group-heading { display: block; }
+  .dashboard-group-heading { align-items: flex-start; }
   .dashboard-group-heading p { margin-top: 3px; }
   .trend-shell { padding-inline: 14px; }
 }

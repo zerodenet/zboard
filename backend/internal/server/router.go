@@ -87,6 +87,7 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/finish", h.ExternalAuthFinishHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/registration-code", h.ExternalRegistrationCodeHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/password", h.ExternalPasswordSetupHandler),
+		newRoute(http.MethodGet, "/api/v1/account/cleanup-status", h.AccountCleanupStatusHandler),
 		newRoute(http.MethodGet, "/api/v1/account/identities/security", h.ExternalPasswordStatusHandler),
 		newRoute(http.MethodPost, "/api/v1/account/security/password", h.ChangeAccountPasswordHandler),
 		newRoute(http.MethodPost, "/api/v1/account/security/confirm-password", h.ConfirmAccountPasswordHandler),

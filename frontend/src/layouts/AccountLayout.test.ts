@@ -12,7 +12,7 @@ vi.mock('../api/menus', async () => {
 it('keeps every navigation entry available and closes the menu on navigation and Escape', async () => {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<p>页面</p>' } }] })
   await router.push('/account')
-  const wrapper = mount(AccountLayout, { global: { plugins: [router] } })
+  const wrapper = mount(AccountLayout, { global: { plugins: [router], stubs: { AccountCleanupNotice: true } } })
   await flushPromises()
   const toggle = wrapper.get('.account-menu')
   expect(wrapper.findAll('nav a')).toHaveLength(11)

@@ -50,3 +50,19 @@ func (h *handlers) AdminUserDeleteHandler(w http.ResponseWriter, r *http.Request
 	OK(w, map[string]any{"id": id, "deleted": true, "history_retained": true})
 }
 func (h *handlers) StartUserCleanupWorker() { h.startPeriodicJob(h.services.UserCleanupJob()) }
+
+// The owner always comes from the current authenticated session, never input.
+func (h *handlers) AccountCleanupStatusHandler(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.authFromRequest(r)
+	if err != nil {
+		Unauthorized(w, "authentication required")
+		return
+	}
+	detail, err := h.services.Identity.Directory.Detail(r.Context(), claims.UserID)
+	if err != nil {
+		writeAccountAdministrationError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	OK(w, detail.Cleanup)
+}

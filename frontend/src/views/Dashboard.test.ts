@@ -10,6 +10,44 @@ import UiSegmentedControl from '../components/UiSegmentedControl.vue'
 import DashboardTrafficRanking from '../components/DashboardTrafficRanking.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
 import MetricCard from '../components/MetricCard.vue'
+
+it('keeps metric containers and previous figures throughout a pending refresh', async () => {
+ const wrapper = await open()
+ const service = wrapper.get('.service-metrics').element, business = wrapper.get('.business-metrics').element
+ const card = wrapper.get('.business-metrics .metric-card').element
+ const current = deferred<any>(), statistics = deferred<any>()
+ vi.mocked(fetchDashboardCurrent).mockReturnValueOnce(current.promise)
+ vi.mocked(fetchDashboardStatistics).mockReturnValueOnce(statistics.promise)
+ const statusCount = wrapper.findAll('.remote-read-status-compact').length
+ wrapper.getComponent(PageRefreshButton).vm.$emit('click'); await flushPromises()
+ expect(wrapper.get('.service-metrics').element).toBe(service)
+ expect(wrapper.get('.business-metrics').element).toBe(business)
+ expect(wrapper.get('.business-metrics .metric-card').element).toBe(card)
+ expect(wrapper.text()).toContain('¥15.00')
+ expect(wrapper.text()).not.toContain('更新中，显示上次结果')
+ expect(wrapper.findAll('.remote-read-status-compact')).toHaveLength(statusCount)
+ current.resolve({ ...structuredClone(facts), active_subscriptions: 8 })
+ statistics.resolve({ ...structuredClone(facts), traffic: facts.service, business: { ...facts.business, revenue_cents: 2500 } })
+ await flushPromises()
+ expect(wrapper.text()).toContain('¥25.00')
+ expect(wrapper.get('.service-metrics').element).toBe(service)
+ expect(wrapper.get('.business-metrics .metric-card').element).toBe(card)
+})
+it('reserves all metric positions before initial responses without inventing zero values', async () => {
+ const current = deferred<any>(), statistics = deferred<any>()
+ vi.mocked(fetchDashboardCurrent).mockReturnValueOnce(current.promise)
+ vi.mocked(fetchDashboardStatistics).mockReturnValueOnce(statistics.promise)
+ const wrapper = await open()
+ expect(wrapper.get('.service-metrics').findAllComponents(MetricCard)).toHaveLength(4)
+ expect(wrapper.get('.business-metrics').findAllComponents(MetricCard)).toHaveLength(6)
+ expect(wrapper.findAll('.metric-value-skeleton')).toHaveLength(10)
+ expect(wrapper.text()).not.toContain('¥0.00')
+ current.resolve({ ...structuredClone(facts), active_subscriptions: 3 })
+ statistics.resolve({ ...structuredClone(facts), traffic: facts.service }); await flushPromises()
+ expect(wrapper.get('.service-metrics').findAllComponents(MetricCard)).toHaveLength(4)
+ expect(wrapper.get('.business-metrics').findAllComponents(MetricCard)).toHaveLength(6)
+ expect(wrapper.findAll('.metric-value-skeleton')).toHaveLength(0)
+})
 vi.mock('../api/dashboard', () => ({ fetchDashboardCurrent: vi.fn(), fetchDashboardStatistics: vi.fn(), fetchDashboardTrend: vi.fn(), fetchDashboardTrafficRankings: vi.fn() }))
 vi.mock('../api/client', () => ({ fetchProtocolDeployments: vi.fn() }))
 const facts: DashboardOverview = {
@@ -29,12 +67,49 @@ beforeEach(()=>{
  vi.mocked(fetchDashboardTrafficRankings).mockResolvedValue({period:facts.period,nodes:[{id:1,name:'Node HK',traffic_bytes:1000,previous_traffic_bytes:500}],users:[{id:2,name:'test@example.test',traffic_bytes:2000,previous_traffic_bytes:0}],as_of:facts.as_of})
  vi.mocked(fetchProtocolDeployments).mockResolvedValue({items:[]} as any)
 })
-afterEach(()=>{view?.unmount();view=undefined})
+afterEach(()=>{view?.unmount();view=undefined;document.body.innerHTML=''})
 async function open() {
  const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component:{template:'<div />'}}]});await router.push('/admin');await router.isReady()
- view=mount(Dashboard,{global:{plugins:[router],components:{UiSection,UiMetricStrip,PageRefreshButton}}});await flushPromises();return view
+ view=mount(Dashboard,{attachTo:document.body,global:{plugins:[router],components:{UiSection,UiMetricStrip,PageRefreshButton}}});await flushPromises();return view
 }
 describe('operations dashboard',()=>{
+ it('shows the hovered bucket amount in the trend currency and prioritizes the selected measure', async () => {
+  vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'USD',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:1,renew_orders:1}]})
+  const wrapper = await open()
+  const column = wrapper.get('.trend-column')
+  expect(column.attributes('title')).toBeUndefined()
+  await column.trigger('pointermove', { pointerType: 'mouse' }); await flushPromises()
+  await vi.waitFor(() => expect(document.body.querySelector('.ui-tooltip-content')).not.toBeNull())
+  const tooltip = () => document.body.querySelector<HTMLElement>('.ui-tooltip-content')!
+  expect(tooltip().textContent).toContain('实收金额 US$7.00')
+  expect(tooltip().textContent).toContain('已支付订单 2 笔')
+  expect(tooltip().textContent).toContain('新购 1 · 续费 1')
+  expect(tooltip().querySelector('time')?.getAttribute('datetime')).toBe(facts.period.from)
+  wrapper.findAllComponents(UiSegmentedControl)[1].vm.$emit('update:modelValue', 'orders'); await flushPromises()
+  expect(tooltip().querySelector('strong')?.textContent).toBe('已支付订单 2 笔')
+  expect(column.attributes('aria-label')).toContain('已支付订单 2 笔 · 实收金额 US$7.00')
+  expect(fetchDashboardTrend).toHaveBeenCalledTimes(1)
+ })
+ it('lets keyboard users inspect an empty bucket and dismiss the amount tooltip', async () => {
+  vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'CNY',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:0,paid_orders:0,new_orders:0,renew_orders:0}]})
+  const wrapper = await open()
+  const column = wrapper.get<HTMLElement>('.trend-column')
+  expect(column.attributes('tabindex')).toBe('0')
+  column.element.focus(); await flushPromises()
+  expect(document.body.querySelector('.ui-tooltip-content')?.textContent).toContain('实收金额 ¥0.00')
+  await column.trigger('keydown', { key: 'Escape' }); await flushPromises()
+  expect(document.body.querySelector('.ui-tooltip-content')).toBeNull()
+ })
+ it('does not invent a combined amount for a mixed-currency bucket', async () => {
+  vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'',mixed_currency:true,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:2,renew_orders:0}]})
+  const wrapper = await open()
+  await wrapper.get('.trend-column').trigger('pointermove', { pointerType: 'mouse' }); await flushPromises()
+  await vi.waitFor(() => expect(document.body.querySelector('.ui-tooltip-content')).not.toBeNull())
+  const tooltip = document.body.querySelector<HTMLElement>('.ui-tooltip-content')!
+  expect(tooltip.querySelector('strong')?.textContent).toBe('已支付订单 2 笔')
+  expect(tooltip.textContent).toContain('多币种金额不合并展示')
+  expect(tooltip.textContent).not.toContain('¥7.00')
+ })
  it('keeps partial snapshot counts separate from unknown complete current totals', async()=>{
   vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
    service:{...facts.service, observed_active_subscriptions:2, observed_active_flows:7},
@@ -79,7 +154,7 @@ describe('operations dashboard',()=>{
   vi.mocked(fetchProtocolDeployments).mockRejectedValue(new Error('events offline'))
   const wrapper=await open()
   expect(wrapper.text()).toContain('¥15.00');expect(wrapper.text()).toContain('↑ 50.0%');expect(wrapper.text()).toContain('↓ 25.0%')
-  expect(wrapper.text()).toContain('Node HK');expect(wrapper.text()).toContain('上期为 0');expect(wrapper.text()).toContain('最近事件加载失败')
+  expect(wrapper.text()).toContain('Node HK');expect(wrapper.text()).toContain('上期为 0');expect(wrapper.text()).toContain('最近事件：更新失败')
   expect(fetchDashboardStatistics).toHaveBeenCalledTimes(1);expect(fetchDashboardTrafficRankings).toHaveBeenCalledTimes(2)
  })
  it('does not wait for pending rankings to render metrics',async()=>{
@@ -133,11 +208,13 @@ it('renders current service state before either historical statistics or trends 
 it('keeps service status on statistics failure and retries only the failed section', async () => {
  vi.mocked(fetchDashboardStatistics).mockRejectedValue(new Error('history unavailable'))
  const wrapper = await open()
- expect(wrapper.text()).toContain('经营统计加载失败')
+ expect(wrapper.text()).toContain('经营统计：更新失败')
  expect(wrapper.text()).toContain('在线节点')
  expect(fetchDashboardCurrent).toHaveBeenCalledOnce()
- const retry = wrapper.findAll('button').find(b => b.text() === '重试')!
- await retry.trigger('click'); await flushPromises()
+ await wrapper.get('[aria-label="经营统计：查看失败原因"]').trigger('click'); await flushPromises()
+ expect(document.body.textContent).toContain('经营统计加载失败')
+ const retry = [...document.body.querySelectorAll('button')].find(b => b.textContent === '重试')!
+ retry.click(); await flushPromises()
  expect(fetchDashboardStatistics).toHaveBeenCalledTimes(2)
  expect(fetchDashboardCurrent).toHaveBeenCalledOnce()
 })

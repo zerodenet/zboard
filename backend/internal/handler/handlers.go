@@ -107,6 +107,7 @@ type userPublic struct {
 
 type adminUserListItem struct {
 	userPublic
+	identity.AccountOverview
 	ActiveSubscriptionCount int64     `json:"active_subscription_count"`
 	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
 	PendingOrderCount       int64     `json:"pending_order_count"`
@@ -641,7 +642,7 @@ func (h *handlers) AdminUsersListHandler(w http.ResponseWriter, r *http.Request)
 	if query.Paged {
 		items := make([]adminUserListItem, 0, len(result.Items))
 		for _, item := range result.Items {
-			items = append(items, adminUserListItem{userPublic: userPublic(item.PublicAccount), ActiveSubscriptionCount: item.ActiveSubscriptionCount, TotalSubscriptionCount: item.TotalSubscriptionCount, PendingOrderCount: item.PendingOrderCount, TotalOrderCount: item.TotalOrderCount, CreatedAt: item.CreatedAt})
+			items = append(items, adminUserListItem{userPublic: userPublic(item.PublicAccount), AccountOverview: item.AccountOverview, ActiveSubscriptionCount: item.ActiveSubscriptionCount, TotalSubscriptionCount: item.TotalSubscriptionCount, PendingOrderCount: item.PendingOrderCount, TotalOrderCount: item.TotalOrderCount, CreatedAt: item.CreatedAt})
 		}
 		OK(w, pagedData(items, result.Total, offset, limit))
 		return

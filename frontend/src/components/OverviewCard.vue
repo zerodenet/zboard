@@ -13,7 +13,7 @@
     <span class="overview-card-copy">
       <span class="overview-card-heading">
         <span class="overview-card-label metric-label">{{ label }}</span>
-        <strong class="overview-card-value metric-value">{{ loading ? '—' : value }}</strong>
+        <strong class="overview-card-value metric-value"><slot name="value">{{ loading ? '—' : value }}</slot></strong>
       </span>
       <span class="overview-card-description" :title="description"><slot name="description">{{ description }}</slot></span>
     </span>

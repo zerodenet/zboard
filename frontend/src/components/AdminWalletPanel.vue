@@ -60,9 +60,10 @@ import UiButton from './UiButton.vue'
 import FormField from './FormField.vue'
 import PageAlert from './PageAlert.vue'
 import TimeBadge from './TimeBadge.vue'
-const props = defineProps<{ userId: number }>(), app = useAppStore()
+const props = defineProps<{ userId: number; initialCurrency?: string }>(), app = useAppStore()
 const actor = computed(() => app.user?.id || 0)
-const currency = ref('CNY'), currencyInput = ref('CNY'), after = ref(0), ledgerAfter = ref(0)
+const initialCurrency = /^[A-Z]{3,16}$/.test(props.initialCurrency || '') ? props.initialCurrency! : 'CNY'
+const currency = ref(initialCurrency), currencyInput = ref(initialCurrency), after = ref(0), ledgerAfter = ref(0)
 const amount = ref(''), ticket = ref(''), reason = ref(''), outcome = ref('unknown'), reference = ref(''), note = ref(''), reversalReason = ref('')
 const debitBlocked = ref(false), reportBlocked = ref(false)
 const saving = ref(false), writeError = ref(''), selected = ref<WalletAdjustment | null>(null)

@@ -67,3 +67,17 @@ cursor and compact success history. Every account's policy, entitlement and
 financial guards are rechecked under the same settings/owner coordination used
 by domain writers. Clearing the setting to zero stops subsequent deletions.
 The job never scans or deletes historical telemetry to remove an account.
+
+
+The user directory exposes page-bounded wallet balances (per currency, string
+minor units) and automatic deletion eligibility. No wallet is created by a read.
+The cleanup projection shares entitlement-end expressions and financial guards
+with the worker and manual checks. Removed shared access ends its waiting-period
+clock at removal, including when its source subscription continues. Perpetual
+access has no invented deadline. A due account is shown as waiting for cleanup;
+a protected account has a reason instead of a misleading date. Eligibility is
+recomputed on reads and rechecked transactionally at deletion, not stored as a
+second schedule. The authenticated `/account/cleanup-status` endpoint resolves
+its owner from the current session, and the account shell shows the rule and the
+account's estimate across user-center pages. Disabling the policy hides this
+notice on the next read.

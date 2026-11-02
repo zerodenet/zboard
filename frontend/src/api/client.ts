@@ -2131,6 +2131,23 @@ export async function fetchUsers(params: { q?: string; status?: string; isAdmin?
   return unwrap(response) || []
 }
 
+export interface AccountCleanupStatus {
+  enabled: boolean
+  inactive_days: number
+  state: 'disabled' | 'protected' | 'subscribed' | 'scheduled' | 'eligible'
+  eligible_at: string | null
+  reason: string
+}
+export interface AccountWalletBalance {
+  currency: string
+  balance_minor: string
+  reserved_minor: string
+}
+export async function fetchAccountCleanupStatus(options: ApiRequestOptions = {}): Promise<AccountCleanupStatus> {
+  const response = await api.get('/account/cleanup-status', { signal: options.signal })
+  return unwrap(response)
+}
+
 export interface AdminUserListItem {
   id: number
   email: string
@@ -2141,6 +2158,8 @@ export interface AdminUserListItem {
   pending_order_count: number
   total_order_count: number
   created_at: string
+  wallet_balances?: AccountWalletBalance[]
+  cleanup?: AccountCleanupStatus
 }
 
 export interface AdminUserDetail extends AdminUserListItem {

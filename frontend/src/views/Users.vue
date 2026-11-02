@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="用户管理" description="点击用户查看详情，或直接编辑账户。">
+    <PageHeader title="用户管理" description="查看余额和清理安排，直接启用或停用账户。">
       <template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/settings/runtime#account-cleanup">自动清理规则</RouterLink></UiButton><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
     </PageHeader>
 
@@ -17,19 +17,26 @@
           </template>
         </WorkbenchFilterBar>
       </template>
-      <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="7" />
-      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="880">
-          <thead><tr><th class="table-primary-column">用户</th><th>状态</th><th class="numeric-column" data-column-priority="2">订阅（有效/全部）</th><th class="numeric-column" data-column-priority="3">订单（待处理/全部）</th><SortableHeader field="created_at" label="注册时间" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" /><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
-          <tbody>
-            <tr v-for="user in users" :key="user.id">
-              <td class="table-primary-column"><div class="cell-title"><RouterLink :to="{ query: { ...route.query, user: String(user.id) } }" :data-user-detail-trigger="user.id" :aria-label="`查看用户 ${user.email}`" class="user-detail-link">{{ user.email }}</RouterLink><span><span class="mono">#{{ user.id }}</span><template v-if="user.is_admin"> · 管理员</template></span></div></td>
-              <td><StatusBadge :tone="statusTone(user.status)">{{ statusName(user.status) }}</StatusBadge></td>
-              <td class="numeric-column" data-column-priority="2"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订阅`">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</RouterLink></td>
-              <td class="numeric-column" data-column-priority="3"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订单`">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</RouterLink></td>
-              <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><template #primary><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :loading="openingUserID === user.id" @click="openEdit(user)">编辑</UiButton></template><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
-            </tr>
-          </tbody>
+      <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="5" />
+      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="640">
+        <thead><tr><SortableHeader field="email" label="用户" class="table-primary-column" :sort-field="sortField" :direction="sortDirection" @sort="setSort" /><th>账户状态</th><th class="numeric-column">余额</th><th>预计自动删除</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+        <tbody>
+          <tr v-for="user in users" :key="user.id">
+            <td class="table-primary-column"><div class="cell-title"><RouterLink :to="{ query: { ...route.query, user: String(user.id) } }" :data-user-detail-trigger="user.id" :title="user.email" :aria-label="`查看用户 ${user.email}`" class="user-detail-link">{{ user.email }}</RouterLink><span><span class="mono">#{{ user.id }}</span><template v-if="user.is_admin"> · 管理员</template><template v-if="user.active_subscription_count"> · 有效订阅 {{ formatNumber(user.active_subscription_count) }}</template></span></div></td>
+            <td>
+              <div class="user-status-control"><UiSwitch :model-value="user.status === 'active'" :disabled="statusBusy.has(user.id)" :aria-label="`启用账户 ${user.email}`" :aria-describedby="statusErrors[user.id] ? `user-status-error-${user.id}` : undefined" @update:model-value="toggleUserStatus(user, $event)" /><StatusBadge :tone="statusTone(user.status)">{{ statusBusy.has(user.id) ? '保存中' : statusName(user.status) }}</StatusBadge></div>
+              <p v-if="statusErrors[user.id]" :id="`user-status-error-${user.id}`" class="user-status-error" role="alert">{{ statusErrors[user.id] }}</p>
+            </td>
+            <td class="numeric-column">
+              <div class="user-wallet-balances">
+                <RouterLink v-for="wallet in user.wallet_balances" :key="wallet.currency" :to="{ query: { ...route.query, user: String(user.id), section: 'wallet', wallet_currency: wallet.currency } }" :aria-label="`查看 ${user.email} 的 ${wallet.currency} 余额`" class="user-wallet-link">{{ formatWalletMoney(wallet.balance_minor, wallet.currency) }}<small v-if="wallet.reserved_minor !== '0'">含冻结 {{ formatWalletMoney(wallet.reserved_minor, wallet.currency) }}</small></RouterLink>
+                <RouterLink v-if="!user.wallet_balances?.length" :to="{ query: { ...route.query, user: String(user.id), section: 'wallet' } }" :aria-label="`查看 ${user.email} 的余额`" class="user-wallet-link">{{ user.wallet_balances ? '0.00' : '未知' }}</RouterLink>
+              </div>
+            </td>
+            <td><AccountCleanupSummary :status="user.cleanup" /></td>
+            <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :disabled="statusBusy.has(user.id)" :loading="openingUserID === user.id" @click="openEdit(user)">编辑账户</UiButton><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
+          </tr>
+        </tbody>
       </DataTable>
       <EmptyState v-else icon="users" title="没有匹配用户" description="调整搜索条件，或创建一个新的平台账户。"><template #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
@@ -71,6 +78,12 @@
             <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
             <div><span>邮箱验证</span><TimeBadge v-if="selectedUserDetail.email_verified_at" :value="selectedUserDetail.email_verified_at" /><strong v-else>未验证</strong></div>
           </section>
+          <section class="user-cleanup-detail" aria-label="账号自动删除">
+            <h3>自动删除</h3>
+            <AccountCleanupSummary :status="selectedUserDetail.cleanup" />
+            <p v-if="selectedUserDetail.cleanup?.enabled">预计时间随订阅和资金状态更新；达到条件后自动处理，执行前会再次核对。</p>
+            <RouterLink to="/admin/settings/runtime#account-cleanup">管理清理规则</RouterLink>
+          </section>
           <section class="user-security" aria-label="账户安全">
             <h3>账户安全</h3>
             <div class="user-security-row">
@@ -79,7 +92,7 @@
             </div>
           </section>
         </template>
-        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :user-id="selectedUserDetail.id" />
+        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :key="`${selectedUserDetail.id}:${route.query.wallet_currency || 'CNY'}`" :user-id="selectedUserDetail.id" :initial-currency="String(route.query.wallet_currency || 'CNY')" />
         <template v-else-if="userDetailSection === 'identities'">
           <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
           <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
@@ -101,7 +114,7 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="create-user-form" type="submit" :loading="saving">创建用户</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑用户" :description="selectedUser ? selectedUser.email : ''" :return-focus-selector="selectedUser ? `[data-user-edit-trigger='${detailID === selectedUser.id ? 'detail' : 'list'}-${selectedUser.id}']` : ''" :busy="saving" @close="closeEdit">
+    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑用户" :description="selectedUser ? selectedUser.email : ''" :return-focus-selector="selectedUser ? (detailID === selectedUser.id ? `[data-user-edit-trigger='detail-${selectedUser.id}']` : `[data-row-action-trigger='user-${selectedUser.id}']`) : ''" :busy="saving" @close="closeEdit">
       <form id="edit-user-form" ref="editFormElement" class="stack" novalidate @submit.prevent="saveUser">
         <PageAlert v-if="editErrors.formError.value" tone="danger" title="无法保存账户">{{ editErrors.formError.value }}</PageAlert>
         <div class="form-grid">
@@ -154,6 +167,8 @@ import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import RowActions from '../components/RowActions.vue'
 import SortableHeader from '../components/SortableHeader.vue'
+import AccountCleanupSummary from '../components/AccountCleanupSummary.vue'
+import UiSwitch from '../components/UiSwitch.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TablePager from '../components/TablePager.vue'
 import TimeBadge from '../components/TimeBadge.vue'
@@ -169,6 +184,7 @@ import { useRemoteResource } from '../composables/useRemoteResource'
 import { nextSortDirection, resolveSortDirection, resolveSortField } from '../composables/tableState'
 import { useAppStore } from '../stores/app'
 import { formatNumber } from '../utils/format'
+import { formatWalletMoney } from '../utils/walletMoney'
 import { collectFieldErrors, isEmail, isOneOf, isUtf8LengthInRange } from '../utils/validation'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import PluginSlot from '../plugins/PluginSlot.vue'
@@ -368,6 +384,25 @@ const { items: users, total, loading, refreshing, error, load: refresh } = useRe
   onOffsetCorrected: () => syncURL(true),
 })
 
+const statusBusy = reactive(new Set<number>())
+const statusErrors = reactive<Record<number, string>>({})
+async function toggleUserStatus(user: UserItem, enabled: boolean) {
+  if (statusBusy.has(user.id) || app.reauthRequired) return
+  const actor = app.user.id, token = app.token
+  statusBusy.add(user.id); delete statusErrors[user.id]
+  try {
+    const updated = await updateAdminUser(user.id, { status: enabled ? 'active' : 'suspended' })
+    if (actor !== app.user.id || token !== app.token || app.reauthRequired) return
+    if (!isOneOf(updated?.status, validUserStatuses)) throw new Error('状态结果未能确认，请刷新核对。')
+    users.value = users.value.map(item => item.id === user.id ? { ...item, status: updated.status } : item)
+    if (selectedUserDetail.value?.id === user.id) selectedUserDetail.value = { ...selectedUserDetail.value, status: updated.status }
+    if (statusFilter.value && updated.status !== statusFilter.value) await refresh()
+    if (user.id === actor) await app.loadMe()
+  } catch (cause: any) {
+    if (actor === app.user.id && token === app.token) statusErrors[user.id] = cause?.response?.data?.message || cause?.message || '状态更新未能确认，请刷新核对。'
+  } finally { statusBusy.delete(user.id) }
+}
+
 function statusName(status: string) { return ({ active: '正常', suspended: '已暂停', deactivated: '已停用' } as Record<string, string>)[status] || `未知状态（${status || '空'}）` }
 function statusTone(status: string): 'success' | 'warning' | 'danger' { return status === 'active' ? 'success' : status === 'suspended' ? 'warning' : 'danger' }
 
@@ -377,17 +412,18 @@ async function applyFilters() { offset.value = 0; await syncURL(); await refresh
 async function clearFilters() { search.value = ''; statusFilter.value = ''; adminFilter.value = ''; verifiedFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, userSortFields, 'created_at'); sortDirection.value = nextSortDirection(sortField.value, next, sortDirection.value, next === 'email' ? 'asc' : 'desc'); sortField.value = next; offset.value = 0; await syncURL(); await refresh() }
-async function closeDetail() { detailResource.reset(); detailID.value = 0; actionError.value = ''; const { user: _user, ...query } = route.query; await router.push({ query }) }
+async function closeDetail() { detailResource.reset(); detailID.value = 0; actionError.value = ''; const { user: _user, section: _section, wallet_currency: _currency, ...query } = route.query; await router.push({ query }) }
 async function syncDetailFromRoute() {
   const id = Number(route.query.user)
   if (!Number.isInteger(id) || id <= 0) {
     detailResource.reset(); detailID.value = 0
     return
   }
-  if (detailID.value === id && (selectedUserDetail.value?.id === id || detailLoading.value)) return
+  const section = ['account', 'wallet', 'identities'].includes(String(route.query.section)) ? String(route.query.section) : 'account'
+  if (detailID.value === id && (selectedUserDetail.value?.id === id || detailLoading.value)) { userDetailSection.value = section; return }
   detailResource.reset()
   detailID.value = id
-  userDetailSection.value = 'account'
+  userDetailSection.value = section
   await detailResource.load()
 }
 
@@ -466,8 +502,19 @@ onMounted(() => { void refresh(); void syncDetailFromRoute() })
 
 <style scoped>
 .page-alert { margin-bottom: 14px; }
+.user-status-control { display: flex; align-items: center; gap: 8px; }
+.user-status-error { margin: 4px 0 0; color: var(--destructive); font-size: 12px; max-width: 180px; }
+.user-wallet-balances { display: grid; gap: 4px; }
+.user-wallet-link { display: grid; gap: 4px; color: var(--foreground); font-variant-numeric: tabular-nums; text-decoration: none; white-space: nowrap; }
+.user-wallet-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.user-wallet-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.user-wallet-link small { display: block; color: var(--muted-foreground); font-size: 12px; }
+.user-cleanup-detail { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+.user-cleanup-detail h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.user-cleanup-detail p { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+.user-cleanup-detail a { width: fit-content; font-size: 13px; }
 .user-detail-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.user-detail-link { color: var(--foreground); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.user-detail-link { display: block; max-width: clamp(160px, 18vw, 240px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-weight: 500; text-decoration: none; }
 .user-detail-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .user-detail-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
 .user-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }

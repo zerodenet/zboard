@@ -71,13 +71,13 @@ func deletionPreview(tx *gorm.DB, user model.User, actor uint, now time.Time) (i
 		message string
 	}{
 		{tx.Model(&model.Subscription{}).Where("user_id=? AND ended_at IS NULL AND end_at>?", user.ID, now), "仍有未结束的订阅，请先在订阅管理中结束并结算。"},
-		{tx.Model(&model.SubscriptionMember{}).Where("user_id=? AND subscription_id IN (SELECT id FROM subscriptions WHERE ended_at IS NULL AND end_at>?)", user.ID, now), "仍属于共享订阅，请先移除共享成员关系。"},
-		{tx.Model(&model.WalletAccount{}).Where("user_id=? AND (balance_minor<>0 OR reserved_minor<>0)", user.ID), "钱包仍有余额或冻结资金，请先完成结算。"},
-		{tx.Model(&model.Order{}).Where("user_id=? AND (status='pending' OR (status='paid' AND fulfilled_at IS NULL))", user.ID), "仍有未结订单，请先取消或完成履约。"},
-		{tx.Model(&model.OrderFunding{}).Where("user_id=? AND state='reserved'", user.ID), "仍有订单资金预留，请先释放或完成支付。"},
-		{tx.Model(&model.WalletAdjustment{}).Where("user_id=? AND external_status NOT IN ?", user.ID, []string{"succeeded", "failed"}), "仍有未完成的钱包出款，请先处理。"},
-		{tx.Model(&model.PaymentReceipt{}).Where("order_id IN (SELECT id FROM orders WHERE user_id=?) AND disposition IN ?", user.ID, []string{"processing", "review_required"}), "仍有待处理的到账记录，请先核对。"},
-		{tx.Model(&model.SubscriptionAutomaticRenewal{}).Where("user_id=? AND pending_order_id IS NOT NULL", user.ID), "仍有待处理自动续费，请先完成或取消。"},
+		{tx.Model(&model.SubscriptionMember{}).Where("user_id=? AND removed_at IS NULL AND status='active' AND subscription_id IN (SELECT id FROM subscriptions WHERE ended_at IS NULL AND end_at>?)", user.ID, now), "仍属于共享订阅，请先移除共享成员关系。"},
+	}
+	for _, guard := range accountFinancialGuards() {
+		checks = append(checks, struct {
+			query   *gorm.DB
+			message string
+		}{tx.Table(guard.table).Where(fmt.Sprintf(guard.condition, "?"), user.ID), guard.reason + "，请先处理后再删除。"})
 	}
 	for _, check := range checks {
 		// Lock the exact evidence selected after acquiring the owner lock. This
@@ -197,15 +197,14 @@ func cleanupCandidates(db *gorm.DB, now time.Time, days int) *gorm.DB {
 	cutoff := now.AddDate(0, 0, -days)
 	// The grace period restarts at the end of the last entitlement, not at
 	// registration for customers whose paid subscription has just expired.
-	return db.Model(&model.User{}).Where("is_admin=? AND users.created_at<=?", false, cutoff).
-		Where("NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id=users.id AND ((s.ended_at IS NULL AND s.end_at>?) OR CASE WHEN s.ended_at IS NOT NULL AND s.ended_at<s.end_at THEN s.ended_at ELSE s.end_at END>?))", now, cutoff).
-		Where("NOT EXISTS (SELECT 1 FROM wallet_accounts w WHERE w.user_id=users.id AND (w.balance_minor<>0 OR w.reserved_minor<>0))").
-		Where("NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id=users.id AND (o.status='pending' OR (o.status='paid' AND o.fulfilled_at IS NULL)))").
-		Where("NOT EXISTS (SELECT 1 FROM order_fundings f WHERE f.user_id=users.id AND f.state='reserved')").
-		Where("NOT EXISTS (SELECT 1 FROM wallet_adjustments a WHERE a.user_id=users.id AND a.external_status NOT IN ('succeeded','failed'))").
-		Where("NOT EXISTS (SELECT 1 FROM orders o JOIN payment_receipts r ON r.order_id=o.id WHERE o.user_id=users.id AND r.disposition IN ('processing','review_required'))").
-		Where("NOT EXISTS (SELECT 1 FROM subscription_automatic_renewals a WHERE a.user_id=users.id AND a.pending_order_id IS NOT NULL)").
-		Where("NOT EXISTS (SELECT 1 FROM subscription_members m JOIN subscriptions s ON s.id=m.subscription_id WHERE m.user_id=users.id AND CASE WHEN s.ended_at IS NOT NULL AND s.ended_at<s.end_at THEN s.ended_at ELSE s.end_at END>?)", cutoff)
+	query := db.Model(&model.User{}).Where("is_admin=? AND users.created_at<=?", false, cutoff).
+		Where("NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id=users.id AND "+entitlementEnd("s")+">?)", cutoff).
+		Where("NOT EXISTS (SELECT 1 FROM subscription_members m JOIN subscriptions s ON s.id=m.subscription_id WHERE m.user_id=users.id AND "+sharedEntitlementEnd()+">?)", cutoff)
+	for _, guard := range accountFinancialGuards() {
+		query = query.Where("NOT " + guard.exists("users.id"))
+	}
+	return query
+
 }
 
 func (s Deletion) Cleanup(ctx context.Context, now time.Time, limit int) (int, error) {
