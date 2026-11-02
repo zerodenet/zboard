@@ -24,8 +24,21 @@ func TestAccountCleanupOverviewMatchesWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	early := now.AddDate(0, 0, -2)
+	group := model.NodeGroup{Name: "cleanup-overview", Code: "cleanup-overview"}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan := model.Plan{Name: "Cleanup overview", Slug: "cleanup-overview", NodeGroupID: group.ID}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	sku := model.PlanSKU{PlanID: plan.ID, Code: "cleanup-overview", Name: "Cleanup overview", BillingUnit: "month", BillingValue: 1, Currency: "USD"}
+	if err := db.Create(&sku).Error; err != nil {
+		t.Fatal(err)
+	}
 	subs := []model.Subscription{{UserID: expired.ID, EndAt: now.AddDate(0, 0, -3), Status: "expired"}, {UserID: active.ID, EndAt: now.AddDate(0, 0, 5), Status: "active"}, {UserID: ended.ID, EndAt: now.AddDate(0, 0, 10), EndedAt: &early, Status: "canceled"}, {UserID: admin.ID, EndAt: now.AddDate(0, 0, 4), Status: "active"}}
 	for i := range subs {
+		subs[i].PlanID, subs[i].PlanSKUID, subs[i].NodeGroupID = plan.ID, sku.ID, group.ID
 		subs[i].StartAt = now.AddDate(0, 0, -60)
 		subs[i].Config = "{}"
 		if err := db.Create(&subs[i]).Error; err != nil {
@@ -42,11 +55,11 @@ func TestAccountCleanupOverviewMatchesWorker(t *testing.T) {
 	if err := db.Create(&model.WalletAccount{UserID: funded.ID, Currency: "USD", BalanceMinor: 9007199254740993, ReservedMinor: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&model.Order{UserID: pending.ID, TradeNo: "cleanup-pending", Status: "pending"}).Error; err != nil {
+	if err := db.Create(&model.Order{UserID: pending.ID, PlanID: plan.ID, PlanSKUID: sku.ID, TradeNo: "cleanup-pending", Status: "pending"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	perpetual := create("perpetual", 90)
-	if err := db.Create(&model.Subscription{UserID: perpetual.ID, StartAt: now.AddDate(0, 0, -60), EndAt: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), Status: "active", Config: "{}"}).Error; err != nil {
+	if err := db.Create(&model.Subscription{UserID: perpetual.ID, PlanID: plan.ID, PlanSKUID: sku.ID, NodeGroupID: group.ID, StartAt: now.AddDate(0, 0, -60), EndAt: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), Status: "active", Config: "{}"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	repo := AccountDirectory{DB: db}
