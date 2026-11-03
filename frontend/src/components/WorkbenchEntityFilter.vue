@@ -1,7 +1,7 @@
 <template>
   <WorkbenchFilterChip :label="label" :active="Boolean(modelValue)" :value-label="selected?.name || `#${modelValue}`" icon="filter" wide @clear="clear">
     <template #default="{ close }">
-      <UiAutocomplete v-model="selection" :suggestions="suggestions" option-label="name" :aria-label="`搜索${label}`" :placeholder="`按名称搜索${label}`" :loading="loading" force-selection dropdown @open="search('')" @complete="event => search(event.query)" @item-select="event => choose(event.value, close)" @clear="clear">
+      <UiAutocomplete v-model="selection" :suggestions="suggestions" option-label="name" :aria-label="`搜索${label}`" :placeholder="`按名称搜索${label}`" :loading="loading" force-selection dropdown @open="openList" @complete="event => search(event.query)" @item-select="event => choose(event.value, close)" @clear="clear">
         <template #option="{ option }"><span class="entity-filter-option"><strong>{{ option.name }}</strong><small>{{ option.secondary }}</small></span></template>
         <template #footer><span class="entity-filter-help">最多显示 20 项，请输入关键词缩小范围。</span></template>
       </UiAutocomplete>
@@ -27,6 +27,11 @@ const loading = ref(false), error = ref('')
 let searchController: AbortController | undefined
 let searchGeneration = 0
 
+function openList() {
+  // Typing also opens Reka's list. Preserve that query; a selected item's label
+  // is display text and should still open the default list without a keyword.
+  void search(typeof selection.value === 'string' ? selection.value : '')
+}
 async function search(query: string) {
   searchController?.abort()
   const controller = new AbortController(), generation = ++searchGeneration

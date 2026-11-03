@@ -15,6 +15,31 @@ async function open(kind: 'user' | 'node' | 'subscription' | 'protocol_endpoint'
   wrappers.push(wrapper); await flushPromises(); return wrapper
 }
 describe('name-based workbench entity filter', () => {
+  it('keeps the typed keyword when typing opens the real suggestion list', async () => {
+    vi.mocked(fetchUsersPage).mockImplementation(async params => ({
+      items: params?.q === 'Tokyo'
+        ? [{ id: 7, email: 'Tokyo@example.test' }]
+        : [{ id: 8, email: 'unrelated@example.test' }],
+      total: 1,
+    } as any))
+    const wrapper = await open('user')
+    await wrapper.get('input[role="combobox"]').setValue('Tokyo')
+    await flushPromises()
+    expect(fetchUsersPage).toHaveBeenLastCalledWith({ q: 'Tokyo', offset: 0, limit: 20 }, { signal: expect.any(AbortSignal) })
+    expect(wrapper.getComponent(UiAutocomplete).props('suggestions')?.map(item => item.name)).toEqual(['Tokyo@example.test'])
+  })
+  it('does not search the selected display label when reopening suggestions', async () => {
+    const refs = emptyEntityReferenceResponse()
+    refs.targets['user:7'] = { id: 7, kind: 'user', display_name: 'selected@example.test' }
+    vi.mocked(fetchAdminEntityReferences).mockResolvedValue(refs)
+    vi.mocked(fetchUsersPage).mockResolvedValue({ items: [], total: 0 } as any)
+    const wrapper = await open('user', '7')
+    wrapper.getComponent(UiAutocomplete).vm.$emit('open')
+    await flushPromises()
+    expect(fetchUsersPage).toHaveBeenLastCalledWith({ q: undefined, offset: 0, limit: 20 }, { signal: expect.any(AbortSignal) })
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
   it.each([
     ['user', fetchUsersPage, { id: 7, email: 'member@example.test' }],
     ['node', fetchNodesPage, { id: 7, name: '东京服务器' }],
