@@ -9,8 +9,8 @@
       <UiButton variant="ghost" icon class="icon-button public-menu" type="button" :aria-label="menuOpen ? '关闭站点导航' : '打开站点导航'" :aria-expanded="menuOpen" aria-controls="public-navigation" @click="menuOpen = !menuOpen"><UiIcon :name="menuOpen ? 'close' : 'menu'" /></UiButton>
       <nav id="public-navigation" :class="{ open: menuOpen }" aria-label="站点导航"><NavigationLinks surface="public" :icons="false" @select-page="menuOpen = false" /></nav>
       <div class="public-actions"><AppearanceSwitch />
-        <RouterLink v-if="app.isAuthenticated" class="button button-secondary button-sm" :to="landingPath">进入{{ app.isAdmin ? '管理后台' : '用户中心' }}</RouterLink>
-        <template v-else><RouterLink class="button button-ghost button-sm" to="/login">登录</RouterLink><RouterLink v-if="app.installation?.allow_registration" class="button button-sm" to="/register">免费注册</RouterLink></template>
+        <UiButton v-if="app.isAuthenticated" as-child variant="secondary" size="sm"><RouterLink :to="landingPath">进入{{ app.isAdmin ? '管理后台' : '用户中心' }}</RouterLink></UiButton>
+        <template v-else><UiButton as-child variant="ghost" size="sm"><RouterLink to="/login">登录</RouterLink></UiButton><UiButton v-if="app.installation?.allow_registration" as-child size="sm"><RouterLink to="/register">免费注册</RouterLink></UiButton></template>
       </div>
     </header>
     <main><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><RouterView /></NavigationPage></main>

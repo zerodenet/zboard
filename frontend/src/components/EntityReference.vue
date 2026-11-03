@@ -38,7 +38,8 @@ const labels: Record<string, string> = {
 const resolved = computed(() => props.reference || fallbackEntityReference(props.fallbackKind, props.fallbackId))
 const meta = computed(() => {
   const parts: string[] = []
-  if (resolved.value.secondary) parts.push(resolved.value.secondary)
+  const secondary = resolved.value.secondary?.trim()
+  if (secondary && secondary !== resolved.value.display_name?.trim()) parts.push(secondary)
   const id = resolved.value.id || props.fallbackId
   if (props.showId && id) parts.push(`${labels[resolved.value.kind] || labels[props.fallbackKind] || 'ID'} #${id}`)
   return parts.join(' · ')
@@ -55,16 +56,16 @@ const meta = computed(() => {
 
 .entity-reference strong {
   color: var(--text-strong);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
-.entity-reference .entity-name { color:var(--text-strong); font-size:11px; font-weight:700; }
+.entity-reference .entity-name { color:var(--text-strong); font-size:13px; font-weight:600; }
 .entity-reference .entity-meta {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.35;
 }
 

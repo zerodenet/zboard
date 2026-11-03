@@ -1,7 +1,7 @@
 <template>
   <Teleport :to="activeTaskTrayHost || 'body'" :disabled="!activeTaskTrayHost">
     <aside v-if="taskIDs.length" class="task-tray" aria-label="后台任务" aria-live="polite">
-      <header><div><UiIcon name="tasks" /><strong>后台任务</strong><span>{{ activeCount ? `${activeCount} 个执行中` : '已产生最终结果' }}</span></div><RouterLink :to="taskLink()">全部任务</RouterLink></header>
+      <header><div><UiIcon name="tasks" /><strong>后台任务</strong><span>{{ activeCount ? `${activeCount} 个执行中` : '查看处理结果' }}</span></div><RouterLink :to="taskLink()">全部任务</RouterLink></header>
       <div class="task-tray-list">
         <article v-for="id in taskIDs" :key="id">
           <template v-if="tasks[id]">
@@ -29,6 +29,7 @@ import { dismissTrackedTask, trackedTaskIDs, trackedTaskSummaries, updateTracked
 import { formatUnknownValue } from '../utils/format'
 import { withAdminReturnTo } from '../utils/navigation'
 import { normalizeOutput } from '../utils/output'
+import { taskStatus } from '../utils/taskStatus'
 import StatusBadge from './StatusBadge.vue'
 import UiIcon from './UiIcon.vue'
 
@@ -40,9 +41,9 @@ let timer: number | undefined
 let loading = false
 
 function taskTypeLabel(type: AdminTask['type'] | 'node_system_action') { return ({ quota: '配额调整', email: '邮件通知', node_detect: '节点状态检测', node_reconcile: '节点内核对齐', node_lifecycle: '节点生命周期', protocol_deploy: '协议批量发布', protocol_active: '协议批量启停', node_group_reconcile: '节点组交付对齐', node_system_action: 'VPS 系统自动化' } as Record<string, string>)[type] || formatUnknownValue('类型', type) }
-function taskStatusLabel(task: AdminTask) { if (task.status === 0) return '等待执行'; if (task.status === 1) return '执行中'; if (task.status === 2) return '已完成'; if (task.status === 3) return Number(task.succeeded_count) > 0 && Number(task.failed_count) > 0 ? '部分失败' : '执行失败'; return formatUnknownValue('状态', task.status) }
-function taskTone(task: AdminTask): 'neutral' | 'info' | 'success' | 'danger' | 'warning' { return task.status === 0 ? 'neutral' : task.status === 1 ? 'info' : task.status === 2 ? 'success' : Number(task.succeeded_count) > 0 && Number(task.failed_count) > 0 ? 'warning' : 'danger' }
-function taskIcon(task: AdminTask) { return task.status === 0 ? 'minus' : task.status === 1 ? 'refresh' : task.status === 2 ? 'check' : 'alert' }
+function taskStatusLabel(task: AdminTask) { return taskStatus(task).label }
+function taskTone(task: AdminTask) { return taskStatus(task).tone }
+function taskIcon(task: AdminTask) { return taskStatus(task).icon }
 function progress(task: AdminTask) { return task.total ? Math.min(100, Math.round(task.current / task.total * 100)) : 0 }
 function firstError(value: string) {
   const first = normalizeOutput(value).split('\n', 1)[0] || ''
@@ -82,5 +83,5 @@ onBeforeUnmount(stopTimer)
 </script>
 
 <style scoped>
-.task-tray{position:fixed;right:18px;bottom:18px;z-index:var(--z-toast);width:min(390px,calc(100vw - 28px));overflow:hidden;border:1px solid var(--line-strong);border-radius:13px;background:var(--surface);box-shadow:0 18px 45px var(--floating-shadow)}.task-tray>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--surface-soft)}.task-tray>header>div{display:flex;align-items:center;gap:7px}.task-tray>header strong{font-size:11px}.task-tray>header span,.task-tray>header a{color:var(--muted);font-size:9px}.task-tray-list{max-height:420px;overflow:auto}.task-tray-list article{display:grid;gap:8px;padding:12px 14px}.task-tray-list article+article{border-top:1px solid var(--line)}.task-tray-heading,.task-tray-meta,.task-tray-actions,.task-loading{display:flex;align-items:center;justify-content:space-between;gap:10px}.task-tray-heading>div{display:flex;align-items:baseline;gap:6px}.task-tray-heading strong{font-size:11px}.task-tray-heading span,.task-tray-meta{color:var(--muted);font-size:9px}.task-progress{height:5px;overflow:hidden;border-radius:999px;background:var(--surface-soft)}.task-progress span{display:block;height:100%;border-radius:inherit;background:var(--primary);transition:width .18s ease}.task-tray p{margin:0;color:var(--danger);font-size:9px;line-height:1.45}.task-tray-actions{justify-content:flex-end}.task-tray-actions a{color:var(--primary);font-size:9px;font-weight:700;text-decoration:none}.task-loading{color:var(--muted);font-size:9px}.task-loading>span:first-child{width:7px;height:7px;border-radius:50%;background:var(--warning)}@media(max-width:680px){.task-tray{right:14px;bottom:14px}}
+.task-tray{position:fixed;right:18px;bottom:18px;z-index:var(--z-toast);width:min(390px,calc(100vw - 28px));overflow:hidden;border:1px solid var(--line-strong);border-radius:13px;background:var(--surface);box-shadow:0 18px 45px var(--floating-shadow)}.task-tray>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--surface-soft)}.task-tray>header>div{display:flex;align-items:center;gap:7px}.task-tray>header strong{font-size:11px}.task-tray>header span,.task-tray>header a{color:var(--muted);font-size: 12px}.task-tray-list{max-height:420px;overflow:auto}.task-tray-list article{display:grid;gap:8px;padding:12px 14px}.task-tray-list article+article{border-top:1px solid var(--line)}.task-tray-heading,.task-tray-meta,.task-tray-actions,.task-loading{display:flex;align-items:center;justify-content:space-between;gap:10px}.task-tray-heading>div{display:flex;align-items:baseline;gap:6px}.task-tray-heading strong{font-size:11px}.task-tray-heading span,.task-tray-meta{color:var(--muted);font-size: 12px}.task-progress{height:5px;overflow:hidden;border-radius:999px;background:var(--surface-soft)}.task-progress span{display:block;height:100%;border-radius:inherit;background:var(--primary);transition:width .18s ease}.task-tray p{margin:0;color:var(--danger);font-size: 12px;line-height:1.45}.task-tray-actions{justify-content:flex-end}.task-tray-actions a{color:var(--primary);font-size: 12px;font-weight: 600;text-decoration:none}.task-loading{color:var(--muted);font-size: 12px}.task-loading>span:first-child{width:7px;height:7px;border-radius:50%;background:var(--warning)}@media(max-width:680px){.task-tray{right:14px;bottom:14px}}
 </style>

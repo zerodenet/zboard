@@ -1,10 +1,7 @@
 <template>
   <div class="raw-customizer">
-    <PageAlert tone="info" title="Raw 模型与可视化双向同步">
-      这里编辑完整的版本化模板模型，而不是最终含用户凭据的订阅结果。有效 JSON 会立即反向映射到可视化配置；协议节点仍由后端安全注入。
-    </PageAlert>
     <div class="raw-heading">
-      <div><strong>完整模板 JSON</strong><span>适合批量复制、审查和精确调整 DNS、TUN、运行模式、策略组与规则集。</span></div>
+      <div><strong>模板 JSON</strong></div>
       <StatusBadge :tone="rawError ? 'danger' : 'success'" :icon="rawError ? 'warning' : 'check'">{{ rawError ? '等待修正' : '已同步' }}</StatusBadge>
     </div>
     <TemplateCodeEditor v-model="rawSource" aria-label="Raw 订阅模板 JSON" />
@@ -58,5 +55,5 @@ watch(model, () => {
 </script>
 
 <style scoped>
-.raw-customizer{display:grid;gap:12px}.raw-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.raw-heading>div{display:grid;gap:3px}.raw-heading strong{font-size:11px;color:var(--text-strong)}.raw-heading span{font-size:9px;color:var(--muted);line-height:1.5}@media(max-width:700px){.raw-heading{align-items:flex-start;flex-direction:column}}
+.raw-customizer{display:grid;gap:12px}.raw-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.raw-heading>div{display:grid;gap:3px}.raw-heading strong{font-size:11px;color:var(--text-strong)}.raw-heading span{font-size: 12px;color:var(--muted);line-height:1.5}@media(max-width:700px){.raw-heading{align-items:flex-start;flex-direction:column}}
 </style>

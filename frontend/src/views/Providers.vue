@@ -13,12 +13,12 @@
       <DataTable v-else-if="accounts.length" caption="外部供应商账户" :row-count="accounts.length" :min-width="760">
         <thead><tr><th class="table-primary-column">账户</th><th data-column-priority="2">供应商</th><th data-column-priority="3">能力</th><th>状态</th><th data-column-priority="2">引用</th><th data-column-priority="2">最近验证</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody><tr v-for="account in accounts" :key="account.id">
-          <td class="table-primary-column"><div class="cell-title"><strong>{{ account.name }}</strong><TableText :value="account.credential_prefix" /></div></td>
+          <td class="table-primary-column"><div class="cell-title"><EntityDetailButton @click="openAccount(account)">{{ account.name }}</EntityDetailButton><TableText :value="account.credential_prefix" /></div></td>
           <td data-column-priority="2">{{ providerLabel(account.provider_key) }}</td>
-          <td data-column-priority="3"><div class="capabilities"><StatusBadge v-for="capability in account.capabilities" :key="capability" tone="neutral" :title="capability">{{ capabilityLabel(capability) }}</StatusBadge></div></td>
-          <td><StatusBadge :tone="account.status === 'active' ? 'success' : account.status === 'invalid' ? 'danger' : 'warning'">{{ account.status === 'active' ? '有效' : account.status === 'invalid' ? '验证失败' : '待验证' }}</StatusBadge><small v-if="account.last_error" class="row-error" :title="account.last_error">{{ account.last_error }}</small></td>
+          <td data-column-priority="3"><TableText :value="account.capabilities.map(capabilityLabel).join(' · ')" /></td>
+          <td><StatusBadge :tone="account.status === 'active' ? 'success' : account.status === 'invalid' ? 'danger' : 'warning'">{{ account.status === 'active' ? '有效' : account.status === 'invalid' ? '验证失败' : '待验证' }}</StatusBadge><small v-if="account.last_error" class="row-error" v-overflow-title="account.last_error">{{ account.last_error }}</small></td>
           <td data-column-priority="2" :title="account.usage_count > 0 ? '关联的 DNS 解析与证书数量' : undefined">{{ account.usage_count }}</td>
-          <td data-column-priority="2"><TimeBadge v-if="account.last_verified_at" :value="account.last_verified_at" mode="relative" /><span v-else class="muted-value">尚未验证</span></td>
+          <td data-column-priority="2"><TimeBadge v-if="account.last_verified_at" :value="account.last_verified_at" mode="relative" /><span v-else class="muted-value">-</span></td>
           <td class="table-action-column"><RowActions :label="`${account.name} 的操作`" :trigger-key="`provider-${account.id}`"><UiButton size="sm" variant="ghost" :disabled="operatingAccount === account.id" @click="openAccount(account)">编辑</UiButton><UiButton size="sm" variant="secondary" :loading="operatingAccount === account.id" @click="verifyAccount(account)">重新验证</UiButton><UiButton size="sm" variant="danger" :disabled="operatingAccount === account.id" title="删除面板凭据并清理关联" @click="removeAccount(account)">删除</UiButton></RowActions></td>
         </tr></tbody>
       </DataTable>
@@ -27,7 +27,6 @@
 
     <ModalDialog :open="accountOpen" :title="editingAccount ? '编辑供应商账户' : '添加供应商账户'" description="Token 加密保存且不会再次回显；编辑时留空可保留原凭据。" :busy="savingAccount" :dirty="accountState.dirty.value" @close="accountOpen = false">
       <form id="provider-account-form" ref="accountFormElement" class="modal-form" novalidate @submit.prevent="saveAccount">
-        <PageAlert v-if="accountForm.api_token" tone="warning" title="Token草稿仅留在本页">未保存的访问凭据不会暂存；请留在本页完成认证后再继续。</PageAlert>
         <PageAlert v-if="accountErrors.formError.value" tone="danger" title="保存供应商账户失败">{{ accountErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="供应商" name="provider-kind" :error="accountErrors.fields.provider_key"><UiSelect v-model="accountForm.provider_key" v-bind="controlAttrs" :options="providerOptions" :disabled="Boolean(editingAccount)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="账户名称" name="provider-name" :error="accountErrors.fields.name" required><UiInput v-bind="controlAttrs" v-model.trim="accountForm.name" maxlength="80" placeholder="例如：生产 Cloudflare" /></FormField>
@@ -40,6 +39,8 @@
 </template>
 
 <script setup lang="ts">
+import EntityDetailButton from '../components/EntityDetailButton.vue'
+import { vOverflowTitle } from '../directives/overflowTitle'
 import TableText from '../components/TableText.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'

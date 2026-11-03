@@ -43,7 +43,7 @@ function closePolicy() {
 </script>
 
 <style scoped>
-.auth-legal-links { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; text-align: center; }
+.auth-legal-links { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; text-align: center; }
 .auth-legal-links button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .auth-legal-links button:hover { text-decoration-thickness: 2px; }
 .auth-legal-links i { font-style: normal; opacity: .65; }

@@ -39,13 +39,19 @@ func (s PublicationRuntimeQueue) Retry(ctx context.Context, nodeID, actorID uint
 }
 
 func (s PublicationRuntimeQueue) Summary(ctx context.Context, now time.Time) (out jobs.RuntimeQueueSummary, err error) {
+	var row struct {
+		jobs.RuntimeQueueSummary
+		DelayedCount int64 `gorm:"column:delayed_count"`
+	}
 	err = s.DB.WithContext(ctx).Model(&model.NodeConfigPublish{}).Select(`
  COALESCE(SUM(CASE WHEN lease_until <= ? AND next_attempt_at <= ? THEN 1 ELSE 0 END),0) AS pending,
  COALESCE(SUM(CASE WHEN lease_until > ? THEN 1 ELSE 0 END),0) AS running,
- COALESCE(SUM(CASE WHEN lease_until <= ? AND next_attempt_at > ? THEN 1 ELSE 0 END),0) AS delayed,
+ COALESCE(SUM(CASE WHEN lease_until <= ? AND next_attempt_at > ? THEN 1 ELSE 0 END),0) AS delayed_count,
  COALESCE(SUM(CASE WHEN lease_token <> '' AND lease_until <= ? THEN 1 ELSE 0 END),0) AS stale,
  COALESCE(SUM(CASE WHEN last_error <> '' THEN 1 ELSE 0 END),0) AS failed,
- MIN(CASE WHEN lease_until <= ? AND next_attempt_at <= ? THEN created_at END) AS oldest_at`, now, now, now, now, now, now, now, now).Scan(&out).Error
+ MIN(CASE WHEN lease_until <= ? AND next_attempt_at <= ? THEN created_at END) AS oldest_at`, now, now, now, now, now, now, now, now).Scan(&row).Error
+	out = row.RuntimeQueueSummary
+	out.Delayed = row.DelayedCount
 	out.ID, out.Name = jobs.PublicationRuntimeQueue, "节点配置发布"
 	return out, err
 }

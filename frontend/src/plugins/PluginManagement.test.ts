@@ -124,7 +124,7 @@ describe('plugin management navigation', () => {
     wrapper.getComponent(UiFileUpload).vm.$emit('select', [new File(['package'], 'oauth.zbplugin')]); await flushPromises()
     await clickText(wrapper, '查看插件'); await clickText(wrapper, '确认导入')
     expect(router.currentRoute.value.path).toBe('/admin/plugins/zboard.oauth')
-    expect(wrapper.text()).toContain('系统已完成能力校验和数据准备'); expect(mocks.action).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('插件已安装，请完成配置后启用'); expect(mocks.action).not.toHaveBeenCalled()
   })
   it('requires explicit trust for an unknown key and clears consent on package replacement', async () => {
     mocks.preview.mockResolvedValueOnce({ ...await mocks.preview(), trusted: false })

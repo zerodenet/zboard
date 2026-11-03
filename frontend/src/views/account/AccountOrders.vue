@@ -2,7 +2,7 @@
   <section class="account-page stack">
     <PageHeader title="我的订单">
       <template #actions>
-        <RouterLink class="button" to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink>
+        <UiButton as-child><RouterLink  to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink></UiButton>
       </template>
     </PageHeader>
 
@@ -54,7 +54,7 @@
             <td><StatusBadge :tone="tone(item.status)">{{ label(item.status) }}</StatusBadge></td>
             <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
             <td class="table-action-column">
-              <RouterLink class="button button-secondary button-sm" :to="`/account/orders/${item.id}`">{{ ['pending', 'failed'].includes(item.status) ? '详情／支付' : '详情' }}</RouterLink>
+              <UiButton as-child variant="secondary" size="sm"><RouterLink  :to="`/account/orders/${item.id}`">{{ ['pending', 'failed'].includes(item.status) ? '详情／支付' : '详情' }}</RouterLink></UiButton>
               <UiButton
                 v-if="item.status === 'pending'"
                 variant="danger"
@@ -69,7 +69,7 @@
         </tbody>
       </DataTable>
       <EmptyState
-        v-else
+        v-else-if="!loading && !error"
         icon="billing"
         title="没有匹配订单"
         description="从套餐页面创建第一笔订单，或调整筛选条件。"
@@ -86,13 +86,7 @@
       </template>
     </DataWorkbench>
 
-    <aside class="account-notice">
-      <UiIcon name="clock" />
-      <div>
-        <strong>订单付款确认</strong>
-        <p>订单以本站核对后的状态为准。没有在线支付方式时，可联系管理员确认收款。</p>
-      </div>
-    </aside>
+
 
     <ConfirmDialog
       :open="confirmOpen"

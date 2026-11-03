@@ -2220,10 +2220,13 @@ export interface AdminTask {
 	running_count?: number
 	succeeded_count?: number
 	failed_count?: number
+	needs_review_count?: number
+	suppressed_count?: number
 	idempotency_key: string
 	priority: number
 	attempts: number
 	max_attempts: number
+	locked_until?: string
 	started_at?: string
 	finished_at?: string
 	created_at: string
@@ -2259,6 +2262,9 @@ export interface AdminTaskSummary {
 }
 
 export interface AdminTaskItem {
+ target_name?: string
+ target_description?: string
+ target_missing?: boolean
 	delivery_state?: 'accepted' | 'not_accepted' | 'unknown' | 'suppressed' | ''
 	id: number
 	task_id: number

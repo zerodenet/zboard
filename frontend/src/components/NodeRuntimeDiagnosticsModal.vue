@@ -149,13 +149,13 @@ function reasonLabel(reason?: NodeDiagnosticReason) {
 .diagnostic-stack{display:grid;gap:14px;min-width:0}
 .diagnostic-loading{min-height:150px;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--muted)}
 .diagnostic-loading>.ui-icon{width:26px;height:26px;color:var(--primary)}
-.diagnostic-loading>div{display:grid;gap:4px}.diagnostic-loading strong{color:var(--text-strong);font-size:12px}.diagnostic-loading span{max-width:520px;font-size:10px;line-height:1.55}
+.diagnostic-loading>div{display:grid;gap:4px}.diagnostic-loading strong{color:var(--text-strong);font-size:12px}.diagnostic-loading span{max-width:520px;font-size: 12px;line-height:1.55}
 .diagnostic-summary{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
 .diagnostic-summary>div{display:grid;justify-items:start;gap:6px}.diagnostic-summary strong{color:var(--text-strong);font-size:12px}
 .diagnostic-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .diagnostic-facts>div{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
-.diagnostic-facts span{color:var(--muted);font-size:10px}
+.diagnostic-facts span{color:var(--muted);font-size: 12px}
 .diagnostic-section{display:grid;gap:10px}.diagnostic-section>header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
-.diagnostic-section>header>div{display:grid;gap:3px}.diagnostic-section>header strong{color:var(--text-strong);font-size:11px}.diagnostic-section>header span{color:var(--muted);font-size:9px;line-height:1.5}
+.diagnostic-section>header>div{display:grid;gap:3px}.diagnostic-section>header strong{color:var(--text-strong);font-size:11px}.diagnostic-section>header span{color:var(--muted);font-size: 12px;line-height:1.5}
 @media(max-width:640px){.diagnostic-summary{align-items:stretch;flex-direction:column}.diagnostic-facts{grid-template-columns:1fr}}
 </style>

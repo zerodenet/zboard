@@ -24,7 +24,7 @@
           <tbody><tr v-for="item in templates" :key="item.id">
             <td class="table-primary-column"><div class="cell-title"><EntityDetailButton :label="`编辑模板 ${item.name}`" @click="openEdit(item)">{{ item.name }}</EntityDetailButton><TableText v-if="item.description" :value="item.description" /></div></td>
             <td data-column-priority="2"><TableText class="mono" :value="`?template=${item.slug}`" /></td>
-            <td data-column-priority="3"><StatusBadge :tone="item.renderer === 'unsupported' ? 'warning' : 'info'" icon="audit" :title="item.content_type || undefined">{{ rendererLabel(item.renderer) }}</StatusBadge></td>
+            <td data-column-priority="3"><TableText :value="rendererLabel(item.renderer)" /></td>
             <td><UiSwitch :model-value="item.is_active" :aria-label="`启用模板 ${item.name}`" :aria-busy="statusChangingID === item.id || undefined" :title="item.renderer === 'unsupported' ? '请先选择支持的输出格式' : undefined" :disabled="Boolean(statusChangingID) || item.renderer === 'unsupported'" @update:model-value="value => toggleActive(item, value)" /></td>
             <td class="numeric-column" data-column-priority="3">{{ item.sort_order }}</td>
             <td data-column-priority="2"><TimeBadge :value="item.updated_at" /></td>
@@ -42,7 +42,6 @@
 
     <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑订阅模板' : '新建订阅模板'" size="xl" :busy="saving || previewing" :return-focus-selector="form.id ? `[data-row-action-trigger='template-${form.id}']` : ''" @close="closeEditor">
       <form id="subscription-template-form" ref="formElement" class="template-editor" novalidate @submit.prevent="save">
-        <PageAlert v-if="templateCaptureError" tone="warning" title="当前模板不能暂存到登录页">{{ templateCaptureError }} 请留在本页重新认证，或自行另存后再离开；不会只暂存部分字段。</PageAlert>
         <div v-if="form.id" class="editor-meta">
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
           <TimeBadge :value="form.updated_at" />
@@ -219,9 +218,6 @@ function readTemplateRecoveryDraft() {
   if (!fields || stored.some(item => !item.customization) || (form.id && !templateRecoveryBaseline.value)) return undefined
   return { id: form.id, revision: form.revision, fields, baseline: templateRecoveryBaseline.value, rendererDrafts: stored }
 }
-const templateCaptureError = computed(() => !editorOpen.value || readTemplateRecoveryDraft() ? '' : rawCustomizationError.value
-  ? 'Raw JSON 尚未同步到模板模型，无法完整暂存。'
-  : '高级配置、未知结构字段、带凭据的未保存远端地址或非标准 DNS 路径无法安全暂存。')
 const templateDraftRecovery = useReauthenticationDraft({
   scope: 'admin.subscription-templates.editor', permission: 'admin', ready: () => templateRecoveryReady.value && templateListLoaded.value && !editingID.value,
   // An unsafe open editor must fail capture, never look like an absent draft.

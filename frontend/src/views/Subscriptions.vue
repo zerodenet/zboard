@@ -20,7 +20,7 @@
       <main v-else-if="selectedSubscription" class="business-detail stack">
         <section class="detail-status-strip" aria-label="订阅状态">
           <StatusBadge :tone="statusTone(selectedSubscription.status)">{{ statusName(selectedSubscription.status) }}</StatusBadge>
-          <StatusBadge tone="info">{{ trafficModeName(selectedSubscription.traffic_calc_mode) }}</StatusBadge>
+          <span>{{ trafficModeName(selectedSubscription.traffic_calc_mode) }}</span>
           <StatusBadge :tone="selectedSubscription.active_credential_count ? 'success' : 'warning'">{{ selectedSubscription.active_credential_count }} 个有效凭证</StatusBadge>
         </section>
         <section class="detail-metrics" aria-label="订阅配额">

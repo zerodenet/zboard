@@ -53,7 +53,7 @@
 
 
     <div class="dashboard-group-heading business-heading">
-      <div class="dashboard-group-copy"><h2>经营概览</h2><p class="dashboard-period-copy"><span :title="periodDescription">{{ overview ? periodDescription : '所选周期的经营统计' }}</span><span>查询时区 {{ overview?.period.timezone || '—' }}</span></p></div>
+      <div class="dashboard-group-copy"><h2>经营概览</h2><p class="dashboard-period-copy"><span v-overflow-title="periodDescription">{{ overview ? periodDescription : '所选周期的经营统计' }}</span><span>查询时区 {{ overview?.period.timezone || '—' }}</span></p></div>
       <RemoteReadStatus compact label="经营统计" :phase="overviewResource.phase.value" :error="error" :last-success-at="overviewResource.lastSuccessAt.value" @retry="overviewResource.load()" />
     </div>
 
@@ -273,6 +273,7 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchProtocolDeployments, type ProtocolDeployment } from '../api/client'
 import {

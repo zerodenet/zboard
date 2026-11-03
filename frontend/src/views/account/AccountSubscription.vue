@@ -27,13 +27,7 @@
         <UiButton v-if="subscriptionUrl" type="button" @click="copy"><UiIcon name="copy" />{{ copyLabel }}</UiButton>
         <UiButton v-else-if="selectedSubscription && !access.configured" type="button" :disabled="!accessReady || access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('generate')">生成此链接</UiButton>
       </template>
-      <template #meta>
-        <StatusBadge v-if="selectedSubscription && accessReady" :tone="access.configured ? 'success' : 'warning'">
-          {{ access.configured ? '已启用' : '未生成' }}
-        </StatusBadge>
-      </template>
       <div v-if="selectedSubscription" class="panel-body access-panel">
-        <span class="access-icon"><UiIcon name="key" /></span>
         <PageAlert v-if="selectedSubscriptionResource.stale.value" tone="warning" title="订阅详情尚未更新">
           暂时无法核对当前额度和期限，显示上次读取的信息。请刷新后再生成、轮换或吊销链接。
         </PageAlert>
@@ -43,16 +37,9 @@
         </PageAlert>
         <PageAlert v-else-if="selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="流量已用完">{{ exhaustedMessage(selectedSubscription) }}<UiButton v-if="canReset(selectedSubscription)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${selectedSubscription.id}`">购买流量重置</RouterLink></UiButton></PageAlert>
         <p v-else-if="!accessReady" role="status">{{ working ? '正在更新链接状态…' : '正在读取链接状态…' }}</p>
-        <div v-else-if="access.configured" class="access-meta">
-          <strong>{{ selectedSubscription.plan_name }} 的链接已启用</strong>
-        </div>
-        <div v-else class="access-meta">
-          <strong>{{ access.notice || '此订阅尚未生成可用链接' }}</strong>
-          <p>生成或轮换只会影响订阅 #{{ selectedSubscription.id }}。</p>
-        </div>
+        <div v-else-if="!access.configured" class="access-meta"><strong>{{ access.notice || '此订阅尚未生成可用链接' }}</strong></div>
 
         <div class="subscription-access-context">
-          <div><span>套餐规格</span><strong>{{ selectedSubscription.plan_name }} · {{ selectedSubscription.sku_name }}</strong></div>
           <div><span>剩余流量</span><strong>{{ formatBytes(Math.max(0, selectedSubscription.flow_total - selectedSubscription.flow_used)) }}</strong></div>
           <div><span>到期时间</span><TimeBadge :value="selectedSubscription.end_at" /></div>
         </div>
@@ -94,9 +81,6 @@
             <UiSelect v-model="selectedTemplate" v-bind="controlAttrs" :options="templateOptions" />
           </FormField>
         </div>
-        <PageAlert v-if="subscriptionUrl" title="用量信息仅属于当前订阅">
-          Subscription-Userinfo 只返回订阅 #{{ selectedSubscription.id }} 的已用流量、总额和到期时间；其他订阅不会被合并到该链接。
-        </PageAlert>
         <div class="access-actions">
           <UiButton v-if="accessReady && access.configured" variant="secondary" size="sm" type="button" :disabled="access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('rotate')">
             轮换此链接
@@ -117,9 +101,7 @@
         </WorkbenchFilterBar>
       </template>
       <template #actions>
-        <StatusBadge :tone="activeSubscriptionTotal ? 'success' : 'neutral'">
-          {{ activeSubscriptionTotal }} 个有效订阅
-        </StatusBadge>
+        <span class="muted">{{ activeSubscriptionTotal }} 个有效订阅</span>
       </template>
 
       <TableSkeleton v-if="listLoading && !subscriptions.length" label="正在加载我的订阅" :columns="5" />
@@ -128,6 +110,7 @@
           <tr>
             <th class="table-primary-column">订阅</th>
             <th>状态</th>
+            <th v-if="subscriptions.some(sub => automaticNeedsAttention(sub.automatic_renewal_state))">自动续费</th>
             <th>流量配额</th>
             <th data-column-priority="1">到期时间</th>
             <th class="table-action-column"><span class="sr-only">操作</span></th>
@@ -138,11 +121,10 @@
             <td class="table-primary-column"><div class="cell-title"><strong>{{ sub.plan_name || `订阅 #${sub.id}` }}</strong><span>#{{ sub.id }} · {{ sub.sku_name }}</span></div></td>
             <td>
               <StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge>
-              <div v-if="automaticNeedsAttention(sub.automatic_renewal_state)">
-                <StatusBadge tone="warning">{{ sub.automatic_renewal_state === 'insufficient_balance' ? '上次自动续费余额不足' : '自动续费需要核对' }}</StatusBadge>
-                <small>上次结果：{{ sub.automatic_renewal_message || '请核对该订阅的余额自动续费状态。' }}</small>
-                <small v-if="sub.automatic_renewal_checked_at">最近检查 <TimeBadge :value="sub.automatic_renewal_checked_at" /></small>
-              </div>
+            </td>
+            <td v-if="subscriptions.some(row => automaticNeedsAttention(row.automatic_renewal_state))" class="subscription-renewal-result">
+              <UiButton v-if="automaticNeedsAttention(sub.automatic_renewal_state)" variant="ghost" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }"><UiIcon name="alert" />{{ sub.automatic_renewal_state === 'insufficient_balance' ? '余额不足' : '待核验' }}</UiButton>
+              <span v-else>—</span>
             </td>
             <td>
               <div class="quota-cell">
@@ -162,7 +144,7 @@
                   :disabled="sub.status !== 'active' || working"
                   @click="selectSubscription(sub.id)"
                 >
-                  {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
+                  {{ sub.id === selectedSubscriptionID ? '查看链接' : '管理链接' }}
                 </UiButton>
                 <UiButton v-if="sub.can_renew" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink></UiButton>
                 </template>
@@ -170,7 +152,7 @@
                 <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="secondary" size="sm" type="button" @click="terminationTarget = sub.id">核对退订</UiButton>
                 <UiButton variant="secondary" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">余额自动续费</UiButton>
 
-                <RouterLink v-if="Number.isSafeInteger(sub.id) && sub.id > 0" class="button button-secondary button-sm" :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">就此订阅提交工单</RouterLink>
+                <UiButton v-if="Number.isSafeInteger(sub.id) && sub.id > 0" as-child variant="secondary" size="sm"><RouterLink  :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">就此订阅提交工单</RouterLink></UiButton>
               </RowActions>
             </td>
           </tr>
@@ -206,7 +188,7 @@
           <tbody>
             <tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id">
               <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.region || '未设置区域'" /><StatusBadge :tone="item.connector_online ? 'success' : 'warning'" icon="activity">{{ item.connector_online ? '上报正常' : '上报延迟' }}</StatusBadge></div></td>
-              <td><StatusBadge tone="neutral" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td>
+              <td>{{ item.protocol.toUpperCase() }}</td>
               <td class="numeric-column">{{ item.load_fresh ? item.active_users : '—' }}</td>
               <td class="numeric-column">{{ item.load_fresh ? item.active_flows : '—' }}</td>
               <td data-column-priority="2"><TimeBadge v-if="item.load_fresh" :value="item.load_observed_at" /><span v-else>{{ item.load_observed_at ? '负载数据已过期' : '暂无负载数据' }}</span></td>
@@ -219,13 +201,7 @@
     </details>
 
 
-    <aside class="account-notice">
-      <UiIcon name="shield" />
-      <div>
-        <strong>每条链接都是独立访问凭证</strong>
-        <p>轮换或吊销只影响当前选择的订阅，不会改变同一账户下其他订阅的链接。</p>
-      </div>
-    </aside>
+
 
     <ConfirmDialog
       :open="confirmOpen"
@@ -796,17 +772,15 @@ onBeforeUnmount(() => {
 
 .subscription-access-context {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  max-width: 640px;
 }
 
 .subscription-access-context > div {
   display: grid;
   gap: 4px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
+  min-width: 0;
 }
 
 .subscription-access-context span {

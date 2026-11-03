@@ -24,3 +24,8 @@ describe('OverviewCard', () => {
     expect(wrapper.emitted('select')).toHaveLength(1)
   })
 })
+
+it('does not reserve a blank description when there is no additional information', () => {
+  const w = mount(OverviewCard, { props: { label: '订单', value: 3, icon: 'billing' } })
+  expect(w.find('.overview-card-description').exists()).toBe(false)
+})

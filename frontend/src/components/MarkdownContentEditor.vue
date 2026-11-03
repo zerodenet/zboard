@@ -100,13 +100,13 @@ function formatSize(bytes: number) {
 .markdown-editor__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .markdown-editor__title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .markdown-editor__header strong { font-size: 13px; }
-.markdown-editor__header p { margin: 5px 0 0; max-width: 720px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.markdown-editor__header p { margin: 5px 0 0; max-width: 720px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .markdown-editor__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .markdown-editor :deep(.ui-tabs) { border-bottom: 1px solid var(--line); }
 .markdown-editor__workspace { padding: 16px 18px 18px; }
 .markdown-editor__textarea { width: 100%; min-height: 360px; font-family: var(--font-mono); font-size: 11px; line-height: 1.65; resize: vertical; }
-.markdown-editor__help { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; color: var(--muted); font-size: 9px; line-height: 1.45; }
-.markdown-editor__help code { color: var(--code-text); }.markdown-editor__help .size-warning { color: var(--danger); font-weight: 700; }
+.markdown-editor__help { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.markdown-editor__help code { color: var(--code-text); }.markdown-editor__help .size-warning { color: var(--danger); font-weight: 600; }
 .markdown-editor__preview { min-height: 360px; padding: 22px 24px; background: var(--surface-soft); }
 .remote-preview { min-height: 260px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 20px; border: 1px dashed var(--line); border-radius: 10px; background: var(--surface); }
 .remote-preview p { margin: 4px 0 0; color: var(--muted); overflow-wrap: anywhere; }
@@ -119,6 +119,6 @@ function formatSize(bytes: number) {
 .policy-markdown :deep(a) { color: var(--primary); }
 .policy-markdown :deep(code) { padding: 2px 4px; border-radius: 4px; background: var(--surface); font-family: var(--font-mono); }
 .policy-markdown :deep(hr) { margin: 24px 0; border: 0; border-top: 1px solid var(--line); }
-.markdown-editor__error { display: flex; gap: 5px; margin: 0; padding: 10px 18px; border-top: 1px solid var(--line); color: var(--danger); font-size: 10px; }
+.markdown-editor__error { display: flex; gap: 5px; margin: 0; padding: 10px 18px; border-top: 1px solid var(--line); color: var(--danger); font-size: 12px; }
 @media (max-width: 760px) { .markdown-editor__header { flex-direction: column; }.markdown-editor__actions { justify-content: flex-start; }.remote-preview { grid-template-columns: auto 1fr; }.remote-preview a { grid-column: 2; } }
 </style>

@@ -53,8 +53,8 @@ func (s BatchQueries) List(ctx context.Context, actor uint, f jobs.BatchFilter) 
 	return out, nil
 }
 func batchProjectionFor(tx *gorm.DB, ids []uint) *gorm.DB {
-	counts := tx.Model(&model.TaskItem{}).Where("task_id IN ?", ids).Select("task_id, SUM(CASE WHEN status=0 THEN 1 ELSE 0 END) AS pending_count, SUM(CASE WHEN status=1 THEN 1 ELSE 0 END) AS running_count, SUM(CASE WHEN status=2 THEN 1 ELSE 0 END) AS succeeded_count, SUM(CASE WHEN status=3 THEN 1 ELSE 0 END) AS failed_count").Group("task_id")
-	return tx.Model(&model.Task{}).Where("tasks.id IN ?", ids).Joins("LEFT JOIN (?) AS item_counts ON item_counts.task_id = tasks.id", counts).Select("tasks.*, COALESCE(item_counts.pending_count,0) AS pending_count, COALESCE(item_counts.running_count,0) AS running_count, COALESCE(item_counts.succeeded_count,0) AS succeeded_count, COALESCE(item_counts.failed_count,0) AS failed_count")
+	counts := tx.Model(&model.TaskItem{}).Where("task_id IN ?", ids).Select("task_id, SUM(CASE WHEN status=0 THEN 1 ELSE 0 END) AS pending_count, SUM(CASE WHEN status=1 THEN 1 ELSE 0 END) AS running_count, SUM(CASE WHEN status=2 THEN 1 ELSE 0 END) AS succeeded_count, SUM(CASE WHEN status=3 THEN 1 ELSE 0 END) AS failed_count, SUM(CASE WHEN delivery_state='unknown' THEN 1 ELSE 0 END) AS needs_review_count, SUM(CASE WHEN delivery_state='suppressed' THEN 1 ELSE 0 END) AS suppressed_count").Group("task_id")
+	return tx.Model(&model.Task{}).Where("tasks.id IN ?", ids).Joins("LEFT JOIN (?) AS item_counts ON item_counts.task_id = tasks.id", counts).Select("tasks.*, COALESCE(item_counts.pending_count,0) AS pending_count, COALESCE(item_counts.running_count,0) AS running_count, COALESCE(item_counts.succeeded_count,0) AS succeeded_count, COALESCE(item_counts.failed_count,0) AS failed_count, COALESCE(item_counts.needs_review_count,0) AS needs_review_count, COALESCE(item_counts.suppressed_count,0) AS suppressed_count")
 }
 func (s BatchQueries) Detail(ctx context.Context, actor, id uint, items bool) (jobs.BatchDetail, error) {
 	var out jobs.BatchDetail
@@ -70,7 +70,10 @@ func (s BatchQueries) Detail(ctx context.Context, actor, id uint, items bool) (j
 			return jobs.ErrBatchNotFound
 		}
 		if items {
-			return tx.Model(&model.TaskItem{}).Where("task_id = ?", id).Order("id").Limit(10000).Find(&out.Items).Error
+			if err := tx.Model(&model.TaskItem{}).Select("task_items.*").Where("task_id = ?", id).Order("id").Limit(10000).Find(&out.Items).Error; err != nil {
+				return err
+			}
+			return batchTargetNames(tx, out.Items)
 		}
 		return nil
 	})
@@ -99,7 +102,10 @@ func (s BatchQueries) Items(ctx context.Context, actor, id uint, f jobs.BatchFil
 		if err := q.Count(&out.Total).Error; err != nil {
 			return err
 		}
-		return q.Order("id").Offset(f.Offset).Limit(f.Limit).Find(&out.Items).Error
+		if err := q.Select("task_items.*").Order("id").Offset(f.Offset).Limit(f.Limit).Find(&out.Items).Error; err != nil {
+			return err
+		}
+		return batchTargetNames(tx, out.Items)
 	})
 	if err != nil {
 		return jobs.BatchItemPage{}, err

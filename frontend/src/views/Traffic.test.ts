@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAccountSubscriptionsPage, fetchTrafficReconciliationPage, fetchTrafficSummary } from '../api/client'
 import { emptyEntityReferenceResponse, fetchAdminEntityReferences, fetchTrafficTrends } from '../api/readModels'
 import { fetchTrafficNodeSeries, fetchTrafficUsagePage, fetchTrafficUsageStatistics } from '../api/trafficUsage'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import CursorPager from '../components/CursorPager.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import NodeTrafficChart from './account/NodeTrafficChart.vue'
@@ -89,7 +90,7 @@ describe.each([false, true])('traffic independent reads (admin=%s)', admin => {
     await open()
     expect(fetchTrafficNodeSeries).toHaveBeenCalledOnce()
     expect(wrapper!.getComponent(NodeTrafficChart).props('data')!.nodes[0]!.id).toBe(1)
-    expect(wrapper!.text()).toContain('正在加载流量记录')
+    expect(wrapper!.getComponent(TableSkeleton).props('label')).toBe(admin ? '正在加载流量记录' : '正在加载流量使用明细')
     expect(wrapper!.text()).not.toContain('没有流量使用明细')
   })
   it('shows first pending statistics as unknown rather than zero or no activity', async () => {
@@ -270,7 +271,8 @@ describe.each([false, true])('traffic independent reads (admin=%s)', admin => {
     await wrapper!.findAll('button').find(button => button.text().includes('重试区间统计'))!.trigger('click')
     await flushPromises()
     expect(wrapper!.getComponent(CursorPager).props('total')).toBe(200)
-    expect(wrapper!.text()).toContain('翻页不刷新统计')
+    const freshness = wrapper!.findAll('p').find(p => p.text().includes('区间统计时间'))!
+    expect(freshness.getComponent(TimeBadge).props('value')).toBe('2026-09-01T00:00:00Z')
     expect(fetchTrafficUsagePage).toHaveBeenCalledOnce()
     expect(fetchTrafficUsageStatistics).toHaveBeenCalledTimes(2)
   })

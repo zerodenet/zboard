@@ -16,7 +16,7 @@
         <label>重试原因（3–400个UTF-8字节） <UiInput v-model="retryReason" aria-label="观察重试原因" maxlength="400" /></label>
         <div><UiButton :disabled="retryBusy || !validRetry || submitted.has(candidateKey(selected))" @click="submitRetry">确认重新排队原材料</UiButton><UiButton variant="secondary" :disabled="retryBusy" @click="selected = null">取消重试</UiButton></div>
       </div>
-      <p v-if="loading" role="status">正在读取观察队列…</p>
+      <p v-if="loading && !page" role="status">正在读取观察队列…</p>
       <template v-if="page">
         <p>已加载状态：{{ statusLabel(page.status) }}。以下时间为入队、调度和处置时间，不是事件采样时间。</p>
         <p v-if="page.status !== status">筛选已改变；当前显示上一次成功加载的记录。</p>

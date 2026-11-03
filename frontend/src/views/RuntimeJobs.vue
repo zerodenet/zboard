@@ -3,26 +3,18 @@
     <PageHeader :title="queueFocused ? `${queueName}队列` : '后台任务'">
       <template #actions><RouterLink class="task-link" :to="queueFocused ? '/admin/runtime-jobs' : '/admin/tasks'">{{ queueFocused ? '全部后台任务' : '运营任务' }}</RouterLink><PageRefreshButton label="刷新后台任务" :loading="loading || (queueFocused && queueLoading)" @click="refresh" /></template>
     </PageHeader>
-    <RemoteReadStatus v-if="!queueFocused" label="运行状态" :phase="runtimeResource.phase.value" :error="error" :last-success-at="runtimeResource.lastSuccessAt.value" @retry="runtimeResource.load()" />
+    <SystemLoadPanel v-if="!queueFocused" ref="systemLoad" />
+    <RemoteReadStatus v-if="!queueFocused && error" label="运行状态" :phase="runtimeResource.phase.value" :error="error" :last-success-at="runtimeResource.lastSuccessAt.value" @retry="runtimeResource.load()" />
     <template v-if="!queueFocused">
-      <RemoteReadStatus label="业务队列" :phase="summariesResource.phase.value" :error="summariesResource.error.value" :last-success-at="summariesResource.lastSuccessAt.value" @retry="summariesResource.load()" />
-      <RemoteReadStatus label="事件与进程诊断" :phase="diagnosticsResource.phase.value" :error="diagnosticsResource.error.value" :last-success-at="diagnosticsResource.lastSuccessAt.value" @retry="diagnosticsResource.load()" />
-      <RemoteReadStatus label="插件状态" :phase="pluginsResource.phase.value" :error="pluginsResource.error.value" :last-success-at="pluginsResource.lastSuccessAt.value" @retry="pluginsResource.load()" />
+      <RemoteReadStatus v-if="summariesResource.error.value" label="业务队列" :phase="summariesResource.phase.value" :error="summariesResource.error.value" :last-success-at="summariesResource.lastSuccessAt.value" @retry="summariesResource.load()" />
+      <RemoteReadStatus v-if="diagnosticsResource.error.value" label="事件与进程诊断" :phase="diagnosticsResource.phase.value" :error="diagnosticsResource.error.value" :last-success-at="diagnosticsResource.lastSuccessAt.value" @retry="diagnosticsResource.load()" />
+      <RemoteReadStatus v-if="pluginsResource.error.value" label="插件状态" :phase="pluginsResource.phase.value" :error="pluginsResource.error.value" :last-success-at="pluginsResource.lastSuccessAt.value" @retry="pluginsResource.load()" />
     </template>
 
-    <p v-if="!data && loading && !queueFocused" role="status">正在读取运行状态…</p>
+    <div v-if="!queueFocused" class="runtime-meta"><span>更新 <TimeBadge :value="data?.as_of" /></span></div>
+    <RuntimeOperationsOverview v-if="!queueFocused" :data="data || { queues: [], runtime: { event_spool: null } }" :queues-loading="summariesResource.loading.value && !summariesResource.data.value" :execution-unavailable="Boolean(sectionIssue('execution'))" :diagnostics-unavailable="Boolean(sectionIssue('runtime'))" @select="selectQueue" />
     <template v-if="data || queueFocused || queuePage || queueLoading || queueError">
       <template v-if="data && !queueFocused">
-      <div class="runtime-meta"><span>更新 <TimeBadge :value="data.as_of" /></span><div v-if="data.issues?.length" class="runtime-issue"><strong>{{ data.issues.length }} 项状态不可用</strong><details><summary>原因</summary><p v-for="issue in data.issues" :key="issue.section">{{ issueText(issue) }}</p></details><UiButton variant="ghost" size="sm" :loading="loading" @click="refresh">重试</UiButton></div></div>
-      <section v-if="data.execution_queue" class="execution-strip" aria-label="全局执行队列"><strong>执行队列</strong><span>等待 {{ data.execution_queue.pending }}</span><span>执行中 {{ data.execution_queue.running }}</span><span>延后 {{ data.execution_queue.delayed }}</span><span v-if="data.execution_queue.unknown">待核验 {{ data.execution_queue.unknown }}</span><span v-if="data.execution_queue.maintenance_reserved">维护中</span></section>
-      <div class="runtime-heading"><h2>待处理队列</h2></div>
-      <section class="queue-grid" aria-label="业务待处理概览">
-        <article v-for="queue in data.queues" :key="queue.id" class="queue-card" :class="{ selected: selected === queue.id }">
-          <div class="queue-title"><UiButton variant="ghost" size="sm" :aria-pressed="selected === queue.id" @click="selectQueue(queue.id)">{{ queue.name }}<span aria-hidden="true">→</span></UiButton></div>
-          <span class="queue-counts"><span><strong>{{ queue.pending }}</strong>{{ queue.id === 'registration_messages' ? '待处理' : '等待' }}</span><span v-if="queue.running"><strong>{{ queue.running }}</strong>执行中</span><span v-if="queue.delayed"><strong>{{ queue.delayed }}</strong>延后</span><span v-if="queue.failed || queue.stale"><strong>{{ queue.failed + queue.stale }}</strong>异常</span></span>
-        </article>
-        <div class="queue-card spool-card"><span class="queue-title">流量事件入账</span><span v-if="data.runtime.event_spool" class="queue-counts"><span><strong>{{ data.runtime.event_spool.pending_events }}</strong>待入账</span><span><strong>{{ bytes(data.runtime.event_spool.pending_bytes) }}</strong>数据量</span></span><span v-else class="queue-foot">{{ sectionIssue('runtime') ? '状态未取得' : '未启用' }}</span></div>
-      </section>
       <details class="runtime-diagnostics"><summary>执行明细与插件状态</summary>
       <section class="runtime-section">
         <div class="runtime-heading"><h2>任务执行情况</h2><span>共享执行名额 {{ data.execution_concurrency ?? '—' }} 个 · 外部操作最多占用 {{ data.external_execution_concurrency ?? '—' }} 个</span></div>
@@ -49,7 +41,7 @@
       </section>
       </details>
       </template>
-      <section v-if="selected && (queueFocused || data?.queues?.length || queuePage || queueLoading || queueError)" class="runtime-section" aria-label="队列明细">
+      <section v-if="selected && queueFocused" class="runtime-section" aria-label="队列明细">
         <div v-if="!queueFocused" class="runtime-heading"><h2>{{ queueName }}队列</h2></div>
         <div v-else-if="queuePage" class="focused-summary"><span>{{ queuePage.total }} 条队列记录</span><span>每 15 秒刷新</span></div>
         <PageAlert v-if="queueError || retryError" tone="danger" title="队列操作未完成">{{ retryError || queueError }}<template #actions><UiButton variant="secondary" size="sm" :loading="queueLoading" @click="reloadQueue">重新读取队列</UiButton></template></PageAlert>
@@ -57,7 +49,7 @@
           <thead><tr><th class="table-primary-column">任务 / 目标</th><th>状态</th><th v-if="selected !== 'registration_messages'" data-column-priority="2">尝试</th><th>{{ selected === 'registration_messages' ? '事件时间' : '下次领取' }}</th><th v-if="selected !== 'registration_messages'" data-column-priority="3">租约到期</th><th v-if="selected === 'node_publish'" class="table-action-column">操作</th></tr></thead>
           <tbody><tr v-for="item in queuePage.items" :key="item.id"><td class="table-primary-column"><div class="queue-task"><span v-if="selected === 'registration_messages'">账户 #{{ item.id }} · 注册事件</span><RouterLink v-else :to="selected === 'admin_tasks' ? `/admin/tasks?task=${item.id}` : `/admin/nodes?node=${item.id}`">{{ selected === 'admin_tasks' ? '任务' : '节点' }} #{{ item.id }}</RouterLink><UiButton v-if="item.last_error" variant="ghost" size="sm" @click="queueFailure = { title: `${queueNames[selected] || '任务'} #${item.id}`, detail: item.last_error }">查看错误</UiButton></div></td><td><StatusBadge :tone="tone(item.state)">{{ selected === 'registration_messages' ? '待处理' : state(item.state) }}</StatusBadge></td><td v-if="selected !== 'registration_messages'" data-column-priority="2">{{ item.attempts }}</td><td><TimeBadge :value="selected === 'registration_messages' ? item.created_at : item.next_attempt_at" /></td><td v-if="selected !== 'registration_messages'" data-column-priority="3"><TimeBadge :value="item.lease_until" /></td><td v-if="selected === 'node_publish'" class="table-action-column"><UiButton v-if="['delayed', 'stale'].includes(item.state)" size="sm" variant="secondary" :loading="retryingID === item.id" @click="retryPublication(item.id)">立即重试</UiButton></td></tr></tbody>
         </DataTable>
-        <p v-else-if="queuePage && !queueLoading && !queueError">此队列暂无待处理任务。</p><p v-if="queueLoading" role="status">正在读取队列…</p>
+        <p v-else-if="queuePage && !queueLoading && !queueError">此队列暂无待处理任务。</p><p v-if="queueLoading && !queuePage" role="status">正在读取队列…</p>
         <TablePager v-if="queuePage" :total="queuePage.total" :offset="offset" :limit="25" :page-sizes="[25]" :loading="queueLoading" @change="changePage" />
       </section>
       <template v-if="data && !queueFocused">
@@ -94,6 +86,8 @@ import RemoteReadStatus from '../components/RemoteReadStatus.vue'
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { fetchRegisteredJobs, fetchRuntimeJobs, fetchRuntimeQueue, retryNodePublication, type RuntimeJobs, type RuntimeJob, type QueuePage, type RegisteredJob } from '../api/runtimeJobs'
+import SystemLoadPanel from '../components/SystemLoadPanel.vue'
+import RuntimeOperationsOverview from '../components/RuntimeOperationsOverview.vue'
 import RuntimeJobHistory from '../components/RuntimeJobHistory.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
@@ -111,7 +105,7 @@ function runtimeView(view: 'execution' | 'queues' | 'runtime' | 'plugins', messa
    const result = await fetchRuntimeJobs(signal, view)
    const sections = view === 'queues' ? ['queues', 'registration_messages'] : view === 'plugins' ? ['plugin_tasks'] : [view]
    const issues = result.issues?.filter(issue => sections.includes(issue.section)) || []
-   if (issues.length) throw { response: { status: 503, data: { message: issues.map(issue => issue.message).join('；') } } }
+   if (issues.length) throw { response: { status: 503, data: { message: issues.map(issue => issue.detail ? `${issue.message}：${issue.detail}` : issue.message).join('；') } } }
    return { ...result, issues }
   }, errorMessage: message, timeoutMs: 8_000 })
 }
@@ -124,7 +118,7 @@ const data = computed(() => {
  if (!runtimeViews.some(resource => resource.data.value)) return null
  const execution = runtimeResource.data.value, queues = summariesResource.data.value
  const diagnostics = diagnosticsResource.data.value, plugins = pluginsResource.data.value
- return { ...execution, as_of: execution?.as_of, started_at: execution?.started_at || '',
+ return { ...execution, as_of: runtimeViews.map(resource => resource.data.value?.as_of).filter((at): at is string => Boolean(at)).sort().at(-1), started_at: execution?.started_at || '',
   jobs: execution?.jobs || [], queues: queues?.queues || [], runtime: diagnostics?.runtime || { event_spool: null },
   plugin_host: plugins?.plugin_host, plugin_tasks: plugins?.plugin_tasks,
   issues: runtimeViews.flatMap(resource => resource.data.value?.issues || []),
@@ -138,6 +132,7 @@ const registryResource = useRemoteResource<RegisteredJob[] | null>({ initial: ()
   throw cause
  }
 }, errorMessage: '任务名录读取失败。' })
+const systemLoad = ref<InstanceType<typeof SystemLoadPanel> | null>(null)
 const { loading, error } = runtimeResource
 const { data: queuePage, loading: queueLoading, error: queueError } = queueResource
 const { data: registeredJobs, loading: registryLoading, error: registryError } = registryResource
@@ -166,12 +161,11 @@ function registeredCadence(seconds: number) { return seconds <= 0 ? '按需' : s
 function registeredOwner(owner: string) { return owner === 'system' ? '内置' : pluginTasks.value.find(task => `plugin:${task.plugin_id}` === owner)?.plugin_name || owner.replace(/^plugin:/, '插件 · ') }
 function registeredStatus(id: string) { if (sectionIssue(id.startsWith('plugin:') ? 'plugin_tasks' : 'execution')) return undefined; return statusByID.value.get(id) }
 function setHistoryOpen(event: Event) { historyOpen.value = (event.target as HTMLDetailsElement).open }
-function bytes(n: number) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB` }
 function sectionIssue(section: string) {
  const resource = section === 'execution' ? runtimeResource : section === 'runtime' ? diagnosticsResource : section === 'plugin_tasks' ? pluginsResource : summariesResource
  return !resource.data.value || !!resource.error.value || data.value?.issues?.some(issue => issue.section === section)
 }
-function issueText(issue: { section: string; message: string }) { const ms = data.value?.read_duration_ms?.[issue.section]; return typeof ms === 'number' && Number.isFinite(ms) ? `${issue.message}（读取 ${ms} 毫秒）` : issue.message }
+
 function requestError(cause: any, fallback: string) { return cause?.response?.data?.message || fallback }
 async function refreshRegisteredJobs() { if (!registryLoading.value) await registryResource.load() }
 async function refreshQueue() {
@@ -180,13 +174,13 @@ async function refreshQueue() {
 }
 async function refresh() {
  if (queueFocused.value) { await refreshQueue(); return }
+ void systemLoad.value?.refresh()
  // Queue details and the registered catalogue cannot wait for diagnostics.
  void refreshRegisteredJobs()
- if (!queueLoading.value) void refreshQueue()
  await Promise.all(runtimeViews.filter(resource => !resource.loading.value).map(resource => resource.load()))
 }
 
-function selectQueue(id: string) { if (id === selected.value) return; selected.value = id; offset.value = 0; queueResource.reset(); queueFailure.value = null; void router.replace({ query: { ...route.query, queue: id } }); void refreshQueue() }
+function selectQueue(id: string) { if (id === selected.value && queueFocused.value) return; selected.value = id; offset.value = 0; queueResource.reset(); queueFailure.value = null; void router.replace({ query: { ...route.query, queue: id } }); void refreshQueue() }
 watch(() => route.query.queue, (queue, previousQueue) => {
   if (isKnownQueue(queue)) { runtimeViews.forEach(resource => resource.invalidate()); registryResource.invalidate() }
   if (isKnownQueue(queue) && queue !== selected.value) selectQueue(queue)
@@ -208,8 +202,7 @@ onMounted(() => {
  void refresh()
  timer = setInterval(() => {
   if (document.hidden) return
-  if (!queueLoading.value && queueResource.canAutoRefresh.value) void refreshQueue()
-  if (queueFocused.value) return
+  if (queueFocused.value) { if (!queueLoading.value && queueResource.canAutoRefresh.value) void refreshQueue(); return }
   for (const resource of runtimeViews) if (!resource.loading.value && resource.canAutoRefresh.value) void resource.load()
   if (!registryLoading.value && registryResource.canAutoRefresh.value) void refreshRegisteredJobs()
  }, 15000)
@@ -262,4 +255,8 @@ onBeforeUnmount(() => { clearInterval(timer); runtimeViews.forEach(resource => r
   .registered-row { grid-template-columns: minmax(0, 1fr) auto; }
   .registered-last { grid-column: 1 / -1; }
 }
+</style>
+
+<style scoped>
+.runtime-meta { min-height: 32px; }
 </style>

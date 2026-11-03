@@ -121,6 +121,9 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightRuntimeMetricHistory(db); err != nil {
+		return err
+	}
 	if db != nil && db.Migrator().HasTable("schema_migrations") {
 		var applied int64
 		if err := db.Table("schema_migrations").Where("version=?", accountSubjectVersion).Count(&applied).Error; err != nil {
@@ -402,6 +405,12 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileUserAdminNoteSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileRuntimeHandlerIndex(db); err != nil {
+		return err
+	}
+	if err := reconcileRuntimeMetricHistory(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -470,6 +479,18 @@ func runMigrations(db *gorm.DB) error {
 		}
 		if version == accountSubjectVersion {
 			if err := reconcileAccountSubjectSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == runtimeHandlerIndexVersion {
+			if err := reconcileRuntimeHandlerIndex(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == runtimeMetricHistoryVersion {
+			if err := reconcileRuntimeMetricHistory(db); err != nil {
 				return err
 			}
 			continue

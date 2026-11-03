@@ -124,3 +124,8 @@ const tableStyle = computed(() => {
   return { minWidth: typeof props.minWidth === 'number' ? `${props.minWidth}px` : props.minWidth }
 })
 </script>
+
+<style scoped>
+/* Keep clipped captions and accessible action labels inside the scroll region. */
+.data-table-shell { position: relative; }
+</style>

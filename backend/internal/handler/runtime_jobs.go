@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-sql-driver/mysql"
 	"log"
 	"net/http"
 	"strconv"
@@ -22,6 +23,8 @@ type runtimeQueue = jobs.RuntimeQueueSummary
 type runtimeStatusIssue struct {
 	Section string `json:"section"`
 	Message string `json:"message"`
+	Code    string `json:"code"`
+	Detail  string `json:"detail"`
 }
 
 func (h *handlers) AdminRuntimeRegisteredJobsHandler(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +128,8 @@ func (h *handlers) AdminRuntimeJobsHandler(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		log.Printf("runtime status partial snapshot: section=%s error=%v", section, err)
-		issues = append(issues, runtimeStatusIssue{Section: section, Message: message})
+		code, detail := runtimeStatusError(err)
+		issues = append(issues, runtimeStatusIssue{Section: section, Message: message, Code: code, Detail: detail})
 	}
 	addIssue("queues", "业务队列状态读取失败", queueErr)
 	addIssue("runtime", "事件队列与进程诊断读取失败", diagnosticsErr)
@@ -252,4 +256,19 @@ func (h *handlers) AdminRuntimePublicationRetryHandler(w http.ResponseWriter, r 
 		return
 	}
 	OK(w, map[string]any{"node_id": id, "status": "queued"})
+}
+
+// Return actionable classifications without leaking SQL, DSNs or driver values.
+func runtimeStatusError(err error) (string, string) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout", "读取超过 5 秒，请检查数据库响应与任务历史查询"
+	}
+	var dbErr *mysql.MySQLError
+	if errors.As(err, &dbErr) {
+		if dbErr.Number == 1064 {
+			return "query_incompatible", "数据库查询不兼容（MySQL 1064）"
+		}
+		return "database_error", fmt.Sprintf("数据库读取失败（MySQL %d）", dbErr.Number)
+	}
+	return "read_failed", "读取未完成，请重试并检查服务日志"
 }

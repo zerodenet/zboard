@@ -74,7 +74,7 @@
               <span class="storefront-sku-grid__check"><UiIcon name="check" /></span>
               <div>
                 <strong>{{ sku.name }}</strong>
-                <small :title="billingLabel(sku)">{{ billingLabel(sku) }}</small>
+                <small v-overflow-title="billingLabel(sku)">{{ billingLabel(sku) }}</small>
               </div>
               <b>{{ formatCurrency(sku.price_cents, sku.currency) }}</b>
               <p v-if="mode === 'addon' && sku.grant_traffic_bytes > 0">
@@ -145,6 +145,7 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, ref, watch } from 'vue'
 import type { PlanCatalogItem, PlanSKU, OrderPreview } from '../api/client'
 import { useAppStore } from '../stores/app'
@@ -247,7 +248,7 @@ function renewalEffectLabel(sku: PlanSKU) {
 .storefront-policy-links > strong :deep(.ui-icon) { color: var(--warning); font-size: 17px; }
 .storefront-policy-links p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
 .storefront-policy-links > div { display: grid; gap: 7px; }
-.storefront-policy-links button { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 38px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--primary); font-size: 12px; font-weight: 700; cursor: pointer; text-align: left; }
+.storefront-policy-links button { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 38px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--primary); font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; }
 .storefront-policy-links button:hover { border-color: var(--primary-border); background: var(--primary-soft); }
-.storefront-policy-consent { display: flex; align-items: flex-start; gap: 9px; padding-top: 10px; border-top: 1px solid var(--warning-border); color: var(--text); font-size: 12px; font-weight: 700; line-height: 1.5; cursor: pointer; }
+.storefront-policy-consent { display: flex; align-items: flex-start; gap: 9px; padding-top: 10px; border-top: 1px solid var(--warning-border); color: var(--text); font-size: 12px; font-weight: 600; line-height: 1.5; cursor: pointer; }
 </style>

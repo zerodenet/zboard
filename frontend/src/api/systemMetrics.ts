@@ -1,0 +1,7 @@
+import { authenticatedAPI as api } from './client'
+export interface ResourceUsage { used: number; total: number; available?: number }
+export interface SystemPoint { at: string; cpu_percent: number | null; memory_percent: number | null; disk_percent: number | null; rx_bytes_per_second: number | null; tx_bytes_per_second: number | null }
+export interface SystemSample { at: string; cpu_percent: number | null; cpu_count: number; load_1: number | null; memory: ResourceUsage | null; disk: ResourceUsage | null; process_cpu_cores: number | null; process_rss: number | null; heap_bytes: number; goroutines: number; rx_bytes_per_second: number | null; tx_bytes_per_second: number | null; issues: string[] }
+export interface SystemMetrics { current: SystemSample | null; points: SystemPoint[]; range_minutes: number; sample_seconds: number; resolution_seconds: number; scope: string; history?: { persistent: boolean; state: 'memory' | 'loading' | 'ready' | 'error'; last_saved_at: string | null; pending_minutes: number; error?: string } }
+export async function fetchSystemMetrics(range: number, signal?: AbortSignal): Promise<SystemMetrics> { return (await api.get('/admin/system-metrics', { params: { range }, signal })).data.data }
+export function formatBytes(n: number | null | undefined, decimals = 1) { if (n == null || !Number.isFinite(n)) return '-'; const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']; let v = n, i = 0; while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }; return `${v.toFixed(i ? decimals : 0)} ${units[i]}` }

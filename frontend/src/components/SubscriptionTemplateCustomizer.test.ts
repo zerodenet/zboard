@@ -78,7 +78,7 @@ describe('SubscriptionTemplateCustomizer', () => {
 
     const raw = wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('Raw 模型'))
     await raw?.trigger('mousedown', { button: 0, ctrlKey: false })
-    expect(wrapper.text()).toContain('Raw 模型与可视化双向同步')
+    expect(wrapper.text()).toContain('模板 JSON')
     const rawEditor = wrapper.find('[aria-label="Raw 订阅模板 JSON"]')
     expect(rawEditor.exists()).toBe(true)
     await rawEditor.setValue(JSON.stringify({ ...customization, mode: 'global', system_proxy: false }))

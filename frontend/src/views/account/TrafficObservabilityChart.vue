@@ -3,11 +3,9 @@
     <header class="panel-header observability-header">
       <div>
         <h2 id="traffic-observability-title">使用趋势</h2>
-        <p>按时间查看计费、上下行和连接峰值；移动指针可查看对应时间点详情。</p>
       </div>
       <div class="observability-status">
         <span v-if="hasConnectionSamples">连接峰值按{{ points.some(point => (point.connection_resolution_seconds ?? 0) >= 3600) ? '小时' : '分钟' }}统计</span>
-        <span v-if="recordCount">已汇总 {{ recordCount.toLocaleString('zh-CN') }} 条原始记录</span>
         <span v-if="truncated" class="observability-warning">当前范围数据已截断</span>
         <span v-if="snapshotAvailable && asOf">完整统计时间：<TimeBadge :value="asOf" /></span>
         <UiButton variant="ghost" size="sm" :disabled="loading" @click="emit('refresh')">刷新趋势</UiButton>
@@ -460,7 +458,7 @@ function tooltipSideClass(index: number) {
 
 .observability-warning {
   color: var(--warning);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .observability-loading,
@@ -525,8 +523,8 @@ function tooltipSideClass(index: number) {
 
 .chart-eyebrow {
   color: var(--primary);
-  font-size: 9px;
-  font-weight: 750;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: .12em;
 }
 
@@ -548,7 +546,7 @@ function tooltipSideClass(index: number) {
   color: var(--text);
   background: var(--surface);
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
   transition: opacity .16s ease, border-color .16s ease, background .16s ease;
 }
@@ -616,7 +614,7 @@ function tooltipSideClass(index: number) {
 .chart-grid text,
 .chart-axis-labels text {
   fill: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .traffic-area.used {
@@ -735,7 +733,7 @@ function tooltipSideClass(index: number) {
 
 .tooltip-row b {
   color: var(--text-strong);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .tooltip-key {
@@ -749,7 +747,7 @@ function tooltipSideClass(index: number) {
   padding-top: 7px;
   border-top: 1px solid var(--line-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .connection-summary {
@@ -757,7 +755,7 @@ function tooltipSideClass(index: number) {
   justify-items: end;
   gap: 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .connection-summary strong {

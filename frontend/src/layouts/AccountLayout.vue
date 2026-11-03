@@ -41,5 +41,5 @@ function logout() { app.clear(); router.push('/') }
 <style scoped>
 .account-cleanup-notice { margin-bottom: 20px; }
 .account-logo { display: block; width: auto; max-width: 150px; height: 34px; object-fit: contain; }
-.nav-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 999px; background: var(--danger); color: var(--text-inverse); font-size: 9px; font-weight: 800; }
+.nav-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 999px; background: var(--danger); color: var(--text-inverse); font-size: 11px; font-weight: 600; }
 </style>

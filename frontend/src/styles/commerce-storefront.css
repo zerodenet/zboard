@@ -108,8 +108,8 @@
 
 .storefront-preview__title small {
   color: var(--primary);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight:600;
   letter-spacing: .09em;
   text-transform: uppercase;
 }
@@ -124,8 +124,8 @@
   border-radius: 999px;
   color: var(--success);
   background: var(--success-soft);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight:600;
 }
 
 .storefront-preview__body > p {
@@ -163,8 +163,8 @@
   border-radius: 8px;
   color: var(--text-secondary);
   background: var(--surface-soft);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight:600;
 }
 
 .storefront-hero .storefront-hero__primary {
@@ -173,7 +173,7 @@
   padding-inline: 20px;
   border-radius: 11px;
   font-size: 14px;
-  font-weight: 650;
+  font-weight:600;
   text-decoration: none;
 }
 
@@ -190,7 +190,7 @@
   color: var(--text-strong);
   background: var(--surface);
   font-size: 14px;
-  font-weight: 650;
+  font-weight:600;
   text-decoration: none;
   box-shadow: none;
 }
@@ -209,7 +209,7 @@
   gap: 5px;
   color: var(--primary-strong);
   font-size: 13px;
-  font-weight: 650;
+  font-weight:600;
   text-decoration: none;
   text-underline-offset: 4px;
   transition: color .15s ease;
@@ -270,7 +270,7 @@
   margin: 0 auto;
   color: var(--primary);
   font-size: 12px;
-  font-weight: 700;
+  font-weight:600;
   text-decoration: none;
 }
 
@@ -351,8 +351,8 @@
 
 .storefront-plan-card__header span {
   color: var(--primary);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight:600;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -369,7 +369,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: var(--surface-soft);
-  font-size: 9px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -441,7 +441,7 @@
 
 .storefront-plan-card__unavailable span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .storefront-plan-card__features {
@@ -485,7 +485,7 @@
   color: var(--muted);
   background: transparent;
   font-size: 11px;
-  font-weight: 650;
+  font-weight:600;
 }
 
 .storefront-back:hover {
@@ -533,8 +533,8 @@
 .purchase-checkout__section > header span,
 .purchase-checkout__summary > span {
   color: var(--primary);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight:600;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -588,7 +588,7 @@
 
 .storefront-entitlement-grid span {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .storefront-entitlement-grid strong {
@@ -623,7 +623,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: var(--surface-soft);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .storefront-sku-grid {
@@ -697,7 +697,7 @@
 
 .storefront-sku-grid small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .storefront-sku-grid b {
@@ -709,7 +709,7 @@
   grid-column: 2 / -1;
   margin: 0;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .storefront-empty-specifications {
@@ -757,15 +757,15 @@
 .storefront-order-summary dt,
 .purchase-checkout__summary dt {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .storefront-order-summary dd,
 .purchase-checkout__summary dd {
   max-width: 65%;
   margin: 0;
-  font-size: 10px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight:600;
   text-align: right;
 }
 
@@ -779,7 +779,7 @@
 
 .storefront-order-summary__total span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .storefront-order-summary__total strong {
@@ -831,8 +831,8 @@
   border: 1px solid var(--line);
   border-radius: 50%;
   background: var(--surface);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight:600;
 }
 
 .purchase-checkout__steps .complete,
@@ -899,8 +899,8 @@
 
 .purchase-checkout__product small {
   color: var(--primary);
-  font-size: 9px;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight:600;
   text-transform: uppercase;
 }
 
@@ -912,7 +912,7 @@
 .purchase-checkout__product p {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .purchase-checkout__product > strong {
@@ -947,13 +947,13 @@
 
 .purchase-checkout__details dt {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .purchase-checkout__details dd {
   margin: 0;
   font-size: 11px;
-  font-weight: 650;
+  font-weight:600;
 }
 
 .purchase-checkout__summary {
@@ -976,7 +976,7 @@
 .purchase-checkout__summary > p {
   margin: 0;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.6;
   text-align: center;
 }

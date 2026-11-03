@@ -1,13 +1,12 @@
 <template>
   <article class="config-row" :aria-labelledby="labelID">
     <div class="config-copy">
-      <div><strong :id="labelID">{{ config.name }}</strong><span class="value-type">{{ controlLabel }}</span><StatusBadge v-if="dirty" tone="warning" icon="edit">已修改</StatusBadge></div>
-      <div class="config-meta"><code>{{ config.config_key }}</code><StatusBadge tone="neutral" icon="history">版本 {{ config.revision }}</StatusBadge><TimeBadge :value="config.updated_at" mode="relative" /></div>
-      <p :id="descriptionID">{{ config.description || '暂无说明' }}</p>
+      <div><strong :id="labelID">{{ config.name }}</strong><StatusBadge v-if="dirty" tone="warning" icon="edit">已修改</StatusBadge></div>
+      <p v-if="config.description" :id="descriptionID">{{ config.description }}</p>
+      <details class="config-meta"><summary :aria-label="`${config.name}的技术信息`">技术信息</summary><div><code>{{ config.config_key }}</code><span>{{ controlLabel }}</span><span>版本 {{ config.revision }}</span><TimeBadge :value="config.updated_at" mode="relative" /></div></details>
     </div>
     <div class="config-control">
       <label v-if="input.control === 'switch'" class="config-switch">
-        <span>{{ draft ? '已启用' : '已关闭' }}</span>
         <UiSwitch v-bind="controlAttrs" :model-value="Boolean(draft)" @update:model-value="emit('update:draft', $event)" />
       </label>
       <UiSelect v-else-if="input.control === 'select'" v-bind="controlAttrs" class="config-input" :options="input.options || []" :model-value="draft as any" :placeholder="placeholder" @update:model-value="emit('update:draft', $event)" />
@@ -55,7 +54,7 @@ const inputType = computed(() => input.value.control === 'password' ? 'password'
 const controlAttrs = computed(() => ({
   id: `${props.config.config_key}-control`,
   'aria-labelledby': labelID.value,
-  'aria-describedby': [descriptionID.value, props.error ? errorID.value : ''].filter(Boolean).join(' '),
+  'aria-describedby': [props.config.description ? descriptionID.value : '', props.error ? errorID.value : ''].filter(Boolean).join(' ') || undefined,
   'aria-invalid': props.error ? 'true' : undefined,
   required: input.value.required || undefined,
 }))
@@ -66,6 +65,22 @@ watch(() => props.config.value, value => {
 </script>
 
 <style scoped>
-.config-row { display: grid; grid-template-columns: minmax(240px,1fr) minmax(220px,.7fr) auto; align-items: center; gap: 16px; padding: 14px 16px; }.config-row+.config-row { border-top: 1px solid var(--line); }.config-copy>div { display: flex; align-items: center; gap: 8px; }.config-copy strong { font-size: 11px; }.value-type { padding: 2px 5px; border-radius: 4px; color: var(--primary); background: var(--primary-soft); font-size: 8px; font-weight: 700; }.config-meta { flex-wrap: wrap; margin-top: 4px; }.config-copy code { color: var(--code-text); font-size: 9px; }.config-copy p { margin: 4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }.config-control { min-width: 0; display: grid; gap: 5px; }.config-switch { display: flex; align-items: center; justify-content: flex-end; gap: 9px; color: var(--muted); font-size: 10px; }.config-textarea { min-height: 92px; resize: vertical; }.config-json { font-family: var(--font-mono); font-size: 10px; }.config-error { display: flex; align-items: flex-start; gap: 4px; color: var(--danger); font-size: 10px; line-height: 1.4; }.config-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
-@media(max-width:850px){.config-row{grid-template-columns:1fr auto}.config-control{grid-column:1 / -1}.config-copy{min-width:0}.config-switch{justify-content:flex-start}}
+.config-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, .7fr) auto; align-items: center; gap: 16px; padding: 14px 16px; }
+.config-row + .config-row { border-top: 1px solid var(--line); }
+.config-copy { min-width: 0; }
+.config-copy > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.config-copy strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.config-copy p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.config-meta { margin-top: 4px; color: var(--muted-foreground); font-size: 12px; }
+.config-meta summary { width: fit-content; cursor: pointer; }
+.config-meta summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.config-meta > div { display: flex; flex-wrap: wrap; gap: 6px 10px; padding-top: 6px; }
+.config-meta code { overflow-wrap: anywhere; }
+.config-control { min-width: 0; display: grid; gap: 5px; }
+.config-switch { display: flex; align-items: center; justify-content: flex-end; }
+.config-textarea { min-height: 92px; resize: vertical; }
+.config-json { font-family: var(--font-mono); font-size: 12px; }
+.config-error { display: flex; align-items: flex-start; gap: 4px; color: var(--destructive); font-size: 12px; line-height: 1.4; }
+.config-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+@media (max-width: 850px) { .config-row { grid-template-columns: minmax(0, 1fr) auto; } .config-control { grid-column: 1 / -1; grid-row: 2; } .config-switch { justify-content: flex-start; } }
 </style>

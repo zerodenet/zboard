@@ -3,7 +3,7 @@
     <FormField v-slot="{ controlAttrs }" label="币种" name="admin-wallet-currency"><UiInput v-model="currencyInput" v-bind="controlAttrs" maxlength="16" :disabled="saving" /></FormField>
     <UiButton variant="secondary" :disabled="saving || loading" @click="applyCurrency">核对余额</UiButton>
     <PageAlert v-if="error || writeError" tone="danger">{{ error || writeError }}</PageAlert>
-    <p v-if="loading" role="status">正在核对余额与扣减记录…</p>
+    <p v-if="loading && !data" role="status">正在核对余额与扣减记录…</p>
     <div v-if="data" :key="`${actor}:${userId}:${currency}`" class="stack">
       <BalanceSummary :balance="data.wallet" />
       <form data-test="debit" @submit.prevent="debit">

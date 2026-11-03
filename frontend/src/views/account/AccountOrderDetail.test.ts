@@ -35,7 +35,7 @@ describe('account order detail payment ownership', () => {
     vi.mocked(fetchAccountOrder).mockResolvedValue(order(27, status))
     const { wrapper } = await open('/account/orders/27?payment_plugin=example.plugin')
     expect(wrapper.find('order-funding-payment-stub').exists()).toBe(false)
-    expect(wrapper.text()).toContain(status === 'paid' ? '本站已确认' : '不可继续支付')
+    expect(wrapper.text()).toContain(status === 'paid' ? '已支付' : '已取消')
     wrapper.unmount()
   })
   it('retains generic return hints only for the current order and removes payment after host settlement', async () => {

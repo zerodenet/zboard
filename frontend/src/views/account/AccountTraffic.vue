@@ -15,24 +15,22 @@
         label="剩余可用"
         :value="summaryLoaded && !summaryError ? formatBytes(summary.remaining_bytes) : '—'"
         icon="activity"
-        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '可用'"
+        :status="!summaryLoaded && summaryLoading ? '加载中' : summaryError ? '读取失败' : ''"
         tone="info"
-        meta="当前有效订阅汇总"
       />
       <MetricCard
         label="累计使用"
         :value="summaryLoaded && !summaryError ? formatBytes(summary.total_used_bytes) : '—'"
         icon="database"
-        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '历史'"
+        :status="!summaryLoaded && summaryLoading ? '加载中' : summaryError ? '读取失败' : ''"
         tone="info"
         icon-tone="success"
-        meta="历史计费流量"
       />
       <MetricCard
         label="今日使用"
         :value="summaryLoaded && !summaryError ? formatBytes(summary.used_bytes_today) : '—'"
         icon="clock"
-        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '今日'"
+        :status="!summaryLoaded && summaryLoading ? '加载中' : summaryError ? '读取失败' : ''"
         tone="info"
         icon-tone="warning"
       >
@@ -42,9 +40,9 @@
         label="最高连接数"
         :value="observabilityError || observability.peak_connections === null ? '—' : observability.peak_connections.toLocaleString('zh-CN')"
         icon="activity"
-        :status="observabilityLoading ? '加载中' : observabilityError ? '读取失败' : observabilityProjectionPending ? '统计更新中' : observability.peak_connections === null ? '未采集' : '区间峰值'"
+        :status="!observabilityLoaded && observabilityLoading ? '加载中' : observabilityError ? '读取失败' : observabilityProjectionPending ? '统计更新中' : observability.peak_connections === null ? '未采集' : ''"
         tone="info"
-        :meta="observabilityLoading ? '正在读取连接观测' : observabilityError ? '连接观测读取失败' : observabilityProjectionPending ? observabilitySnapshotAvailable ? '上次完整统计的区间峰值，当前统计正在更新' : '当前范围统计未知，正在等待更新' : observability.peak_connections === null ? '当前范围暂无连接观测；旧版内核会保持未采集状态' : '取筛选范围内的最高并发值'"
+        :meta="observabilityLoading ? '正在读取连接观测' : observabilityError ? '连接观测读取失败' : observabilityProjectionPending ? observabilitySnapshotAvailable ? '上次完整统计的区间峰值，当前统计正在更新' : '当前范围统计未知，正在等待更新' : ''"
       />
     </UiMetricStrip>
 
@@ -65,8 +63,8 @@
     <NodeTrafficChart v-else :data="nodeSeries" :loading="nodeSeriesLoading || !nodeSeriesLoaded" />
 
     <PageAlert v-if="statisticsError" tone="danger" title="流量区间统计加载失败">{{ statisticsError }} <UiButton variant="secondary" @click="recordStatistics.load()">重试区间统计</UiButton></PageAlert>
-    <p v-else-if="statisticsLoading" role="status">正在计算流量区间统计…</p>
-    <p v-if="statisticsReady && statisticsData" class="muted">区间统计时间：<TimeBadge :value="statisticsData.as_of" />（翻页不刷新统计）<UiButton variant="ghost" size="sm" :disabled="statisticsLoading" @click="recordStatistics.load()">刷新区间统计</UiButton></p>
+    <p v-else-if="statisticsLoading && !statisticsData" role="status">正在计算流量区间统计…</p>
+    <p v-if="statisticsReady && statisticsData" class="muted">区间统计时间：<TimeBadge :value="statisticsData.as_of" /><UiButton variant="ghost" size="sm" :disabled="statisticsLoading" @click="recordStatistics.load()">刷新区间统计</UiButton></p>
 
     <DataWorkbench :total="total" :loading="recordLoading" :refreshing="refreshing">
       <template #filters>
@@ -86,7 +84,6 @@
       </template>
 
       <PageAlert v-if="recordError" tone="danger" title="流量记录加载失败">{{ recordError }} <UiButton variant="secondary" @click="loadRecords()">重试记录</UiButton></PageAlert>
-      <p v-if="recordLoading && !records.length" role="status">正在加载流量记录…</p>
       <TableSkeleton v-if="recordLoading && !records.length" label="正在加载流量使用明细" :columns="8" />
       <DataTable v-else-if="records.length" :caption="`我的流量使用明细（按${bucketLabel}聚合）`" :row-count="total" :min-width="920">
         <thead>
@@ -148,13 +145,7 @@
       </template>
     </DataWorkbench>
 
-    <aside class="account-notice">
-      <UiIcon name="activity" />
-      <div>
-        <strong>流量明细如何计算？</strong>
-        <p>明细由服务端按照时间粒度、节点、订阅和实际计费倍率汇总；原始计费记录仍保留用于计费、审计与对账。节点趋势直接从同一批原始计费事实按时间与节点计算，不额外生成统计记录。连接峰值来自 ZBoard 已接受的 Principal 当前态观测，并按所选日期范围聚合；旧版内核没有观测时保持未采集。</p>
-      </div>
-    </aside>
+
   </section>
 </template>
 

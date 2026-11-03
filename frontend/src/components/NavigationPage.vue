@@ -5,9 +5,9 @@
     <h1>{{ title }}</h1>
     <p>{{ description }}</p>
     <div class="navigation-state-actions">
-      <RouterLink v-if="failure === 'session-expired'" class="button" :to="{ path: '/login', query: { redirect: route.fullPath, reason: 'session-expired' } }">重新登录</RouterLink>
+      <UiButton v-if="failure === 'session-expired'" as-child><RouterLink :to="{ path: '/login', query: { redirect: route.fullPath, reason: 'session-expired' } }">重新登录</RouterLink></UiButton>
       <UiButton v-else variant="secondary" :loading="retrying" @click="$emit('retry')">{{ error && failure !== 'forbidden' ? '重试' : '重新检查授权' }}</UiButton>
-      <RouterLink class="button button-ghost" :to="route.path.startsWith('/admin') ? '/account' : '/'">{{ route.path.startsWith('/admin') ? '返回个人中心' : '返回首页' }}</RouterLink>
+      <UiButton as-child variant="ghost"><RouterLink  :to="route.path.startsWith('/admin') ? '/account' : '/'">{{ route.path.startsWith('/admin') ? '返回个人中心' : '返回首页' }}</RouterLink></UiButton>
     </div>
   </section>
   <slot v-else />

@@ -22,6 +22,11 @@ fixtures no longer install PrimeVue, and it is absent from the package manifest.
 - Use `UiSelect` for finite options and `UiAutocomplete` for remote choices.
   They use Reka keyboard, focus, and overlay behavior. Keep remote query state
   in the owning lookup component.
+  A filter commits only an explicit choice or clear action. Cancelling an
+  unfinished keyword with Escape, blur or a closed popover retains its applied
+  value. `UiAutocomplete` distinguishes explicit clears from unselected drafts;
+  form lookups keep their existing forced-selection validation. Node/group
+  lookups opt into `preserveSelectionOnCancel` when used inside filters.
 - Use `ModalDialog` for short forms and `DetailDrawer` for complex details.
   Both use Reka modal focus management. `ModalDialog` keeps dirty-form
   confirmation and explicit focus return.
@@ -76,17 +81,32 @@ fixtures no longer install PrimeVue, and it is absent from the package manifest.
   IDs in the URL. Put technical scope and granularity controls in advanced
   filters; never silently drop an invalid or unavailable saved ID.
 - Use `notify` for short operation feedback and `PageAlert` for page-level
-  failures. Field validation stays at the field. Destructive operations use
+  failures. A repeated title/message is shown once; distinct failure reasons and
+  recovery actions remain visible. Title-only alerts reserve no blank description.
+  Field validation stays at the field. Destructive operations use
   `confirmAction` and `ConfirmDialog`.
 
 Avoid page-local control styles, `window.confirm()`, decorative shadows,
 hover scaling, and ordinary text in the brand color.
+
+Setting rows show the named control and optional description, without an
+additional on/off label or control-type badge. Keys, types, revisions and update
+times belong in the closed technical-information disclosure. Do not render
+“no description” placeholders. Keep conflicts and actionable errors visible.
+
+Use at least 12px for descriptions, errors and lookup candidates; compact
+metadata and chart axes may use 11px. Do not fit desktop content by shrinking
+text to 8–10px. Adapt layout and wrap long values instead.
 
 For teleported Reka popovers with scoped styles, use `PopoverContent as-child`
 around a native styled content element. A scoped class on the Reka component
 alone may not reach the teleported DOM. Verify computed styles in the browser,
 including long unbroken text, available viewport width/height and scrolling;
 the presence of a CSS rule in source is not visual acceptance.
+The same viewport bounds apply to tooltips, select lists, autocomplete results
+and action menus. Clamp their minimum width as well as maximum width, wrap long
+unbroken values, and scroll inside the available height. Test both dark mode
+and a narrow viewport.
 
 Filter toolbars follow the project's Stripe-style capsule pattern. Suggested
 conditions use dashed capsule triggers; active conditions show the selected
@@ -96,3 +116,60 @@ this distinct from ordinary forms, where the standard input and button apply.
 Do not replace capsule filters with rectangular secondary buttons or impose
 ordinary button dimensions on them. Sharing code alone does not establish
 Stripe design compliance.
+
+Independent list fields may use a focused popover editor when a narrow mutation
+API exists. Keep the read value aligned with its header; numeric sort icons go
+before the label so the label and value share the same trailing edge. Click the
+value to edit, focus/select the input, explicitly save or cancel, and restore
+trigger focus on Escape. Do not save on blur or replace a full resource payload.
+Reject invalid precision rather than silently rounding a billing value; retain
+the draft and concrete error on failed saves. Disable duplicate pending writes
+and reject late results after target, identity or permission changes.
+
+`ProtocolMultiplierCell` uses the multiplier-only API for direct protocols.
+Forward-entry multipliers are plain read-only text, without an editor, focus
+stop or pointer action. Editing the parent protocol refreshes its related entry
+rows without confusing their separate ID spaces.
+For tables with 600px or less available width, action columns stop being sticky
+so they cannot cover neighboring editable fields after horizontal scrolling.
+
+Runtime charts use the shared section icon and compact segmented time-range
+control. Keep percentage and network units on separate axes, a single vertical
+inspection panel and aligned values. Use the component's available width for
+layout. Keep chart axes and metadata at least 11px; never gain density by
+shrinking text to 8–10px. Unknown samples break both lines and fills. Pointer,
+touch and keyboard inspection must use the same timestamp across all series,
+remain inside the chart and survive refresh without jumping to a newer point.
+
+Administrative task targets show recognizable business identity directly: user
+email first with an optional administrator note; node, protocol and group names;
+subscription names with owner/plan information. Resolve only the requested page
+in bounded batches. Do not make users read raw IDs or ORM names such as TaskItem
+in the primary result column. Keep identifiers in closed technical details.
+Deleted entities remain in task results with an explicit missing state; a failed
+or unavailable lookup is not evidence of deletion. Avoid new retained copies of
+personal data purely for display.
+
+
+A table status cell shows one primary business result. Keep history, review and
+retry controls in the fixed action column, never between status labels. Separate
+independent states (such as subscription validity and automatic renewal) into
+named columns; show only actionable exceptions for secondary processes. Do not
+repeat a badge as adjacent explanatory text. Details belong in the relevant
+record or editor, not an always-visible paragraph.
+
+Task list, detail drawer and task tray use the same status projection. A finished
+email task does not prove delivery: show server acknowledgment as submitted,
+unresolved acknowledgment as needs review, and suppressed reminders as canceled.
+Old records without acknowledgment remain unrecorded. Only offer review after
+the execution lease is no longer live; review never sends a message. Pending
+review must not offer an unconditional retry.
+
+
+Console checks cover routed account pages as well as admin pages. Plain
+attributes (protocol format, provider capabilities and billing method) are not
+states and do not need status badges. Keep routine metric icons neutral and
+omit empty description containers; reserve badge space only when a badge is
+present. Use the same 400/500/600 weight scale in shared components and page
+styles. Password confirmation errors belong at the confirmation field, while
+server failures remain beside the form.

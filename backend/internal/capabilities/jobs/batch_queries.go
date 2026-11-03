@@ -11,26 +11,31 @@ var ErrBatchNotFound = errors.New("task not found")
 var ErrBatchQuery = errors.New("invalid task query")
 
 type BatchItem struct {
-	DeliveryState string     `json:"delivery_state,omitempty"`
-	ID            uint       `json:"id"`
-	TaskID        uint       `json:"task_id"`
-	TargetType    string     `json:"target_type"`
-	TargetID      string     `json:"target_id"`
-	Payload       string     `json:"payload"`
-	Status        int16      `json:"status"`
-	Attempts      int        `json:"attempts"`
-	Error         string     `json:"error"`
-	StartedAt     *time.Time `json:"started_at"`
-	FinishedAt    *time.Time `json:"finished_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	TargetName        string     `json:"target_name,omitempty"`
+	TargetDescription string     `json:"target_description,omitempty"`
+	TargetMissing     bool       `json:"target_missing,omitempty"`
+	DeliveryState     string     `json:"delivery_state,omitempty"`
+	ID                uint       `json:"id"`
+	TaskID            uint       `json:"task_id"`
+	TargetType        string     `json:"target_type"`
+	TargetID          string     `json:"target_id"`
+	Payload           string     `json:"payload"`
+	Status            int16      `json:"status"`
+	Attempts          int        `json:"attempts"`
+	Error             string     `json:"error"`
+	StartedAt         *time.Time `json:"started_at"`
+	FinishedAt        *time.Time `json:"finished_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 type BatchView struct {
 	BatchReceipt
-	PendingCount   int64 `json:"pending_count"`
-	RunningCount   int64 `json:"running_count"`
-	SucceededCount int64 `json:"succeeded_count"`
-	FailedCount    int64 `json:"failed_count"`
+	PendingCount     int64 `json:"pending_count"`
+	RunningCount     int64 `json:"running_count"`
+	SucceededCount   int64 `json:"succeeded_count"`
+	FailedCount      int64 `json:"failed_count"`
+	NeedsReviewCount int64 `json:"needs_review_count"`
+	SuppressedCount  int64 `json:"suppressed_count"`
 }
 type BatchDetail struct {
 	BatchView

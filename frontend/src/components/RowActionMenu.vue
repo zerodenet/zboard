@@ -12,7 +12,7 @@
       ><UiIcon name="more" /></UiButton></Tooltip>
     </DropdownMenuTrigger>
     <DropdownMenuPortal>
-      <DropdownMenuContent class="ui-dropdown-content" align="end" :side-offset="5" @close-auto-focus="restoreFocus">
+      <DropdownMenuContent class="ui-dropdown-content" align="end" :side-offset="5" :collision-padding="16" @close-auto-focus="restoreFocus">
         <RowActionItems :actions="actions" />
       </DropdownMenuContent>
     </DropdownMenuPortal>

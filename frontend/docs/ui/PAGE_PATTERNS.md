@@ -49,6 +49,10 @@ Quiet timestamps may occupy a reserved metadata slot. Background refresh must
 retain existing rows and must not insert a loading paragraph above them. Reset
 the reader only when its query scope changes; failed refreshes retain the last
 successful result and expose a retry next to that result.
+Noncompact read-status components announce routine background refreshes to
+assistive technology without inserting a visible row. Use the compact variant
+when a page needs a persistent visible timestamp. First loads and failures
+remain visible; errors must never turn into a successful empty state.
 
 The node asset page is the reference data flow: it has search and filters,
 selection, table status, detail drawer, edit forms, destructive confirmation,
@@ -67,6 +71,13 @@ is determined (including protected, disabled and permanent accounts). Do not rep
 the retention policy beneath every date. A due date or eligible state is red;
 protected and disabled accounts are not overdue. Never label a queued account
 as deletion in progress without an actual execution state.
+
+The account-centre cleanup notice is targeted, not a platform policy broadcast.
+Show it only for enabled `scheduled` or `eligible` states. Administrators skip
+this read entirely; protected accounts and users with valid subscriptions see no
+notice, even when a possible future deadline exists. A failed refresh retains a
+known countdown and a retry action; an unread or previously unaffected account
+must not be presented as at risk without an authoritative matching state.
 
 In the user list, show zero and unavailable balances as `-` while preserving
 their different meanings in accessible labels. Keep nonzero amounts and
@@ -105,9 +116,44 @@ the shared menu and protocol telemetry in a collapsed section. Credential
 generation, rotation and revocation keep their existing confirmation and
 subscription-isolation rules.
 
+## Plugin lists
+
+The market and installed-plugin lists use the same capsule search and filters,
+with selected conditions retained in the URL. Plugin names open details through
+real links. Keep enable/disable, configuration and uninstall actions separate;
+installation compatibility and signature checks remain in the install flow.
+
 ## Verification
 
 Review at 1920, 1440, 1280, 1024, and 768 px. Check normal, empty, loading,
 refreshing, failed, forbidden, long text, and high-volume states. Verify
 Tab, Shift+Tab, Enter, Space, Escape, and arrow-key paths for every overlay.
 Build and type checks are necessary but do not replace this page review.
+
+Plugin lists use the available workspace width. Long card names remain real
+links with a title only when clipped; descriptions use measured `TableText`
+expansion instead of stretching every card to fit an entire document.
+
+## Account centre
+
+Use the real `AccountLayout` when reviewing customer pages, with its navigation,
+content width and responsive table containers. A shared-component fixture alone
+does not establish page-level compliance. Review overview, plans, orders and
+order detail, wallet, subscription access, traffic, announcements, tickets,
+security and integration credentials separately.
+
+Use `account-section-body` for padded content and `account-form` for short forms
+(maximum 480 px). Group nearby actions in `account-form-actions`; do not place
+bare controls directly below a section header. Wallet summary and top-up share
+a desktop row and stack on mobile. Currency selection is compact; ledger amounts
+identify currency once in the header, keep exact minor-unit formatting and retain
+zero transactions. Keep business and amount visible on small screens; move
+auxiliary columns behind the existing column toggle and prevent sticky actions
+from covering financial values. Do not change checkout intent, idempotency,
+credential, password or payment-confirmation contracts for presentation.
+
+Routine successful state needs no explanatory banner. Subscription links are
+shown once with nearby quota/expiry and copy action; keep technical options
+collapsed. Announcement content stays flat, readable and without decorative
+rank numbers or shadows. Connection instructions for integrations are opt-in;
+one-time secret handling and revocation consequences stay explicit.

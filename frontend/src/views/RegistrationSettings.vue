@@ -41,20 +41,7 @@
         </UiSection>
       </div>
 
-      <UiSection title="注册流程与通知" description="验证码负责证明邮箱可用；欢迎通知是注册成功后进入持久化任务队列的另一条链路。">
-        <div class="registration-flow" aria-label="注册处理流程">
-          <div><span>1</span><strong>开放注册入口</strong><small>决定访客是否可以提交注册</small></div>
-          <UiIcon name="chevron" />
-          <div><span>2</span><strong>完成身份验证</strong><small>{{ verificationEnabled ? '邮箱验证码验证通过' : '当前不要求额外验证' }}</small></div>
-          <UiIcon name="chevron" />
-          <div><span>3</span><strong>创建用户</strong><small>账号事实写入用户资源</small></div>
-          <UiIcon name="chevron" />
-          <div><span>4</span><strong>排队欢迎通知</strong><small>仅在下方模板启用时创建邮件任务</small></div>
-        </div>
-        <PageAlert tone="info" title="验证码邮件与欢迎通知不是同一件事">验证码在注册前同步发送；欢迎通知在注册成功后创建可重试任务，可在“运营任务”查看数量、进度和结果。</PageAlert>
-      </UiSection>
-
-      <UiSection title="注册成功通知" description="这是系统注册触发器的唯一模板。启用后每个成功注册会创建一条欢迎邮件任务；停用不影响验证码。">
+      <UiSection title="注册成功通知" description="用户注册成功后自动发送，停用不影响验证码。">
         <EmailTemplateManager mode="registration" @dirty="templateDirty = $event" />
       </UiSection>
     </SettingsPageLayout>

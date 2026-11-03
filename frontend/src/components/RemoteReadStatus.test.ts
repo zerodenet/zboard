@@ -29,6 +29,8 @@ it('keeps successful reads quiet while retaining refresh, failure and permission
   expect(wrapper.find('[role="status"]').exists()).toBe(false)
   await wrapper.setProps({ phase: 'refreshing' })
   expect(wrapper.text()).toContain('更新中，显示上次结果')
+  expect(wrapper.find('.remote-read-status').exists()).toBe(false)
+  expect(wrapper.get('[role="status"]').classes()).toContain('sr-only')
   await wrapper.setProps({ phase: 'stale', error: '连接中断' })
   expect(wrapper.text()).toContain('连接中断')
   await wrapper.get('button').trigger('click')

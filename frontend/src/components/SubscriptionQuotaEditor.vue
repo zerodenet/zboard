@@ -1,7 +1,7 @@
 <template>
   <form ref="formElement" class="stack" aria-label="编辑订阅流量" novalidate @submit.prevent="save">
     <PageAlert v-if="formErrors.formError.value" tone="danger" title="流量修改失败">{{ formErrors.formError.value }}</PageAlert>
-    <PageAlert v-if="success" tone="success" title="流量参数已保存">订阅授权已重新检查，节点同步已排队。</PageAlert>
+    <TransientFeedback :success="success ? '流量参数已保存。' : ''" />
     <FormField v-slot="{ controlAttrs }" label="当前周期配额" name="subscription-quota" :error="fields.flow_total" hint="包含本周期额外购买的流量，单位 GiB。">
       <ByteSizeInput v-model="total" v-bind="controlAttrs" :min-bytes="0" :max-bytes="Number.MAX_SAFE_INTEGER" :disabled="saving" />
     </FormField>
@@ -25,6 +25,7 @@ import { updateSubscriptionQuota, type AdminSubscriptionDetail } from '../api/cl
 import ByteSizeInput from './ByteSizeInput.vue'
 import FormField from './FormField.vue'
 import PageAlert from './PageAlert.vue'
+import TransientFeedback from './TransientFeedback.vue'
 import UiButton from './UiButton.vue'
 import UiTextarea from './UiTextarea.vue'
 import { formatBytes } from '../utils/format'

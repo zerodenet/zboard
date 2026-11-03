@@ -1,7 +1,7 @@
 <template>
   <section class="account-page stack">
     <PageHeader
-      :title="`你好，${app.user.email}`"
+      title="我的概览"
     >
       <template #actions>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="load">
@@ -18,60 +18,54 @@
         label="剩余流量"
         :value="quotaLoaded ? formatBytes(quota.remaining_bytes) : '—'"
         icon="activity"
-        :status="quotaLoading ? (quotaLoaded ? '更新中' : '加载中') : quotaError ? '更新失败' : '可用'"
-        tone="info"
-        :meta="quotaLoaded ? (quotaError ? '上次成功读取的可用流量' : '全部有效订阅的可用流量合计') : quotaError ? '尚未取得额度' : '正在读取订阅额度'"
+        :loading="!quotaLoaded && quotaLoading"
+        :tone="quotaError ? 'danger' : 'neutral'"
+        :meta="quotaError ? (quotaLoaded ? '上次成功读取的可用流量' : '尚未取得额度') : ''"
       />
       <MetricCard
         label="有效订阅"
         :value="activeLoaded ? activeSubscriptionTotal : '—'"
         icon="plans"
-        :status="activeLoading ? '加载中' : activeError ? '读取失败' : '有效期内'"
-        :tone="activeSubscriptionTotal ? 'success' : 'neutral'"
-        icon-tone="success"
-        meta="仅加载最近 3 条"
+        :loading="!activeLoaded && activeLoading"
+        :tone="activeError ? 'danger' : 'neutral'"
+
       />
       <MetricCard
         label="待处理订单"
         :value="pendingLoaded ? pendingOrderTotal : '—'"
         icon="billing"
-        :status="pendingLoading ? '加载中' : pendingError ? '读取失败' : '待支付'"
-        :tone="pendingOrderTotal ? 'warning' : 'neutral'"
-        icon-tone="warning"
-        meta="按当前用户完整统计"
+        :loading="!pendingLoaded && pendingLoading"
+        :tone="pendingError ? 'danger' : 'neutral'"
+
       />
     </UiMetricStrip>
 
     <PluginSlot name="account.overview.cards" surface="account" />
 
-    <div class="section-grid">
-      <UiSection class="span-8" title="当前订阅" description="最近三条有效服务及其配额和到期状态。">
+    <div class="section-grid account-overview-grid">
+      <UiSection class="span-8" title="当前订阅">
         <template #actions>
-          <RouterLink class="button button-ghost button-sm" to="/account/subscription">
+          <UiButton as-child variant="ghost" size="sm"><RouterLink  to="/account/subscription">
             管理订阅<UiIcon name="chevron" />
-          </RouterLink>
+          </RouterLink></UiButton>
         </template>
         <PageAlert v-if="activeError" tone="danger" title="有效订阅加载失败">{{ activeError }} <UiButton variant="secondary" @click="activeResource.load()">重试订阅</UiButton></PageAlert>
-        <p v-if="activeLoading" role="status">正在加载有效订阅…</p>
+        <TableSkeleton v-if="activeLoading && !activeLoaded" label="正在加载有效订阅" :columns="3" :rows="3" />
         <DataTable v-if="activeSubscriptions.length" caption="最近三条有效订阅" :row-count="activeSubscriptionTotal" :min-width="620">
           <thead>
             <tr>
               <th class="table-primary-column">订阅</th>
-              <th>套餐</th>
-              <th>剩余流量</th>
+              <th class="numeric-column">剩余流量</th>
               <th data-column-priority="1">到期时间</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="sub in activeSubscriptions" :key="sub.id">
-              <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
-              <td>
-                <div class="cell-title cell-related">
-                  <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
-                  <TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" />
-                </div>
-              </td>
-              <td class="value-cell"><strong>{{ formatBytes(remaining(sub)) }}</strong><div v-if="sub.flow_used >= sub.flow_total"><small>本周期流量已用完</small><RouterLink v-if="sub.can_reset" class="button button-ghost button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></div></td>
+              <td class="table-primary-column"><div class="cell-related">
+                <RouterLink v-overflow-title="sub.plan_name" :to="{ path: '/account/subscription', query: { subscription: String(sub.id) } }">{{ sub.plan_name || `订阅 #${sub.id}` }}</RouterLink>
+                <TableText v-if="sub.sku_name" :value="sub.sku_name" />
+              </div></td>
+              <td class="value-cell numeric-column"><strong>{{ formatBytes(remaining(sub)) }}</strong><div v-if="sub.flow_used >= sub.flow_total"><small>本周期流量已用完</small><UiButton v-if="sub.can_reset" as-child variant="ghost" size="sm"><RouterLink  :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton></div></td>
               <td data-column-priority="1"><TimeBadge :value="sub.end_at" mode="relative" /></td>
             </tr>
           </tbody>
@@ -82,47 +76,47 @@
           title="还没有有效订阅"
           description="选择一个套餐并创建订单，订单确认后即可获得订阅服务。"
         >
-          <template #actions><RouterLink class="button button-sm" to="/account/plans">选择套餐</RouterLink></template>
+          <template #actions><UiButton as-child size="sm"><RouterLink  to="/account/plans">选择套餐</RouterLink></UiButton></template>
         </EmptyState>
       </UiSection>
 
-      <UiSection class="span-4" title="快捷操作" description="常用入口集中在这里。">
+      <UiSection class="span-4" title="快捷操作">
         <div class="panel-body quick-links">
-          <RouterLink to="/account/plans"><span><UiIcon name="plans" /></span><div><strong>购买套餐</strong><small>浏览可售规格</small></div><UiIcon name="chevron" /></RouterLink>
-          <RouterLink to="/account/subscription"><span><UiIcon name="key" /></span><div><strong>订阅配置</strong><small>生成或复制链接</small></div><UiIcon name="chevron" /></RouterLink>
-          <RouterLink to="/account/traffic"><span><UiIcon name="activity" /></span><div><strong>流量明细</strong><small>查看每条使用记录</small></div><UiIcon name="chevron" /></RouterLink>
+          <RouterLink to="/account/plans"><span><UiIcon name="plans" /></span><div><strong>购买套餐</strong></div><UiIcon name="chevron" /></RouterLink>
+          <RouterLink to="/account/subscription"><span><UiIcon name="key" /></span><div><strong>订阅配置</strong></div><UiIcon name="chevron" /></RouterLink>
+          <RouterLink to="/account/traffic"><span><UiIcon name="activity" /></span><div><strong>流量明细</strong></div><UiIcon name="chevron" /></RouterLink>
         </div>
       </UiSection>
     </div>
 
-    <UiSection title="最近订单" description="最近三笔订单的处理状态。">
+    <UiSection title="最近订单">
       <template #actions>
-        <RouterLink class="button button-ghost button-sm" to="/account/orders">
+        <UiButton as-child variant="ghost" size="sm"><RouterLink  to="/account/orders">
           全部订单<UiIcon name="chevron" />
-        </RouterLink>
+        </RouterLink></UiButton>
       </template>
       <PageAlert v-if="ordersError" tone="danger" title="最近订单加载失败">{{ ordersError }} <UiButton variant="secondary" @click="ordersResource.load()">重试最近订单</UiButton></PageAlert>
-      <p v-if="ordersLoading" role="status">正在加载最近订单…</p>
+      <TableSkeleton v-if="ordersLoading && !ordersLoaded" label="正在加载最近订单" :columns="4" :rows="3" />
       <DataTable v-if="orders.length" caption="最近三笔订单" :row-count="recentOrderTotal" :min-width="680">
         <thead>
           <tr>
             <th class="table-primary-column">订单</th>
             <th>商品</th>
-            <th>金额</th>
+            <th class="numeric-column">金额</th>
             <th>状态</th>
             <th data-column-priority="2">创建时间</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="order in orders" :key="order.id">
-            <td class="table-primary-column">#{{ order.id }}</td>
+            <td class="table-primary-column"><RouterLink :to="`/account/orders/${order.id}`">#{{ order.id }}</RouterLink></td>
             <td>
               <div class="cell-title cell-related">
                 <TableText :value="order.plan_name || `套餐 #${order.plan_id}`" />
                 <TableText :value="order.sku_name || `SKU #${order.plan_sku_id}`" />
               </div>
             </td>
-            <td class="value-cell">{{ formatCurrency(order.amount_cents, order.currency) }}</td>
+            <td class="value-cell numeric-column">{{ formatCurrency(order.amount_cents, order.currency) }}</td>
             <td><StatusBadge :tone="orderTone(order.status)">{{ orderLabel(order.status) }}</StatusBadge></td>
             <td data-column-priority="2"><TimeBadge :value="order.created_at" /></td>
           </tr>
@@ -134,6 +128,8 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../../directives/overflowTitle'
+import TableSkeleton from '../../components/TableSkeleton.vue'
 import PluginSlot from '../../plugins/PluginSlot.vue'
 import TableText from '../../components/TableText.vue'
 import { computed, onMounted } from 'vue'
@@ -207,3 +203,7 @@ async function load() {
 
 onMounted(load)
 </script>
+
+<style scoped>
+.account-overview-grid { align-items: start; }
+</style>

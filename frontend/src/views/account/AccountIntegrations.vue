@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page integrations-page">
     <PageHeader title="外部集成">
-      <template #actions><RouterLink to="/account/security">返回账户安全</RouterLink><PageRefreshButton :loading="loading" :disabled="creating || revoking" @click="load(offset)" /></template>
+      <template #actions><UiButton as-child variant="ghost" size="sm"><RouterLink to="/account/security">账户安全</RouterLink></UiButton><PageRefreshButton :loading="loading" :disabled="creating || revoking" @click="load(offset)" /></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" />
     <PageAlert v-if="integrationDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ integrationDraftRecovery.message.value }}<UiButton type="button" variant="ghost" @click="integrationDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
@@ -13,7 +13,7 @@
         <div class="button-row"><UiButton type="button" @click="copyToken">复制凭据</UiButton><UiButton variant="secondary" type="button" @click="issuedToken = ''">已保存，关闭原文</UiButton></div>
       </div>
     </UiSection>
-    <UiSection title="创建凭据" description="允许查询本人的流量记录与统计，每个账号最多保留 20 个有效凭据。">
+    <UiSection title="创建凭据" description="读取本人的流量数据，最多创建 20 个有效凭据。">
       <form ref="formElement" class="integration-form" novalidate @submit.prevent="create">
         <FormField v-slot="{ controlAttrs }" label="用途名称" name="integration-name" :error="formErrors.fields.name" required>
           <UiInput v-model="name" v-bind="controlAttrs" maxlength="120" placeholder="例如：每日报表" :disabled="creating || !!issuedToken" />
@@ -25,7 +25,7 @@
         <PageAlert v-if="formErrors.formError.value" tone="danger" title="凭据未创建">{{ formErrors.formError.value }}</PageAlert>
       </form>
     </UiSection>
-    <UiSection title="已创建的凭据" description="列表仅显示前缀。撤销后，使用该凭据的客户端将无法继续读取数据。">
+    <UiSection title="已创建的凭据" >
       <DataTable v-if="items.length" caption="集成凭据" :min-width="650">
         <thead><tr><th>用途</th><th>权限</th><th>有效期至</th><th>状态</th><th>操作</th></tr></thead>
         <tbody><tr v-for="item in items" :key="item.id">
@@ -37,13 +37,13 @@
         </tr></tbody>
       </DataTable>
       <p v-else-if="loading" role="status">正在读取凭据…</p>
-      <EmptyState v-else icon="key" title="暂无凭据" description="需要连接报表客户端时，在上方创建凭据。" />
+      <EmptyState v-else-if="!error" icon="key" title="暂无凭据" description="" />
       <div v-if="offset > 0 || hasNext" class="pager"><UiButton variant="ghost" :disabled="loading || offset === 0" @click="load(Math.max(0, offset - pageSize))">上一页</UiButton><span>第 {{ offset / pageSize + 1 }} 页</span><UiButton variant="ghost" :disabled="loading || !hasNext" @click="load(offset + pageSize)">下一页</UiButton></div>
     </UiSection>
-    <UiSection title="连接客户端" description="在客户端中设置下列地址，并使用刚创建的凭据进行 Bearer 认证。">
+    <details class="integration-instructions"><summary>连接客户端</summary><UiSection title="接口地址" description="在客户端中设置下列地址，并使用刚创建的凭据进行 Bearer 认证。">
       <dl class="endpoint-list"><dt>能力目录</dt><dd><code>{{ directoryURL }}</code></dd><dt>流量查询</dt><dd><code>{{ invokeURL }}</code></dd></dl>
       <p>客户端只能读取本人的数据。查询时指定开始时间、结束时间和分钟／小时／日粒度，每次最多返回 200 条分组记录。</p>
-    </UiSection>
+    </UiSection></details>
     <ConfirmDialog :open="!!selected" title="撤销这个凭据？" :message="`“${selected?.name || '此凭据'}”连接的客户端将停止访问。`" confirm-text="撤销凭据" tone="danger" :busy="revoking" :error="revokeError" @close="selected = null" @confirm="revoke" />
   </section>
 </template>
@@ -143,5 +143,5 @@ onMounted(() => load(0))
 onBeforeUnmount(() => { alive = false; issuedToken.value = '' })
 </script>
 <style scoped>
-.integration-form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(140px,220px) auto;gap:16px;align-items:end;padding:20px}.credential-result{padding:20px;display:grid;gap:16px}.button-row,.pager{display:flex;gap:12px;align-items:center}.pager{justify-content:flex-end;padding:16px}.token-prefix{display:block;color:var(--muted);margin-top:4px}.endpoint-list{display:grid;gap:8px;padding:0 20px}.endpoint-list dt{font-weight:600}.endpoint-list dd{margin:0;overflow-wrap:anywhere}.ui-section>p{padding:0 20px 16px;color:var(--muted)}@media(max-width:640px){.integration-form{grid-template-columns:1fr}.button-row{flex-wrap:wrap}}
+.integration-form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(140px,180px) auto;max-width:760px;gap:16px;align-items:end;padding:20px}.integration-instructions>summary{width:fit-content;cursor:pointer;font-size:13px;color:var(--muted-foreground)}.integration-instructions>summary:focus-visible{outline:2px solid var(--ring);outline-offset:4px}.integration-instructions>.ui-section{margin-top:16px}.credential-result{padding:20px;display:grid;gap:16px}.button-row,.pager{display:flex;gap:12px;align-items:center}.pager{justify-content:flex-end;padding:16px}.token-prefix{display:block;color:var(--muted);margin-top:4px}.endpoint-list{display:grid;gap:8px;padding:0 20px}.endpoint-list dt{font-weight:600}.endpoint-list dd{margin:0;overflow-wrap:anywhere}.ui-section>p{padding:0 20px 16px;color:var(--muted)}@media(max-width:640px){.integration-form{grid-template-columns:1fr}.button-row{flex-wrap:wrap}}
 </style>

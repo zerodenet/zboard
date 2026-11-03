@@ -2,8 +2,8 @@
   <section class="account-page stack">
     <PageHeader :title="order ? `订单 #${order.id}` : '订单详情'">
       <template #actions>
-        <RouterLink class="button button-secondary" to="/account/orders">返回我的订单</RouterLink>
-        <RouterLink v-if="orderSupportRoute" class="button button-secondary" :to="orderSupportRoute">就此订单提交工单</RouterLink>
+        <UiButton as-child variant="secondary"><RouterLink  to="/account/orders">返回我的订单</RouterLink></UiButton>
+        <UiButton v-if="orderSupportRoute" as-child variant="secondary"><RouterLink :to="orderSupportRoute">就此订单提交工单</RouterLink></UiButton>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="load">刷新订单</UiButton>
       </template>
     </PageHeader>
@@ -28,9 +28,7 @@
         <div class="order-detail-payment">
           <p class="order-detail-amount">{{ formatCurrency(order.payable_amount ?? order.amount_cents, order.currency) }}</p>
           <StatusBadge :tone="order.status === 'paid' ? 'success' : order.status === 'pending' ? 'warning' : order.status === 'failed' ? 'danger' : 'neutral'">{{ statusLabel }}</StatusBadge>
-          <p v-if="order.status === 'paid'">本站已确认这笔订单付款完成。</p>
-          <RouterLink v-if="order.status === 'paid' && order.order_type === 'topup'" :to="{ path: '/account/wallet', query: { currency: order.currency } }">充值已进入站内余额，查看余额与流水</RouterLink>
-          <p v-else-if="order.status === 'canceled'">此订单已取消，不可继续支付。</p>
+          <RouterLink v-if="order.status === 'paid' && order.order_type === 'topup'" :to="{ path: '/account/wallet', query: { currency: order.currency } }">查看余额与流水</RouterLink>
           <OrderFundingPayment v-if="payable && !error && order.order_type !== 'topup'" :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" @changed="load" />
           <CheckoutPayment v-if="payable && !error && order.order_type === 'topup'" :key="order.id" name="account.orders.payment" embedded :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" :open-on-load="Boolean(returnPlugin)" @paid="load" />
           <p v-if="payable" class="order-detail-hint">付款结果以本站核对后的订单状态为准。</p>
@@ -87,6 +85,6 @@ watch(orderId, () => { reset(); void load() }, { immediate: true })
 .order-detail-payment { justify-items: start; padding: 20px; }
 .order-detail-payment > .checkout-payment { width: 100%; }
 .order-detail-payment p { margin: 0; }
-.order-detail-amount { font-size: 30px; font-weight: 700; }
+.order-detail-amount { font-size: 30px; font-weight: 600; }
 @media (max-width: 760px) { .order-detail-layout, .order-detail-fields { grid-template-columns: 1fr; } }
 </style>

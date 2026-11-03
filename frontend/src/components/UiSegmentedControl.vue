@@ -1,6 +1,7 @@
 <template>
   <RadioGroupRoot
     class="ui-segmented-control"
+    :class="{ 'ui-segmented-control-compact': density === 'compact' }"
     orientation="horizontal"
     :aria-label="label"
     :model-value="modelValue"
@@ -25,6 +26,7 @@ const props = defineProps<{
   modelValue: string
   options: Array<{ value: string; label: string; disabled?: boolean }>
   label: string
+  density?: 'default' | 'compact'
   disabled?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -72,4 +74,9 @@ function handleKeydown(event: KeyboardEvent) {
 .ui-segmented-item:focus-visible { outline: 2px solid var(--focus-border); outline-offset: 2px; z-index: 1; }
 .ui-segmented-item:disabled { cursor: not-allowed; opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .ui-segmented-item { transition: none; } }
+
+.ui-segmented-control-compact { padding: 0; background: transparent; gap: 4px; }
+.ui-segmented-control-compact .ui-segmented-item { min-width: 30px; min-height: 26px; padding: 3px 7px; border-radius: 4px; font-size: 11px; }
+.ui-segmented-control-compact .ui-segmented-item[data-state='checked'] { color: var(--background); background: var(--foreground); border-color: transparent; box-shadow: none; }
+@media (pointer: coarse) { .ui-segmented-control-compact .ui-segmented-item { min-height: 36px; min-width: 36px; } }
 </style>

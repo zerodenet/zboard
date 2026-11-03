@@ -7,9 +7,7 @@
       </template>
     </PageHeader>
 
-    <PageAlert tone="info" title="统一规则源">
-      远端规则会完整保存在 ZBoard，再按客户端生成规则地址。包含进程匹配的规则集支持 Clash / sing-box，不能绑定 Zero 模板。
-    </PageAlert>
+    <details><summary>格式兼容说明</summary><p>进程匹配规则支持 Clash / sing-box，不支持 Zero。</p></details>
 
     <TransientFeedback :success="message" :error="feedbackError" success-title="规则集操作已完成" error-title="规则集操作失败" />
 
@@ -110,7 +108,6 @@
       @close="closeEditor"
     >
       <form id="managed-rule-set-form" ref="formElement" class="rule-set-editor" novalidate @submit.prevent="save">
-        <PageAlert v-if="ruleCaptureError" tone="warning" title="当前来源地址不能暂存到登录页">{{ ruleCaptureError }} 请留在本页重新认证，或自行另存后再离开；不会忽略隐藏的未保存内容。</PageAlert>
         <div v-if="form.id" class="editor-meta">
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
           <StatusBadge tone="info" icon="audit">{{ formatNumber(form.rule_count) }} 条规则</StatusBadge>
@@ -337,8 +334,6 @@ const { items: ruleSets, total, loading, refreshing, error, load, hasLoaded: rul
   onOffsetCorrected: () => syncURL(true),
 })
 const feedbackError = computed(() => operationError.value || error.value)
-const ruleCaptureError = computed(() => editorOpen.value && !ruleSetRecoveryFields(form, ruleOriginalSourceURL.value, true)
-  ? '未保存的远端地址含认证信息、查询参数或无法识别的格式，不能写入浏览器草稿。' : '')
 const ruleDraftRecovery = useReauthenticationDraft({
   scope: 'admin.subscription-rule-sets.editor', permission: 'admin', ready: () => ruleListLoaded.value && !editingID.value,
   read: () => editorOpen.value ? { id: form.id, revision: form.revision, fields: ruleSetRecoveryFields(form, ruleOriginalSourceURL.value, true), baseline: ruleRecoveryBaseline.value } : null,

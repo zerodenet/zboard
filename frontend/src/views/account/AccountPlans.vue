@@ -246,7 +246,7 @@
             <div>
               <span>订阅 #{{ subscription.id }}</span>
               <strong>{{ subscription.plan_name }}</strong>
-              <small :title="subscription.sku_name">{{ subscription.sku_name }}</small>
+              <small v-overflow-title="subscription.sku_name">{{ subscription.sku_name }}</small>
             </div>
             <UiIcon name="chevron" />
           </button>
@@ -325,6 +325,7 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../../directives/overflowTitle'
 import CheckoutPayment from '../../plugins/CheckoutPayment.vue'
 import { ensureCheckoutOrder, isDefiniteOrderRejection, readCheckoutOrderDraft, restoreCheckoutIntent, newCheckoutIntent, type OrderDraft } from '../../composables/checkoutOrder'
 import { useAppStore } from '../../stores/app'
@@ -562,7 +563,7 @@ const currentOperation = computed(() => {
 const loading = computed(() => subscriptionLoading.value || planLoading.value || detailLoading.value || creating.value)
 const catalogVisible = computed(() => operation.value === 'purchase' || Boolean(selectedSubscription.value))
 const pageTitle = computed(() => checkoutOpen.value ? '确认订单' : selectedPlan.value?.name || currentOperation.value.title)
-const pageDescription = computed(() => checkoutOpen.value ? '核对订单内容并选择支付方式。' : selectedPlan.value ? '选择规格并继续结算。' : currentOperation.value.description)
+const pageDescription = computed(() => checkoutOpen.value || selectedPlan.value || operation.value === 'purchase' ? '' : currentOperation.value.description)
 const catalogTitle = computed(() => ({
   purchase: '购买新的订阅', renew: `${selectedSubscription.value?.plan_name || ''} ${currentOperation.value.label}`,
   change: '选择新的套餐', addon: `${selectedSubscription.value?.plan_name || ''} 流量包`, reset: '购买流量重置',

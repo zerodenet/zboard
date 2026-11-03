@@ -28,7 +28,7 @@
           <td class="table-primary-column"><div class="cell-title"><strong>{{ record.record_type }} {{ record.domain_name }}</strong><EndpointAddress :address="record.record_value" /><span>TTL {{ record.ttl === 1 ? '自动' : record.ttl }}<template v-if="record.proxied"> · Cloudflare 代理</template></span></div></td>
           <td data-column-priority="2"><RouterLink class="table-secondary-text" v-overflow-title="record.node_name || `VPS #${record.node_id}`" :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name || `VPS #${record.node_id}` }}</RouterLink></td>
           <td data-column-priority="2"><TableText :value="record.provider_name" /></td>
-          <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error" :title="record.last_error">{{ record.last_error }}</small></td>
+          <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error" v-overflow-title="record.last_error">{{ record.last_error }}</small></td>
           <td data-column-priority="3"><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
           <td data-column-priority="2"><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
           <td class="table-action-column">
@@ -42,7 +42,7 @@
         </tr></tbody>
       </DataTable>
       <EmptyState v-else class="dns-empty-state" icon="nodes" :title="search || statusFilter ? '没有匹配的解析记录' : '还没有 DNS 解析'" :description="search || statusFilter ? '调整搜索词或同步状态后重试。' : '添加解析后，可以在这里查看同步和公共解析状态。'">
-        <template #actions><UiButton v-if="search || statusFilter" type="button" variant="secondary" size="sm" @click="clearFilters">清除筛选</UiButton><RouterLink v-else class="ui-button ui-button-secondary ui-button-sm" to="/admin/providers">管理供应商账户</RouterLink></template>
+        <template #actions><UiButton v-if="search || statusFilter" type="button" variant="secondary" size="sm" @click="clearFilters">清除筛选</UiButton><UiButton v-else as-child variant="secondary" size="sm"><RouterLink to="/admin/providers">管理供应商账户</RouterLink></UiButton></template>
       </EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>

@@ -98,8 +98,8 @@ defineEmits<{ select: [step: number] }>()
   border-radius: 50%;
   color: var(--muted);
   background: var(--surface-neutral);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .is-active .ui-step-index,
@@ -125,7 +125,7 @@ defineEmits<{ select: [step: number] }>()
 
 .ui-step-copy small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 @media (max-width: 680px) {

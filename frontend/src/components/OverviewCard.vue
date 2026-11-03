@@ -2,7 +2,7 @@
   <component
     :is="interactive ? 'button' : 'article'"
     class="overview-card"
-    :class="{ 'overview-card-interactive': interactive }"
+    :class="{ 'overview-card-interactive': interactive, 'overview-card-with-badge': Boolean($slots.badge) }"
     :data-tone="tone"
     :type="interactive ? 'button' : undefined"
     :aria-pressed="interactive ? selected : undefined"
@@ -15,7 +15,7 @@
         <span class="overview-card-label metric-label">{{ label }}</span>
         <strong class="overview-card-value metric-value"><slot name="value">{{ loading ? '—' : value }}</slot></strong>
       </span>
-      <span class="overview-card-description" v-overflow-title="description"><slot name="description">{{ description }}</slot></span>
+      <span v-if="description || $slots.description" class="overview-card-description" v-overflow-title="description"><slot name="description">{{ description }}</slot></span>
     </span>
     <span v-if="$slots.badge" class="overview-card-badge"><slot name="badge" /></span>
   </component>
@@ -52,7 +52,7 @@ defineEmits<{ select: [] }>()
 <style scoped>
 .overview-card {
   min-width: 0;
-  min-height: 108px;
+  min-height: 84px;
   position: relative;
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
@@ -85,8 +85,9 @@ defineEmits<{ select: [] }>()
 .overview-card-heading { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
 .overview-card-label { overflow: hidden; color: var(--text-secondary); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .overview-card-value { color: var(--text-strong); font-size: 24px; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-.overview-card-description { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.overview-card-description { overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .overview-card-badge { position: absolute; right: 12px; bottom: 12px; }
+.overview-card-with-badge { min-height: 108px; padding-bottom: 36px; }
 .overview-card-interactive {
   cursor: pointer;
   transition: border-color .15s ease-out, background-color .15s ease-out;
@@ -107,6 +108,6 @@ defineEmits<{ select: [] }>()
 .overview-card-interactive:disabled { cursor: not-allowed; opacity: .58; }
 
 @media (max-width: 560px) {
-  .overview-card { min-height: 98px; }
+  .overview-card-with-badge { min-height: 98px; }
 }
 </style>

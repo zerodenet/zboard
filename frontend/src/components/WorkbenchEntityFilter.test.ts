@@ -15,6 +15,22 @@ async function open(kind: 'user' | 'node' | 'subscription' | 'protocol_endpoint'
   wrappers.push(wrapper); await flushPromises(); return wrapper
 }
 describe('name-based workbench entity filter', () => {
+  it('cancels an unselected search without removing the applied filter', async () => {
+    const refs = emptyEntityReferenceResponse()
+    refs.targets['user:7'] = { id: 7, kind: 'user', display_name: 'selected@example.test' }
+    vi.mocked(fetchAdminEntityReferences).mockResolvedValue(refs)
+    vi.mocked(fetchUsersPage).mockResolvedValue({ items: [], total: 0 } as any)
+    const wrapper = await open('user', '7')
+    await wrapper.get('input[role="combobox"]').setValue('unfinished search')
+    await wrapper.get('input[role="combobox"]').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('selected@example.test')
+    await wrapper.get('button[aria-label="清除选择"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['']])
+    expect(wrapper.emitted('apply')).toHaveLength(1)
+  })
   it('keeps the typed keyword when typing opens the real suggestion list', async () => {
     vi.mocked(fetchUsersPage).mockImplementation(async params => ({
       items: params?.q === 'Tokyo'

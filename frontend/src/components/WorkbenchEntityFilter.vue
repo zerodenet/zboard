@@ -1,7 +1,7 @@
 <template>
-  <WorkbenchFilterChip :label="label" :active="Boolean(modelValue)" :value-label="selected?.name || `#${modelValue}`" icon="filter" wide @clear="clear">
+  <WorkbenchFilterChip :label="label" :active="Boolean(modelValue)" :value-label="selected?.name || `#${modelValue}`" icon="filter" wide @clear="clear" @close="restoreSelection">
     <template #default="{ close }">
-      <UiAutocomplete v-model="selection" :suggestions="suggestions" option-label="name" :aria-label="`搜索${label}`" :placeholder="`按名称搜索${label}`" :loading="loading" force-selection dropdown @open="openList" @complete="event => search(event.query)" @item-select="event => choose(event.value, close)" @clear="clear">
+      <UiAutocomplete v-model="selection" :suggestions="suggestions" option-label="name" :aria-label="`搜索${label}`" :placeholder="`按名称搜索${label}`" :loading="loading" force-selection dropdown @open="openList" @complete="event => search(event.query)" @item-select="event => choose(event.value, close)" @clear="clearSelection">
         <template #option="{ option }"><span class="entity-filter-option"><strong>{{ option.name }}</strong><small>{{ option.secondary }}</small></span></template>
         <template #footer><span class="entity-filter-help">最多显示 20 项，请输入关键词缩小范围。</span></template>
       </UiAutocomplete>
@@ -59,6 +59,14 @@ function choose(item: Option, close: (restoreFocus?: boolean) => void) {
 function clear() {
   selected.value = null; selection.value = null
   emit('update:modelValue', ''); emit('apply')
+}
+function restoreSelection() {
+  if (typeof selection.value !== 'string' && selection.value) return
+  selection.value = props.modelValue ? selected.value || { id: Number(props.modelValue), name: `#${props.modelValue}`, secondary: '' } : null
+}
+function clearSelection(reason?: 'explicit' | 'unselected') {
+  if (reason === 'unselected') restoreSelection()
+  else clear()
 }
 watch(() => [props.kind, props.modelValue] as const, async ([kind, id], previous, onCleanup) => {
   if (kind !== previous?.[0]) { searchController?.abort(); searchGeneration++; loading.value = false; suggestions.value = [] }

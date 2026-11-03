@@ -3,7 +3,7 @@
     <TooltipRoot>
       <TooltipTrigger :ref="forwardRef" as-child v-bind="$attrs"><slot /></TooltipTrigger>
       <TooltipPortal>
-        <TooltipContent class="ui-tooltip-content" :side-offset="6"><slot name="content">{{ text }}</slot></TooltipContent>
+        <TooltipContent class="ui-tooltip-content" :side-offset="6" :collision-padding="16"><slot name="content">{{ text }}</slot></TooltipContent>
       </TooltipPortal>
     </TooltipRoot>
   </TooltipProvider>

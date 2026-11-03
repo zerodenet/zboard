@@ -19,7 +19,7 @@ describe('wallet account and top-up intent', () => {
   it('links the actual wallet entry to an unsubmitted ticket without changing money or creating orders', async () => {
     vi.mocked(fetchWallet).mockResolvedValue({ ...page(), entries: [{ id: 8, kind: 'credit', balance_delta: '100', reserved_delta: '0', balance_after: '12000', reserved_after: '0', source_order_id: 27, reason: '余额核对', created_at: '2026-10-20T00:00:00Z' }] })
     const { wrapper, router } = await open()
-    const support = wrapper.findAll('a').find(link => link.text() === '就此流水提交工单')!
+    const support = wrapper.get('a[aria-label="就此流水提交工单"]')
     expect(support.attributes('href')).toBe('/account/tickets?new=1&wallet_entry_id=8')
     expect(router.currentRoute.value.path).toBe('/account/wallet')
     expect(createWalletTopUp).not.toHaveBeenCalled()
@@ -51,4 +51,13 @@ describe('wallet account and top-up intent', () => {
     expect(createWalletTopUp).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+})
+
+it('keeps a zero ledger transaction explicit while zero balances stay quiet', async () => {
+  vi.mocked(fetchWallet).mockResolvedValue({ ...page('0'), entries: [{ id: 8, kind: 'release', balance_delta: '0', reserved_delta: '-100', balance_after: '0', reserved_after: '0', reason: '释放预留', created_at: '2026-10-20T00:00:00Z' }] })
+  const { wrapper } = await open()
+  expect(wrapper.get('td[aria-label="CNY 0.00"]').text()).toBe('0.00')
+  expect(wrapper.get('[aria-label="CNY 余额"]').text()).toContain('-')
+  expect(createWalletTopUp).not.toHaveBeenCalled()
+  wrapper.unmount()
 })

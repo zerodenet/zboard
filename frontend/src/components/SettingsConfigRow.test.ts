@@ -24,6 +24,14 @@ function config(overrides: Partial<SystemConfig>): SystemConfig {
 }
 
 describe('SettingsConfigRow', () => {
+  it('omits absent descriptions and keeps technical metadata in a closed disclosure', () => {
+    const wrapper = mount(SettingsConfigRow, { props: { config: config({ description: '' }), draft: 587 } })
+    expect(wrapper.text()).not.toContain('暂无说明')
+    expect(wrapper.find('.config-copy p').exists()).toBe(false)
+    expect(wrapper.get('details').attributes('open')).toBeUndefined()
+    expect(wrapper.get('details').text()).toContain('smtp_port')
+    expect(wrapper.get('input').attributes('aria-describedby')).toBeUndefined()
+  })
   it('edits a subscription alert switch and saves through the existing config action', async () => {
     const wrapper = mount(SettingsConfigRow, {
       props: {
@@ -34,11 +42,13 @@ describe('SettingsConfigRow', () => {
         draft: false, dirty: true,
       },
     })
-    expect(wrapper.text()).toContain('已关闭')
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.find('.config-switch').text()).toBe('')
     await wrapper.get('[role="switch"]').trigger('click')
     expect(wrapper.emitted('update:draft')?.at(-1)).toEqual([true])
     await wrapper.setProps({ draft: true })
-    expect(wrapper.text()).toContain('已启用')
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('.config-switch').text()).toBe('')
     const save = wrapper.findAll('button').find(button => button.text().includes('保存'))!
     await save.trigger('click')
     expect(wrapper.emitted('save')).toHaveLength(1)

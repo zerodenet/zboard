@@ -40,7 +40,7 @@ import UiButton from './UiButton.vue'
 
 defineOptions({ inheritAttrs: false })
 const attrs = useAttrs()
-const props = withDefaults(defineProps<{ modelValue: number; disabled?: boolean; placeholder?: string }>(), { disabled: false, placeholder: '选择节点，或输入名称、区域、地址搜索' })
+const props = withDefaults(defineProps<{ modelValue: number; preserveSelectionOnCancel?: boolean; disabled?: boolean; placeholder?: string }>(), { disabled: false, placeholder: '选择节点，或输入名称、区域、地址搜索' })
 const emit = defineEmits<{ 'update:modelValue': [value: number]; select: [value: AdminNodeListItem | null] }>()
 const selection = ref<AdminNodeListItem | string | null>(null)
 const suggestions = ref<AdminNodeListItem[]>([])
@@ -105,7 +105,12 @@ function openList() {
 }
 function search(event: { query: string }) { query.value = event.query.trim(); void loadList() }
 function selectItem(event: { value: AdminNodeListItem }) { emit('update:modelValue', event.value.id); emit('select', event.value) }
-function clear() {
+function clear(reason?: 'explicit' | 'unselected') {
+  if (props.preserveSelectionOnCancel && reason === 'unselected') {
+    query.value = ''; selection.value = null
+    if (props.modelValue) void loadSelection(props.modelValue)
+    return
+  }
   selectionController?.abort()
   selectionLoading.value = false
   selection.value = null

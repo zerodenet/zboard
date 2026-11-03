@@ -85,7 +85,7 @@ const model = defineModel<SupportedSubscriptionRenderer | 'unsupported'>({ requi
 
 .template-output-copy small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
   white-space: normal;

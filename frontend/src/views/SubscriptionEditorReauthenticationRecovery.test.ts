@@ -95,7 +95,7 @@ it.each(['raw', 'advanced', 'unknown', 'changed-url'] as const)('explicitly refu
   if (mode === 'unknown') vm.form.customization.policy_groups[0].private_key = 'DO-NOT-STORE'
   if (mode === 'changed-url') vm.form.customization.policy_groups[1].probe_url = 'https://user:DO-NOT-STORE@probe.test/path'
   await flushPromises()
-  expect(view!.text()).toContain('不能暂存到登录页')
+  expect(view!.text()).not.toContain('不能暂存到登录页')
   expect(captureReauthenticationDrafts(1, path).ok).toBe(false)
   expect(vm.editorOpen).toBe(true); expect(vm.form.name).toBe('Keep ordinary title'); expect(sessionStorage.length).toBe(0); noWrites()
 })
@@ -135,7 +135,7 @@ it('restores unchanged private remote sources from the server and preserves hidd
 it('refuses an unsafe changed hidden source URL instead of losing it while recovering only manual content', async () => {
   const path = await open('rule'), vm = view!.vm as any; vm.openCreate(); vm.form.name = 'New local'; vm.form.source_url = 'https://rules.test/path?token=DO-NOT-STORE'; vm.form.mode = 'manual'
   await flushPromises()
-  expect(view!.text()).toContain('不能暂存到登录页'); expect(captureReauthenticationDrafts(1, path).ok).toBe(false)
+  expect(view!.text()).not.toContain('不能暂存到登录页'); expect(captureReauthenticationDrafts(1, path).ok).toBe(false)
   expect(vm.form.source_url).toContain('DO-NOT-STORE'); expect(vm.editorOpen).toBe(true); expect(sessionStorage.length).toBe(0); noWrites()
 })
 it('keeps a new manual rule editor without implicit creation', async () => {

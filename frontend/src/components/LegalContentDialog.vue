@@ -56,5 +56,5 @@ const html = computed(() => renderSafeMarkdown(resolveLegalVariables(stripLeadin
 .legal-remote__notice span { display: flex; align-items: center; gap: 6px; }
 .legal-remote__notice a { color: var(--primary); }
 .legal-remote__frame { width: 100%; min-height: 58vh; border: 1px solid var(--line); border-radius: 10px; background: white; }
-.legal-remote__fallback { margin: 0; color: var(--muted); font-size: 9px; }
+.legal-remote__fallback { margin: 0; color: var(--muted); font-size: 12px; }
 </style>

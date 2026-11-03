@@ -82,7 +82,7 @@
               <td><div class="protocol-status-control"><UiSwitch :model-value="endpoint.is_active" :disabled="isTogglePending(endpoint) || (!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported)" :title="!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported ? endpoint.kernel_unsupported_reason : undefined" :aria-label="`${endpoint.is_active ? '停用' : '启用'}协议服务 ${endpoint.name}`" @update:model-value="value => toggleEndpoint(endpoint, value)" /><div class="cell-title"><span v-if="isTogglePending(endpoint)" role="status">{{ toggleBusyKeys.has(`${endpoint.service_kind || 'listener'}:${endpoint.id}`) ? '正在提交' : isTogglePending(endpoint) ? '任务处理中' : '' }}</span><small v-if="endpoint.publication?.status === 'connections_pending'">配置已应用；旧连接撤权待核验</small></div></div></td>
               <td><div class="protocol-load" :title="endpoint.usage?.traffic_projection_pending ? '流量统计正在更新，已结算流量不受影响' : endpoint.forward ? '父协议汇总，包含其他共享入口；无法按前置入口单独拆分' : '当前协议服务的活跃负载和今日流量'"><strong><span><UiIcon name="users" />{{ formatNumber(endpoint.usage?.active_users) }}</span><span><UiIcon name="link" />{{ formatNumber(endpoint.usage?.active_flows) }}</span></strong><span class="protocol-load-traffic"><UiIcon name="activity" />{{ endpoint.usage?.traffic_projection_pending ? '统计更新中' : formatCompactBytes(endpoint.usage?.used_bytes_today) }}</span></div></td>
               <td data-column-priority="3"><TableText :value="endpoint.forward ? endpoint.forward.node_group_names?.join('、') || '未分配' : endpoint.node_group_memberships?.map(group=>group.name).join('、') || '未分配'" /></td>
-              <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
+              <td class="numeric-column" data-column-priority="3"><span v-if="endpoint.service_kind === 'forward'" class="protocol-multiplier-readonly">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</span><ProtocolMultiplierCell v-else :endpoint-id="endpoint.id" :multiplier-milli="endpoint.multiplier_milli" :name="endpoint.name" :disabled="orderingOpen" @saved="savedProtocolMultiplier" /></td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
               <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><UiButton as-child variant="ghost" size="sm" v-if="endpoint.latest_deployment?.has_error"><RouterLink :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink></UiButton><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
             </tr>
@@ -178,7 +178,6 @@
     </ModalDialog>
 
     <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑协议服务' : copySourceID ? '复制协议配置' : '创建协议服务'" :description="form.id ? '协议配置可切换承载 VPS；保存前会校验凭证、端口和完整配置。' : copySourceID ? '已复制原服务配置为独立草稿，可更换节点、入口和名称后保存。' : '跟随步骤完成节点、连接参数和配置确认。'" size="xl" :busy="saving" @close="closeEditor">
-      <PageAlert v-if="protocolSensitiveChanged" tone="warning" title="连接配置草稿仅留在本页">连接凭据、出口或自定义配置已修改，无法安全暂存；请留在本页完成认证。普通入口字段仅在这些配置未修改时可恢复。</PageAlert>
       <form id="protocol-form" ref="protocolFormElement" class="protocol-editor" novalidate @submit.prevent="save">
         <UiStepNav :steps="wizardSteps" :current="editorStep" :max-step="form.id ? 3 : editorStep" label="协议服务配置步骤" @select="goToStep" />
         <PageAlert v-if="editorErrors.formError.value || editorError" tone="danger" title="无法保存协议服务">{{ editorErrors.formError.value || editorError }}
@@ -319,6 +318,7 @@
 
 <script setup lang="ts">
 import { vOverflowTitle } from '../directives/overflowTitle'
+import ProtocolMultiplierCell from '../components/ProtocolMultiplierCell.vue'
 import EntityDetailButton from '../components/EntityDetailButton.vue'
 import ResourceDeletionDialog from '../components/ResourceDeletionDialog.vue'
 import NodeSetupGuide from '../components/NodeSetupGuide.vue'
@@ -361,7 +361,7 @@ import { protocolAssetBaseline, protocolAssetRecovery, sameRecoveryBaseline } fr
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { useSelectionScope } from '../composables/useSelectionScope'
 import { nextSortDirection, resolveSortDirection, resolveSortField, resolveTableDensity } from '../composables/tableState'
-import { confirmAction } from '../utils/feedback'
+import { confirmAction, notify } from '../utils/feedback'
 import EndpointAddress from '../components/EndpointAddress.vue'
 import { formatCompactBytes, formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
@@ -661,6 +661,16 @@ const effectiveSortDirection = computed<'asc' | 'desc'>(() => groupedByNode.valu
 function protocolLabel(protocol: string) { return ({ socks5: 'SOCKS5', vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
 function formatMultiplier(value: number) { return `${Number(value || 1000) / 1000}×` }
 function formatMultiplierNumber(value: number) { return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(Number(value || 1000) / 1000) }
+function multiplierEndpointID(endpoint: ProtocolEndpointListItem) {
+  return endpoint.service_kind === 'forward' ? Number(endpoint.parent_protocol_id || endpoint.forward?.endpoint_id) || 0 : endpoint.id
+}
+function savedProtocolMultiplier(value: { id: number; multiplier_milli: number }) {
+  endpoints.value = endpoints.value.map(endpoint => multiplierEndpointID(endpoint) === value.id ? { ...endpoint, multiplier_milli: value.multiplier_milli } : endpoint)
+  if (selectedEndpointDetail.value?.id === value.id) selectedEndpointDetail.value.multiplier_milli = value.multiplier_milli
+  if (selectedEndpointSummary.value?.id === value.id) selectedEndpointSummary.value = { ...selectedEndpointSummary.value, multiplier_milli: value.multiplier_milli }
+  notify('倍率已保存', '', 'success')
+  void loadEndpoints()
+}
 function deploymentLabel(status?: string) { return status === 'succeeded' ? '成功' : status === 'failed' ? '失败' : status === 'reconciling' ? '结果待核对' : status === 'suspended' ? '已暂停自动重试' : status === 'superseded' ? '已被后续配置接替' : status === 'deferred' ? '保持现状（待适配）' : status === 'running' ? '执行中' : status === 'queued' ? '等待执行' : formatUnknownValue('任务状态', status) }
 function deploymentTone(status?: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'succeeded' ? 'success' : status === 'failed' ? 'danger' : status === 'running' || status === 'queued' || status === 'deferred' || status === 'reconciling' || status === 'suspended' ? 'warning' : 'neutral' }
 function deploymentIcon(status?: string) { return status === 'succeeded' ? 'check' : status === 'failed' ? 'alert' : status === 'running' ? 'refresh' : status === 'queued' || status === 'deferred' || status === 'reconciling' || status === 'suspended' ? 'clock' : 'minus' }

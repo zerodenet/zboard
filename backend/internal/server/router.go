@@ -123,6 +123,7 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodPut, "/api/v1/admin/email-templates/:id", h.AdminEmailTemplateUpdateHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/email-templates/:id", h.AdminEmailTemplateDeleteHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-info", h.AdminSystemInfoHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/system-metrics", h.AdminSystemMetricsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs", h.AdminRuntimeJobsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs/registered", h.AdminRuntimeRegisteredJobsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs/runs", h.AdminRuntimeHistoryHandler),

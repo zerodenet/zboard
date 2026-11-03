@@ -45,8 +45,8 @@
 
 .commerce-product-head span {
   color: var(--primary);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight:600;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -64,7 +64,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: var(--surface-soft);
-  font-size: 9px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -127,7 +127,7 @@
 .commerce-offer-tabs span {
   overflow: hidden;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -203,7 +203,7 @@
 
 .commerce-unavailable-price span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .commerce-catalog-empty {
@@ -237,8 +237,8 @@
 
 .commerce-hub-heading span {
   color: var(--primary);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight:600;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -261,7 +261,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: var(--surface-soft);
-  font-size: 9px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -297,8 +297,8 @@
 .commerce-context-card > div > span,
 .commerce-target-grid span {
   color: var(--primary);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight:600;
   text-transform: uppercase;
 }
 
@@ -312,7 +312,7 @@
 .commerce-context-card p {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .commerce-subscription-card header > strong {
@@ -341,14 +341,14 @@
 .commerce-subscription-card dt,
 .commerce-context-card dt {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .commerce-subscription-card dd,
 .commerce-context-card dd {
   margin: 0;
   font-size: 11px;
-  font-weight: 650;
+  font-weight:600;
 }
 
 .commerce-subscription-actions {
@@ -408,7 +408,7 @@
 
 .commerce-target-grid small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .commerce-target-grid .ui-icon {

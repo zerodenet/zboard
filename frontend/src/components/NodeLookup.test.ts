@@ -22,6 +22,19 @@ async function open(wrapper: ReturnType<typeof mount>) {
 }
 const options = () => [...document.querySelectorAll('.ui-autocomplete-option')].map(item => item.textContent)
 describe('NodeLookup default browsing', () => {
+  it('retains an applied filter when an unfinished lookup is cancelled, while explicit clear still applies', async () => {
+    vi.mocked(fetchNodesPage).mockResolvedValue(page([node(7)]))
+    const wrapper = await setup(7)
+    await wrapper.setProps({ preserveSelectionOnCancel: true })
+    await wrapper.get('input').setValue('unfinished')
+    await wrapper.get('input').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('节点 7')
+    await wrapper.get('[aria-label="清除选择"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([0])
+  })
+
   it('lists all nodes on opening without restricting choices to the selected node', async () => {
     vi.mocked(fetchNodesPage).mockResolvedValueOnce(page([node(7)]))
     const wrapper = await setup(7)

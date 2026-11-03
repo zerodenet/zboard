@@ -9,7 +9,7 @@
       <AdminPageNavigation />
       <TransientFeedback :success="message" />
       <PageAlert v-if="!plugin.admission?.accepted" tone="warning">插件尚未通过宿主校验，无法运行。请查看操作记录。</PageAlert>
-      <PageAlert v-if="route.query.imported === '1' && !plugin.enabled" tone="success">插件已安装，系统已完成能力校验和数据准备。完成配置后即可启用。</PageAlert>
+      <PageAlert v-if="route.query.imported === '1' && !plugin.enabled" tone="info">插件已安装，请完成配置后启用。</PageAlert>
       <PageAlert v-if="actionError || plugin.last_error" tone="danger">{{ actionError || plugin.last_error }}</PageAlert>
       <nav class="plugin-tabs" aria-label="插件详情栏目">
         <RouterLink v-for="item in tabs" :key="item.id" :to="{ path: pluginDetailPath(plugin.id), query: item.id === 'overview' ? {} : { tab: item.id } }" :class="{ selected: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined">{{ item.label }}</RouterLink>

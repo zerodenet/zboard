@@ -12,6 +12,7 @@
     <span v-else-if="lastSuccessAt" class="read-success">更新于 <TimeBadge :value="lastSuccessAt" mode="relative" /></span>
     <span v-else role="status">{{ label }}：{{ phase === 'idle' ? '等待加载' : message }}</span>
   </div>
+  <span v-else-if="phase === 'refreshing' && !error" class="sr-only" role="status">{{ label }}：{{ message }}</span>
   <div v-else-if="phase !== 'idle' && (phase !== 'ready' || error)" class="remote-read-status" :class="{ 'read-failed': !!error }" role="status">
     <span>{{ label }}：{{ message }}</span>
     <TimeBadge v-if="lastSuccessAt" :value="lastSuccessAt" mode="relative" />

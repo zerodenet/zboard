@@ -6,6 +6,7 @@
   margin: 0 auto;
   min-width: 0;
 }
+.plugins-list-page { max-width: none; margin: 0; }
 .plugins-page > .admin-page-navigation { margin-top: -2px; }
 .plugins-heading {
   display: flex;
@@ -89,6 +90,7 @@
   gap: 12px;
 }
 .plugin-card {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -129,6 +131,7 @@
   background: var(--danger-soft);
   color: var(--danger);
 }
+.plugin-card h2 .entity-title-link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plugin-card h2 {
   margin: 0;
   font-size: 16px;

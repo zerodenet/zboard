@@ -5,7 +5,7 @@
       <SelectIcon class="ui-select-chevron" aria-hidden="true">⌄</SelectIcon>
     </SelectTrigger>
     <SelectPortal>
-      <SelectContent class="ui-select-content" position="popper" :side-offset="5">
+      <SelectContent class="ui-select-content" position="popper" :side-offset="5" :collision-padding="16">
         <SelectViewport class="ui-select-viewport">
           <template v-for="(option, index) in options" :key="index">
             <SelectGroup v-if="option.options">

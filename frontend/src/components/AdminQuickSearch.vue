@@ -62,7 +62,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleShortcut))
 .admin-search-trigger:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .admin-search-trigger > span { flex: 1; }
 .admin-search-trigger .ui-icon { font-size: 15px; }
-.admin-search-trigger kbd { padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-subtle); font: inherit; font-size: 10px; }
+.admin-search-trigger kbd { padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-subtle); font: inherit; font-size: 11px; }
 .admin-quick-search { display: grid; gap: 10px; }
 .admin-quick-search-field { height: 40px; display: flex; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid var(--input); border-radius: 6px; }
 .admin-quick-search-field:focus-within { border-color: var(--ring); box-shadow: 0 0 0 3px var(--focus-ring); }

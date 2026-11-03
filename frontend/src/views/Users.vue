@@ -105,7 +105,6 @@
     <PageAlert v-if="accountRecoveryConflict" tone="warning" title="草稿需要人工核对">原账户已变化，草稿仍保留；不能直接覆盖服务器的新内容。请另存普通字段后重新打开编辑器。</PageAlert>
     <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="创建平台用户" description="邮箱是唯一账户标识，创建后即可登录。" size="lg" :busy="saving" @close="closeCreate">
       <form id="create-user-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="create">
-        <PageAlert v-if="form.password" tone="warning" title="密码草稿仅留在本页">未保存的密码不会暂存；请留在本页完成认证后再继续。</PageAlert>
         <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法创建用户">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="邮箱地址" name="create-user-email" :error="createErrors.fields.email" required full><UiInput v-model.trim="form.email" v-bind="controlAttrs" type="email" autocomplete="email" placeholder="user@example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="初始密码" name="create-user-password" hint="长度为 12–72 个 UTF-8 字节。" :error="createErrors.fields.password" required full><UiInput v-model="form.password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" /></FormField>

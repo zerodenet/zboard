@@ -1,8 +1,8 @@
 <template>
   <WorkbenchFilterChip :label="label" :active="Boolean(model)" :value-label="selectedName || `#${model}`" icon="filter" wide @clear="clear">
     <template #default="{ close }">
-      <NodeLookup v-if="kind === 'node'" :model-value="model" :placeholder="placeholder" :aria-label="label" @update:model-value="value => commit(value, close)" @select="select" />
-      <NodeGroupLookup v-else :model-value="model" :placeholder="placeholder" :aria-label="label" :enabled-only="false" @update:model-value="value => commit(value, close)" @select="select" />
+      <NodeLookup v-if="kind === 'node'" :model-value="model" preserve-selection-on-cancel :placeholder="placeholder" :aria-label="label" @update:model-value="value => commit(value, close)" @select="select" />
+      <NodeGroupLookup v-else :model-value="model" preserve-selection-on-cancel :placeholder="placeholder" :aria-label="label" :enabled-only="false" @update:model-value="value => commit(value, close)" @select="select" />
     </template>
   </WorkbenchFilterChip>
 </template>

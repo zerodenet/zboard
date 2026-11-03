@@ -11,7 +11,7 @@ it('always provides native password change for password accounts', async () => {
  const w = render(); await flushPromises(); expect(w.text()).toContain('修改密码')
  const inputs = w.findAll('input[type=password]'); expect(inputs).toHaveLength(3)
  await inputs[0].setValue('current-password'); await inputs[1].setValue('new-password-123'); await inputs[2].setValue('different-password')
- await w.get('button').trigger('click'); expect(mocks.change).not.toHaveBeenCalled(); expect(w.text()).toContain('两次输入的新密码不一致')
+ await w.get('button').trigger('click'); expect(mocks.change).not.toHaveBeenCalled(); expect(w.text()).toContain('两次输入的新密码不一致'); expect(inputs[2].attributes('aria-invalid')).toBe('true')
  await inputs[2].setValue('new-password-123'); await w.get('button').trigger('click'); await flushPromises()
  expect(mocks.change).toHaveBeenCalledWith('current-password', 'new-password-123'); expect((inputs[0].element as HTMLInputElement).value).toBe('');w.unmount()
 })

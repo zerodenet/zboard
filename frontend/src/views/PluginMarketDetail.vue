@@ -3,7 +3,7 @@
     <PageHeader :title="detail?.entry.name || '插件详情'" :description="detail?.entry.description" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">返回市场</RouterLink></UiButton></template></PageHeader>
     <AdminPageNavigation />
     <PageAlert v-if="error" tone="danger">{{ error }}<template #actions><UiButton @click="load">重试</UiButton></template></PageAlert>
-    <p v-if="loading" role="status">正在读取发行信息…</p>
+    <p v-if="loading && !detail" role="status">正在读取发行信息…</p>
     <template v-if="detail">
       <section class="plugin-card">
         <h2>发行与安装</h2>
@@ -28,7 +28,6 @@
             <UiButton :disabled="!hostArtifact || samePackage || loading || !!error" @click="installOpen = true">{{ samePackage ? '当前版本已安装' : detail.installed?.state === 'uninstalled' ? '重新安装' : detail.installed ? '切换到此版本' : '在线安装' }}</UiButton>
             <UiButton as-child variant="secondary" v-if="detail.installed"><RouterLink :to="`/admin/plugins/${encodeURIComponent(id)}`">管理插件</RouterLink></UiButton>
           </div>
-          <p>安装前会展示包内清单、兼容性与签名指纹。新安装默认停用，随后可进入管理页配置、启用或卸载。</p>
         </template>
         <UiButton as-child variant="secondary" v-else-if="detail.installed"><RouterLink :to="`/admin/plugins/${encodeURIComponent(id)}`">管理插件</RouterLink></UiButton>
         <UiButton v-if="detail.notice" variant="secondary" :disabled="loading" @click="load">刷新发行信息</UiButton>

@@ -40,7 +40,7 @@ import UiButton from './UiButton.vue'
 
 defineOptions({ inheritAttrs: false })
 const attrs = useAttrs()
-const props = withDefaults(defineProps<{ modelValue: number; disabled?: boolean; placeholder?: string; enabledOnly?: boolean }>(), { disabled: false, enabledOnly: true, placeholder: '选择节点组，或输入名称、代码搜索' })
+const props = withDefaults(defineProps<{ modelValue: number; preserveSelectionOnCancel?: boolean; disabled?: boolean; placeholder?: string; enabledOnly?: boolean }>(), { disabled: false, enabledOnly: true, placeholder: '选择节点组，或输入名称、代码搜索' })
 const emit = defineEmits<{ 'update:modelValue': [value: number]; select: [value: NodeGroupSummary | null] }>()
 const selection = ref<NodeGroupSummary | string | null>(null)
 const suggestions = ref<NodeGroupSummary[]>([])
@@ -105,7 +105,12 @@ function openList() {
 }
 function search(event: { query: string }) { query.value = event.query.trim(); void loadList() }
 function selectItem(event: { value: NodeGroupSummary }) { emit('update:modelValue', event.value.id); emit('select', event.value) }
-function clear() {
+function clear(reason?: 'explicit' | 'unselected') {
+  if (props.preserveSelectionOnCancel && reason === 'unselected') {
+    query.value = ''; selection.value = null
+    if (props.modelValue) void loadSelection(props.modelValue)
+    return
+  }
   selectionController?.abort()
   selectionLoading.value = false
   selection.value = null

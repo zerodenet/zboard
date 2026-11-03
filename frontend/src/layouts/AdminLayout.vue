@@ -26,14 +26,14 @@
         </div>
         <div class="topbar-actions"><AppearanceSwitch /><DropdownMenuRoot>
           <DropdownMenuTrigger as-child>
-            <button type="button" class="topbar-account-trigger" aria-label="账户菜单" :title="app.user.email || '账户菜单'">
+            <button type="button" class="topbar-account-trigger" aria-label="账户菜单">
               <span class="topbar-account-avatar" aria-hidden="true">{{ userInitial }}</span>
-              <span class="topbar-account-name">{{ app.user.email || '管理员' }}</span>
+              <span class="topbar-account-name" v-overflow-title="app.user.email">{{ app.user.email || '管理员' }}</span>
               <UiIcon name="chevron" class="topbar-account-chevron" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent as-child align="end" :side-offset="8"><div class="ui-dropdown-content topbar-account-menu">
+            <DropdownMenuContent as-child align="end" :side-offset="8" :collision-padding="16"><div class="ui-dropdown-content topbar-account-menu">
               <div class="topbar-account-menu-heading">{{ app.user.email || '管理员' }}</div>
               <DropdownMenuSeparator class="topbar-account-menu-separator" />
               <DropdownMenuItem as-child class="ui-dropdown-item"><RouterLink to="/"><UiIcon name="dashboard" />查看站点</RouterLink></DropdownMenuItem>
@@ -56,6 +56,7 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from 'reka-ui'
@@ -103,7 +104,7 @@ function logout() { app.clear(); router.push('/') }
 .admin-brand-home { min-width: 0; display: flex; align-items: center; gap: 10px; text-decoration: none; }
 .admin-brand-home .brand-mark { width: 30px; height: 30px; border-radius: 7px; color: var(--foreground); background: var(--card); border: 1px solid var(--border); font-size: 15px; }
 .admin-brand-home strong { color: var(--foreground); font-size: 13px; font-weight: 600; }
-.admin-brand-home span:not(.brand-mark) { color: var(--muted-foreground); font-size: 10px; }
+.admin-brand-home span:not(.brand-mark) { color: var(--muted-foreground); font-size: 12px; }
 .nav-icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; color: var(--muted-foreground); background: transparent; cursor: pointer; font-size: 16px; }
 .nav-icon-button:hover { background: var(--muted-surface); color: var(--foreground); }
 .nav-icon-button:focus-visible, .admin-brand-home:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }

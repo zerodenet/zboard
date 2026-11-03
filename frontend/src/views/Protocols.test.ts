@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Protocols from './Protocols.vue'
+import ProtocolMultiplierCell from '../components/ProtocolMultiplierCell.vue'
 import FormField from '../components/FormField.vue'
 import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.vue'
 import NodeGroupLookup from '../components/NodeGroupLookup.vue'
@@ -438,4 +439,26 @@ it('opens the dashboard failure link with a visible filter and can clear it', as
   expect(vi.mocked(fetchProtocolEndpointsPage).mock.calls.at(-1)![0]).not.toHaveProperty('deploymentStatus')
   expect(wrapper.vm.$route.query.deployment).toBeUndefined()
   wrapper.unmount()
+})
+
+it('keeps forward multipliers read-only and synchronizes them after editing the parent without id collisions', async () => {
+  const rows = [
+    { id: 21, service_kind: 'listener', name: 'Parent', node_id: 1, protocol: 'shadowsocks', multiplier_milli: 2000 },
+    { id: 3, service_kind: 'forward', name: 'Forward', parent_protocol_id: 21, node_id: 2, protocol: 'shadowsocks', multiplier_milli: 2000 },
+    { id: 3, service_kind: 'listener', name: 'Unrelated', node_id: 3, protocol: 'vless', multiplier_milli: 7000 },
+  ]
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValueOnce({ items: rows, total: 3 } as any)
+  const view = await render()
+  const cells = view.findAllComponents(ProtocolMultiplierCell)
+  expect(cells.map(cell => cell.props('endpointId'))).toEqual([21, 3])
+  expect(view.get('.protocol-multiplier-readonly').text()).toBe('2')
+  expect(view.get('.protocol-multiplier-readonly').find('button').exists()).toBe(false)
+  expect(view.get('.protocol-multiplier-readonly').attributes('tabindex')).toBeUndefined()
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: rows.map((row, index) => index < 2 ? { ...row, multiplier_milli: 2500 } : row), total: 3 } as any)
+  const before = vi.mocked(fetchProtocolEndpointsPage).mock.calls.length
+  cells[0].vm.$emit('saved', { id: 21, multiplier_milli: 2500 }); await flushPromises()
+  expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(before + 1)
+  expect(view.findAllComponents(ProtocolMultiplierCell).map(cell => cell.props('multiplierMilli'))).toEqual([2500, 7000])
+  expect(view.get('.protocol-multiplier-readonly').text()).toBe('2.5')
+  view.unmount()
 })

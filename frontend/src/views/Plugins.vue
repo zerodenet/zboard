@@ -1,6 +1,6 @@
 <template>
-  <div class="standard-page plugins-page">
-    <PageHeader title="插件管理" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">浏览插件市场</RouterLink></UiButton><UiButton :loading="busy" @click="importOpen = true">离线导入</UiButton></template></PageHeader>
+  <div class="standard-page plugins-page plugins-list-page">
+    <PageHeader title="插件管理" :show-section-navigation="false"><template #actions><PageRefreshButton label="刷新插件" :loading="loading" :disabled="busy" @click="load" /><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">浏览插件市场</RouterLink></UiButton><UiButton :loading="busy" @click="importOpen = true">离线导入</UiButton></template></PageHeader>
     <AdminPageNavigation />
     <TransientFeedback :success="message" />
     <p v-if="error || actionError" role="alert" class="plugins-error">
@@ -13,10 +13,10 @@
         <WorkbenchFilterSelect v-model="state" label="运行状态" :options="stateOptions" />
         <WorkbenchFilterSelect v-model="business" label="扩展用途" :options="businessOptions" />
       </WorkbenchFilterBar>
-      <UiButton variant="secondary" type="button" :loading="loading" :disabled="busy" @click="load">刷新</UiButton><span>{{ filtered.length }} / {{ installedItems.length }} 个插件</span>
+      <span>{{ loaded ? `${filtered.length} / ${installedItems.length} 个插件` : '—' }}</span>
     </div>
-    <p v-if="loading && !installedItems.length">正在读取插件…</p>
-    <section v-else-if="!error && !filtered.length" class="plugins-empty">
+    <p v-if="loading && !loaded">正在读取插件…</p>
+    <section v-else-if="loaded && !error && !filtered.length" class="plugins-empty">
       <h2>{{ installedItems.length ? "没有匹配的插件" : "还没有安装插件" }}</h2>
       <template v-if="hasFilters"><p>没有符合当前名称、运行状态、扩展用途和页面位置的插件。</p><UiButton variant="secondary" @click="clearFilters">清除筛选</UiButton></template>
       <template v-else><p>从插件市场选择扩展，或导入发布者提供的签名 .zbplugin 文件。</p><p>离线导入不需要连接市场，安装后默认停用。</p></template>
@@ -29,9 +29,9 @@
             pluginStateLabel(plugin.state)
           }}</span>
         </div>
-        <h2>{{ plugin.name }}</h2>
+        <h2><RouterLink v-overflow-title="plugin.name" class="entity-title-link" :to="pluginDetailPath(plugin.id)">{{ plugin.name }}</RouterLink></h2>
         <p class="plugin-id">{{ plugin.id }} · v{{ plugin.version }}</p>
-        <p>{{ plugin.manifest.description || "此插件未提供描述。" }}</p>
+        <p v-if="plugin.manifest.description"><TableText :value="plugin.manifest.description" /></p>
         <p>{{ pluginBusinessLabel(plugin) }}</p>
         <p v-if="!plugin.admission?.accepted">宿主校验未通过，请查看详情。</p>
         <div class="plugin-tags">
@@ -58,7 +58,6 @@
             @click="act(plugin, 'enable')"
             >启用</UiButton
           >
-          <UiButton as-child variant="secondary"><RouterLink :to="pluginDetailPath(plugin.id)">查看详情</RouterLink></UiButton>
           <RouterLink v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" class="plugin-text-link" :to="`${pluginDetailPath(plugin.id)}/configuration`">配置</RouterLink>
         </div>
       </article>
@@ -68,6 +67,9 @@
 </template>
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
+import PageRefreshButton from '../components/PageRefreshButton.vue'
+import TableText from '../components/TableText.vue'
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminPageNavigation from '../components/AdminPageNavigation.vue'
@@ -82,7 +84,7 @@ import { usePluginActions, pluginDetailPath, hasPluginConfig, canPluginRun } fro
 import { fetchPlugins, surfaceLabel, pluginStateLabel, pluginBusinessLabel, type Plugin, type Surface } from '../api/plugins'
 import '../styles/plugins.css'
 const router = useRouter(), route = useRoute()
-const { data: items, loading, error, load } = useRemoteResource<Plugin[]>({
+const { data: items, loading, loaded, error, load } = useRemoteResource<Plugin[]>({
   initial: () => [], fetch: ({ signal }) => fetchPlugins(signal), errorMessage: '无法读取插件列表，请重试。',
 })
 const { busy, error: actionError, message, act } = usePluginActions(load)

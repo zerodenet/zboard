@@ -28,7 +28,7 @@ describe('account traffic observability', () => {
     expect(chart).toContain('所选时间范围内暂时没有可用的连接统计')
     expect(chart).not.toContain('请检查节点内核版本和事件上报链路')
     expect(chart).not.toContain('字段已经预留')
-    expect(page).toContain('Principal 当前态观测')
+    expect(page).not.toContain('Principal 当前态观测')
     expect(page).not.toContain('按发生时间重放并聚合')
   })
 })

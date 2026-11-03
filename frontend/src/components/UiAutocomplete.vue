@@ -26,7 +26,7 @@
       <ComboboxTrigger v-if="dropdown" class="ui-autocomplete-trigger" aria-label="展开建议" :disabled="disabled"><UiIcon name="chevron" /></ComboboxTrigger>
     </ComboboxAnchor>
     <ComboboxPortal>
-      <ComboboxContent class="ui-autocomplete-content" position="popper" :side-offset="5">
+      <ComboboxContent class="ui-autocomplete-content" position="popper" :side-offset="5" :collision-padding="16">
         <ComboboxViewport>
           <ComboboxItem v-for="(option, index) in suggestions" :key="option.id ?? option.value ?? index" class="ui-autocomplete-option" :value="option">
             <slot name="option" :option="option">{{ displayValue(option) }}</slot>
@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, useAttrs, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useAttrs, watch } from 'vue'
 import {
   ComboboxAnchor, ComboboxContent, ComboboxInput, ComboboxItem,
   ComboboxPortal, ComboboxRoot, ComboboxTrigger, ComboboxViewport,
@@ -71,7 +71,7 @@ const emit = defineEmits<{
   open: []
   complete: [event: { query: string }]
   'item-select': [event: { value: any }]
-  clear: []
+  clear: [reason?: 'explicit' | 'unselected']
 }>()
 function displayValue(value: any): string {
   if (value === null || value === undefined) return ''
@@ -106,17 +106,21 @@ function clearUnselected() {
   if (!props.forceSelection || typeof model.value !== 'string') return
   model.value = null
   query.value = ''
-  emit('clear')
+  emit('clear', 'unselected')
 }
+let blurTimer: ReturnType<typeof setTimeout> | undefined
 function handleBlur() {
-  window.setTimeout(() => {
+  clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => {
+    blurTimer = undefined
     if (document.activeElement?.closest('.ui-autocomplete-content, .ui-autocomplete-anchor')) return
     clearUnselected()
   }, 0)
 }
+onBeforeUnmount(() => clearTimeout(blurTimer))
 function clear() {
   query.value = ''
   model.value = null
-  emit('clear')
+  emit('clear', 'explicit')
 }
 </script>

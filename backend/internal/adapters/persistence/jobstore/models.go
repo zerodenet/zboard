@@ -28,25 +28,25 @@ type DispatchLane struct {
 func (DispatchLane) TableName() string { return "job_dispatch_lanes" }
 
 type Record struct {
-	TimeoutMS      int64     `gorm:"not null;default:0"`
-	AttemptCount   int       `gorm:"not null;default:0"`
-	MaxAttempts    int       `gorm:"not null;default:1"`
-	RetryBackoffMS int64     `gorm:"not null;default:0"`
-	ExecutionGroup string    `gorm:"size:160;not null;default:'';index"`
-	DispatchLane   string    `gorm:"size:200;not null;default:'core';index:job_dispatch_ready,priority:1"`
-	ID             string    `gorm:"primaryKey;size:36"`
-	Owner          string    `gorm:"size:160;not null;uniqueIndex:job_intent,priority:1"`
-	Key            string    `gorm:"size:160;not null;uniqueIndex:job_intent,priority:2"`
-	Handler        string    `gorm:"size:160;not null"`
-	Resource       string    `gorm:"size:160;not null;index"`
-	Payload        string    `gorm:"type:text;not null"`
-	Fingerprint    string    `gorm:"size:64;not null"`
-	State          string    `gorm:"size:24;not null;index:job_ready,priority:1;index:job_dispatch_ready,priority:2"`
-	NotBefore      time.Time `gorm:"not null;index:job_ready,priority:2;index:job_dispatch_ready,priority:3"`
-	CreatedAt      time.Time `gorm:"not null"`
-	FinishedAt     *time.Time
-	Token          string `gorm:"size:36;not null"`
-	Worker         string `gorm:"size:160;not null"`
+	TimeoutMS      int64      `gorm:"not null;default:0"`
+	AttemptCount   int        `gorm:"not null;default:0"`
+	MaxAttempts    int        `gorm:"not null;default:1"`
+	RetryBackoffMS int64      `gorm:"not null;default:0"`
+	ExecutionGroup string     `gorm:"size:160;not null;default:'';index"`
+	DispatchLane   string     `gorm:"size:200;not null;default:'core';index:job_dispatch_ready,priority:1"`
+	ID             string     `gorm:"primaryKey;size:36"`
+	Owner          string     `gorm:"size:160;not null;uniqueIndex:job_intent,priority:1;index:job_runtime_handler,priority:1"`
+	Key            string     `gorm:"size:160;not null;uniqueIndex:job_intent,priority:2"`
+	Handler        string     `gorm:"size:160;not null;index:job_runtime_handler,priority:2"`
+	Resource       string     `gorm:"size:160;not null;index"`
+	Payload        string     `gorm:"type:text;not null"`
+	Fingerprint    string     `gorm:"size:64;not null"`
+	State          string     `gorm:"size:24;not null;index:job_ready,priority:1;index:job_dispatch_ready,priority:2"`
+	NotBefore      time.Time  `gorm:"not null;index:job_ready,priority:2;index:job_dispatch_ready,priority:3"`
+	CreatedAt      time.Time  `gorm:"not null"`
+	FinishedAt     *time.Time `gorm:"index:job_runtime_handler,priority:3"`
+	Token          string     `gorm:"size:36;not null"`
+	Worker         string     `gorm:"size:160;not null"`
 	ExpiresAt      *time.Time
 	ScheduleID     string     `gorm:"size:320;not null;default:'';index;uniqueIndex:job_schedule_planned,priority:1"`
 	PlannedAt      *time.Time `gorm:"uniqueIndex:job_schedule_planned,priority:2"`
