@@ -2149,6 +2149,7 @@ export async function fetchAccountCleanupStatus(options: ApiRequestOptions = {})
 }
 
 export interface AdminUserListItem {
+  admin_note?: string
   id: number
   email: string
   is_admin: boolean
@@ -2191,12 +2192,12 @@ export async function fetchAdminUserDetail(id: number, options: ApiRequestOption
   return unwrap(response)
 }
 
-export async function createAdminUser(payload: { email: string; password: string; is_admin?: boolean; status?: string }) {
+export async function createAdminUser(payload: { email: string; password: string; is_admin?: boolean; status?: string; admin_note?: string }) {
   const response = await api.post('/admin/users', payload)
   return unwrap(response)
 }
 
-export async function updateAdminUser(id: number, payload: { status?: string; is_admin?: boolean; password?: string }) {
+export async function updateAdminUser(id: number, payload: { status?: string; is_admin?: boolean; password?: string; admin_note?: string }) {
   const response = await api.put(`/admin/users/${id}`, payload)
   return unwrap(response)
 }

@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader :title="order ? `订单 #${order.id}` : '订单详情'" description="查看这笔订单的商品、金额和付款状态。" eyebrow="ORDER">
+    <PageHeader :title="order ? `订单 #${order.id}` : '订单详情'">
       <template #actions>
         <RouterLink class="button button-secondary" to="/account/orders">返回我的订单</RouterLink>
         <RouterLink v-if="orderSupportRoute" class="button button-secondary" :to="orderSupportRoute">就此订单提交工单</RouterLink>

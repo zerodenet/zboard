@@ -3,13 +3,14 @@
     <span class="status-overview-icon"><UiIcon :name="icon" /></span>
     <div class="status-overview-copy">
       <strong>{{ label }}</strong>
-      <p :title="description"><slot name="description">{{ description }}</slot></p>
+      <p v-overflow-title="description"><slot name="description">{{ description }}</slot></p>
     </div>
     <StatusBadge class="status-overview-badge" :tone="tone">{{ status }}</StatusBadge>
   </div>
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import StatusBadge from './StatusBadge.vue'
 import UiIcon from './UiIcon.vue'
 

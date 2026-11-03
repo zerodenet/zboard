@@ -28,7 +28,7 @@ describe('wallet account and top-up intent', () => {
   it('recovers a lost creation response using the same amount and idempotency key', async () => {
     vi.mocked(createWalletTopUp).mockRejectedValueOnce(new Error('lost response'))
     const { wrapper, router } = await open()
-    expect(wrapper.text()).toContain('CNY 120.00')
+    expect(wrapper.get('[aria-label="CNY 余额"]').text()).toContain('120.00')
     await wrapper.get('input[placeholder="例如 10.00"]').setValue('0.29')
     await wrapper.get('form').trigger('submit'); await flushPromises()
     const first = vi.mocked(createWalletTopUp).mock.calls[0]![0]
@@ -45,7 +45,7 @@ describe('wallet account and top-up intent', () => {
     await wrapper.get('input[placeholder="例如 10.00"]').setValue('25.00')
     vi.mocked(fetchWallet).mockResolvedValue(page('0'))
     reactive(state).user.id = 2; await flushPromises()
-    expect(wrapper.text()).toContain('CNY 0.00')
+    expect(wrapper.get('[aria-label="CNY 余额"]').text()).toContain('-')
     expect(wrapper.text()).not.toContain('CNY 120.00')
     expect((wrapper.get('input[placeholder="例如 10.00"]').element as HTMLInputElement).value).toBe('')
     expect(createWalletTopUp).not.toHaveBeenCalled()

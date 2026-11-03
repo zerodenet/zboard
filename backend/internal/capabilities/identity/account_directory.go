@@ -20,6 +20,7 @@ type AccountDirectoryQuery struct {
 type AccountDirectoryItem struct {
 	PublicAccount
 	AccountOverview
+	AdminNote               string    `json:"admin_note"`
 	ActiveSubscriptionCount int64     `json:"active_subscription_count"`
 	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
 	PendingOrderCount       int64     `json:"pending_order_count"`
@@ -31,6 +32,7 @@ type AccountBusinessDetail struct {
 	AccountOverview
 	ID                      uint       `json:"id"`
 	AccountName             string     `json:"account_name"`
+	AdminNote               string     `json:"admin_note"`
 	Email                   string     `json:"email"`
 	EmailVerifiedAt         *time.Time `json:"email_verified_at"`
 	LastLoginAt             *time.Time `json:"last_login_at"`

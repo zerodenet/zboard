@@ -2,7 +2,7 @@
   <section class="standard-page">
     <PageHeader
       title="Fair Use 观测"
-      description="查看最近 15 天连接行为及其覆盖情况；当前阶段不通知、不限速、不暂停订阅，也不执行任何处罚。"
+      description="仅观测，不自动限制订阅。"
     >
       <template #actions>
         <PageRefreshButton label="刷新 Fair Use 观测" :loading="loading" :disabled="!subscriptionID" @click="load" />

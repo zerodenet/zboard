@@ -14,3 +14,10 @@ export function formatWalletMoney(value: string, currency: string): string {
   if (!/^-?\d+$/.test(value)) return '金额未知'
   return `${currency} ${walletMajor(value)}`
 }
+
+// Read-only balance displays share this rule. Prices, payments and ledger
+// deltas keep formatWalletMoney so a zero transaction remains explicit.
+export function formatBalance(value: string | null | undefined, currency: string, showCurrency = true): string {
+  if (value == null || !/^-?\d+$/.test(value) || BigInt(value) === 0n) return '-'
+  return showCurrency ? formatWalletMoney(value, currency) : walletMajor(value)
+}

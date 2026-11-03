@@ -367,10 +367,10 @@ input:not(.ui-input):not(.ui-autocomplete-input):not(.ui-number-input)::placehol
 .data-table .table-action-column { position:sticky; right:0; z-index:3; background:var(--surface); box-shadow:-1px 0 var(--line); }
 .data-table thead .table-action-column { z-index:4; background:var(--table-header-bg); }
 .data-table tbody tr:hover .selection-column,.data-table tbody tr:hover .table-primary-column,.data-table tbody tr:hover .table-action-column { background:var(--surface-hover); }
-@media(max-width:1100px){.data-table:not([data-show-secondary='true']) [data-column-priority='3']{display:none}}
-@media(max-width:720px){.data-table .cell-title,.data-table .table-primary-column > strong,.data-table .entity-reference{max-width:220px}.data-table:not([data-show-secondary='true']) [data-column-priority='2']{display:none}.data-table .table-primary-column{position:static;min-width:180px}.data-table .table-action-column{min-width:52px}.workbench-total span{display:none}.workbench-filters>.ui-input,.workbench-filters>.ui-select,.workbench-filters>.date-range-filter{flex:1 1 180px}}
-@container (max-width:1100px){.data-table:not([data-show-secondary='true']) [data-column-priority='3']{display:none}}
-@container (max-width:720px){.data-table:not([data-show-secondary='true']) [data-column-priority='2']{display:none}}
+
+@media(max-width:720px){.data-table .cell-title,.data-table .table-primary-column > strong,.data-table .entity-reference{max-width:220px}.data-table .table-primary-column{position:static;min-width:180px}.data-table .table-action-column{min-width:52px}.workbench-total span{display:none}.workbench-filters>.ui-input,.workbench-filters>.ui-select,.workbench-filters>.date-range-filter{flex:1 1 180px}}
+@container (max-width:900px){.data-table:not([data-show-secondary='true']) [data-column-priority='3']{display:none}}
+@container (max-width:600px){.data-table:not([data-show-secondary='true']) [data-column-priority='2']{display:none}}
 @media(max-width:480px){.workbench-filters>.ui-input,.workbench-filters>.ui-select,.workbench-filters>.date-range-filter{width:100%;min-width:100%;flex-basis:100%}.workbench-filter-chip-trigger strong{max-width:112px}.data-table th,.data-table td{padding-inline:6px}.data-table .table-primary-column{min-width:130px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 

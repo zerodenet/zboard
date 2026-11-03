@@ -10,6 +10,8 @@ it('offers light, dark and system as accessible radio choices and switches immed
   const trigger = wrapper.get('button')
   await trigger.trigger('click', { button: 0, ctrlKey: false })
   await flushPromises()
+  const scope = wrapper.get('.appearance-switch').element.getAttributeNames().find(name => name.startsWith('data-v-'))!
+  expect(document.querySelector('.appearance-menu')?.hasAttribute(scope)).toBe(true)
   const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
   expect(items.map(item => item.textContent?.trim())).toEqual(['浅色', '深色', '跟随系统'])
   items[1].click()

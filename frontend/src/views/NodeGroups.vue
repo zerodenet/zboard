@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="权限组" description="权限组（节点组）定义套餐可用的直连与前置入口；保存后同步订阅凭据和交付配置。">
+    <PageHeader title="权限组">
       <template #actions><PageRefreshButton label="刷新权限组" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建权限组</UiButton></template>
     </PageHeader>
 
@@ -12,7 +12,7 @@
       <template #filters><WorkbenchFilterBar :active="Boolean(search || enabledFilter || groupID)" :active-count="Number(Boolean(search)) + Number(Boolean(enabledFilter)) + Number(Boolean(groupID))" @clear="clearFilters"><WorkbenchFilterInput v-model="search" label="搜索" field-label="权限组名称或代码" placeholder="名称、代码或说明" @apply="applyFilters" /><UiButton v-if="groupID" variant="ghost" size="sm" type="button" @click="clearGroupFilter">权限组 #{{ groupID }}<UiIcon name="close" /></UiButton><WorkbenchFilterSelect v-model="enabledFilter" label="启用状态" :options="enabledOptions" @apply="applyFilters" /></WorkbenchFilterBar></template>
       <TableSkeleton v-if="loading && !groups.length" label="正在加载权限组" :columns="7" />
       <DataTable v-else-if="groups.length" caption="权限组列表；成员数量直接展示，完整成员仅在编辑时按需加载" :row-count="total" :min-width="900" table-class="group-table" :columns="groupColumns" :rows="groups">
-        <template #cell-name="{ row: group }"><div class="cell-title"><strong>{{ group.name }}</strong><TableText :value="group.description || '暂无说明'" /></div></template>
+        <template #cell-name="{ row: group }"><div class="cell-title"><strong>{{ group.name }}</strong><TableText v-if="group.description" :value="group.description" /></div></template>
         <template #cell-code="{ row: group }"><TableText class="mono" :value="group.code" /></template>
         <template #cell-is_enabled="{ row: group }"><StatusBadge :tone="group.is_enabled ? 'success' : 'neutral'">{{ group.is_enabled ? '已启用' : '已停用' }}</StatusBadge></template>
         <template #cell-protocol_endpoint_count="{ row: group }"><RouterLink :to="withAdminReturnTo('/admin/protocols', route.fullPath, { group: String(group.id) })">{{ group.protocol_endpoint_count || 0 }} 直连 / {{ group.network_entry_count || 0 }} 前置</RouterLink></template>

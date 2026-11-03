@@ -10,6 +10,7 @@ import (
 type User struct {
 	ID              uint           `json:"id" gorm:"primaryKey"`
 	AccountName     string         `json:"account_name" gorm:"size:80"`
+	AdminNote       string         `json:"-" gorm:"size:500;not null;default:''"`
 	Email           string         `json:"email" gorm:"size:128;uniqueIndex;not null"`
 	Password        string         `json:"-" gorm:"size:255;not null"`
 	EmailVerifiedAt *time.Time     `json:"email_verified_at"`

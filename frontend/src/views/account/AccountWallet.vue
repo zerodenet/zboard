@@ -1,29 +1,29 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="账户余额" eyebrow="WALLET" description="余额与预留按币种分别记账，不提供提现。">
+    <PageHeader title="账户余额">
       <template #actions><UiButton variant="secondary" :disabled="loading" @click="load">刷新余额</UiButton></template>
     </PageHeader>
     <UiSection title="当前余额">
       <FormField v-slot="{ controlAttrs }" label="币种" name="wallet-currency"><UiInput v-model="currency" v-bind="controlAttrs" maxlength="3" :disabled="submitted" /></FormField>
-      <p v-if="wallet">可用 {{ money(wallet.available_minor) }} · 已预留 {{ money(wallet.reserved_minor) }}</p>
+      <BalanceSummary v-if="wallet" :balance="wallet" :show-total="false" />
       <p v-else-if="loading" role="status">正在核对余额…</p>
       <PageAlert v-if="error" tone="danger">{{ error }}</PageAlert>
     </UiSection>
-    <UiSection title="主动充值" description="创建充值单后选择已接入的支付渠道。只有渠道付款核验完成，资金才会进入余额。">
+    <UiSection title="主动充值">
       <form @submit.prevent="create" novalidate>
         <FormField v-slot="{ controlAttrs }" label="充值金额" name="wallet-topup-amount"><UiInput v-model="amount" v-bind="controlAttrs" inputmode="decimal" placeholder="例如 10.00" :disabled="submitted" /></FormField>
         <PageAlert v-if="createError" tone="danger">{{ createError }}</PageAlert>
-        <UiButton type="submit" :loading="creating">{{ submitted ? '恢复本次充值单' : '创建充值单并选择支付方式' }}</UiButton>
+        <UiButton type="submit" :loading="creating">{{ submitted ? '继续充值' : '充值' }}</UiButton>
         <UiButton v-if="submitted" type="button" variant="secondary" :disabled="creating" @click="startNew">新建另一笔充值</UiButton>
       </form>
-      <RouterLink to="/account/orders">核对我的订单与已有充值</RouterLink>
+      <RouterLink to="/account/orders">充值记录</RouterLink>
     </UiSection>
     <UiSection title="余额流水">
       <DataTable v-if="wallet?.entries.length" caption="余额流水" :min-width="650">
         <thead><tr><th>时间</th><th>业务</th><th>金额变动</th><th>变动后余额</th><th>来源</th><th>支持</th></tr></thead>
-        <tbody><tr v-for="entry in wallet.entries" :key="entry.id"><td><TimeBadge :value="entry.created_at" /></td><td>{{ entry.reason }}</td><td>{{ money(entry.balance_delta) }}</td><td>{{ money(entry.balance_after) }}</td><td><RouterLink v-if="entry.source_order_id" :to="`/account/orders/${entry.source_order_id}`">订单 #{{ entry.source_order_id }}</RouterLink></td><td><RouterLink v-if="Number.isSafeInteger(entry.id) && entry.id > 0" :to="{ path: '/account/tickets', query: { new: '1', wallet_entry_id: String(entry.id) } }">就此流水提交工单</RouterLink></td></tr></tbody>
+        <tbody><tr v-for="entry in wallet.entries" :key="entry.id"><td><TimeBadge :value="entry.created_at" /></td><td>{{ entry.reason }}</td><td>{{ money(entry.balance_delta) }}</td><td><BalanceValue :amount="entry.balance_after" :currency="wallet.currency" :show-currency="false" /></td><td><RouterLink v-if="entry.source_order_id" :to="`/account/orders/${entry.source_order_id}`">订单 #{{ entry.source_order_id }}</RouterLink></td><td><RouterLink v-if="Number.isSafeInteger(entry.id) && entry.id > 0" :to="{ path: '/account/tickets', query: { new: '1', wallet_entry_id: String(entry.id) } }">就此流水提交工单</RouterLink></td></tr></tbody>
       </DataTable>
-      <p v-else-if="wallet">暂无该币种余额流水。</p>
+      <p v-else-if="wallet">暂无流水。</p>
       <UiButton v-if="wallet?.has_more" variant="secondary" :disabled="loading" @click="older">较早流水</UiButton>
       <UiButton v-if="after" variant="secondary" :disabled="loading" @click="after = 0; load()">最新流水</UiButton>
     </UiSection>
@@ -36,6 +36,8 @@ import { useAppStore } from '../../stores/app'
 import { fetchWallet, createWalletTopUp, type WalletPage } from '../../api/wallet'
 import { ensureCheckoutOrder, newCheckoutIntent, restoreCheckoutIntent } from '../../composables/checkoutOrder'
 import { useRemoteResource } from '../../composables/useRemoteResource'
+import BalanceSummary from '../../components/BalanceSummary.vue'
+import BalanceValue from '../../components/BalanceValue.vue'
 import { parseWalletAmount, formatWalletMoney, walletMajor } from '../../utils/walletMoney'
 import { commerceErrorMessage } from '../../utils/commerceErrors'
 import PageHeader from '../../components/PageHeader.vue'

@@ -3,7 +3,7 @@
     <div class="customizer-header">
       <div>
         <strong>个性化配置</strong>
-        <span>策略组会生成客户端原生节点组；所有协议配置默认按名称注入，可用正则进一步筛选。</span>
+
       </div>
       <div class="customizer-counts">
         <StatusBadge tone="info" icon="nodes">{{ model.policy_groups.length }} 个策略组</StatusBadge>
@@ -22,7 +22,7 @@
       <div class="section-heading">
         <div>
           <strong>策略组</strong>
-          <span>名称会成为客户端中的组名；类型和参数仅按当前输出格式支持的能力生成。</span>
+
         </div>
         <UiButton type="button" variant="secondary" size="sm" :disabled="model.policy_groups.length >= 16" @click="addPolicyGroup">
           <UiIcon name="plus" />添加策略组
@@ -47,16 +47,16 @@
           </header>
 
           <div class="policy-group-grid">
-            <FormField label="策略组名称" :name="`policy-group-${index}-name`" hint="客户端展示名称，必须在当前模板内唯一。" required>
+            <FormField label="策略组名称" :name="`policy-group-${index}-name`" hint="名称须唯一。" required>
               <template #default="{ controlAttrs }"><UiInput v-model.trim="group.name" v-bind="controlAttrs" maxlength="64" placeholder="例如：节点选择" /></template>
             </FormField>
-            <FormField label="策略组类型" :name="`policy-group-${index}-type`" hint="只提供当前输出格式支持的类型。" required>
+            <FormField label="策略组类型" :name="`policy-group-${index}-type`" required>
               <template #default="{ controlAttrs }"><UiSelect v-model="group.type" v-bind="controlAttrs" :options="groupTypeOptions" @change="normalizeGroupType(group)" /></template>
             </FormField>
-            <FormField label="包含节点名称" :name="`policy-group-${index}-include`" hint="可选 RE2 正则；留空表示包含所有协议配置名称。">
+            <FormField label="包含节点名称" :name="`policy-group-${index}-include`" hint="RE2 正则，留空包含全部节点。">
               <template #default="{ controlAttrs }"><UiInput v-model="group.include_pattern" v-bind="controlAttrs" maxlength="256" placeholder="例如：(?i)香港|HK" /></template>
             </FormField>
-            <FormField label="排除节点名称" :name="`policy-group-${index}-exclude`" hint="可选 RE2 正则；在包含规则之后执行。">
+            <FormField label="排除节点名称" :name="`policy-group-${index}-exclude`" hint="RE2 正则。">
               <template #default="{ controlAttrs }"><UiInput v-model="group.exclude_pattern" v-bind="controlAttrs" maxlength="256" placeholder="例如：测试|维护" /></template>
             </FormField>
 
@@ -76,7 +76,7 @@
           <div v-if="group.type === 'select'" class="group-special-target-editor">
             <div>
               <strong>特殊节点</strong>
-              <span>决定系统特殊节点是否作为该策略组成员导出；sing-box 使用路由拒绝动作，不提供 REJECT 出站。</span>
+
             </div>
             <label class="group-reference-option">
               <UiCheckbox
@@ -97,7 +97,7 @@
           <div v-if="otherGroups(group.id).length" class="group-reference-editor">
             <div>
               <strong>包含其他策略组</strong>
-              <span>这些组会和正则匹配的全部节点一起成为当前组成员。</span>
+
             </div>
             <div class="group-reference-options">
               <label v-for="candidate in otherGroups(group.id)" :key="candidate.id" class="group-reference-option">
@@ -124,13 +124,13 @@
       <div class="section-heading">
         <div>
           <strong>规则集绑定</strong>
-          <span>规则集命中后可指向任一策略组，也可以直接选择直连或拦截。</span>
+
         </div>
         <UiButton type="button" variant="secondary" size="sm" :disabled="model.rule_sets.length >= 64" @click="addRemoteRuleSet">
           <UiIcon name="plus" />快捷添加远端
         </UiButton>
       </div>
-      <FormField label="选择规则集" name="template-rule-set-library" hint="仅检索当前输出格式中已启用的规则集；选择后默认绑定主策略组。" full>
+      <FormField label="选择规则集" name="template-rule-set-library" hint="默认指向主策略组。" full>
         <template #default="{ controlAttrs }">
           <SubscriptionRuleSetLookup
             v-bind="controlAttrs"
@@ -156,7 +156,7 @@
             <div class="library-rule-source">
               <code>{{ ruleSetDetail(rule.rule_set_id)?.tag || `#${rule.rule_set_id}` }}</code>
               <span>{{ ruleSetDetail(rule.rule_set_id)?.format || '正在读取规则集详情' }} · {{ formatInterval(ruleSetDetail(rule.rule_set_id)?.interval) }}</span>
-              <small>{{ ruleSetDetail(rule.rule_set_id)?.url || '保存和预览时由后端校验引用。' }}</small>
+              <small>{{ ruleSetDetail(rule.rule_set_id)?.url || '-' }}</small>
             </div>
             <FormField label="命中后出站" :name="`rule-set-${index}-target`" required>
               <template #default="{ controlAttrs }"><UiSelect v-model="rule.target" v-bind="controlAttrs" :options="ruleTargetOptions" /></template>
@@ -186,7 +186,7 @@
       </div>
       <div v-else class="rule-set-empty">
         <UiIcon name="audit" />
-        <div><strong>尚未绑定规则集</strong><span>可以选择统一维护的规则集，也可以添加当前模板专用的远端来源。</span></div>
+        <div><strong>尚未绑定规则集</strong></div>
       </div>
     </div>
 

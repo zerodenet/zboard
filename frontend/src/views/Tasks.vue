@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="运营任务" description="追踪配额、通知、节点检测与协议发布等后台任务，保留每个目标的最终结果。">
+    <PageHeader title="运营任务">
       <template #actions><PageRefreshButton label="刷新运营任务" :loading="loading || summaryLoading" @click="refreshAll" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建任务</UiButton></template>
     </PageHeader>
 

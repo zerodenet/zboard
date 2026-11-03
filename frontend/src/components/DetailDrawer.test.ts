@@ -11,6 +11,18 @@ const UiButtonStub = defineComponent({
 afterEach(() => { document.body.innerHTML = '' })
 
 describe('DetailDrawer', () => {
+  it('expands long management content and restores compact width for the next entity', async () => {
+    const wrapper = mount(DetailDrawer, { attachTo: document.body, props: { open: true, title: '协议详情' } })
+    await nextTick()
+    const toggle = document.body.querySelector<HTMLButtonElement>('.drawer-expand')!
+    toggle.click(); await nextTick()
+    expect(document.body.querySelector('.ui-sheet-expanded')).not.toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    expect(document.body.querySelector('.ui-sheet-expanded')).toBeNull()
+    wrapper.unmount()
+  })
   it('traps keyboard focus, closes on Escape and restores the opener focus', async () => {
     const opener = document.createElement('button')
     opener.textContent = '打开详情'

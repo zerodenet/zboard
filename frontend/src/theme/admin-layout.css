@@ -24,7 +24,7 @@
 .admin-page-navigation-vertical .admin-page-navigation-link:hover { color: var(--foreground); background: var(--muted-surface); }
 .admin-page-navigation-vertical .admin-page-navigation-link[aria-current='page'] { color: var(--foreground); background: var(--sidebar-active); font-weight: 600; }
 .admin-shell .business-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.admin-shell .business-metrics > .metric-card:last-child { grid-column: span 2; }
+.admin-shell .business-metrics > .metric-card:last-child { grid-column: auto; }
 
 /* Data pages place controls and the table directly in the content column. */
 .admin-shell .data-workbench { width: 100%; min-width: 0; border: 0; background: transparent; box-shadow: none; }
@@ -52,15 +52,13 @@
 @media (max-width: 1280px) {
   .admin-shell .protocols-page > .page-header { align-items: stretch; flex-direction: column; gap: 12px; }
   .admin-shell .protocols-page > .page-header .page-actions { align-self: flex-start; flex-wrap: wrap; }
-  .admin-shell .section-grid.dashboard-section { grid-template-columns: minmax(0, 1fr); }
-  .admin-shell .section-grid.dashboard-section > * { grid-column: 1 / -1; }
   .admin-shell .standard-page > .dashboard-header { align-items: stretch; flex-direction: column; gap: 12px; }
   .admin-shell .standard-page > .dashboard-header .page-actions { align-self: flex-start; }
   .admin-shell .dashboard-header .dashboard-controls { flex-wrap: nowrap; }
 }
 
-@media (min-width: 1400px) {
-  .admin-shell .business-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (min-width: 1600px) {
+  .admin-shell .business-metrics { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .admin-shell .business-metrics > .metric-card:last-child { grid-column: auto; }
 }
 
@@ -71,7 +69,7 @@
   .admin-shell .settings-page-layout > .admin-page-navigation .admin-page-navigation-link[aria-current='page']::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--primary); content: ''; }
 }
 
-@media (max-width: 999px) {
+@media (max-width: 1100px) {
   .admin-shell .business-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -88,4 +86,9 @@
   .admin-shell .standard-page > .page-header { align-items: stretch; }
   .admin-shell .standard-page > .page-header .page-actions { align-self: flex-start; }
   .admin-shell .settings-panel > .ui-section > .panel-header { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
+
+@media (max-width: 1200px) {
+  .admin-shell .section-grid.dashboard-section { grid-template-columns: minmax(0, 1fr); }
+  .admin-shell .section-grid.dashboard-section > * { grid-column: 1 / -1; }
 }

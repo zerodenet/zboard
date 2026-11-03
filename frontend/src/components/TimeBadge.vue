@@ -1,5 +1,6 @@
 <template>
-  <time
+  <span v-if="!validDate" class="time-placeholder" :title="exactLabel" :aria-label="exactLabel">-</span>
+  <time v-else
     class="time-badge"
     :class="`time-badge-${tone}`"
     :datetime="dateTimeAttribute"

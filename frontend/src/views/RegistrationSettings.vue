@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page registration-settings-page">
-    <PageHeader title="注册与验证" description="集中管理注册入口、身份验证方式和注册成功后的系统通知；后续图形验证码等验证模块也在这里扩展。" :show-section-navigation="false">
+    <PageHeader title="注册与验证" :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新注册设置" :loading="loading" @click="reload" /></template>
     </PageHeader>
 

@@ -18,7 +18,7 @@ beforeEach(() => {
 })
 describe('controlled wallet adjustment', () => {
  it('requires explicit debit and preserves the original ticketed request through a lost response and reload', async () => {
-   const wrapper = open(); await flushPromises(); expect(wrapper.text()).toContain('已预留 CNY 1.00'); expect(debitWallet).not.toHaveBeenCalled()
+   const wrapper = open(); await flushPromises(); expect(wrapper.get('[aria-label="CNY 余额"]').text()).toContain('已预留1.00'); expect(debitWallet).not.toHaveBeenCalled()
    vi.mocked(debitWallet).mockRejectedValueOnce(new Error('response lost')); const form = await fillDebit(wrapper); await form.trigger('submit'); await flushPromises()
    const original = vi.mocked(debitWallet).mock.calls[0]![0]; expect(original).toEqual({ user_id: 27, currency: 'CNY', amount_minor: 900, ticket_id: 12, reason: '工单特殊出款', idempotency_key: expect.stringMatching(/^[a-f0-9]{32}$/) })
    expect(form.findAll('input').every(input => input.attributes('disabled') !== undefined)).toBe(true)

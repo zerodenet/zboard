@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page integrations-page">
-    <PageHeader title="外部集成" eyebrow="账户授权" description="为报表客户端创建独立凭据，随时查看有效期或停止授权。">
+    <PageHeader title="外部集成">
       <template #actions><RouterLink to="/account/security">返回账户安全</RouterLink><PageRefreshButton :loading="loading" :disabled="creating || revoking" @click="load(offset)" /></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" />

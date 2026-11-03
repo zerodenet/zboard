@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="站点公告" description="发布支持安全 Markdown 的定时公告；登录用户可在公告中心查看历史与已读状态。">
+    <PageHeader title="站点公告">
       <template #actions><PageRefreshButton :loading="loading" label="刷新公告" @click="load" /><UiButton type="button" @click="newAnnouncement">新建公告</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="success" :error="error" />

@@ -101,7 +101,7 @@ function updateColumns() {
   const availableWidth = table.value?.parentElement?.clientWidth || window.innerWidth
   const hidden = headers.filter(header => {
     const priority = header.getAttribute('data-column-priority')
-    return priority === '3' && availableWidth <= 1100 || priority === '2' && availableWidth <= 720
+    return priority === '3' && availableWidth <= 900 || priority === '2' && availableWidth <= 600
   }).length
   hasSecondaryColumns.value = hidden > 0
   const count = headers.length - (showSecondary.value ? 0 : hidden)

@@ -1,5 +1,5 @@
 <template>
-  <div class="form-field" :class="{ 'form-field-full': full, 'form-field-invalid': Boolean(error) }">
+  <div class="form-field" :class="{ 'form-field-full': full, 'form-field-invalid': Boolean(error), 'form-field-quiet': !hint && !error }">
     <label class="form-field-label" :for="controlId">
       <span>{{ label }}</span>
       <span v-if="required" class="form-field-required" aria-hidden="true">*</span>
@@ -8,7 +8,7 @@
     <div class="form-field-control">
       <slot :control-attrs="controlAttrs" :control-id="controlId" />
     </div>
-    <div class="form-field-message" :id="messageId" :aria-live="error ? 'polite' : undefined">
+    <div class="form-field-message" :class="{ 'sr-only': !hint && !error }" :id="messageId" :aria-live="error ? 'polite' : undefined">
       <span v-if="error" class="form-field-error"><UiIcon name="alert" />{{ error }}</span>
       <span v-else-if="hint" class="form-field-hint">{{ hint }}</span>
       <span v-else aria-hidden="true">&nbsp;</span>
@@ -47,3 +47,7 @@ const controlAttrs = computed(() => ({
   'aria-invalid': props.error ? 'true' : undefined,
 }))
 </script>
+
+<style scoped>
+.form-field-quiet { grid-template-rows: auto auto; }
+</style>

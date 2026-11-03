@@ -6,7 +6,7 @@
       <div v-if="file" class="plugin-import-file" role="status" aria-live="polite">
         <span class="plugin-import-file-icon"><UiIcon name="plans" /></span>
         <span class="plugin-import-file-identity">
-          <strong :title="file.name">{{ file.name }}</strong>
+          <strong v-overflow-title="file.name">{{ file.name }}</strong>
           <small>已选择的 .zbplugin 安装包</small>
         </span>
         <span class="plugin-import-file-size">{{ formatCompactBytes(file.size) }}</span>
@@ -44,6 +44,7 @@
   </ModalDialog>
 </template>
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { onScopeDispose, ref, watch } from 'vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import UiFileUpload from '../components/UiFileUpload.vue'

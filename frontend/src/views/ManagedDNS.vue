@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="DNS 解析" description="管理域名解析记录及其同步状态。">
+    <PageHeader title="DNS 解析">
       <template #actions>
         <PageRefreshButton label="刷新 DNS 解析" :loading="loading || refreshing" @click="refreshAll" />
         <UiButton type="button" :disabled="!activeDNSAccounts.length" @click="openCreateDNS"><UiIcon name="plus" />添加解析</UiButton>
@@ -26,7 +26,7 @@
         <thead><tr><th class="table-primary-column">域名</th><th data-column-priority="2">目标节点</th><th data-column-priority="2">供应商</th><th>状态</th><th data-column-priority="3">公共解析</th><th data-column-priority="2">同步时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody><tr v-for="record in records" :key="record.id">
           <td class="table-primary-column"><div class="cell-title"><strong>{{ record.record_type }} {{ record.domain_name }}</strong><EndpointAddress :address="record.record_value" /><span>TTL {{ record.ttl === 1 ? '自动' : record.ttl }}<template v-if="record.proxied"> · Cloudflare 代理</template></span></div></td>
-          <td data-column-priority="2"><RouterLink class="table-secondary-text" :title="record.node_name || `VPS #${record.node_id}`" :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name || `VPS #${record.node_id}` }}</RouterLink></td>
+          <td data-column-priority="2"><RouterLink class="table-secondary-text" v-overflow-title="record.node_name || `VPS #${record.node_id}`" :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name || `VPS #${record.node_id}` }}</RouterLink></td>
           <td data-column-priority="2"><TableText :value="record.provider_name" /></td>
           <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error" :title="record.last_error">{{ record.last_error }}</small></td>
           <td data-column-priority="3"><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
@@ -124,6 +124,7 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import EndpointAddress from '../components/EndpointAddress.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'

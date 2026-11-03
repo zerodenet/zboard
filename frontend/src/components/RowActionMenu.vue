@@ -8,7 +8,6 @@
         icon
         type="button"
         :aria-label="label"
-        :title="label"
         :data-row-action-trigger="triggerKey || undefined"
       ><UiIcon name="more" /></UiButton></Tooltip>
     </DropdownMenuTrigger>

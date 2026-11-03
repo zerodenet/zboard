@@ -9,12 +9,13 @@
       class="template-output-option"
       :class="{ 'template-output-option-selected': model === option.value }"
       :aria-checked="model === option.value ? 'true' : 'false'"
+      :title="option.description"
       @click="model = option.value"
     >
       <span class="template-output-icon"><UiIcon :name="option.icon" /></span>
       <span class="template-output-copy">
         <strong>{{ option.label }}</strong>
-        <small>{{ option.description }}</small>
+        <small>{{ option.mode === 'full' ? '完整配置' : '节点订阅' }}</small>
       </span>
       <UiIcon v-if="model === option.value" name="check" class="template-output-check" />
     </UiButton>
@@ -32,7 +33,7 @@ const model = defineModel<SupportedSubscriptionRenderer | 'unsupported'>({ requi
 <style scoped>
 .template-output-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -77,6 +78,7 @@ const model = defineModel<SupportedSubscriptionRenderer | 'unsupported'>({ requi
 }
 
 .template-output-copy strong {
+  overflow-wrap: anywhere;
   color: var(--text-strong);
   font-size: 12px;
 }
@@ -96,7 +98,7 @@ const model = defineModel<SupportedSubscriptionRenderer | 'unsupported'>({ requi
 
 @media (max-width: 700px) {
   .template-output-options {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

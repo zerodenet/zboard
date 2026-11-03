@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="免费证书" description="申请和管理节点证书，查看有效期与续期状态。">
+    <PageHeader title="免费证书">
       <template #actions><PageRefreshButton label="刷新证书" :loading="loading || refreshing" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />申请证书</UiButton></template>
     </PageHeader>
 
@@ -21,7 +21,7 @@
         <thead><tr><th class="table-primary-column">证书</th><th data-column-priority="2">节点</th><th>状态</th><th data-column-priority="2">签发环境</th><th>到期时间</th><th data-column-priority="3">自动续期</th><th class="numeric-column" data-column-priority="3">使用数</th><th data-column-priority="3">最近操作</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody><tr v-for="certificate in certificates" :key="certificate.id">
           <td class="table-primary-column"><div class="cell-title"><strong :title="certificate.name">{{ displayCertificateName(certificate) }}</strong><TableText v-if="showCertificateDomains(certificate)" :value="certificate.domains.join('、')" /></div></td>
-          <td data-column-priority="2"><RouterLink class="table-secondary-text" :title="certificate.node_name || `VPS #${certificate.node_id}`" :to="`/admin/nodes?node=${certificate.node_id}`">{{ certificate.node_name || `VPS #${certificate.node_id}` }}</RouterLink></td>
+          <td data-column-priority="2"><RouterLink class="table-secondary-text" v-overflow-title="certificate.node_name || `VPS #${certificate.node_id}`" :to="`/admin/nodes?node=${certificate.node_id}`">{{ certificate.node_name || `VPS #${certificate.node_id}` }}</RouterLink></td>
           <td><StatusBadge :tone="certificateTone(certificate.status)" :icon="certificateIcon(certificate.status)">{{ certificateStatusLabel(certificate.status) }}</StatusBadge><small v-if="certificate.last_error" class="certificate-error" :title="certificate.last_error">{{ certificate.last_error }}</small></td>
           <td data-column-priority="2"><StatusBadge :tone="certificate.environment === 'production' ? 'info' : 'warning'">{{ certificate.environment === 'production' ? '生产证书' : '测试证书' }}</StatusBadge></td>
           <td><TimeBadge v-if="certificate.not_after" :value="certificate.not_after" :tone="expiryTone(certificate)" /><span v-else class="muted-value">尚未签发</span></td>
@@ -81,6 +81,7 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

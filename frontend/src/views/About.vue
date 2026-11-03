@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page about-page">
-    <PageHeader title="关于 ZBoard" description="查看当前运行版本、开源许可和 ZeroDeNet 项目资源。" :show-section-navigation="false">
+    <PageHeader title="关于 ZBoard" :show-section-navigation="false">
       <template #actions>
         <PageRefreshButton label="刷新运行信息" :loading="loading" @click="loadInfo" />
       </template>

@@ -150,6 +150,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0077_principal_minute_buckets.up.sql",
 		"0078_native_minute_settlement.up.sql",
 		"0079_account_subjects.up.sql",
+		"0080_user_admin_notes.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -234,6 +235,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0077_principal_minute_buckets.down.sql",
 		"0078_native_minute_settlement.down.sql",
 		"0079_account_subjects.down.sql",
+		"0080_user_admin_notes.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

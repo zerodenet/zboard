@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="运行日志" description="以紧凑摘要查看协议发布、节点内核和后台任务；输出与错误仅在打开详情时加载。">
+    <PageHeader title="运行日志">
       <template #actions><PageRefreshButton label="刷新运行日志" :loading="loading" @click="load" /></template>
     </PageHeader>
 

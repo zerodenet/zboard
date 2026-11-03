@@ -11,6 +11,9 @@ it('keeps compact refresh metadata stable and preserves a readable failure until
   await wrapper.setProps({ phase: 'stale', error: '数据库响应超时，请稍后再试' })
   await wrapper.get('[aria-label="经营统计：查看失败原因"]').trigger('click'); await flushPromises()
   expect(document.body.textContent).toContain('数据库响应超时，请稍后再试')
+  const scope = root.getAttributeNames().find(name => name.startsWith('data-v-'))!
+  expect(scope).toBeTruthy()
+  expect(document.querySelector('.read-error-details')?.hasAttribute(scope)).toBe(true)
   const retry = [...document.body.querySelectorAll('button')].find(b => b.textContent === '重试')!
   retry.click(); await flushPromises(); expect(wrapper.emitted('retry')).toHaveLength(1)
   await wrapper.setProps({ phase: 'refreshing', error: '' })

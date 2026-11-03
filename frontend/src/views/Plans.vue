@@ -2,7 +2,6 @@
   <section class="standard-page">
     <PageHeader
       title="商品与套餐"
-      description="查看商品的购买用途、价格与交付范围，进入详情管理销售规格。"
     >
       <template #actions>
         <PageRefreshButton label="刷新商品与套餐" :loading="loading" @click="refreshAll" />
@@ -60,8 +59,8 @@
           <tr v-for="plan in plans" :key="plan.id">
             <td class="table-primary-column">
               <div class="cell-title">
-                <strong>{{ plan.name }}</strong>
-                <TableText :value="`${plan.slug} · ${plan.summary || '暂无摘要'}`" />
+                <EntityDetailButton :data-plan-detail-trigger="plan.id" @click="openDetails(plan.id)">{{ plan.name }}</EntityDetailButton>
+                <TableText :value="plan.summary ? `${plan.slug} · ${plan.summary}` : plan.slug" />
               </div>
             </td>
             <td>
@@ -445,6 +444,7 @@
 </template>
 
 <script setup lang="ts">
+import EntityDetailButton from '../components/EntityDetailButton.vue'
 import TableText from '../components/TableText.vue'
 import SKUCycleFields from '../components/SKUCycleFields.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'

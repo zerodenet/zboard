@@ -16,7 +16,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     await enable!.trigger('click')
     expect(customization.tun.enabled).toBe(true)
     expect(customization.system_proxy).toBe(true)
-    expect(wrapper.text()).toContain('已提供客户端 HTTP 代理开关')
+    expect(wrapper.get('[role="status"]').text()).toBe('客户端 HTTP 代理已启用')
     expect(wrapper.text()).not.toContain('自动设置系统 HTTP 代理（桌面命令行）')
     const tun = wrapper.findAll('label.setting-switch').find(label => label.text().includes('启用 TUN 全局接管'))!
     await tun.find('[role="switch"]').trigger('click')
@@ -30,7 +30,7 @@ describe('SubscriptionTemplateCustomizer', () => {
       props: { renderer: 'sing-box', modelValue: customization },
       global: { plugins: [] },
     })
-    expect(wrapper.text()).toContain('Rule（规则）、Direct（直连）、Global（全局）')
+    expect(customization.mode).toBe('rule')
     const enable = wrapper.findAll('button').find(button => button.text() === '启用客户端 HTTP 代理开关')
     expect(enable).toBeDefined()
     await enable!.trigger('click')
@@ -38,7 +38,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     expect(customization.tun.enabled).toBe(true)
     expect(customization.dns.enabled).toBe(true)
     expect(customization.system_proxy).toBe(false)
-    expect(wrapper.text()).toContain('已提供客户端 HTTP 代理开关')
+    expect(wrapper.get('[role="status"]').text()).toBe('客户端 HTTP 代理已启用')
     expect(wrapper.findAll('button').some(button => button.text() === '启用客户端 HTTP 代理开关')).toBe(false)
   })
 

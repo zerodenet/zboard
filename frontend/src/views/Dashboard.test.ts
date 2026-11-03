@@ -118,10 +118,13 @@ describe('operations dashboard',()=>{
   const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
   expect(flows.props('value')).toBe('7')
   expect(flows.props('status')).toBe('覆盖未知')
-  expect(flows.props('meta')).toContain('新鲜度未确认')
+  expect(flows.attributes('title')).toContain('覆盖范围及更新时间待确认')
+  expect(flows.props('meta')).toBe('')
   const subscriptions=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测活跃订阅')!
   expect(subscriptions.props('value')).toBe('2')
-  expect(subscriptions.props('meta')).toContain('有连接的订阅')
+  expect(subscriptions.props('status')).toBe('覆盖未知')
+  expect(subscriptions.attributes('title')).toContain('覆盖范围及更新时间待确认')
+  expect(subscriptions.props('meta')).toBe('')
   expect(wrapper.text()).not.toContain('实时')
  })
  it('treats old server counts as observations even when its old coverage boolean is true', async()=>{

@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader v-if="!embedded" title="前置转发服务" description="组合 A 入口与 B 落地协议，作为独立线路分配给节点组。用户鉴权与流量结算由 B 承载。">
+    <PageHeader v-if="!embedded" title="前置转发服务">
       <template #actions><UiButton variant="secondary" :loading="loading" @click="load">刷新</UiButton><UiButton @click="edit()">创建入口</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" />

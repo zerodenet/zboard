@@ -3,7 +3,6 @@
     <PageHeader
       class="dashboard-header"
       title="运营工作台"
-      description="查看营收、订阅、服务运行与当前待处理异常。"
     >
       <template #actions>
         <div class="dashboard-controls">
@@ -19,7 +18,7 @@
     </div>
     <UiMetricStrip class="dashboard-section service-metrics" :aria-busy="!current && currentResource.loading.value || undefined">
       <template v-if="current">
-      <MetricCard label="有效订阅" :value="formatNumber(current.active_subscriptions)" icon="plans" status="当前" :meta="`${formatNumber(current.subscriptions.expiring_within_3d)} 个将在 3 天内到期`" />
+      <MetricCard label="有效订阅" :value="formatNumber(current.active_subscriptions)" icon="plans" :meta="current.subscriptions.expiring_within_3d ? `${formatNumber(current.subscriptions.expiring_within_3d)} 个将在 3 天内到期` : ''" />
       <MetricCard
         label="已观测活跃订阅"
         :value="observedValue(observedSubscriptions)"
@@ -27,7 +26,7 @@
         :status="observedSubscriptions === null ? '未采集' : '覆盖未知'"
         tone="neutral"
         icon-tone="neutral"
-        :meta="observedSubscriptions === null ? '尚未取得主体连接快照' : '主体快照中有连接的订阅，覆盖范围及新鲜度未确认'"
+        :title="observedSubscriptions === null ? '尚未采集连接数据' : '覆盖范围及更新时间待确认'"
       />
       <MetricCard
         label="已观测连接"
@@ -36,17 +35,17 @@
         :status="observedFlows === null ? '未采集' : '覆盖未知'"
         tone="neutral"
         icon-tone="neutral"
-        :meta="observedFlows === null ? '尚未取得主体连接快照' : '已有主体快照的汇总，覆盖范围及新鲜度未确认'"
+        :title="observedFlows === null ? '尚未采集连接数据' : '覆盖范围及更新时间待确认'"
       />
 
       <MetricCard
         label="在线节点"
         :value="`${formatNumber(current.service.online_nodes)} / ${formatNumber(current.service.enabled_nodes)}`"
         icon="nodes"
-        status="当前"
+
         tone="neutral"
         icon-tone="neutral"
-        meta="依据最近两分钟心跳"
+        title="依据最近两分钟心跳"
       />
       </template>
       <template v-else><MetricCard v-for="metric in serviceMetricLabels" :key="metric.label" :label="metric.label" value="—" :icon="metric.icon" :loading="currentResource.loading.value" meta="尚未取得服务数据" /></template>

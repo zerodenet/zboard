@@ -1,35 +1,31 @@
 <template>
   <section class="runtime-settings">
-    <div v-if="renderer === 'sing-box'" class="runtime-client-controls">
-      <p>导入后可在客户端切换 Rule（规则）、Direct（直连）、Global（全局）；初始模式不会移除其他模式的规则。</p>
-      <p v-if="model.tun.enabled && model.mixed_enabled">已提供客户端 HTTP 代理开关，可在支持该功能的 sing-box 图形客户端中随时切换。由客户端管理系统代理，适用于 iOS / Android，无需额外启用命令行系统代理。</p>
-      <template v-else>
-        <p>客户端 HTTP 代理开关需要同时启用 TUN 和本地 HTTP/SOCKS 代理。</p>
-        <UiButton variant="secondary" @click="enableClientHTTPProxy">启用客户端 HTTP 代理开关</UiButton>
-      </template>
-    </div>
+    <template v-if="renderer === 'sing-box'">
+      <span v-if="model.tun.enabled && model.mixed_enabled" class="sr-only" role="status">客户端 HTTP 代理已启用</span>
+      <UiButton v-else variant="secondary" @click="enableClientHTTPProxy">启用客户端 HTTP 代理开关</UiButton>
+    </template>
     <div class="runtime-grid">
-      <FormField label="初始运行模式" name="template-route-mode" hint="规则模式按规则集匹配；全局模式全部走主策略组；直连模式绕过代理。" required>
+      <FormField label="初始运行模式" name="template-route-mode" required>
         <template #default="{ controlAttrs }"><UiSelect v-model="model.mode" v-bind="controlAttrs" :options="modeOptions" /></template>
       </FormField>
-      <FormField v-if="model.mixed_enabled" label="本地混合代理端口" name="template-mixed-port" hint="在 127.0.0.1 同时提供 HTTP CONNECT 和 SOCKS 代理。" required>
+      <FormField v-if="model.mixed_enabled" label="本地混合代理端口" name="template-mixed-port" hint="监听 127.0.0.1" required>
         <template #default="{ controlAttrs }"><UiNumberInput v-model="model.mixed_port" v-bind="controlAttrs" :min="1" :max="65535" /></template>
       </FormField>
     </div>
 
     <label class="setting-switch">
-      <span><strong>启用本地 HTTP/SOCKS 代理</strong><small>关闭后不监听本地混合代理端口；需同时启用 TUN 才能接管流量。</small></span>
+      <span><strong>启用本地 HTTP/SOCKS 代理</strong></span>
       <UiSwitch v-model="model.mixed_enabled" @update:model-value="toggleMixed" />
     </label>
 
     <label v-if="renderer === 'sing-box' && model.mixed_enabled && !model.tun.enabled" class="setting-switch">
-      <span><strong>自动设置系统 HTTP 代理（桌面命令行）</strong><small>仅适用于有权限的桌面命令行运行。iOS / Android 图形客户端请启用 TUN，使用客户端内的 HTTP 代理开关。</small></span>
+      <span><strong>自动设置系统 HTTP 代理（桌面命令行）</strong></span>
       <UiSwitch v-model="model.system_proxy" />
     </label>
 
     <template v-if="supportsRuntimeNetwork">
       <label class="setting-switch">
-        <span><strong>启用 DNS</strong><small>生成客户端原生 DNS 服务、缓存、地址族策略与可选 Fake-IP。</small></span>
+        <span><strong>启用 DNS</strong></span>
         <UiSwitch v-model="model.dns.enabled" />
       </label>
       <div v-if="model.dns.enabled" class="nested-settings">
@@ -58,9 +54,9 @@
           </article>
         </div>
         <div class="runtime-grid">
-          <label class="setting-switch compact"><span><strong>DNS 缓存</strong><small>减少重复查询。</small></span><UiSwitch v-model="model.dns.cache_enabled" /></label>
+          <label class="setting-switch compact"><span><strong>DNS 缓存</strong></span><UiSwitch v-model="model.dns.cache_enabled" /></label>
           <FormField v-if="model.dns.cache_enabled" label="缓存容量" name="template-dns-cache"><template #default="{ controlAttrs }"><UiNumberInput v-model="model.dns.cache_capacity" v-bind="controlAttrs" :min="1" :max="65536" /></template></FormField>
-          <label class="setting-switch compact"><span><strong>Fake-IP</strong><small>透明代理时保留域名映射。</small></span><UiSwitch v-model="model.dns.fake_ip_enabled" /></label>
+          <label class="setting-switch compact"><span><strong>Fake-IP</strong></span><UiSwitch v-model="model.dns.fake_ip_enabled" /></label>
           <template v-if="model.dns.fake_ip_enabled">
             <FormField label="Fake-IP IPv4 地址池" name="template-dns-fake-v4"><template #default="{ controlAttrs }"><UiInput v-model.trim="model.dns.fake_ipv4_range" v-bind="controlAttrs" /></template></FormField>
             <FormField label="Fake-IP IPv6 地址池" name="template-dns-fake-v6"><template #default="{ controlAttrs }"><UiInput v-model.trim="model.dns.fake_ipv6_range" v-bind="controlAttrs" /></template></FormField>
@@ -69,7 +65,7 @@
       </div>
 
       <label class="setting-switch">
-        <span><strong>启用 TUN 全局接管</strong><small>关闭时只处理主动使用本地 HTTP/SOCKS 端口的应用；开启后由 TUN 接管系统流量。</small></span>
+        <span><strong>启用 TUN 全局接管</strong></span>
         <UiSwitch v-model="model.tun.enabled" @update:model-value="toggleTun" />
       </label>
       <div v-if="model.tun.enabled" class="nested-settings runtime-grid">
@@ -160,8 +156,5 @@ function toggleDNSHijack(enabled: boolean) {
 </script>
 
 <style scoped>
-.runtime-client-controls { display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
-.runtime-client-controls p { margin: 0; }
-.runtime-client-controls .ui-button { justify-self: start; }
 .runtime-settings,.nested-settings,.dns-server-list{display:grid;gap:10px}.runtime-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}.setting-switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft)}.setting-switch span{display:grid;gap:3px}.setting-switch strong,.dns-list-heading strong{font-size:10px;color:var(--text-strong)}.setting-switch small{font-size:9px;color:var(--muted);line-height:1.5}.setting-switch.compact{min-height:58px}.nested-settings{padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft)}.dns-list-heading,.dns-server-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.dns-server-row{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.dns-server-grid{flex:1}.tun-switches{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tun-switches label{display:flex;align-items:center;gap:6px;font-size:10px}@media(max-width:760px){.runtime-grid{grid-template-columns:1fr}.dns-server-row{align-items:flex-start;flex-direction:column}}
 </style>

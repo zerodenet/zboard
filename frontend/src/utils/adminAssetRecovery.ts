@@ -7,7 +7,9 @@ const status = (v: any) => ['active', 'suspended', 'deactivated'].includes(v)
 const version = (v: any) => text(v, 64) && v.length > 0 && Number.isFinite(Date.parse(v))
 export function userAccountFields(v: any) {
   if (!object(v) || !text(v.email, 128) || !status(v.status) || typeof v.is_admin !== 'boolean') return
-  return { email: v.email as string, status: v.status as string, is_admin: v.is_admin as boolean }
+  const note = v.admin_note ?? ''
+  if (!text(note, 2000) || Array.from(note).length > 500) return
+  return { email: v.email as string, status: v.status as string, is_admin: v.is_admin as boolean, admin_note: note as string }
 }
 export function userAccountBaseline(v: any) {
   const fields = userAccountFields(v)

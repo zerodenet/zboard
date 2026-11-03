@@ -6,11 +6,18 @@ describe('ordinary user, provider and protocol recovery schemas', () => {
   it('retains original identity and timestamp without passwords or permissions metadata', () => {
     const original = { id: 4, email: 'owner@example.test', status: 'active', is_admin: false, updated_at: at, password: 'SECRET' }
     const draft = userAccountRecovery({ id: 4, fields: { ...original, status: 'suspended' }, baseline: original, token: 'SECRET' })
-    expect(draft).toEqual({ id: 4, fields: { email: original.email, status: 'suspended', is_admin: false }, baseline: userAccountBaseline(original) })
+    expect(draft).toEqual({ id: 4, fields: { email: original.email, status: 'suspended', is_admin: false, admin_note: '' }, baseline: userAccountBaseline(original) })
     expect(JSON.stringify(draft)).not.toContain('SECRET')
     expect(userAccountRecovery({ id: 5, fields: original, baseline: original })).toBeUndefined()
     expect(userAccountRecovery({ id: 4, fields: { ...original, email: 'other@example.test' }, baseline: original })).toBeUndefined()
     expect(userAccountBaseline({ ...original, updated_at: '' })).toBeUndefined()
+  })
+  it('retains admin notes in same-admin recovery and rejects oversized notes', () => {
+    const original = { id: 4, email: 'owner@example.test', status: 'active', is_admin: false, updated_at: at, admin_note: '张三' }
+    const draft = userAccountRecovery({ id: 4, fields: { ...original, admin_note: '李四' }, baseline: original })
+    expect(draft?.fields.admin_note).toBe('李四')
+    expect(draft?.baseline?.admin_note).toBe('张三')
+    expect(userAccountRecovery({ id: 4, fields: { ...original, admin_note: '字'.repeat(501) }, baseline: original })).toBeUndefined()
   })
   it('keeps the server provider revision and never stores token or credential prefix', () => {
     const baseline = { id: 9, revision: 7, name: 'Old', provider_key: 'cloudflare', api_token: 'SECRET', credential_prefix: 'SECRET' }

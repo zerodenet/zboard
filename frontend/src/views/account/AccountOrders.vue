@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="我的订单" description="按状态查看商品快照、金额和处理进度。" eyebrow="ORDERS">
+    <PageHeader title="我的订单">
       <template #actions>
         <RouterLink class="button" to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink>
       </template>

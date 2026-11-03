@@ -37,7 +37,7 @@ func (s AccountDirectory) List(ctx context.Context, q identity.AccountDirectoryQ
 	}
 	if q.Search != "" {
 		like := fmt.Sprintf("%%%s%%", strings.ToLower(q.Search))
-		query = query.Where("LOWER(email) LIKE ? OR LOWER(account_name) LIKE ?", like, like)
+		query = query.Where("LOWER(email) LIKE ? OR LOWER(account_name) LIKE ? OR LOWER(admin_note) LIKE ?", like, like, like)
 	}
 	var total int64
 	if q.Paged {
@@ -119,7 +119,7 @@ func (s AccountDirectory) project(ctx context.Context, users []model.User, now t
 		}
 		subs, orders := subscriptionCounts[user.ID], orderCounts[user.ID]
 		items = append(items, identity.AccountDirectoryItem{
-			PublicAccount: publicAccount(user), AccountOverview: overview, CreatedAt: user.CreatedAt,
+			PublicAccount: publicAccount(user), AccountOverview: overview, CreatedAt: user.CreatedAt, AdminNote: user.AdminNote,
 			ActiveSubscriptionCount: subs.Active, TotalSubscriptionCount: subs.Total,
 			PendingOrderCount: orders.Active, TotalOrderCount: orders.Total,
 		})
@@ -158,7 +158,7 @@ func (s AccountDirectory) Detail(ctx context.Context, id uint, now time.Time) (i
 		return identity.AccountBusinessDetail{}, identity.ErrAccountNotFound
 	}
 	return identity.AccountBusinessDetail{
-		AccountOverview: overview, ID: user.ID, AccountName: user.AccountName, Email: user.Email, EmailVerifiedAt: user.EmailVerifiedAt,
+		AccountOverview: overview, ID: user.ID, AccountName: user.AccountName, AdminNote: user.AdminNote, Email: user.Email, EmailVerifiedAt: user.EmailVerifiedAt,
 		LastLoginAt: user.LastLoginAt, IsAdmin: user.IsAdmin, Status: user.Status,
 		ActiveSubscriptionCount: subs.Active, TotalSubscriptionCount: subs.Total,
 		PendingOrderCount: orders.Active, TotalOrderCount: orders.Total,

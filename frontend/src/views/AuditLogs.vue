@@ -2,7 +2,6 @@
   <section class="standard-page">
     <PageHeader
       title="审计日志"
-      description="列表以操作发生关联的业务对象为主；内部目标值仅作为辅助定位信息。"
     >
       <template #actions>
         <PageRefreshButton label="刷新审计日志" :loading="loading" @click="load" />

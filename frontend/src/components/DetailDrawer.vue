@@ -2,14 +2,17 @@
   <DialogRoot :open="open" @update:open="handleOpenChange">
     <DialogPortal>
       <DialogOverlay class="ui-dialog-overlay" />
-      <DialogContent class="detail-drawer ui-sheet-content" @open-auto-focus="handleOpenAutoFocus" @close-auto-focus="handleCloseAutoFocus" @keydown="handleKeydown">
+      <DialogContent class="detail-drawer ui-sheet-content" :class="{ 'ui-sheet-expanded': expanded }" @open-auto-focus="handleOpenAutoFocus" @close-auto-focus="handleCloseAutoFocus" @keydown="handleKeydown">
         <header class="detail-drawer-header">
           <div>
             <span v-if="eyebrow">{{ eyebrow }}</span>
             <DialogTitle>{{ title }}</DialogTitle>
             <DialogDescription :class="{ 'sr-only': !description }">{{ description || title }}</DialogDescription>
           </div>
-          <UiButton ref="closeButton" variant="ghost" size="sm" icon type="button" aria-label="关闭详情" title="关闭详情" @click="emit('close')"><UiIcon name="close" /></UiButton>
+          <div class="drawer-window-actions">
+            <UiButton ref="closeButton" variant="ghost" size="sm" icon type="button" aria-label="关闭详情" title="关闭详情" @click="emit('close')"><UiIcon name="close" /></UiButton>
+            <UiButton class="drawer-expand" variant="ghost" size="sm" type="button" :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '还原宽度' : '展开详情' }}</UiButton>
+          </div>
         </header>
         <div class="detail-drawer-body"><slot /></div>
         <div ref="taskTrayHost" class="task-tray-host" />
@@ -29,6 +32,7 @@ const props = withDefaults(defineProps<{ open: boolean; title: string; eyebrow?:
 const emit = defineEmits<{ close: [] }>()
 const taskTrayHost = useTaskTrayHost()
 const closeButton = ref<InstanceType<typeof UiButton> | null>(null)
+const expanded = ref(false)
 let previousFocus: HTMLElement | null = null
 let returnFocusSelector = ''
 watch(() => props.open, async (open, wasOpen) => {
@@ -36,6 +40,7 @@ watch(() => props.open, async (open, wasOpen) => {
     previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     returnFocusSelector = props.returnFocusSelector
   } else if (!open && wasOpen) {
+    expanded.value = false
     await nextTick()
     restoreFocus()
   }
@@ -76,4 +81,7 @@ function restoreFocus() {
 
 <style scoped>
 .task-tray-host { display: contents; }
+.drawer-window-actions { display: flex; flex-direction: row-reverse; align-items: center; gap: 4px; }
+.ui-sheet-expanded { width: min(1200px, calc(100vw - 32px)); }
+@media (max-width: 820px) { .drawer-expand { display: none; } .ui-sheet-expanded { width: 100vw; } }
 </style>

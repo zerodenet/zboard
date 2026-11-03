@@ -1,13 +1,14 @@
 <template>
   <UiSection title="流量维度统计" description="按用户、节点、订阅或协议端点查看整个筛选区间的用量，支持继续筛选和查看明细。">
+    <template #meta><RemoteReadStatus compact label="流量维度统计" :phase="resource.phase.value" :error="error" :last-success-at="resource.lastSuccessAt.value" @retry="load" /></template>
     <template #actions>
       <UiSelect v-model="dimension" class="breakdown-dimension" aria-label="统计维度" :options="dimensions" />
       <UiButton variant="ghost" size="sm" :loading="loading" @click="load">刷新统计</UiButton>
     </template>
     <div class="breakdown-body">
-      <PageAlert v-if="error" tone="danger" title="维度统计加载失败">{{ error }} <UiButton variant="secondary" @click="load">重试统计</UiButton></PageAlert>
-      <p v-if="loading" role="status">正在加载维度统计…</p>
-      <template v-if="data && !error">
+      <PageAlert v-if="error && !data" tone="danger" title="维度统计加载失败">{{ error }} <UiButton variant="secondary" @click="load">重试统计</UiButton></PageAlert>
+      <p v-if="loading && !resource.loaded.value" role="status">正在加载维度统计…</p>
+      <template v-if="data">
         <UiMetricStrip>
           <MetricCard label="上传流量" :value="formatBytes(data.totals.upload_bytes)" icon="upload" meta="整个筛选区间" />
           <MetricCard label="下载流量" :value="formatBytes(data.totals.download_bytes)" icon="download" meta="整个筛选区间" />
@@ -46,6 +47,7 @@ import DataTable from '../components/DataTable.vue'
 import TablePager from '../components/TablePager.vue'
 import EmptyState from '../components/EmptyState.vue'
 import TimeBadge from '../components/TimeBadge.vue'
+import RemoteReadStatus from '../components/RemoteReadStatus.vue'
 const props = defineProps<{ dimension: TrafficDimension; userId: string; nodeId: string; subscriptionId: string; protocolEndpointId: string; from: string; to: string; refreshToken: number }>()
 const emit = defineEmits<{ drilldown: [dimension: TrafficDimension, id: number, details: boolean]; 'update:dimension': [value: TrafficDimension] }>()
 const dimension = computed({ get: () => props.dimension, set: value => emit('update:dimension', value) })
@@ -58,14 +60,15 @@ const resource = useRemoteResource<TrafficBreakdown | null>({
   errorMessage: '无法加载当前维度统计，请重试。',
 })
 const { data, loading, error } = resource
-async function load() { resource.reset(); await resource.load() }
-async function changePage(page: { offset: number; limit: number }) { offset.value = page.offset; limit.value = page.limit; await load() }
-watch(() => JSON.stringify([props.userId, props.nodeId, props.subscriptionId, props.protocolEndpointId, props.from, props.to, dimension.value]), () => { offset.value = 0; void load() }, { immediate: true })
+async function load() { await resource.load() }
+async function resetScope() { resource.reset(); await load() }
+async function changePage(page: { offset: number; limit: number }) { offset.value = page.offset; limit.value = page.limit; await resetScope() }
+watch(() => JSON.stringify([props.userId, props.nodeId, props.subscriptionId, props.protocolEndpointId, props.from, props.to, dimension.value]), () => { offset.value = 0; void resetScope() }, { immediate: true })
 watch(() => props.refreshToken, () => { void load() })
 watch(() => data.value?.total, total => {
   if (total !== undefined && offset.value > 0 && offset.value >= total) {
     offset.value = Math.max(0, Math.ceil(total / limit.value) - 1) * limit.value
-    void load()
+    void resetScope()
   }
 })
 let poll: ReturnType<typeof setInterval> | undefined

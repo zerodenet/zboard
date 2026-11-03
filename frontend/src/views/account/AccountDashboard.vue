@@ -2,8 +2,6 @@
   <section class="account-page stack">
     <PageHeader
       :title="`你好，${app.user.email}`"
-      description="这是你的订阅、流量和订单状态总览。"
-      eyebrow="MY ACCOUNT"
     >
       <template #actions>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="load">

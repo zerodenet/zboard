@@ -1,6 +1,6 @@
 <template>
   <div class="admin-build-info" aria-label="系统版本信息">
-    <span class="build-version" :title="version">版本 {{ version }}</span>
+    <span class="build-version" v-overflow-title="version">版本 {{ version }}</span>
     <span>构建时间 {{ buildTime }}</span>
     <div class="version-actions">
       <button type="button" :disabled="checking || !canCompare" @click="checkForUpdates(true)">
@@ -20,6 +20,7 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, ref, watch } from 'vue'
 import type { AdminSystemInfo } from '../api/system'
 import { compareZBoardVersions, fetchZBoardReleases, latestEligibleRelease, releaseChannelForVersion, ZBOARD_DEPLOYMENT_GUIDE_URL, ZBOARD_RELEASES_URL, type ZBoardRelease } from '../api/releaseUpdates'

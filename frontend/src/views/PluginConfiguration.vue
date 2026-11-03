@@ -5,7 +5,7 @@
     <p v-if="loading && !plugin" role="status">正在读取插件…</p>
     <section v-else-if="!plugin && !error" class="plugins-empty"><h1>未找到插件</h1><p>请返回插件管理检查。</p></section>
     <template v-if="plugin">
-      <PageHeader :title="plugin.name" description="设置插件所需的参数，保存后由系统管理配置。" :show-section-navigation="false"><template #actions><template v-if="configurable"><UiButton v-if="plugin.manifest.components.server" variant="secondary" :loading="testing" :disabled="jsonOpen" @click="test">测试已保存配置</UiButton><UiButton variant="ghost" :disabled="testing || jsonOpen" @click="jsonOpen = true">高级 JSON 配置</UiButton></template></template></PageHeader>
+      <PageHeader :title="plugin.name" :show-section-navigation="false"><template #actions><template v-if="configurable"><UiButton v-if="plugin.manifest.components.server" variant="secondary" :loading="testing" :disabled="jsonOpen" @click="test">测试已保存配置</UiButton><UiButton variant="ghost" :disabled="testing || jsonOpen" @click="jsonOpen = true">高级 JSON 配置</UiButton></template></template></PageHeader>
       <AdminPageNavigation />
       <TransientFeedback :success="message" />
       <PageAlert v-if="testError" tone="danger">{{ testError }}</PageAlert>

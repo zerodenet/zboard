@@ -7,7 +7,7 @@
         </UiButton>
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent class="ui-dropdown-content appearance-menu" align="end" :side-offset="6">
+        <DropdownMenuContent as-child align="end" :side-offset="6"><div class="ui-dropdown-content appearance-menu">
           <DropdownMenuLabel class="appearance-menu-label">外观模式</DropdownMenuLabel>
           <DropdownMenuRadioGroup :model-value="appearance.preference.value" @update:model-value="change">
             <DropdownMenuRadioItem v-for="option in options" :key="option.value" :value="option.value" class="ui-dropdown-item appearance-option">
@@ -15,7 +15,7 @@
               <DropdownMenuItemIndicator class="appearance-check"><UiIcon name="check" /></DropdownMenuItemIndicator>
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
+        </div></DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
   </div>

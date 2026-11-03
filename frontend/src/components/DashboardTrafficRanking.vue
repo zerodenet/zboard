@@ -8,7 +8,7 @@
       <div v-if="loading && !items.length" class="ranking-empty" role="status">正在加载流量排行…</div>
       <ol v-else-if="items.length" class="ranking-list">
         <li v-for="(item, index) in items" :key="item.id">
-          <div class="ranking-heading"><span class="ranking-name"><span class="rank-number">{{ index + 1 }}</span><span class="ranking-label" :title="item.name">{{ item.name === '节点' || item.name === '用户' ? `${item.name} #${item.id}` : item.name }}</span></span><MetricComparison :current="item.traffic_bytes" :previous="item.previous_traffic_bytes" :label="comparisonLabel" :format="formatBytes" /></div>
+          <div class="ranking-heading"><span class="ranking-name"><span class="rank-number">{{ index + 1 }}</span><span class="ranking-label" v-overflow-title="item.name">{{ item.name === '节点' || item.name === '用户' ? `${item.name} #${item.id}` : item.name }}</span></span><MetricComparison :current="item.traffic_bytes" :previous="item.previous_traffic_bytes" :label="comparisonLabel" :format="formatBytes" /></div>
           <div class="ranking-meter"><div class="ranking-track"><span :style="{ width: `${maximum ? item.traffic_bytes / maximum * 100 : 0}%` }" /></div><span class="ranking-value">{{ formatBytes(item.traffic_bytes) }}</span></div>
         </li>
       </ol>
@@ -18,6 +18,7 @@
   </UiSection>
 </template>
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed } from 'vue'
 import type { DashboardRange, DashboardTrafficRanking } from '../api/dashboard'
 import UiSection from './UiSection.vue'

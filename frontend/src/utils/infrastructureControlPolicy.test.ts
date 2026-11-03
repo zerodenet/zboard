@@ -146,6 +146,7 @@ describe('infrastructure control policy', () => {
       const source = read('views', view)
       expect(source).toContain('<WorkbenchFilterBar')
       expect(source).toContain('<WorkbenchFilterInput')
+      expect(source).not.toMatch(/<WorkbenchFilterInput\b[^>]*\binline\b/)
       expect(source).not.toContain('<UiSearchInput')
     }
   })

@@ -33,14 +33,14 @@
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent class="ui-dropdown-content topbar-account-menu" align="end" :side-offset="8">
+            <DropdownMenuContent as-child align="end" :side-offset="8"><div class="ui-dropdown-content topbar-account-menu">
               <div class="topbar-account-menu-heading">{{ app.user.email || '管理员' }}</div>
               <DropdownMenuSeparator class="topbar-account-menu-separator" />
               <DropdownMenuItem as-child class="ui-dropdown-item"><RouterLink to="/"><UiIcon name="dashboard" />查看站点</RouterLink></DropdownMenuItem>
               <DropdownMenuItem as-child class="ui-dropdown-item"><RouterLink to="/account"><UiIcon name="users" />个人中心</RouterLink></DropdownMenuItem>
               <DropdownMenuSeparator class="topbar-account-menu-separator" />
               <DropdownMenuItem class="ui-dropdown-item" @select="logout"><UiIcon name="logout" />退出登录</DropdownMenuItem>
-            </DropdownMenuContent>
+            </div></DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot></div>
       </header>

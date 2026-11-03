@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page account-announcements">
-    <PageHeader title="公告中心" description="重要公告优先展开，历史通知保持轻量列表；未读只统计当前有效公告。" eyebrow="NOTICE BOARD">
+    <PageHeader title="公告中心">
       <template #actions><PageRefreshButton :loading="loading" label="刷新公告" @click="load" /></template>
     </PageHeader>
     <TransientFeedback :error="error" />

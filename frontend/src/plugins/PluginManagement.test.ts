@@ -108,7 +108,7 @@ describe('plugin management navigation', () => {
     const file = new File(['package'], 'org.zerodenet.connect.zboard-0.0.2-dev.202609181350-linux-amd64.zbplugin')
     dialog.getComponent(UiFileUpload).vm.$emit('select', [file]); await flushPromises()
     expect(mocks.import).not.toHaveBeenCalled()
-    expect(wrapper.get('.plugin-import-file strong').attributes('title')).toBe(file.name)
+    expect(wrapper.get('.plugin-import-file strong').attributes('title')).toBeUndefined()
     expect(wrapper.text()).toContain(file.name)
     expect(wrapper.text()).toContain('7 B')
     mocks.import.mockRejectedValueOnce({ response: { data: { message: '发布者签名不受信任' } } })

@@ -70,7 +70,7 @@ describe('account subscription independent loading and access identity', () => {
   })
   afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
-  async function open(path = '/account/subscription', routed = false) {
+  async function open(path = '/account/subscription', routed = false, realActions = false) {
     router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/account/subscription', component: routed ? AccountSubscription : { template: '<div />' } },
       { path: '/account/plans', component: { template: '<div />' } },
@@ -79,10 +79,13 @@ describe('account subscription independent loading and access identity', () => {
     await router.push(path)
     await router.isReady()
     pinia = createPinia()
-    wrapper = mount(routed ? RouterView : AccountSubscription, { global: {
+    wrapper = mount(routed ? RouterView : AccountSubscription, { attachTo: realActions ? document.body : undefined, global: {
       plugins: [pinia, router], components: { UiButton, UiInput, UiSelect, UiTextarea, TimeBadge },
       stubs: {
         ConfirmDialog: true, TicketAttachmentEditor: true, PageRefreshButton: true,
+        // Credential/commerce tests exercise handlers independently of menu mounting.
+        // The actual row-menu path is covered below and in RowActionMenu.test.ts.
+        RowActions: realActions ? false : { template: '<div><slot name="primary" /><slot /></div>' },
         ModalDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
       },
     } })
@@ -94,6 +97,32 @@ describe('account subscription independent loading and access identity', () => {
     expect(match, `button ${text}`).toBeDefined()
     return match!
   }
+
+  it('puts copying before the subscription list, collapses telemetry and exposes secondary actions through the real menu', async () => {
+    await open('/account/subscription?subscription=1', false, true)
+    const accessPanel = wrapper!.get('.subscription-access-panel').element
+    const list = wrapper!.get('.data-workbench').element
+    expect(accessPanel.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper!.get('.subscription-access-section button').text()).toBe('复制链接')
+    expect(wrapper!.get('.subscription-diagnostics').attributes('open')).toBeUndefined()
+    expect(wrapper!.find('tbody a[href^="/account/tickets"]').exists()).toBe(false)
+    await wrapper!.get('tbody button[aria-haspopup="menu"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('就此订阅提交工单')
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('余额自动续费')
+  })
+
+  it('offers generation in the main access header without opening technical options or submitting automatically', async () => {
+    vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: 1 })
+    await open('/account/subscription?subscription=1')
+    const generate = wrapper!.get('.subscription-access-section .ui-section-actions button')
+    expect(generate.text()).toBe('生成此链接')
+    expect(generate.attributes('disabled')).toBeUndefined()
+    expect(wrapper!.get('.subscription-options').attributes('open')).toBeUndefined()
+    await generate.trigger('click')
+    expect(wrapper!.getComponent(ConfirmDialog).props('open')).toBe(true)
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+  })
 
   it.each([1, 2])('prefills a ticket for row %i independently of the managed credential without submitting or rotating', async id => {
     const selected = 3 - id

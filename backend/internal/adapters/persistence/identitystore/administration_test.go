@@ -33,7 +33,7 @@ func TestAdministrationKeepsLastAdminAndAuditsAtomically(t *testing.T) {
 	if _, err := service.Update(ctx, p, actor.ID, identity.AccountChange{IsAdmin: &no}); !errors.Is(err, identity.ErrLastAdministrator) {
 		t.Fatal(err)
 	}
-	target, err := service.Create(ctx, p, identity.NewAccount{Email: " new@example.test ", Password: "ValidPassword2026!"})
+	target, err := service.Create(ctx, p, identity.NewAccount{Email: " new@example.test ", Password: "ValidPassword2026!", AdminNote: "创建时的备注"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,14 +57,15 @@ func TestAdministrationKeepsLastAdminAndAuditsAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	suspended := "suspended"
-	if _, err := service.Update(ctx, p, target.ID, identity.AccountChange{Status: &suspended}); err == nil {
+	note := "不应提交的备注"
+	if _, err := service.Update(ctx, p, target.ID, identity.AccountChange{Status: &suspended, AdminNote: &note}); err == nil {
 		t.Fatal("expected audit failure")
 	}
 	var current model.User
 	if err := db.First(&current, target.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if current.Status != "active" {
+	if current.Status != "active" || current.AdminNote != "创建时的备注" {
 		t.Fatal("mutation committed without audit", current.Status)
 	}
 }

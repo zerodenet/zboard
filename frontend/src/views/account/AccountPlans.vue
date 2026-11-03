@@ -3,7 +3,6 @@
     <PageHeader
       :title="pageTitle"
       :description="pageDescription"
-      eyebrow="PLANS"
     >
       <template #actions>
         <UiButton v-if="checkoutOpen" variant="secondary" type="button" :disabled="creating" @click="backToDetail">

@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="外部供应商" description="管理 DNS 服务商账户及其连接状态。">
+    <PageHeader title="外部供应商">
       <template #actions><PageRefreshButton label="刷新" :loading="loading || refreshing" @click="refreshAll" /><UiButton type="button" @click="openAccount()"><UiIcon name="plus" />添加供应商账户</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" success-title="操作已提交" error-title="操作失败" />

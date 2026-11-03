@@ -85,7 +85,7 @@ async function render() {
   await router.push('/admin/edit?page=3#draft')
   cleanup = installAuthSessionNavigation(router, () => store.clear(), () => store.suspendSession())
   wrapper = mount(App, { global: { plugins: [pinia, router], components: { UiButton }, stubs: {
-    ModalDialog: { template: '<section role="dialog"><slot /></section>' },
+    ModalDialog: { template: '<section role="dialog"><slot /><slot name="footer" /></section>' },
     NavigationProgress: true, FeedbackHost: true, MaintenanceScreen: true, AnnouncementStack: true,
   } } })
   await flushPromises()
@@ -113,6 +113,10 @@ describe('in-page session restoration', () => {
     expect(router.currentRoute.value.fullPath).toBe('/admin/edit?page=3#draft')
     expect(wrapper!.get('[data-draft]').element).toBe(editor)
     expect(store.reauthRequired).toBe(true)
+    expect((wrapper!.get('input[type="email"]').element as HTMLInputElement).value).toBe(actor.email)
+    expect(wrapper!.get('input[type="email"]').attributes('inputmode')).toBe('email')
+    expect(wrapper!.get('input[type="password"]').attributes('autocomplete')).toBe('current-password')
+    expect(wrapper!.get('[role="dialog"]').findAll('p')).toHaveLength(0)
     expired = false
     await authenticate()
     expect(store.reauthRequired).toBe(false)
@@ -130,6 +134,8 @@ describe('in-page session restoration', () => {
     trackedTaskIDs.value = [99]
     await expire()
     actor = { id: 2, email: 'second@example.test', is_admin: false }
+    await wrapper!.get('input[type="email"]').setValue('second@example.test')
+    expect(wrapper!.get('[role="dialog"]').text()).toContain('切换账户将清除未保存内容。')
     expired = false
     await authenticate()
     expect(store.user.id).toBe(2)
@@ -211,9 +217,10 @@ describe('in-page session restoration', () => {
     expect(store.passwordLoginAvailable).toBe(false)
     await expire()
     expect(wrapper!.find('input[type="password"]').exists()).toBe(false)
-    expect(wrapper!.text()).toContain('OIDC 登录')
-    expect(wrapper!.text()).toContain('本标签页暂存 10 分钟')
-    await wrapper!.findAll('button').find(button => button.text() === '打开第三方登录入口')!.trigger('click')
+    const externalButton = wrapper!.findAll('button').find(button => button.text() === '第三方登录')!
+    expect(externalButton.attributes('title')).toBe('OIDC 登录')
+    expect(wrapper!.get('[role="dialog"]').findAll('p')).toHaveLength(0)
+    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/login')
     expect(router.currentRoute.value.query).toEqual({ redirect: '/admin/edit?page=3#draft', reason: 'session-expired' })
@@ -226,7 +233,7 @@ describe('in-page session restoration', () => {
     await render()
     await expire()
     expect(wrapper!.find('input[type="password"]').exists()).toBe(false)
-    await wrapper!.findAll('button').find(button => button.text() === '我已设置邮箱密码')!.trigger('click')
+    await wrapper!.findAll('button').find(button => button.text() === '邮箱密码登录')!.trigger('click')
     expect(wrapper!.find('input[type="password"]').exists()).toBe(true)
     expect(requests.mock.calls.filter(([url]) => url === '/auth/login')).toHaveLength(0)
   })
@@ -239,7 +246,7 @@ describe('full-page identity recovery uses verified identity and permission', ()
     externalMethods = [{ plugin_id: 'oidc', generation: 1, slot: { title: 'OIDC 登录', id: 'login', surface: 'public', slot: 'auth.login.methods', entrypoint: 'ui/login.html' } }]
     const current = await render()
     await expire()
-    await wrapper!.findAll('button').find(button => button.text() === '打开第三方登录入口')!.trigger('click')
+    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click')
     await flushPromises()
     return current
   }
@@ -277,7 +284,7 @@ describe('full-page identity recovery uses verified identity and permission', ()
     passwordSet = false
     externalMethods = [{ plugin_id: 'oidc', generation: 1, slot: { title: 'OIDC 登录', id: 'login', surface: 'public', slot: 'auth.login.methods', entrypoint: 'ui/login.html' } }]
     const { router } = await render(); await expire()
-    const button = wrapper!.findAll('button').find(button => button.text() === '打开第三方登录入口')!.element as HTMLButtonElement
+    const button = wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.element as HTMLButtonElement
     button.click(); button.click(); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/login')
     expect(sessionStorage.getItem('zboard.reauth-drafts.manifest.v1')).not.toBeNull()
@@ -289,7 +296,7 @@ describe('full-page identity recovery uses verified identity and permission', ()
     const { router, store } = await render(); await expire()
     const original = wrapper!.get('[data-draft]').element
     const storageWrite = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => { throw new DOMException('quota', 'QuotaExceededError') })
-    await wrapper!.findAll('button').find(button => button.text() === '打开第三方登录入口')!.trigger('click'); await flushPromises()
+    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click'); await flushPromises()
     expect(storageWrite).toHaveBeenCalledOnce()
     expect(router.currentRoute.value.fullPath).toBe('/admin/edit?page=3#draft')
     expect(wrapper!.get('[data-draft]').element).toBe(original)
@@ -305,7 +312,7 @@ describe('full-page identity recovery uses verified identity and permission', ()
     const { router } = await render()
     await wrapper!.get('[data-draft]').setValue('x'.repeat(70_000))
     await expire()
-    await wrapper!.findAll('button').find(button => button.text() === '打开第三方登录入口')!.trigger('click'); await flushPromises()
+    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click'); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/admin/edit')
     expect((wrapper!.get('[data-draft]').element as HTMLInputElement).value.length).toBe(70_000)
     expect(wrapper!.text()).toContain('尚未离开此页')

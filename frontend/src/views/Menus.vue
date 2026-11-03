@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="菜单管理" description="管理后台、用户中心和公开站点的菜单名称、层级与显示状态。" :show-section-navigation="false">
+    <PageHeader title="菜单管理" :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新菜单" :loading="loading" :disabled="saving" @click="reload" /></template>
     </PageHeader>
     <TransientFeedback :success="notice" />

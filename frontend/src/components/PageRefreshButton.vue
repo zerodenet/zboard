@@ -8,7 +8,6 @@
     :loading="loading"
     :disabled="disabled"
     :aria-label="label"
-    :title="label"
     @click="$emit('click')"
   >
     <UiIcon name="refresh" />

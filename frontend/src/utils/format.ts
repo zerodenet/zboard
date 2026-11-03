@@ -10,9 +10,9 @@ function byteFractionDigits(value: number): number {
 }
 
 export function formatBytes(bytes: number | undefined | null): string {
-  if (bytes === null || bytes === undefined) return '—'
+  if (bytes === null || bytes === undefined) return '-'
   const value = Number(bytes)
-  if (!Number.isFinite(value)) return '—'
+  if (!Number.isFinite(value)) return '-'
   if (value === 0) return '0 B'
   if (value < 0) return `-${formatBytes(Math.abs(value))}`
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
@@ -23,7 +23,7 @@ export function formatBytes(bytes: number | undefined | null): string {
 
 // Dense usage lists can round; quota balances retain formatBytes' extra precision.
 export function formatCompactBytes(bytes: number | undefined | null): string {
-  if (bytes == null || !Number.isFinite(Number(bytes))) return '—'
+  if (bytes == null || !Number.isFinite(Number(bytes))) return '-'
   const value = Number(bytes)
   if (value === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
@@ -37,13 +37,13 @@ export function formatCompactBytes(bytes: number | undefined | null): string {
 }
 
 export function formatSignedBytes(bytes: number | undefined | null): string {
-  if (bytes === null || bytes === undefined || !Number.isFinite(Number(bytes))) return '—'
+  if (bytes === null || bytes === undefined || !Number.isFinite(Number(bytes))) return '-'
   const value = Number(bytes)
   return `${value > 0 ? '+' : ''}${formatBytes(value)}`
 }
 
 export function formatCurrency(cents: number | undefined | null, currency = 'CNY') {
-  if (cents === null || cents === undefined || !Number.isFinite(Number(cents))) return '—'
+  if (cents === null || cents === undefined || !Number.isFinite(Number(cents))) return '-'
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2 }).format(Number(cents) / 100)
 }
 
@@ -54,10 +54,10 @@ export function isPerpetualDate(value?: string | null): boolean {
 }
 
 export function formatDateTime(value?: string | null) {
-  if (!value) return '—'
+  if (!value) return '-'
   if (isPerpetualDate(value)) return '永久有效'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '无效时间'
+  if (Number.isNaN(date.getTime())) return '-'
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
     timeZone: getDisplayTimeZone(),
@@ -82,11 +82,11 @@ export function formatExactDateTime(value?: string | null) {
 }
 
 export function formatRelativeTime(value?: string | null, now = Date.now()) {
-  if (!value) return '未记录'
+  if (!value) return '-'
   if (isPerpetualDate(value)) return '永久有效'
   const date = new Date(value)
   const timestamp = date.getTime()
-  if (Number.isNaN(timestamp)) return '无效时间'
+  if (Number.isNaN(timestamp)) return '-'
 
   const difference = timestamp - now
   const absolute = Math.abs(difference)
@@ -104,11 +104,11 @@ export function formatRelativeTime(value?: string | null, now = Date.now()) {
 }
 
 export function formatCompactDateTime(value?: string | null, now = Date.now()) {
-  if (!value) return '未记录'
+  if (!value) return '-'
   if (isPerpetualDate(value)) return '永久有效'
   const date = new Date(value)
   const timestamp = date.getTime()
-  if (Number.isNaN(timestamp)) return '无效时间'
+  if (Number.isNaN(timestamp)) return '-'
   if (Math.abs(timestamp - now) < 7 * 24 * 60 * 60 * 1000) return formatRelativeTime(value, now)
   return new Intl.DateTimeFormat('zh-CN', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
@@ -117,7 +117,7 @@ export function formatCompactDateTime(value?: string | null, now = Date.now()) {
 }
 
 export function formatNumber(value: number | undefined | null) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '-'
   return new Intl.NumberFormat('zh-CN').format(Number(value))
 }
 

@@ -399,6 +399,9 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileAccountSubjectSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileUserAdminNoteSchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -467,6 +470,12 @@ func runMigrations(db *gorm.DB) error {
 		}
 		if version == accountSubjectVersion {
 			if err := reconcileAccountSubjectSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == userAdminNoteVersion {
+			if err := reconcileUserAdminNoteSchema(db); err != nil {
 				return err
 			}
 			continue

@@ -1,6 +1,6 @@
 <template>
   <div class="standard-page plugins-page">
-    <PageHeader title="插件管理" description="查看已安装插件，管理启停与配置。" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">浏览插件市场</RouterLink></UiButton><UiButton :loading="busy" @click="importOpen = true">离线导入</UiButton></template></PageHeader>
+    <PageHeader title="插件管理" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">浏览插件市场</RouterLink></UiButton><UiButton :loading="busy" @click="importOpen = true">离线导入</UiButton></template></PageHeader>
     <AdminPageNavigation />
     <TransientFeedback :success="message" />
     <p v-if="error || actionError" role="alert" class="plugins-error">

@@ -12,7 +12,7 @@
         <CheckoutPayment v-if="funding.discount_reservation.can_reconcile" :key="'reconcile:' + orderId + ':' + app.user.id" name="account.orders.payment" embedded reconcile-only :actor-id="app.user.id" :order-id="orderId" :currency="currency" :channel-amount-minor="funding.cash_minor" :preferred-plugin="preferredPlugin" :reconcile-on-load="false" :open-on-load="false" @paid="changed" @reconciled="reconciled" />
       </template>
       <template v-else-if="!funding.configured">
-        <p>当前可用余额 {{ money(funding.available_minor) }}。请选择本次付款方式。</p>
+        <p>可用余额 <BalanceValue :amount="funding.available_minor" :currency="currency" /></p>
         <template v-if="pendingChoice === null">
           <UiButton type="button" :loading="configuring" @click="configure(true)">先使用余额，不足部分通过渠道支付</UiButton>
           <UiButton type="button" variant="secondary" :disabled="configuring" @click="configure(false)">{{ funding.change_mode === 'full_term' ? '旧权益抵扣后，仅渠道补差' : '全部通过支付渠道' }}</UiButton>
@@ -43,6 +43,7 @@ import { useAppStore } from '../stores/app'
 import { configureOrderFunding, fetchOrderFunding, payOrderFromWallet, type OrderFunding } from '../api/orderFunding'
 import { cancelOrder } from '../api/client'
 import { useRemoteResource } from '../composables/useRemoteResource'
+import BalanceValue from './BalanceValue.vue'
 import { formatWalletMoney } from '../utils/walletMoney'
 import { commerceErrorMessage } from '../utils/commerceErrors'
 import CheckoutPayment from '../plugins/CheckoutPayment.vue'

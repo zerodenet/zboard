@@ -75,6 +75,21 @@ describe('traffic dimension overview', () => {
     expect(fetchTrafficNodeSeries).toHaveBeenCalledOnce()
     expect(fetchTrafficUsagePage).not.toHaveBeenCalled()
   })
+  it('retains existing rows during a manual refresh and after a failed refresh', async () => {
+    await open()
+    const breakdown = wrapper!.getComponent(TrafficBreakdown)
+    const table = breakdown.get('table').element
+    let reject!: (error: Error) => void
+    vi.mocked(fetchTrafficBreakdown).mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail }))
+    await breakdown.findAll('button').find(button => button.text() === '刷新统计')!.trigger('click')
+    expect(breakdown.get('table').element).toBe(table)
+    expect(breakdown.text()).toContain('用户一')
+    expect(breakdown.text()).not.toContain('正在加载维度统计')
+    reject(new Error('offline')); await flushPromises()
+    expect(breakdown.get('table').element).toBe(table)
+    expect(breakdown.text()).toContain('用户一')
+    expect(breakdown.text()).toContain('更新失败')
+  })
   it('cancels stale dimension requests and ignores their late responses', async () => {
     let resolve!: (value: any) => void
     vi.mocked(fetchTrafficBreakdown).mockReturnValueOnce(new Promise(done => { resolve = done }))

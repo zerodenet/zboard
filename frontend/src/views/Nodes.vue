@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="服务器管理" description="管理服务器、查看连接状态，在节点协议中配置可用线路。">
+    <PageHeader title="服务器管理">
       <template #actions>
         <UiButton variant="secondary" type="button" @click="observationQueueOpen = true">观察队列</UiButton>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
@@ -40,7 +40,7 @@
           <tbody>
             <tr v-for="node in nodes" :key="node.id" :class="{ selected: selectedNode?.id === node.id, 'batch-selected': isNodeSelected(node.id) }">
               <td class="selection-column"><UiCheckbox :model-value="isNodeSelected(node.id)" :disabled="selectionAllMatching || node.lifecycle_status === 'archived'" :aria-label="`选择节点 ${node.name}`" @update:model-value="toggleNodeSelection(node.id, $event)" /></td>
-              <td class="table-primary-column"><div class="cell-title"><strong>{{ node.name }}</strong><EndpointAddress v-if="node.address" :address="node.address" /><span v-else>未设置地址</span></div></td>
+              <td class="table-primary-column"><div class="cell-title"><EntityDetailButton @click="selectNode(node)">{{ node.name }}</EntityDetailButton><EndpointAddress v-if="node.address" :address="node.address" /><span v-else>未设置地址</span></div></td>
               <td data-column-priority="3"><TableText :value="node.region" /></td>
               <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ !node.is_enabled && !['archived', 'deleting', 'maintenance'].includes(node.lifecycle_status) ? '已禁用' : lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
               <td><StatusBadge :tone="node.connector_online ? 'success' : node.connector_last_seen_at ? 'warning' : 'neutral'" :icon="node.connector_online ? 'wifi' : node.connector_last_seen_at ? 'alert' : 'minus'">{{ node.connector_online ? '在线' : node.connector_last_seen_at ? '离线' : '未连接' }}</StatusBadge></td>
@@ -299,6 +299,7 @@
 </template>
 
 <script setup lang="ts">
+import EntityDetailButton from '../components/EntityDetailButton.vue'
 import { compareKernelVersions } from '../utils/kernelVersion'
 import NodeKernelUpload from '../components/NodeKernelUpload.vue'
 import NodeRetirementDialog from '../components/NodeRetirementDialog.vue'

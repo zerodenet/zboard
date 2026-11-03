@@ -5,7 +5,7 @@
     <PageAlert v-if="error || writeError" tone="danger">{{ error || writeError }}</PageAlert>
     <p v-if="loading" role="status">正在核对余额与扣减记录…</p>
     <div v-if="data" :key="`${actor}:${userId}:${currency}`" class="stack">
-      <p>余额 {{ money(data.wallet.balance_minor) }} · 已预留 {{ money(data.wallet.reserved_minor) }} · 可扣减 {{ money(data.wallet.available_minor) }}</p>
+      <BalanceSummary :balance="data.wallet" />
       <form data-test="debit" @submit.prevent="debit">
         <FormField v-slot="{ controlAttrs }" label="扣减金额" name="admin-wallet-amount"><UiInput v-model="amount" v-bind="controlAttrs" inputmode="decimal" :disabled="saving || Boolean(debitIntent)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="该用户的工单编号" name="admin-wallet-ticket"><UiInput v-model="ticket" v-bind="controlAttrs" inputmode="numeric" :disabled="saving || Boolean(debitIntent)" /></FormField>
@@ -51,6 +51,7 @@ import { useAppStore } from '../stores/app'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { newCheckoutIntent } from '../composables/checkoutOrder'
 import { commerceErrorMessage } from '../utils/commerceErrors'
+import BalanceSummary from './BalanceSummary.vue'
 import { formatWalletMoney, parseWalletAmount, walletMajor } from '../utils/walletMoney'
 import { debitWallet, fetchAdministrativeWallet, fetchWalletAdjustments, fetchWalletAdjustment, recordWalletPayout, reverseWalletAdjustment, type WalletAdjustment, type WalletDebit, type WalletPayout } from '../api/walletAdjustments'
 import UiSection from './UiSection.vue'

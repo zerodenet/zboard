@@ -108,6 +108,7 @@ type userPublic struct {
 type adminUserListItem struct {
 	userPublic
 	identity.AccountOverview
+	AdminNote               string    `json:"admin_note"`
 	ActiveSubscriptionCount int64     `json:"active_subscription_count"`
 	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
 	PendingOrderCount       int64     `json:"pending_order_count"`
@@ -306,16 +307,18 @@ type subscriptionManifestNode struct {
 }
 
 type adminUserCreateReq struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	IsAdmin  bool   `json:"is_admin"`
-	Status   string `json:"status"`
+	AdminNote string `json:"admin_note"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	IsAdmin   bool   `json:"is_admin"`
+	Status    string `json:"status"`
 }
 
 type adminUserUpdateReq struct {
-	Status   *string `json:"status"`
-	IsAdmin  *bool   `json:"is_admin"`
-	Password *string `json:"password"`
+	AdminNote *string `json:"admin_note"`
+	Status    *string `json:"status"`
+	IsAdmin   *bool   `json:"is_admin"`
+	Password  *string `json:"password"`
 }
 
 type setupRequest struct {
@@ -642,7 +645,7 @@ func (h *handlers) AdminUsersListHandler(w http.ResponseWriter, r *http.Request)
 	if query.Paged {
 		items := make([]adminUserListItem, 0, len(result.Items))
 		for _, item := range result.Items {
-			items = append(items, adminUserListItem{userPublic: userPublic(item.PublicAccount), AccountOverview: item.AccountOverview, ActiveSubscriptionCount: item.ActiveSubscriptionCount, TotalSubscriptionCount: item.TotalSubscriptionCount, PendingOrderCount: item.PendingOrderCount, TotalOrderCount: item.TotalOrderCount, CreatedAt: item.CreatedAt})
+			items = append(items, adminUserListItem{userPublic: userPublic(item.PublicAccount), AccountOverview: item.AccountOverview, AdminNote: item.AdminNote, ActiveSubscriptionCount: item.ActiveSubscriptionCount, TotalSubscriptionCount: item.TotalSubscriptionCount, PendingOrderCount: item.PendingOrderCount, TotalOrderCount: item.TotalOrderCount, CreatedAt: item.CreatedAt})
 		}
 		OK(w, pagedData(items, result.Total, offset, limit))
 		return

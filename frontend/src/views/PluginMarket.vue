@@ -1,6 +1,6 @@
 <template>
   <div class="standard-page plugins-page">
-    <PageHeader title="插件市场" description="查找扩展、选择版本并安装。" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugins">管理插件</RouterLink></UiButton></template></PageHeader>
+    <PageHeader title="插件市场" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/plugins">管理插件</RouterLink></UiButton></template></PageHeader>
     <AdminPageNavigation />
     <p v-if="error" role="alert" class="plugins-error">
       {{ error }}

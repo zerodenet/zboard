@@ -7,15 +7,15 @@ afterEach(() => setDisplayTimeZone('UTC'))
 describe('formatters', () => {
   it('keeps zero distinct from missing and invalid numeric values', () => {
     expect(formatBytes(0)).toBe('0 B')
-    expect(formatBytes(null)).toBe('—')
-    expect(formatBytes(Number.NaN)).toBe('—')
+    expect(formatBytes(null)).toBe('-')
+    expect(formatBytes(Number.NaN)).toBe('-')
     expect(formatBytes(-1024)).toBe('-1.00 KB')
     expect(formatSignedBytes(438)).toBe('+438 B')
     expect(formatSignedBytes(-438)).toBe('-438 B')
     expect(formatNumber(0)).toBe('0')
-    expect(formatNumber(null)).toBe('—')
+    expect(formatNumber(null)).toBe('-')
     expect(formatCurrency(0)).toContain('0.00')
-    expect(formatCurrency(undefined)).toBe('—')
+    expect(formatCurrency(undefined)).toBe('-')
   })
 
   it('uses concise usage values without affecting precise quota formatting', () => {
@@ -25,8 +25,8 @@ describe('formatters', () => {
     expect(formatCompactBytes(-1024)).toBe('-1 KB')
     expect(formatCompactBytes(0)).toBe('0 B')
     expect(formatCompactBytes(0.5)).toBe('0.5 B')
-    expect(formatCompactBytes(null)).toBe('—')
-    expect(formatCompactBytes(Infinity)).toBe('—')
+    expect(formatCompactBytes(null)).toBe('-')
+    expect(formatCompactBytes(Infinity)).toBe('-')
   })
 
   it('does not round remaining quota back to the full allowance', () => {
@@ -40,10 +40,10 @@ describe('formatters', () => {
   })
 
   it('never echoes invalid or missing timestamps', () => {
-    expect(formatDateTime()).toBe('—')
-    expect(formatDateTime('not-a-date')).toBe('无效时间')
-    expect(formatRelativeTime('not-a-date')).toBe('无效时间')
-    expect(formatCompactDateTime('not-a-date')).toBe('无效时间')
+    expect(formatDateTime()).toBe('-')
+    expect(formatDateTime('not-a-date')).toBe('-')
+    expect(formatRelativeTime('not-a-date')).toBe('-')
+    expect(formatCompactDateTime('not-a-date')).toBe('-')
   })
 
   it('renders the permanent subscription sentinel as permanent instead of year 9999', () => {

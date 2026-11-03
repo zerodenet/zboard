@@ -1,16 +1,18 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="流量与对账" description="按用户、节点、订阅和协议端点查看流量汇总与趋势，按需下钻计费明细和对账。">
+    <PageHeader title="流量与对账">
       <template #actions><PageRefreshButton label="刷新流量与对账" :loading="loading" @click="load" /></template>
     </PageHeader>
     <UiTabs :model-value="section" label="流量视图" :items="[{ value: 'summary', label: '统计概览' }, { value: 'details', label: '明细与对账' }]" @update:model-value="changeSection" />
-    <WorkbenchFilterBar :active="hasFilters" :loading="loading" @clear="clearFilters">
-      <WorkbenchFilterSelect v-model="bucket" label="汇总粒度" :options="bucketOptions" @apply="applyFilters" />
-      <WorkbenchFilterInput v-model="filters.userId" label="用户 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
-      <WorkbenchFilterInput v-model="filters.nodeId" label="节点 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
-      <WorkbenchFilterInput v-model="filters.subscriptionId" label="订阅 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
-      <WorkbenchFilterInput v-model="filters.protocolEndpointId" label="协议端点 ID" value-prefix="#" inputmode="numeric" @apply="applyFilters" />
+    <WorkbenchFilterBar :active="hasFilters" :active-count="[filters.userId, filters.nodeId, filters.subscriptionId, filters.protocolEndpointId].filter(Boolean).length" :advanced-count="[filters.subscriptionId, filters.protocolEndpointId, bucket !== 'hour' ? 'bucket' : ''].filter(Boolean).length" :loading="loading" @clear="clearFilters">
+      <WorkbenchEntityFilter v-model="filters.userId" kind="user" label="用户" @apply="applyFilters" />
+      <WorkbenchEntityFilter v-model="filters.nodeId" kind="node" label="服务器" @apply="applyFilters" />
       <WorkbenchFilterDate v-model:from="from" v-model:to="to" label="记录日期" @apply="applyFilters" />
+      <template #advanced>
+        <WorkbenchEntityFilter v-model="filters.subscriptionId" kind="subscription" label="订阅" @apply="applyFilters" />
+        <WorkbenchEntityFilter v-model="filters.protocolEndpointId" kind="protocol_endpoint" label="协议服务" @apply="applyFilters" />
+        <WorkbenchFilterSelect v-model="bucket" label="汇总粒度" :options="bucketOptions" @apply="applyFilters" />
+      </template>
     </WorkbenchFilterBar>
     <TrafficBreakdown v-if="section === 'summary'" v-bind="breakdownScope" :dimension="dimension" :refresh-token="refreshToken" @update:dimension="changeDimension" @drilldown="drilldown" />
     <template v-if="section === 'details'">
@@ -165,7 +167,7 @@ import { trafficNodeBucket } from '../utils/trafficNodeBucket'
 import { keyedLoad } from '../composables/keyedLoad'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterDate from '../components/WorkbenchFilterDate.vue'
-import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
+import WorkbenchEntityFilter from '../components/WorkbenchEntityFilter.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
 import UiButton from '../components/UiButton.vue'

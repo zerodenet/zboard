@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="流量明细" description="按时间范围查看使用趋势、节点流量分布和按分钟、小时或天聚合的计费明细。" eyebrow="TRAFFIC">
+    <PageHeader title="流量明细">
       <template #actions>
         <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
           <UiIcon name="refresh" />刷新
