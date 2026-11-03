@@ -24,7 +24,7 @@
       <EmptyState v-else-if="!loading" icon="audit" title="注册通知模板不可用" description="系统尚未创建注册通知模板，请检查数据库迁移状态。" />
     </section>
 
-    <details v-if="mode !== 'registration'" class="template-usage"><summary>使用说明</summary><section class="template-workflow" aria-label="运营模板使用流程">
+    <details v-if="mode !== 'registration'" class="template-usage"><summary>使用说明</summary><p>模板保存、任务创建和实际发送是三个独立步骤。</p><section class="template-workflow" aria-label="运营模板使用流程">
       <div><span>1</span><strong>创建并启用模板</strong><small>这里只保存可复用主题和正文</small></div>
       <UiIcon name="chevron" />
       <div><span>2</span><strong>进入运营任务</strong><small>选择用户或订阅，不再手填 ID</small></div>

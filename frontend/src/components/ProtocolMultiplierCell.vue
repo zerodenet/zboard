@@ -8,8 +8,9 @@
     <PopoverPortal>
       <PopoverContent as-child align="end" :side-offset="6" :collision-padding="16" @open-auto-focus="focusInput" @interact-outside="guardClosing" @escape-key-down="guardClosing">
         <form class="ui-popover-content protocol-multiplier-editor" novalidate @submit.prevent="save">
-          <FormField v-slot="{ controlAttrs }" label="计费倍率" :name="inputId" :error="error">
-            <UiInput ref="input" v-model="draft" v-bind="controlAttrs" inputmode="decimal" autocomplete="off" maxlength="16" :disabled="saving" @input="error = ''" />
+          <FormField label="计费倍率" :name="inputId" :error="error">
+            <template #default="{ controlAttrs }"><UiInput ref="input" v-model="draft" v-bind="controlAttrs" inputmode="decimal" autocomplete="off" maxlength="16" :disabled="saving" @input="error = ''" /></template>
+            <template #error><span role="alert">{{ error }}</span></template>
           </FormField>
           <div class="protocol-multiplier-actions"><UiButton variant="ghost" size="sm" :disabled="saving" @click="setOpen(false)">取消</UiButton><UiButton size="sm" type="submit" :loading="saving">保存</UiButton></div>
         </form>

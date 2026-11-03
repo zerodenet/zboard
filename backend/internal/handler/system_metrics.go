@@ -10,6 +10,10 @@ func (h *handlers) AdminSystemMetricsHandler(w http.ResponseWriter, r *http.Requ
 	if _, err := h.requireAdmin(w, r); err != nil {
 		return
 	}
+	if h.services.RuntimeMonitor == nil {
+		ServiceUnavailable(w, "监控暂不可用")
+		return
+	}
 	minutes := 360
 	if value := r.URL.Query().Get("range"); value != "" {
 		v, err := strconv.Atoi(value)

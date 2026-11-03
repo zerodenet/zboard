@@ -93,7 +93,7 @@
           <StatusOverviewItem icon="nodes" label="资产状态" :tone="selectedNode.is_enabled ? 'success' : 'neutral'" :status="selectedNode.is_enabled ? '启用' : '停用'" />
           <StatusOverviewItem icon="activity" label="Zero 内核" :description="kernelDescription" :tone="kernelTone" :status="kernelStatusLabel" />
           <article class="node-load-summary">
-            <header><div><strong>主机资源</strong></div><UiButton variant="secondary" size="sm" type="button" :loading="nodeLoadLoading" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="loadNodeLoad(selectedNode.id)"><UiIcon name="refresh" />刷新资源</UiButton></header>
+            <header><div><strong>主机资源</strong></div><UiButton variant="secondary" size="sm" type="button" title="页面不会自动采样" :loading="nodeLoadLoading" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="loadNodeLoad(selectedNode.id)"><UiIcon name="refresh" />刷新资源</UiButton></header>
             <RemoteReadStatus label="主机资源" :phase="loadResource.phase.value" :error="nodeLoadError" :last-success-at="loadResource.lastSuccessAt.value" @retry="loadNodeLoad(selectedNodeID)" />
             <div v-if="nodeLoad" class="node-load-grid">
               <div><span>系统负载（1 / 5 / 15 分钟）</span><strong>{{ nodeLoad.load_average_1.toFixed(2) }} / {{ nodeLoad.load_average_5.toFixed(2) }} / {{ nodeLoad.load_average_15.toFixed(2) }}</strong><small>{{ formatNumber(nodeLoad.cpu_core_count) }} 核 · 1 分钟负载率 {{ formatLoadRatio(nodeLoad) }}</small></div>

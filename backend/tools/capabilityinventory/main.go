@@ -201,6 +201,8 @@ var ignoredInMemoryMutations = map[string]bool{
 }
 
 var explicitRuntimeSiteOwners = map[string]string{
+	"internal/capabilities/platform/runtime_monitor.go":       "platform",
+	"internal/capabilities/platform/runtime_history.go":       "platform",
 	"internal/localworkers/process.go":                        "jobs",
 	"internal/localworkers/supervisor.go":                     "jobs",
 	"internal/application/projection_supervisor.go":           "jobs",
@@ -319,6 +321,7 @@ var explicitRoutePrefixes = []struct {
 	{"/api/v1/admin/subscriptions", "entitlements"},
 	{"/api/v1/admin/system-configs", "platform"},
 	{"/api/v1/admin/system-info", "platform"},
+	{"/api/v1/admin/system-metrics", "platform"},
 	{"/api/v1/admin/tasks", "jobs"},
 	{"/api/v1/admin/tickets", "experience"},
 	{"/api/v1/admin/traffic", "metering"},

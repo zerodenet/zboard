@@ -224,7 +224,9 @@ func New(db *gorm.DB, secret string) *Services {
 	s.BatchRequests = jobs.BatchRequests{Repository: jobstore.BatchRequests{DB: db}}
 	s.JobSubmissions = jobs.Submissions{Repository: jobstore.New(db)}
 	s.JobHistory = jobs.HistoryQueries{Repository: jobstore.New(db)}
-	s.RuntimeMonitor = platform.NewRuntimeMonitor(hostmetrics.New(), platformstore.SystemMetricHistory{DB: db})
+	if db != nil {
+		s.RuntimeMonitor = platform.NewRuntimeMonitor(hostmetrics.New(), platformstore.SystemMetricHistory{DB: db})
+	}
 	s.Jobs = jobs.NewGatedRuntime(jobstore.New(db), uuid.NewString(), s.isReady, s.WorkPaused, func(err error) { log.Printf("job runtime: %v", err) })
 	s.JobCancellations = jobs.CancellationService{Repository: jobstore.New(db), Active: s.Jobs}
 	s.JobResourceFence = jobs.ResourceFence{Repository: jobstore.New(db)}
@@ -243,11 +245,17 @@ func (s *Services) DatabaseReady(ctx context.Context) error {
 
 // StartWork opens the bootstrap gate after every startup step and registration.
 func (s *Services) StartWork() {
-	if s.lifecycle.CompareAndSwap(0, 1) {
+	if s.lifecycle.CompareAndSwap(0, 1) && s.RuntimeMonitor != nil {
 		s.RuntimeMonitor.Start()
 	}
 }
-func (s *Services) Close() { s.lifecycle.Store(2); s.RuntimeMonitor.Close(); s.Jobs.Close() }
+func (s *Services) Close() {
+	s.lifecycle.Store(2)
+	if s.RuntimeMonitor != nil {
+		s.RuntimeMonitor.Close()
+	}
+	s.Jobs.Close()
+}
 
 // Matches prevents a legacy transport adapter from pairing a capability set
 // with a different authority database or signing configuration.

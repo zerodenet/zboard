@@ -8,8 +8,8 @@
     <div class="form-field-control">
       <slot :control-attrs="controlAttrs" :control-id="controlId" />
     </div>
-    <div class="form-field-message" :class="{ 'sr-only': !hint && !error }" :id="messageId" :aria-live="error ? 'polite' : undefined">
-      <span v-if="error" class="form-field-error"><UiIcon name="alert" />{{ error }}</span>
+    <div class="form-field-message" :class="{ 'sr-only': !hint && !error }" :id="messageId" :aria-live="error && !$slots.error ? 'polite' : undefined">
+      <span v-if="error" class="form-field-error"><UiIcon name="alert" /><slot name="error">{{ error }}</slot></span>
       <span v-else-if="hint" class="form-field-hint">{{ hint }}</span>
       <span v-else aria-hidden="true">&nbsp;</span>
     </div>
