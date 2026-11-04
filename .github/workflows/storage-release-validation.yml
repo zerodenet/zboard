@@ -5,12 +5,22 @@ on:
 permissions:
   contents: read
 jobs:
-  storage:
+  core-groups:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        mysql: ["8.2.0", "8.4"]
+        include:
+          - {mysql: '8.4', group: business-06-01}
+          - {mysql: '8.4', group: business-06-02}
+          - {mysql: '8.4', group: business-06-03}
+          - {mysql: '8.4', group: business-06-04}
+          - {mysql: '8.4', group: business-06-05}
+          - {mysql: '8.4', group: business-06-06}
+          - {mysql: '8.4', group: business-06-07}
+          - {mysql: '8.4', group: business-06-08}
+          - {mysql: '8.4', group: business-06-09}
+          - {mysql: '8.2.0', group: tail}
     services:
       mysql:
         image: mysql:${{ matrix.mysql }}
@@ -23,69 +33,64 @@ jobs:
           --health-interval=5s --health-timeout=5s --health-retries=30
     env:
       ZBOARD_TEST_MYSQL_DSN: root:zboard-isolated-storage@tcp(127.0.0.1:3306)/?parseTime=true&loc=UTC
+      STORAGE_ACCEPTANCE_GROUP: ${{ matrix.group }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 154ca888ef5e481f352229d103679e6d799ee356
-          fetch-depth: 0
+          ref: e07ee60816bcf46da0c0006c8bf350166680c2e2
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: Verify exact release source
-        run: test "$(git rev-parse HEAD)" = 154ca888ef5e481f352229d103679e6d799ee356
-      - name: Prove the original millisecond rounding defect
-        working-directory: backend
+      - name: Verify exact deployed application trees
         shell: bash
         run: |
-          cp internal/handler/completed_flow_storage_acceptance_test.go /tmp/precision-regression-test.go
-          git checkout --detach e973b778208ac5c20090b1fbcbf29ae155aa8e1e
-          cp /tmp/precision-regression-test.go internal/handler/completed_flow_storage_acceptance_test.go
-          set +e
-          go test ./internal/handler -run '^TestMySQLCompletedFlowStorageKeepsHistoricalAccountingAuthority$' -count=1 -timeout=5m -v > /tmp/original-precision.log 2>&1
-          result=$?
-          set -e
-          test "$result" -eq 1
-          grep 'completed authority not transferred 0 <nil>' /tmp/original-precision.log
-          git checkout --force --detach 154ca888ef5e481f352229d103679e6d799ee356
-      - name: Add isolated cold-transfer acceptance probe
+          test "$(git rev-parse HEAD:backend)" = 2af9d6a929cabb0e1a6408825886165b4f7cbd3e
+          test "$(git rev-parse HEAD:frontend)" = 736b7beed87ade297f7f12834490a8579a0e6e05
+          test "$(git rev-parse HEAD:VERSION)" = e610c69f126cc33e3868bdaaaca5bef0edd27afe
+      - name: Discover and prove full core selection
+        run: python3 scripts/mysql_profiles.py --profile core --plan-only --output-dir artifacts/plan
+      - name: Run exact bounded group without retries or timeout changes
         shell: bash
         run: |
-          cat > backend/internal/handler/storage_rollout_canary_test.go <<'GO'
-          package handler
-          import (
-           "errors"
-           "fmt"
-           "testing"
-           "time"
-           mysqlDriver "github.com/go-sql-driver/mysql"
-           "github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
-           "github.com/zerodenet/zboard/backend/internal/capabilities/metering"
-           "github.com/zerodenet/zboard/backend/internal/model"
-          )
-          func TestMySQLStorageRolloutConcurrentColdTransfer(t *testing.T) {
-           h,c:=accountingFixtureFromOrder(t,newMySQLBusinessOrderFixture(t))
-           if err:=h.db.Model(&model.ProtocolEndpoint{}).Where("id=?",c.ProtocolEndpointID).Update("multiplier_milli",1001).Error;err!=nil { t.Fatal(err) }
-           store:=h.services.CompletionAccounting(h.credentialCipher)
-           first:=make([]metering.CompletedFlow,16)
-           for i:=range first { first[i]=metering.CompletedFlow{NodeID:c.NodeID,PrincipalKey:c.PrincipalKey,CoreInstanceID:"cold-transfer",FlowID:fmt.Sprint(i),EventID:fmt.Sprint("first-",i),EventType:"flow.completed",Sequence:uint64(i+1),Revision:uint64(i+1),BytesUp:100,OccurredAt:time.Now().UTC().AddDate(-20,0,0)};if _,_,err:=store.Complete(t.Context(),first[i]);err!=nil {t.Fatal(err)} }
-           if err:=h.db.Model(&model.FlowUsage{}).Where("node_id=?",c.NodeID).Update("completed_at",time.Now().UTC().Add(-48*time.Hour)).Error;err!=nil {t.Fatal(err)}
-           retry:=func(run func()error)error {var err error;for k:=0;k<4;k++ {err=run();if err==nil{return nil};var sqlErr *mysqlDriver.MySQLError;if !errors.As(err,&sqlErr)||(sqlErr.Number!=1213&&sqlErr.Number!=1205){return err};time.Sleep(20*time.Millisecond)};return err}
-           start:=make(chan struct{});done:=make(chan error,5)
-           go func(){<-start;done<-retry(func()error{_,err:=(meteringstore.FlowCursorCompaction{DB:h.db,Now:func()time.Time{return time.Now().UTC().Truncate(time.Second).Add(750*time.Microsecond)}}).Drain(t.Context(),200);return err})}()
-           for i:=0;i<4;i++ {in:=first[i];in.EventID=fmt.Sprint("late-",i);in.Sequence=uint64(100+i);in.Revision=in.Sequence;in.BytesUp=200;go func(){<-start;done<-retry(func()error{_,_,err:=store.Complete(t.Context(),in);return err})}()}
-           close(start);for k:=0;k<5;k++ {if err:=<-done;err!=nil {t.Fatal(err)}}
-           for _,in:=range first {if _,_,err:=store.Complete(t.Context(),in);err!=nil {t.Fatal(err)}}
-           var sub model.Subscription;if err:=h.db.First(&sub,c.SubscriptionID).Error;err!=nil||sub.FlowUsed!=2020 {t.Fatal("cold replay changed rounded quota",sub.FlowUsed,err)}
-           var total int64;if err:=h.db.Model(&model.TrafficRecord{}).Where("subscription_id=?",c.SubscriptionID).Select("COALESCE(SUM(used_bytes),0)").Scan(&total).Error;err!=nil||total!=2020 {t.Fatal("cold replay changed ledger",total,err)}
-           var cold int64;if err:=h.db.Model(&model.FlowCursorCheckpoint{}).Count(&cold).Error;err!=nil||cold!=12 {t.Fatal("cold transfer did not preserve twelve unaffected connections",cold,err)}
-           var duplicates int64;if err:=h.db.Raw("SELECT COUNT(*) FROM (SELECT node_id,flow_id FROM (SELECT node_id,flow_id FROM flow_usages UNION ALL SELECT node_id,flow_id FROM flow_cursor_checkpoints) u GROUP BY node_id,flow_id HAVING COUNT(*)>1) d").Scan(&duplicates).Error;err!=nil||duplicates!=0 {t.Fatal("duplicate authority",duplicates,err)}
-           t.Log("16 original completions, 4 concurrent late deltas, compaction and 16 replays: quota and ledger remain 2020")
-          }
-          GO
-      - name: Validate migrations and retention on actual MySQL
-        working-directory: backend
-        run: go test ./internal/datastore -run 'TestMySQL(MeteringIndexBudget|FlowStatistics)' -count=1 -timeout=15m -v
-      - name: Validate exact-release late reporting and concurrent transfer
-        working-directory: backend
-        run: go test ./internal/handler -run 'TestMySQL(StorageRolloutConcurrentColdTransfer|CompletedFlowStorage|NativeMinute)' -count=10 -timeout=15m -v
+          python3 - <<'PY'
+          import json,os,re,subprocess,sys
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          import mysql_profiles as p
+          root=Path.cwd();backend=root/'backend';directory=root/'artifacts'/'execution';directory.mkdir(parents=True)
+          plan=json.loads((root/'artifacts/plan/plan.json').read_text())
+          part=json.loads((root/'artifacts/plan/partition.json').read_text())
+          expected_core={tuple(x) for x in part['core']}
+          assert len(expected_core)==447
+          assert set().union(*({tuple(x) for x in item['expected']} for item in plan))==expected_core
+          assert sum(len(item['expected']) for item in plan)==447
+          group=os.environ['STORAGE_ACCEPTANCE_GROUP']
+          if group=='tail':
+           names={'TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock','TestMySQLAccountingWaitRechecksConcurrentNodeDeletion','TestMySQLConsumerBoundsTransactionsAndDrainsBacklog','TestMySQLNodeStatsFailureRetainsSettlementAndRetriesProjection','TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay','TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs'}
+           expected={('./internal/handler',name) for name in names};assert expected<=expected_core
+           command=['go','test','-json','-p','1','./internal/handler','-run',p.positive_regex(names),'-count=1','-timeout','15m']
+          else:
+           item=next(item for item in plan if item['group']==group)
+           assert item['command'][5]=='./internal/handler', item['command']
+           expected={tuple(x) for x in item['expected']};assert len(expected)<=32
+           command=item['command']
+          module=re.search(r'^module\s+(\S+)',(backend/'go.mod').read_text(),re.M).group(1)
+          log=directory/'events.jsonl';commands=[]
+          code=p.run_command(command,backend,log,commands)
+          events=p.read_events(log);summary=p.result_summary(events,expected,module)
+          receipt={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'group':group,'expected':sorted(expected),'command':command,'exit_code':code,'summary':summary,'source_before':json.loads((root/'artifacts/plan/source-sha256.json').read_text())}
+          receipt['source_after']=p.source_fingerprints(root)
+          assert receipt['source_before']==receipt['source_after']
+          (directory/'receipt.json').write_text(json.dumps(receipt,indent=2))
+          if code or not summary['complete']:
+           for line in p.execution_failure_diagnostics(events,summary):print(line)
+           raise SystemExit(1)
+          print('Validated exact group',group,'passed',summary['passed'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-${{ matrix.mysql }}-${{ matrix.group }}-e07ee60
+          path: artifacts
+          if-no-files-found: error
