@@ -352,9 +352,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-  color-scheme: light;
+  color-scheme: inherit;
 }
-:global(.dark) .plugin-frame iframe { color-scheme: dark; }
 .plugin-frame--slot iframe { border: 0; border-radius: 0; background: transparent; }
 .plugin-frame--slot-pending { height: 0; overflow: hidden; }
 .plugin-frame--slot-pending iframe { visibility: hidden; pointer-events: none; }
