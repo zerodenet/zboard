@@ -46,16 +46,15 @@ func (h *handlers) startScheduledJob(id string, interval time.Duration, run func
 	if strings.HasPrefix(id, "node_publish_") {
 		name = "节点配置发布 · " + strings.TrimPrefix(id, "node_publish_")
 	}
+	external := id == "admin_tasks" || strings.HasPrefix(id, "node_publish_")
+	recoverable := id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_")
 	h.startPeriodicJob(application.PeriodicJob{
 		ID: id, Name: name, Interval: interval, Timeout: 30 * time.Minute, Immediate: true,
-		External:           id == "admin_tasks" || strings.HasPrefix(id, "node_publish_"),
-		ReconcileAfterLoss: id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
-		RetryFailures:      id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
-		// These are core pollers/scanners. Business results retain their own
-		// domain history; only clean periodic success/yield rows are reused.
-		CompactHistory: true,
-		Ready:          h.jobReadiness(id),
-		Run:            run,
+		External: external, ReconcileAfterLoss: recoverable, RetryFailures: recoverable,
+		// Reuse is restricted to recoverable internal scans. External execution
+		// retains its durable evidence and its existing bounded history policy.
+		CompactHistory: recoverable && !external,
+		Ready:          h.jobReadiness(id), Run: run,
 	})
 }
 

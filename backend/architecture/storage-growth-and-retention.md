@@ -54,12 +54,13 @@ retained identity information. Checkpoints remove activity indexes, duplicate
 strings and event metadata from completed-flow authority; they still grow with
 distinct completed flow identities. No fixed-byte accounting bound is claimed.
 
-Core pollers/scanners and retention jobs reuse only clean successful/yielded
+Recoverable internal core scanners and retention jobs reuse only clean successful/yielded
 periodic execution rows. Domain results (tasks, orders, DNS/certificate operations
 and audit) remain independent. Failed, retried and unknown attempts are not reused
 and continue through configured history retention. This prevents a one-second
 cleanup poller from generating a new permanent execution row for each batch.
-Plugin-defined and explicit submitted jobs do not inherit this core-only policy.
+External execution groups, non-recoverable scans, plugin-defined jobs and explicit
+submitted jobs do not inherit this internal-only policy.
 
 Minute financial settlements continue to sum already calculated charges. Pricing,
 rounding, entitlement epochs, reset boundaries and historical ownership do not
@@ -127,7 +128,8 @@ limit and remains independent of this diagnostic policy.
 
 ## Release and acceptance boundaries
 
-All changes in this batch are local source changes. No production cleanup,
+Implementation-phase snapshot, before release authorization: these were local
+source changes. No production cleanup,
 migration, timer modification, image build, release or deployment was performed.
 The production allocation above therefore has not been reclaimed by this work.
 Logical retirement makes InnoDB pages reusable; it does not promise smaller

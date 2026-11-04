@@ -25,7 +25,7 @@ func (p CommerceDiscountProvider) RedeemDiscount(ctx context.Context, in commerc
 }
 
 func (s *Services) DiscountRedemptionJob() PeriodicJob {
-	return PeriodicJob{ID: "discount_redemptions", Name: "优惠预留确认与恢复", Interval: 10 * time.Second, Timeout: 2 * time.Minute, External: true, Immediate: true, ReconcileAfterLoss: true, RetryFailures: true, CompactHistory: true, Run: func(ctx context.Context) error {
+	return PeriodicJob{ID: "discount_redemptions", Name: "优惠预留确认与恢复", Interval: 10 * time.Second, Timeout: 2 * time.Minute, External: true, Immediate: true, ReconcileAfterLoss: true, RetryFailures: true, Run: func(ctx context.Context) error {
 		provider, _ := s.commerceDiscountQuoter.(commerce.DiscountRedemptionProvider)
 		_, err := (commercestore.DiscountRedemptionJobs{DB: s.Identity.db, Provider: provider}).RunBatch(ctx, 10)
 		// Domain unknown/failure remains durable; existing periodic scheduling retries

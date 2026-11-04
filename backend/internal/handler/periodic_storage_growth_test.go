@@ -40,3 +40,26 @@ func TestCoreScannerReusesSuccessHistoryWithoutRemovingBusinessResults(t *testin
 		t.Fatal("periodic compaction changed domain history", got, err)
 	}
 }
+
+func TestCoreHistoryPolicyDoesNotBlockExternalOrUnrecoverableRegistration(t *testing.T) {
+	for _, id := range []string{"admin_tasks", "node_publish_0", "dns_observation", "shutdown_inflight"} {
+		t.Run(id, func(t *testing.T) {
+			h, _ := newAnnouncementTestHandlers(t)
+			prepareTestMaintenanceSource(t, h)
+			h.startScheduledJob(id, time.Hour, func(context.Context) error { return nil })
+			defer h.closeScheduledJob(id)
+			found := false
+			for _, job := range h.services.Jobs.RegisteredJobs() {
+				if job.ID == id {
+					found = true
+					if job.CompactHistory {
+						t.Fatal("external/nonrecoverable evidence became reusable", id)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("core job registration rejected", id)
+			}
+		})
+	}
+}
