@@ -13,14 +13,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Keep the existing receive-time15-day diagnostic/dedup horizon. Only already
-// projected rows retire; their point and both minute deltas disappear atomically.
+// Exact receive-time diagnostics expire independently of minute history. Only
+// verified projected rows retire; deleting raw/points must not erase chart data.
 // No financial ledger, cumulative cursor or original accounting proof is touched.
 func (s ObservationRetention) pruneProjectedFlowStarts(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	return s.pruneProjectedFlowStartsAt(ctx, cutoff, cutoff.Add(metering.ObservationRetentionHorizon), limit)
+}
+
+func (s ObservationRetention) pruneProjectedFlowStartsAt(ctx context.Context, cutoff, now time.Time, limit int) (int64, error) {
 	if limit < 1 || limit > metering.ObservationRetentionBatchLimit {
 		return 0, errors.New("invalid flow retention batch")
 	}
-	now := cutoff.Add(metering.ObservationRetentionHorizon)
 	var ids []uint64
 	if err := s.DB.WithContext(ctx).Model(&model.FlowStartStatisticsPoint{}).Where("received_at<? AND review_at<=?", cutoff, now).Order("review_at,source_id").Limit(limit).Pluck("source_id", &ids).Error; err != nil {
 		return 0, err
@@ -72,10 +75,15 @@ func (s ObservationRetention) pruneProjectedFlowStarts(ctx context.Context, cuto
 					}
 				}
 			}
-			delta := map[flowMinuteKey]uint64{}
 			var clear []uint64
 			for _, r := range sources {
-				if !r.ReceivedAt.Before(cutoff) || busy[r.ID] || r.ID <= state.LegacyUpperID && r.ID > state.LegacyAfterID {
+				if !r.ReceivedAt.Before(cutoff) {
+					continue
+				}
+				if busy[r.ID] || r.ID <= state.LegacyUpperID && r.ID > state.LegacyAfterID {
+					if err := tx.Model(&model.FlowStartStatisticsPoint{}).Where("source_id = ?", r.ID).Update("review_at", now.Add(time.Minute)).Error; err != nil {
+						return err
+					}
 					continue
 				}
 				p, ok := byID[r.ID]
@@ -90,34 +98,9 @@ func (s ObservationRetention) pruneProjectedFlowStarts(ctx context.Context, cuto
 					continue
 				}
 				clear = append(clear, r.ID)
-				for basis, at := range map[string]time.Time{"occurred": r.OccurredAt, "received": r.ReceivedAt} {
-					delta[flowMinuteKey{r.SubscriptionID, r.NodeID, basis, at.UTC().Truncate(time.Minute)}]++
-				}
 			}
 			if len(clear) == 0 {
 				return nil
-			}
-			keys := make([]flowMinuteKey, 0, len(delta))
-			for key := range delta {
-				keys = append(keys, key)
-			}
-			sort.Slice(keys, func(i, j int) bool {
-				a, b := keys[i], keys[j]
-				if a.Subscription != b.Subscription {
-					return a.Subscription < b.Subscription
-				}
-				if a.Node != b.Node {
-					return a.Node < b.Node
-				}
-				if a.Basis != b.Basis {
-					return a.Basis < b.Basis
-				}
-				return a.At.Before(b.At)
-			})
-			for _, key := range keys {
-				if err := flowMinuteDelta(tx, key, delta[key], true); err != nil {
-					return err
-				}
 			}
 			for _, record := range []any{&model.FlowStartStatisticsPoint{}, &FlowStartRecord{}} {
 				column := "source_id"

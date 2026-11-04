@@ -22,7 +22,7 @@ func meteringIndexBudget(t *testing.T, mysql bool) {
 		t.Fatal(err)
 	}
 	// Reintroduce known legacy indexes to model an upgrade, not just a fresh DB.
-	for _, index := range []struct{ table, name, columns string }{{"traffic_records", "idx_traffic_user", "user_id"}, {"traffic_records", "idx_traffic_time", "record_at"}, {"flow_usages", "idx_flow_usages_principal", "principal_key"}, {"flow_usages", "idx_flow_usages_status_seen", "status,last_seen_at"}} {
+	for _, index := range []struct{ table, name, columns string }{{"traffic_records", "idx_traffic_records_flow", "flow_id"}, {"traffic_records", "idx_traffic_records_event_type", "event_type"}, {"traffic_records", "idx_traffic_user", "user_id"}, {"traffic_records", "idx_traffic_time", "record_at"}, {"flow_usages", "idx_flow_usages_principal", "principal_key"}, {"flow_usages", "idx_flow_usages_status_seen", "status,last_seen_at"}} {
 		if !db.Migrator().HasIndex(index.table, index.name) {
 			if err := db.Exec(fmt.Sprintf("CREATE INDEX %s ON %s(%s)", index.name, index.table, index.columns)).Error; err != nil {
 				t.Fatal(err)
@@ -42,7 +42,7 @@ func meteringIndexBudget(t *testing.T, mysql bool) {
 			t.Fatal("upgrade/restart", i, err)
 		}
 	}
-	for _, index := range []struct{ table, name string }{{"traffic_records", "idx_traffic_user"}, {"traffic_records", "idx_traffic_time"}, {"flow_usages", "idx_flow_usages_principal"}, {"flow_usages", "idx_flow_usages_status_seen"}} {
+	for _, index := range []struct{ table, name string }{{"traffic_records", "idx_traffic_records_flow"}, {"traffic_records", "idx_traffic_records_event_type"}, {"traffic_records", "idx_traffic_user"}, {"traffic_records", "idx_traffic_time"}, {"flow_usages", "idx_flow_usages_principal"}, {"flow_usages", "idx_flow_usages_status_seen"}} {
 		if db.Migrator().HasIndex(index.table, index.name) {
 			t.Fatal("redundant write amplification retained", index)
 		}

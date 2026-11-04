@@ -64,7 +64,7 @@ func TestHistoryRetentionJobsSeparateFailureReadinessAndBoundedExecution(t *test
 	}
 	seen := map[string]bool{}
 	for _, job := range defs {
-		if seen[job.ID] || job.Ready == nil || job.Run == nil || job.Timeout != 20*time.Second || job.External || !job.RetryFailures || !job.ReconcileAfterLoss {
+		if seen[job.ID] || job.Ready == nil || job.Run == nil || job.Timeout != 20*time.Second || job.External || !job.RetryFailures || !job.ReconcileAfterLoss || !job.CompactHistory {
 			t.Fatal("unbounded or unsafe retention definition", job.ID)
 		}
 		seen[job.ID] = true

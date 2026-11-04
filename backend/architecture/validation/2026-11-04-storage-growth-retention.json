@@ -1,0 +1,71 @@
+{
+  "base_commit": "8c44dc828d78d1ff6f29a41a5b6180bd3f49b739",
+  "source": "local uncommitted working tree; no build, push, release or deployment",
+  "changed_files_snapshot_sha256": "02557595041c13eaa8a34a85516beee6b89fb6c5939efc0770ebb778772455c4",
+  "read_only_production_evidence": "/Volumes/tool/zboard-deployments/20261104-storage-design-audit/production-readonly-sample.json",
+  "design": "backend/architecture/storage-growth-and-retention.md",
+  "new_migrations": [
+    "0083_flow_cursor_checkpoints.up.sql",
+    "0084_flow_detail_retention.up.sql"
+  ],
+  "component_suite": {
+    "command": "go test -p 2 -timeout=20m ./internal/datastore ./internal/adapters/persistence/meteringstore ./internal/application ./internal/adapters/persistence/observabilitystore ./tools/capabilityinventory",
+    "status": "passed",
+    "log": "/tmp/zboard-storage-validation-final.log",
+    "source_note": "This passed run preceded the final legacy-key rename guard and additional alias/query-plan assertions; the current-source targeted run below covers those subsequent changes."
+  },
+  "growth_regressions": {
+    "status": "passed",
+    "log": "/tmp/zboard-storage-growth-current.log",
+    "coverage": [
+      "twenty-year-old completed report and delta",
+      "terminal/active bit preserved",
+      "abandoned active and legacy cursor continuation",
+      "fractional per-report charging",
+      "collation-equivalent cold alias and legacy rename rejection",
+      "transactional compaction failure and progress rollback",
+      "bounded rotating seek",
+      "forty daily bursts leave 20 raw and 20 exact points, 30 minute rows",
+      "300 retained starts survive raw retirement",
+      "expiry query plan uses ordered time index without temporary sort",
+      "far-future node timestamps cannot evade minute expiry"
+    ]
+  },
+  "handler_storage_acceptance": {
+    "status": "passed",
+    "log": "/tmp/zboard-storage-acceptance-current.log",
+    "mysql_case": "skipped; isolated MySQL DSN unavailable"
+  },
+  "initial_full_backend_suite": {
+    "status": "failed; not claimed as a single green full-suite run",
+    "log": "/tmp/zboard-storage-backend-full.log",
+    "issues": [
+      "two legacy schema fixtures retained a later dependent index migration receipt; fixed and full datastore package passed",
+      "three model owners missing in contract inventory; fixed and inventory package passed",
+      "handler default ten-minute suite timeout",
+      "native plugin post-RPC fence deadline failure; isolated rerun passed"
+    ]
+  },
+  "handler_full_extended_timeout_recheck": {
+    "log": "/tmp/zboard-storage-handler-full.log",
+    "duration_seconds": 1099.127,
+    "status": "completed; native wallet plugin startup failed in two subcases, all other tests passed",
+    "failed_case_rerun": {
+      "log": "/tmp/zboard-storage-wallet-plugin-recheck.log",
+      "status": "passed",
+      "duration_seconds": 21.996
+    }
+  },
+  "native_plugin_failed_case_recheck": {
+    "log": "/tmp/zboard-storage-plugin-recheck.log",
+    "status": "passed",
+    "duration_seconds": 34.164
+  },
+  "not_validated": [
+    "isolated reference MySQL upgrade/collation/concurrency/space measurements",
+    "production activation and maintenance ownership handoff",
+    "physical InnoDB tablespace shrink"
+  ],
+  "financial_retention": "no age limit or lateness rejection for accounting receipts/checkpoints; no fixed-byte total-storage claim",
+  "production_mutations_performed": false
+}

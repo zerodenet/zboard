@@ -183,11 +183,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	usage.LastEventID = event.EventID
 	usage.LastSeenAt = recordAt
 	usage.CompletedAt = nil
-	if found {
-		if err := tx.Save(&usage).Error; err != nil {
-			return result, err
-		}
-	} else if err := tx.Create(&usage).Error; err != nil {
+	if err := saveFlowUsage(tx, &usage, found, previousUsageKey); err != nil {
 		return result, err
 	}
 

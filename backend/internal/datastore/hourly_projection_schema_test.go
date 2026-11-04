@@ -204,6 +204,10 @@ func TestSQLiteHourlyProjectionRollbackRestoresLegacyWriterOnlyAfterDrain(t *tes
 		t.Fatal(err)
 	}
 
+	// A genuine legacy source has no receipt for the later minute expiry index.
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", "0084_flow_detail_retention.up.sql").Error; err != nil {
+		t.Fatal(err)
+	}
 	// Only this isolated fixture reconstructs the original pre0070 schema. The
 	// current0071 receipt/source column independently blocks binary rollback.
 	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", flowStartStatisticsVersion).Error; err != nil {

@@ -9,6 +9,15 @@ import (
 )
 
 func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
+	if id == application.FlowDetailRetentionJobID {
+		return h.services.FlowDetailRetentionJob().Ready
+	}
+	if id == application.FlowCursorCompactionJobID {
+		return h.services.FlowCursorCompactionJob().Ready
+	}
+	if id == application.LegacyPrincipalRetentionJobID {
+		return h.services.LegacyPrincipalRetentionJob().Ready
+	}
 	if id == "registration_messages" {
 		return h.services.RegistrationMessages(h.credentialCipher).Pending
 	}

@@ -20,8 +20,8 @@ type FlowStartStatisticsPending struct {
 
 func (FlowStartStatisticsPending) TableName() string { return "flow_start_statistics_pending" }
 
-// A thin exact-time point is needed only for partial minute boundaries. It and
-// both minute contributions retire atomically with the original15-day raw row.
+// Exact-time points and raw diagnostics retire together after 24 hours. Minute
+// history has its own 15-day expiry and survives retirement of individual points.
 type FlowStartStatisticsPoint struct {
 	SourceID                                          uint64 `gorm:"primaryKey;autoIncrement:false"`
 	SubscriptionID, NodeID                            uint
@@ -40,3 +40,11 @@ type FlowStartStatisticsMinute struct {
 }
 
 func (FlowStartStatisticsMinute) TableName() string { return "flow_start_statistics_minutes" }
+
+// Captures a finite pre-upgrade point range for bounded deadline conversion.
+// It is operational progress, never a substitute for financial replay receipts.
+type FlowDetailRetentionState struct {
+	ID      uint   `gorm:"primaryKey;autoIncrement:false;not null"`
+	UpperID uint64 `gorm:"not null"`
+	AfterID uint64 `gorm:"not null"`
+}

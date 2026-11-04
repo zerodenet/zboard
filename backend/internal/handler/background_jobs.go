@@ -20,7 +20,7 @@ type backgroundJobs struct {
 	loops        map[string]*scheduledJob
 }
 
-var jobNames = map[string]string{"user_cleanup": "无有效订阅账号清理", application.FlowStartStatisticsJobID: "连接开始事件统计投影", application.PrincipalStatisticsJobID: "连接统计投影", application.PrincipalScopeRetentionJobID: "连接统计原始材料保留", "discount_redemptions": "优惠预留确认与恢复", "traffic_diagnostic_retention": "流量诊断材料保留", "node_observation_material_retention": "节点观察材料保留", application.NodeObservationJobID: application.NodeObservationJobName, application.UsageProjectionJobID: application.UsageProjectionJobName, "automatic_renewal": "余额自动续费", "wallet_reservations": "余额预留到期释放", "subscription_alerts": "订阅告警扫描", "credential_expiry": "订阅到期处理", "traffic_reset": "订阅流量重置", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "审计历史保留", "history_retention_tasks": "运营任务历史保留", "history_retention_node_operations": "节点操作历史保留", "history_retention_protocol_deployments": "发布历史保留", "history_retention_archived_cursors": "已删除节点计费游标回收", "history_retention_periodic_success": "成功周期任务历史保留", "history_retention_periodic_failure": "失败周期任务历史保留", "history_retention_certificates": "证书操作历史保留", "history_retention_dns": "DNS 操作历史保留", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
+var jobNames = map[string]string{application.FlowCursorCompactionJobID: "连接计费状态压缩", application.FlowDetailRetentionJobID: "连接明细与分钟统计保留", application.LegacyPrincipalRetentionJobID: "旧连接观测保留", "user_cleanup": "无有效订阅账号清理", application.FlowStartStatisticsJobID: "连接开始事件统计投影", application.PrincipalStatisticsJobID: "连接统计投影", application.PrincipalScopeRetentionJobID: "连接统计原始材料保留", "discount_redemptions": "优惠预留确认与恢复", "traffic_diagnostic_retention": "流量诊断材料保留", "node_observation_material_retention": "节点观察材料保留", application.NodeObservationJobID: application.NodeObservationJobName, application.UsageProjectionJobID: application.UsageProjectionJobName, "automatic_renewal": "余额自动续费", "wallet_reservations": "余额预留到期释放", "subscription_alerts": "订阅告警扫描", "credential_expiry": "订阅到期处理", "traffic_reset": "订阅流量重置", "fair_use": "公平使用评估", "certificate_renewal": "证书续期扫描", "dns_observation": "DNS 公网核验", "history_retention": "审计历史保留", "history_retention_tasks": "运营任务历史保留", "history_retention_node_operations": "节点操作历史保留", "history_retention_protocol_deployments": "发布历史保留", "history_retention_archived_cursors": "已删除节点计费游标回收", "history_retention_periodic_success": "成功周期任务历史保留", "history_retention_periodic_failure": "失败周期任务历史保留", "history_retention_certificates": "证书操作历史保留", "history_retention_dns": "DNS 操作历史保留", "proxy_pool_sync": "代理池订阅同步", "node_publish": "节点配置发布", "admin_tasks": "运营任务执行", "registration_messages": "注册消息处理", "event_consumer": "流量事件入账"}
 
 func (h *handlers) backgroundJobs() *backgroundJobs {
 	h.jobRuntimeOnce.Do(func() {
@@ -51,9 +51,11 @@ func (h *handlers) startScheduledJob(id string, interval time.Duration, run func
 		External:           id == "admin_tasks" || strings.HasPrefix(id, "node_publish_"),
 		ReconcileAfterLoss: id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
 		RetryFailures:      id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_"),
-		CompactHistory:     id == "registration_messages" || id == "event_consumer",
-		Ready:              h.jobReadiness(id),
-		Run:                run,
+		// These are core pollers/scanners. Business results retain their own
+		// domain history; only clean periodic success/yield rows are reused.
+		CompactHistory: true,
+		Ready:          h.jobReadiness(id),
+		Run:            run,
 	})
 }
 

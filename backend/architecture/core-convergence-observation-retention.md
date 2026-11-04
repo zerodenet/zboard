@@ -1,5 +1,9 @@
 # P4 diagnostic retention: independent bounded maintenance
 
+The current policy is documented in [metering storage growth and retention](storage-growth-and-retention.md).
+It separates 24-hour raw/exact detail from fifteen-day minute history; the shared
+fifteen-day source/point/minute lifetime below describes the previous implementation.
+
 This batch removes the unbounded fifteen-day `DELETE` hooks from flow-start
 reception and Fair Use evaluation inserts. Accepted traffic settlement and
 evaluation state no longer share a transaction with diagnostic cleanup. The

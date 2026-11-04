@@ -12,6 +12,9 @@ import (
 // and foreign-key ordering. Missing legacy source tables may be absent; an
 // existing source table must never be silently dropped from the destination.
 func CopyApplicationData(source, target *gorm.DB) error {
+	if err := preflightFlowDetailRetentionSchema(source); err != nil {
+		return err
+	}
 	if err := preflightNativeSettlementSchema(source); err != nil {
 		return err
 	}
@@ -56,6 +59,9 @@ func CopyApplicationData(source, target *gorm.DB) error {
 		return err
 	}
 	if err := preflightReportReceiptSchema(source); err != nil {
+		return err
+	}
+	if err := preflightFlowCursorCheckpointSchema(source); err != nil {
 		return err
 	}
 	if err := preflightDiagnosticMaterialSchema(source); err != nil {

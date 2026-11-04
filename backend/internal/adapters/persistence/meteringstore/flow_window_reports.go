@@ -57,6 +57,14 @@ func validateFlowWindowReports(tx *gorm.DB, samples []metering.FlowSample) error
 				if read.Error != nil {
 					return read.Error
 				}
+				if read.RowsAffected == 0 {
+					var cold model.FlowCursorCheckpoint
+					read = tx.Select("revision").Where("node_id = ? AND flow_id = ?", node, metering.FlowUsageKey(sample.CoreInstanceID, sample.FlowID)).Limit(1).Find(&cold)
+					if read.Error != nil {
+						return read.Error
+					}
+					cursor.Revision = cold.Revision
+				}
 				if read.RowsAffected == 0 || cursor.Revision < sample.Sequence {
 					return metering.ErrFlowWindowNeedsIndividualReports
 				}

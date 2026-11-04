@@ -104,6 +104,7 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 				return err
 			}
 			targetUsageKey := metering.FlowUsageKey(event.CoreInstanceID, flow.FlowID)
+			previousUsageKey := usage.FlowID
 			continues := false
 			previousRaw, previousUpload, previousDownload, previousUsed := int64(0), int64(0), int64(0), int64(0)
 			if usageExists {
@@ -207,11 +208,7 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			usage.LastEventID = event.EventID
 			usage.LastSeenAt = recordAt
 			usage.CompletedAt = &now
-			if usageExists {
-				if err := tx.Save(&usage).Error; err != nil {
-					return err
-				}
-			} else if err := tx.Create(&usage).Error; err != nil {
+			if err := saveFlowUsage(tx, &usage, usageExists, previousUsageKey); err != nil {
 				return err
 			}
 

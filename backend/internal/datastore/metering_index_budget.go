@@ -24,6 +24,8 @@ var meteringIndexBudget = map[string][]meteringIndexDrop{
 		{"last_seen_at", []string{"idx_flow_usages_last_seen_at"}, ""},
 	},
 	"traffic_records": {
+		{"flow_id", []string{"idx_traffic_records_flow", "idx_traffic_records_flow_id"}, ""},
+		{"event_type", []string{"idx_traffic_records_event_type"}, ""},
 		{"user_id", []string{"idx_traffic_user", "idx_traffic_records_user_id"}, "user_id,record_at"},
 		{"subscription_id", []string{"idx_traffic_records_subscription_id"}, "subscription_id,record_at"},
 		{"node_id", []string{"idx_traffic_node", "idx_traffic_records_node_id"}, "node_id,record_at"},

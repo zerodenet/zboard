@@ -25,7 +25,7 @@ func (s *Services) HistoryRetentionJobs() []PeriodicJob {
 	}
 	jobs := make([]PeriodicJob, 0, len(targets)+2)
 	for _, target := range targets {
-		jobs = append(jobs, PeriodicJob{ID: target.id, Name: target.name, Interval: target.interval, Timeout: 20 * time.Second, Immediate: true, RetryFailures: true, ReconcileAfterLoss: true,
+		jobs = append(jobs, PeriodicJob{ID: target.id, Name: target.name, Interval: target.interval, Timeout: 20 * time.Second, Immediate: true, RetryFailures: true, ReconcileAfterLoss: true, CompactHistory: true,
 			Ready: func(ctx context.Context) (bool, error) {
 				return s.HistoryRetention.ReadyTarget(ctx, time.Now().UTC(), target.target)
 			},
@@ -49,7 +49,7 @@ func (s *Services) HistoryRetentionJobs() []PeriodicJob {
 			}
 			return time.Now().UTC().AddDate(0, 0, -days), nil
 		}
-		jobs = append(jobs, PeriodicJob{ID: operation.id, Name: operation.name, Interval: 5 * time.Minute, Timeout: 20 * time.Second, Immediate: true, RetryFailures: true, ReconcileAfterLoss: true,
+		jobs = append(jobs, PeriodicJob{ID: operation.id, Name: operation.name, Interval: 5 * time.Minute, Timeout: 20 * time.Second, Immediate: true, RetryFailures: true, ReconcileAfterLoss: true, CompactHistory: true,
 			Ready: func(ctx context.Context) (bool, error) {
 				before, err := cutoff(ctx)
 				if err != nil || before.IsZero() {

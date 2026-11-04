@@ -269,8 +269,8 @@ func (s *flowBatch) loadUsage(tx *gorm.DB, in metering.FlowSample, credential ui
 		}
 		sort.Strings(keys)
 		for start := 0; start < len(keys); start += 200 {
-			var rows []model.FlowUsage
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", in.NodeID, keys[start:min(start+200, len(keys))]).Order("flow_id").Find(&rows).Error; err != nil {
+			rows, err := loadFlowUsageCandidates(tx, in.NodeID, keys[start:min(start+200, len(keys))])
+			if err != nil {
 				return model.FlowUsage{}, false, false, err
 			}
 			for _, row := range rows {

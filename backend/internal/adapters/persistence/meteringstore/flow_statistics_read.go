@@ -109,6 +109,12 @@ func flowStatisticsSeries(tx *gorm.DB, subscription uint, spec metering.Observat
 		return nil, 0, errors.New("flow statistics bucket must be whole minutes")
 	}
 	from := now.Add(-spec.Duration)
+	// Historical charts expose minute resolution. Preserve the full left minute
+	// after exact points expire; current enforcement windows still use the exact
+	// inclusive point/minute union above, within the 24-hour detail horizon.
+	if from.Before(now.Add(-FlowStartDetailHorizon)) {
+		from = from.UTC().Truncate(time.Minute)
+	}
 	if err := ensureFlowStatisticsReady(tx, subscription, "received", from, now); err != nil {
 		return nil, 0, err
 	}

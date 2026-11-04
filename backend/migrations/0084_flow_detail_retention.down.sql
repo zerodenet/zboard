@@ -1,0 +1,2 @@
+DROP INDEX idx_flow_stats_minute_retention ON flow_start_statistics_minutes;
+DROP TABLE flow_detail_retention_states;

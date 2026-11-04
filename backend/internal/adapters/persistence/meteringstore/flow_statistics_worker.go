@@ -9,7 +9,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -136,8 +135,14 @@ func (s FlowStatistics) Drain(ctx context.Context, limit int) (int, error) {
 					return errors.New("flow projected source changed")
 				}
 			} else {
-				insert = append(insert, model.FlowStartStatisticsPoint{SourceID: r.ID, NodeID: r.NodeID, SubscriptionID: r.SubscriptionID, OccurredAt: r.OccurredAt, ReceivedAt: r.ReceivedAt, SourceCreatedAt: r.CreatedAt, ReviewAt: r.ReceivedAt.Add(metering.ObservationRetentionHorizon), FactSHA256: flowStatisticsDigest(r)})
+				insert = append(insert, model.FlowStartStatisticsPoint{SourceID: r.ID, NodeID: r.NodeID, SubscriptionID: r.SubscriptionID, OccurredAt: r.OccurredAt, ReceivedAt: r.ReceivedAt, SourceCreatedAt: r.CreatedAt, ReviewAt: r.ReceivedAt.Add(FlowStartDetailHorizon), FactSHA256: flowStatisticsDigest(r)})
 				for basis, at := range map[string]time.Time{"occurred": r.OccurredAt, "received": r.ReceivedAt} {
+					// Occurrence time is supplied by the node; it must not create
+					// arbitrarily future buckets that can evade time-based expiry.
+					// Keep the event/point and its trusted received-time count.
+					if basis == "occurred" && at.After(r.ReceivedAt.Add(FlowStartFutureAllowance)) {
+						continue
+					}
 					delta[flowMinuteKey{r.SubscriptionID, r.NodeID, basis, at.UTC().Truncate(time.Minute)}]++
 				}
 			}
@@ -173,7 +178,7 @@ func (s FlowStatistics) Drain(ctx context.Context, limit int) (int, error) {
 			return a.At.Before(b.At)
 		})
 		for _, key := range keys {
-			if err := flowMinuteDelta(tx, key, delta[key], false); err != nil {
+			if err := flowMinuteDelta(tx, key, delta[key]); err != nil {
 				return err
 			}
 		}
@@ -209,31 +214,22 @@ func (s FlowStatistics) Drain(ctx context.Context, limit int) (int, error) {
 	}
 	return processed, nil
 }
-func flowMinuteDelta(tx *gorm.DB, key flowMinuteKey, n uint64, subtract bool) error {
+func flowMinuteDelta(tx *gorm.DB, key flowMinuteKey, n uint64) error {
+	if n == 0 || n > math.MaxInt64 {
+		return errors.New("flow minute count invalid")
+	}
 	var row model.FlowStartStatisticsMinute
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("subscription_id=? AND node_id=? AND basis=? AND minute_at=?", key.Subscription, key.Node, key.Basis, key.At).Limit(1).Find(&row)
 	if q.Error != nil {
 		return q.Error
 	}
 	if q.RowsAffected == 0 {
-		if subtract {
-			return errors.New("flow minute receipt missing before retention")
-		}
 		return tx.Create(&model.FlowStartStatisticsMinute{SubscriptionID: key.Subscription, NodeID: key.Node, Basis: key.Basis, MinuteAt: key.At, EventCount: n}).Error
 	}
 	if n == 0 || row.EventCount == 0 || row.EventCount > math.MaxInt64 {
 		return errors.New("flow minute count corrupt")
 	}
 	query := tx.Model(&model.FlowStartStatisticsMinute{}).Where("subscription_id=? AND node_id=? AND basis=? AND minute_at=?", key.Subscription, key.Node, key.Basis, key.At)
-	if subtract {
-		if row.EventCount < n {
-			return errors.New("flow minute count underflow")
-		}
-		if row.EventCount == n {
-			return query.Delete(&model.FlowStartStatisticsMinute{}).Error
-		}
-		return query.Update("event_count", row.EventCount-n).Error
-	}
 	if n > math.MaxInt64-row.EventCount {
 		return fmt.Errorf("flow minute count overflow")
 	}

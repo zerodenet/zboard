@@ -31,6 +31,10 @@ func flowStatisticsLegacy(t *testing.T, mysql bool) {
 			t.Fatal(err)
 		}
 	}
+	// A genuine legacy source has no receipt for the later minute expiry index.
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", "0084_flow_detail_retention.up.sql").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", flowStatisticsMigration).Error; err != nil {
 		t.Fatal(err)
 	}

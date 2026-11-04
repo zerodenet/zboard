@@ -7,4 +7,7 @@ func (h *handlers) StartPrincipalStatisticsWorker() {
 	h.startPeriodicJob(h.services.PrincipalStatisticsJob())
 	h.startPeriodicJob(h.services.FlowStartStatisticsJob())
 	h.startPeriodicJob(h.services.PrincipalScopeRetentionJob())
+	h.startPeriodicJob(h.services.FlowDetailRetentionJob())
+	h.startPeriodicJob(h.services.FlowCursorCompactionJob())
+	h.startPeriodicJob(h.services.LegacyPrincipalRetentionJob())
 }

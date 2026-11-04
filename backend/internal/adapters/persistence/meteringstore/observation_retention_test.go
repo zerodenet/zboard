@@ -161,14 +161,14 @@ func TestObservationRetentionSQLiteRollbackAndInsertIndependence(t *testing.T) {
 			count, err := prune(context.Background(), cutoff, 3)
 			wantDeletes := 1
 			if table == (FlowStartRecord{}).TableName() {
-				wantDeletes = 4
+				wantDeletes = 2
 			}
 			if err == nil || count != 0 || deleteCalls != wantDeletes {
 				t.Fatalf("failed maintenance acknowledged: %d %v calls=%d", count, err, deleteCalls)
 			}
 
 			if table == (FlowStartRecord{}).TableName() {
-				if len(deleteTables) != 4 || deleteTables[0] != "flow_start_statistics_minutes" || deleteTables[1] != "flow_start_statistics_minutes" || deleteTables[2] != "flow_start_statistics_points" || deleteTables[3] != (FlowStartRecord{}).TableName() {
+				if len(deleteTables) != 2 || deleteTables[0] != "flow_start_statistics_points" || deleteTables[1] != (FlowStartRecord{}).TableName() {
 					t.Fatal("retention no longer verifies both transactional deletion paths", deleteTables)
 				}
 				var points, total int64

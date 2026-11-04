@@ -113,12 +113,16 @@ func TestFlowStatisticsExactInclusiveBoundariesDistinctNodesAndAllOriginalRanges
 			t.Fatal(err)
 		}
 		seconds := int64(spec.BucketDuration / time.Second)
+		from := now.Add(-spec.Duration)
+		if spec.Duration > 24*time.Hour {
+			from = from.Truncate(time.Minute)
+		}
 		var expected []metering.ObservationAggregate
-		if err := db.Model(&FlowStartRecord{}).Select("CAST(CAST(strftime('%s',received_at) AS INTEGER)/? AS INTEGER) AS bucket_index,COUNT(*) AS connection_starts,COUNT(DISTINCT node_id) AS working_nodes", seconds).Where("subscription_id=? AND received_at>=? AND received_at<=?", 7, now.Add(-spec.Duration), now).Group("bucket_index").Order("bucket_index").Scan(&expected).Error; err != nil {
+		if err := db.Model(&FlowStartRecord{}).Select("CAST(CAST(strftime('%s',received_at) AS INTEGER)/? AS INTEGER) AS bucket_index,COUNT(*) AS connection_starts,COUNT(DISTINCT node_id) AS working_nodes", seconds).Where("subscription_id=? AND received_at>=? AND received_at<=?", 7, from, now).Group("bucket_index").Order("bucket_index").Scan(&expected).Error; err != nil {
 			t.Fatal(err)
 		}
 		var exactNodes int64
-		if err := db.Model(&FlowStartRecord{}).Where("subscription_id=? AND received_at>=? AND received_at<=?", 7, now.Add(-spec.Duration), now).Distinct("node_id").Count(&exactNodes).Error; err != nil {
+		if err := db.Model(&FlowStartRecord{}).Where("subscription_id=? AND received_at>=? AND received_at<=?", 7, from, now).Distinct("node_id").Count(&exactNodes).Error; err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(rows, expected) || nodes != exactNodes {
@@ -150,6 +154,9 @@ func TestFlowStatisticsLegacyResumeRetireAndCopiedAllocatorReuseStayExplicit(t *
 		flowStatisticsFixtureSource(t, db, 1, 7, fmt.Sprint("legacy-", i), at, at.Add(time.Duration(i)*time.Second), false)
 	}
 	// This isolated fixture reconstructs a genuine pre0071 source schema.
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", "0084_flow_detail_retention.up.sql").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", "0071_flow_start_statistics.up.sql").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +202,10 @@ func TestFlowStatisticsLegacyResumeRetireAndCopiedAllocatorReuseStayExplicit(t *
 	drainFlowStatistics(t, db, 1)
 	if n, err := (ObservationRetention{DB: db}).PruneFlowStarts(t.Context(), at.Add(3*time.Second), 1000); err != nil || n != 3 {
 		t.Fatal(n, err)
+	}
+	// Minute history expires independently, after raw and exact points retire.
+	if _, err := (FlowDetailRetention{DB: db}).expireMinutes(t.Context(), at.Add(24*time.Hour), 200); err != nil {
+		t.Fatal(err)
 	}
 	for _, table := range []string{"subscription_flow_start_events", "flow_start_statistics_points", "flow_start_statistics_minutes"} {
 		var n int64

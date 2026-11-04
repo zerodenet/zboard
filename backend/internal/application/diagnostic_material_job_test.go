@@ -29,7 +29,7 @@ func TestDiagnosticMaterialJobKeepsBoundedLiveCapability(t *testing.T) {
 	p := &diagnosticRetentionProbe{ready: true}
 	s := &Services{DiagnosticMaterialRetention: metering.DiagnosticMaterialRetention{Repository: p}}
 	j := s.DiagnosticMaterialRetentionJob()
-	if j.ID != "traffic_diagnostic_retention" || j.Interval != time.Second || j.Timeout != time.Minute || !j.Immediate || !j.RetryFailures || !j.ReconcileAfterLoss || j.External {
+	if j.ID != "traffic_diagnostic_retention" || j.Interval != time.Second || j.Timeout != time.Minute || !j.Immediate || !j.RetryFailures || !j.ReconcileAfterLoss || !j.CompactHistory || j.External {
 		t.Fatal("retention job policy", j)
 	}
 	ctx, cancel := context.WithCancel(t.Context())

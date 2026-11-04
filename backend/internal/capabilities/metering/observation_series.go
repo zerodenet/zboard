@@ -105,6 +105,9 @@ func (s ObservationSeriesService) Read(ctx context.Context, actor, subscription 
 }
 func ProjectObservationSeries(subscriptionID uint, spec ObservationRange, now time.Time, coverage CoverageSummary, rows []ObservationAggregate, distinctWorkingNodes int64) (ObservationSeries, error) {
 	since := now.Add(-spec.Duration)
+	if spec.Duration > 24*time.Hour {
+		since = since.UTC().Truncate(time.Minute)
+	}
 	bucketSeconds := int64(spec.BucketDuration / time.Second)
 	if bucketSeconds <= 0 {
 		return ObservationSeries{}, errors.New("invalid observation bucket")

@@ -32,7 +32,16 @@ func (s HistoryRetention) pruneArchivedFlowCursors(ctx context.Context, before t
 			return err
 		}
 		if len(ids) == 0 {
-			return nil
+			var keys []string
+			if err := tx.Model(&model.FlowCursorCheckpoint{}).Where("node_id = ?", node.ID).Order("flow_id").Limit(limit).Pluck("flow_id", &keys).Error; err != nil {
+				return err
+			}
+			if len(keys) == 0 {
+				return nil
+			}
+			res := tx.Where("node_id = ? AND flow_id IN ?", node.ID, keys).Delete(&model.FlowCursorCheckpoint{})
+			count = res.RowsAffected
+			return res.Error
 		}
 		res := tx.Where("id IN ? AND node_id = ?", ids, node.ID).Delete(&model.FlowUsage{})
 		count = res.RowsAffected
@@ -43,5 +52,5 @@ func (s HistoryRetention) pruneArchivedFlowCursors(ctx context.Context, before t
 
 func archivedCursorNodes(db *gorm.DB, before time.Time) *gorm.DB {
 	return db.Model(&model.Node{}).Where("lifecycle_status = ? AND archived_at < ? AND is_enabled = false AND node_credential_revoked_at IS NOT NULL AND traffic_secret_revoked_at IS NOT NULL", "archived", before).
-		Where("EXISTS (?)", db.Model(&model.FlowUsage{}).Select("1").Where("flow_usages.node_id = nodes.id"))
+		Where("EXISTS (?) OR EXISTS (?)", db.Model(&model.FlowUsage{}).Select("1").Where("flow_usages.node_id = nodes.id"), db.Model(&model.FlowCursorCheckpoint{}).Select("1").Where("flow_cursor_checkpoints.node_id = nodes.id"))
 }

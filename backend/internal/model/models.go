@@ -562,8 +562,8 @@ type TrafficRecord struct {
 	NodeID                  uint      `json:"node_id" gorm:"uniqueIndex:ux_traffic_node_report,priority:1;uniqueIndex:ux_traffic_node_nonce,priority:1"`
 	ProtocolEndpointID      uint      `json:"protocol_endpoint_id"`
 	ReportID                string    `json:"report_id,omitempty" gorm:"size:191;uniqueIndex:ux_traffic_node_report,priority:2"`
-	FlowID                  string    `json:"flow_id,omitempty" gorm:"size:128;index"`
-	EventType               string    `json:"event_type,omitempty" gorm:"size:32;index"`
+	FlowID                  string    `json:"flow_id,omitempty" gorm:"size:128"`
+	EventType               string    `json:"event_type,omitempty" gorm:"size:32"`
 	EventRevision           uint64    `json:"event_revision,omitempty"`
 	Nonce                   string    `json:"-" gorm:"size:64;uniqueIndex:ux_traffic_node_nonce,priority:2"`
 	RawBytes                int64     `json:"raw_bytes"`

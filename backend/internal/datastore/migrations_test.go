@@ -153,6 +153,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0080_user_admin_notes.up.sql",
 		"0081_runtime_handler_index.up.sql",
 		"0082_runtime_metric_history.up.sql",
+		"0083_flow_cursor_checkpoints.up.sql",
+		"0084_flow_detail_retention.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -240,6 +242,8 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0080_user_admin_notes.down.sql",
 		"0081_runtime_handler_index.down.sql",
 		"0082_runtime_metric_history.down.sql",
+		"0083_flow_cursor_checkpoints.down.sql",
+		"0084_flow_detail_retention.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)
