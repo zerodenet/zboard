@@ -3671,7 +3671,7 @@ paths:
                   - { $ref: '#/components/schemas/ApiResponse' }
                   - properties:
                       data: { $ref: '#/components/schemas/WalletEntry' }
-        '400': { description: Invalid amount, currency or reason }
+        '400': { description: 'Invalid amount, currency or reason' }
         '401': { description: Authentication required }
         '403': { description: Current active administrator required }
         '404': { description: Target user not found }
