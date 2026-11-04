@@ -45,20 +45,12 @@ func appendWalletEntry(tx *gorm.DB, source walletEntrySource, key, kind, reason 
 	if currency, err := commerce.NormalizeWalletCurrency(source.Currency); err != nil || currency != source.Currency {
 		return 0, commerce.ErrPaymentFactConflict
 	}
-	// A missing account with a surviving ledger is lost financial evidence;
-	// do not recreate a zero summary before replaying or crediting another fact.
-	if _, err := walletAvailable(tx, source.UserID, source.Currency, false); err != nil {
-		return 0, err
-	}
-	account := model.WalletAccount{UserID: source.UserID, Currency: source.Currency, Revision: 1}
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&account).Error; err != nil {
-		return 0, err
-	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND currency = ?", source.UserID, source.Currency).First(&account).Error; err != nil {
+	account, err := lockWalletAccount(tx, source.UserID, source.Currency)
+	if err != nil {
 		return 0, err
 	}
 	var existing model.WalletEntry
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("entry_key = ?", key).First(&existing).Error
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("entry_key = ?", key).First(&existing).Error
 	if err == nil {
 		if existing.UserID != source.UserID || existing.Currency != source.Currency || existing.BalanceDelta != balanceDelta || existing.ReservedDelta != reservedDelta || existing.Kind != kind || !equalWalletOrder(existing.SourceOrderID, source.OrderID) {
 			return 0, commerce.ErrPaymentFactConflict
@@ -86,4 +78,18 @@ func appendWalletEntry(tx *gorm.DB, source walletEntrySource, key, kind, reason 
 	}
 	err = tx.Model(&model.WalletAccount{}).Where("user_id = ? AND currency = ?", source.UserID, source.Currency).Updates(map[string]any{"balance_minor": entry.BalanceAfter, "reserved_minor": entry.ReservedAfter, "revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
 	return entry.ID, err
+}
+
+func lockWalletAccount(tx *gorm.DB, userID uint, currency string) (model.WalletAccount, error) {
+	// Surviving ledger entries without their summary are lost evidence, not an
+	// empty wallet. Preserve that guard before creating and locking the account.
+	if _, err := walletAvailable(tx, userID, currency, false); err != nil {
+		return model.WalletAccount{}, err
+	}
+	account := model.WalletAccount{UserID: userID, Currency: currency, Revision: 1}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&account).Error; err != nil {
+		return account, err
+	}
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND currency = ?", userID, currency).First(&account).Error
+	return account, err
 }

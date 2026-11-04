@@ -45,7 +45,7 @@
 
     <DetailDrawer :open="Boolean(detailID)" :title="selectedUserDetail?.email || '用户详情'" :description="selectedUserDetail ? `账户 #${selectedUserDetail.id}` : '正在加载账户业务概览'" :return-focus-selector="detailID ? `[data-user-detail-trigger='${detailID}']` : ''" @close="closeDetail">
       <PageAlert v-if="detailError" tone="danger" title="用户详情加载失败">{{ detailError }}</PageAlert>
-      <div v-if="detailLoading" class="detail-loading" role="status">正在加载用户详情…</div>
+      <div v-if="detailLoading && !selectedUserDetail" class="detail-loading" role="status">正在加载用户详情…</div>
       <main v-else-if="selectedUserDetail" class="business-detail stack user-detail">
         <PageAlert v-if="actionError" tone="danger" title="用户操作未完成">{{ actionError }}</PageAlert>
         <div class="user-detail-heading">
@@ -93,7 +93,7 @@
             </div>
           </section>
         </template>
-        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :key="`${selectedUserDetail.id}:${route.query.wallet_currency || 'CNY'}`" :user-id="selectedUserDetail.id" :initial-currency="String(route.query.wallet_currency || 'CNY')" />
+        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :key="`${selectedUserDetail.id}:${route.query.wallet_currency || 'CNY'}`" :user-id="selectedUserDetail.id" :user-label="selectedUserDetail.email" @changed="walletChanged" :initial-currency="String(route.query.wallet_currency || 'CNY')" />
         <template v-else-if="userDetailSection === 'identities'">
           <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
           <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
@@ -276,6 +276,7 @@ const detailResource = useRemoteResource<AdminUserDetail | null>({
   errorMessage: '用户详情加载失败。',
 })
 const { data: selectedUserDetail, loading: detailLoading, error: detailError } = detailResource
+async function walletChanged() { await Promise.all([refresh(), detailResource.load()]) }
 const deletingUser = ref<UserItem | null>(null)
 const deletionPreview = ref<UserDeletionPreview | null>(null)
 const deletionError = ref(''), deletionConfirmation = ref('')

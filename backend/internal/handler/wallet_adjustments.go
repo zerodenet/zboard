@@ -35,6 +35,30 @@ func adjustmentPage(r *http.Request) (uint, int, error) {
 	}
 	return uint(after), limit, err
 }
+func (h *handlers) AdminWalletCreditHandler(w http.ResponseWriter, r *http.Request) {
+	actor, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	raw, err := integrationBody(w, r)
+	if err != nil {
+		BadRequest(w, "增加余额请求无效。")
+		return
+	}
+	in, err := catalog.DecodeObject[commerce.WalletCreditRequest](raw)
+	if err != nil {
+		BadRequest(w, "增加余额请求包含无效或多余字段。")
+		return
+	}
+	out, err := h.services.WalletAdjustments.Credit(r.Context(), actor.UserID, in)
+	if err != nil {
+		adjustmentError(w, err, "该请求标识已用于不同的增加内容，请核对余额流水。")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	OK(w, out)
+}
+
 func (h *handlers) AdminUserWalletHandler(w http.ResponseWriter, r *http.Request) {
 	actor, err := h.requireAdmin(w, r)
 	if err != nil {

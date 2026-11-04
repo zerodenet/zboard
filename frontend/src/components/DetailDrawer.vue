@@ -1,7 +1,7 @@
 <template>
   <DialogRoot :open="open" @update:open="handleOpenChange">
     <DialogPortal>
-      <DialogOverlay class="ui-dialog-overlay" />
+      <DialogOverlay class="ui-dialog-overlay ui-sheet-overlay" />
       <DialogContent class="detail-drawer ui-sheet-content" :class="{ 'ui-sheet-expanded': expanded }" @open-auto-focus="handleOpenAutoFocus" @close-auto-focus="handleCloseAutoFocus" @keydown="handleKeydown">
         <header class="detail-drawer-header">
           <div>

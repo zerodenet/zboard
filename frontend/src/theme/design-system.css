@@ -156,6 +156,7 @@
 .status-badge { border-radius: 6px; font-weight: 500; }
 
 .ui-dialog-overlay { position: fixed; inset: 0; z-index: var(--z-dialog); background: var(--dialog-overlay); }
+.ui-sheet-overlay { z-index: var(--z-drawer); }
 .ui-dialog-content {
   position: fixed; top: 50%; left: 50%; z-index: calc(var(--z-dialog) + 1);
   max-width: calc(100vw - 32px); max-height: 88vh; display: flex; flex-direction: column;
@@ -171,7 +172,7 @@
 .ui-confirm-content { z-index: calc(var(--z-confirm) + 1); width: min(440px, calc(100vw - 32px)); }
 .ui-confirm-content > .app-dialog-heading { padding: 18px 20px 0; }
 .ui-sheet-content {
-  position: fixed; top: 0; right: 0; z-index: calc(var(--z-dialog) + 1);
+  position: fixed; top: 0; right: 0; z-index: calc(var(--z-drawer) + 1);
   width: min(720px, 100vw); height: 100vh; min-height: 0;
   display: grid; grid-template-rows: auto minmax(0, 1fr);
   border-left: 1px solid var(--border); background: var(--card);

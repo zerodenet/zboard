@@ -234,3 +234,18 @@ it('opens the wallet directly from the balance without the extra tab selection',
   expect(wrapper.get('admin-wallet-panel-stub').attributes('initialcurrency')).toBe('CNY')
   expect(wrapper.find('admin-wallet-panel-stub').exists()).toBe(true)
 })
+
+it('refreshes the list balance and account protection details after a wallet change', async () => {
+ const { wrapper }=await render()
+ await wrapper.get('.user-wallet-link').trigger('click');await flushPromises()
+ expect(api.detail).toHaveBeenCalledTimes(1)
+ const changed={...user,wallet_balances:[{currency:'CNY',balance_minor:'22345',reserved_minor:'0'}],cleanup:{...user.cleanup,state:'protected',eligible_at:undefined,reason:'账户有余额'}}
+ api.list.mockResolvedValue({items:[changed],total:1})
+ let finish!:(value:unknown)=>void;api.detail.mockReturnValueOnce(new Promise(resolve=>{finish=resolve}))
+ const panel=wrapper.getComponent({name:'AdminWalletPanel'}), identity=panel.vm.$.uid
+ panel.vm.$emit('changed');await flushPromises()
+ expect(wrapper.getComponent({name:'AdminWalletPanel'}).vm.$.uid).toBe(identity)
+ finish(changed);await flushPromises()
+ expect(api.list).toHaveBeenCalledTimes(2);expect(api.detail).toHaveBeenCalledTimes(2)
+ expect(wrapper.get('.user-wallet-link').text()).toBe('223.45')
+})

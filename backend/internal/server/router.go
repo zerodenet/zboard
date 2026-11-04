@@ -263,6 +263,7 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/subscription-access", h.AdminOrderSubscriptionAccessHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders/:id/payment-events", h.AdminOrderPaymentEventsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/users/:id/wallet", h.AdminUserWalletHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-credits", h.AdminWalletCreditHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/wallet-adjustments", h.AdminWalletAdjustmentsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/wallet-adjustments", h.AdminWalletAdjustmentsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/wallet-adjustments/:id", h.AdminWalletAdjustmentHandler),

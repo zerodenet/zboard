@@ -1,5 +1,5 @@
 import { authenticatedAPI as api } from './client'
-import type { WalletPage } from './wallet'
+import type { WalletPage, WalletEntry } from './wallet'
 export interface WalletAdjustment {
   id: number; user_id: number; currency: string; amount_minor: string; reason: string
   ticket_id: number; actor_id: number; entry_id: number; reversal_entry_id?: number
@@ -8,6 +8,8 @@ export interface WalletAdjustment {
 }
 export interface WalletAdjustmentPage { items: WalletAdjustment[]; has_more: boolean }
 export interface WalletDebit { user_id: number; currency: string; amount_minor: number; ticket_id: number; reason: string; idempotency_key: string }
+export type WalletCredit = Omit<WalletDebit, 'ticket_id'>
+export async function creditWallet(request: WalletCredit): Promise<WalletEntry> { const { data } = await api.post('/admin/wallet-credits', request); return data.data }
 export interface WalletPayout { outcome: string; reference: string; note: string; occurred_at: string; idempotency_key: string }
 export async function fetchAdministrativeWallet(user: number, currency: string, after = 0, signal?: AbortSignal): Promise<WalletPage> {
   const { data } = await api.get(`/admin/users/${user}/wallet`, { params: { currency, after, limit: 25 }, signal }); return data.data

@@ -3651,6 +3651,31 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Current administrator role required }
         '404': { description: Approval not found }
+  /api/v1/admin/wallet-credits:
+    post:
+      tags: [admin, orders]
+      operationId: creditUserWallet
+      summary: Add balance to a user wallet with an audited idempotent ledger entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalletCreditRequest' }
+      responses:
+        '200':
+          description: Persisted credit; identical replay returns the same entry; no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/WalletEntry' }
+        '400': { description: Invalid amount, currency or reason }
+        '401': { description: Authentication required }
+        '403': { description: Current active administrator required }
+        '404': { description: Target user not found }
+        '409': { description: Conflicting idempotency key or unavailable financial evidence }
   /api/v1/admin/wallet-adjustments:
     get:
       tags: [admin, orders]
@@ -10028,6 +10053,16 @@ components:
         available_minor: { type: string, pattern: '^[0-9]+$' }
         entries: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/WalletEntry' } }
         has_more: { type: boolean }
+    WalletCreditRequest:
+      type: object
+      additionalProperties: false
+      required: [user_id, currency, amount_minor, reason, idempotency_key]
+      properties:
+        user_id: { type: integer, minimum: 1 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        amount_minor: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        reason: { type: string, minLength: 1, maxLength: 400 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 80, pattern: '^[a-zA-Z0-9_-]+$' }
     WalletDebitRequest:
       type: object
       additionalProperties: false
