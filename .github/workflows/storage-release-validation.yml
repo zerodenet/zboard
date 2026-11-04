@@ -26,13 +26,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: e973b778208ac5c20090b1fbcbf29ae155aa8e1e
+          ref: 154ca888ef5e481f352229d103679e6d799ee356
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - name: Verify exact release source
-        run: test "$(git rev-parse HEAD)" = e973b778208ac5c20090b1fbcbf29ae155aa8e1e
+        run: test "$(git rev-parse HEAD)" = 154ca888ef5e481f352229d103679e6d799ee356
+      - name: Prove the original millisecond rounding defect
+        working-directory: backend
+        shell: bash
+        run: |
+          cp internal/handler/completed_flow_storage_acceptance_test.go /tmp/precision-regression-test.go
+          git checkout --detach e973b778208ac5c20090b1fbcbf29ae155aa8e1e
+          cp /tmp/precision-regression-test.go internal/handler/completed_flow_storage_acceptance_test.go
+          set +e
+          go test ./internal/handler -run '^TestMySQLCompletedFlowStorageKeepsHistoricalAccountingAuthority$' -count=1 -timeout=5m -v > /tmp/original-precision.log 2>&1
+          result=$?
+          set -e
+          test "$result" -eq 1
+          grep 'completed authority not transferred 0 <nil>' /tmp/original-precision.log
+          git checkout --force --detach 154ca888ef5e481f352229d103679e6d799ee356
       - name: Add isolated cold-transfer acceptance probe
         shell: bash
         run: |
@@ -57,12 +72,13 @@ jobs:
            if err:=h.db.Model(&model.FlowUsage{}).Where("node_id=?",c.NodeID).Update("completed_at",time.Now().UTC().Add(-48*time.Hour)).Error;err!=nil {t.Fatal(err)}
            retry:=func(run func()error)error {var err error;for k:=0;k<4;k++ {err=run();if err==nil{return nil};var sqlErr *mysqlDriver.MySQLError;if !errors.As(err,&sqlErr)||(sqlErr.Number!=1213&&sqlErr.Number!=1205){return err};time.Sleep(20*time.Millisecond)};return err}
            start:=make(chan struct{});done:=make(chan error,5)
-           go func(){<-start;done<-retry(func()error{_,err:=(meteringstore.FlowCursorCompaction{DB:h.db}).Drain(t.Context(),200);return err})}()
+           go func(){<-start;done<-retry(func()error{_,err:=(meteringstore.FlowCursorCompaction{DB:h.db,Now:func()time.Time{return time.Now().UTC().Truncate(time.Second).Add(750*time.Microsecond)}}).Drain(t.Context(),200);return err})}()
            for i:=0;i<4;i++ {in:=first[i];in.EventID=fmt.Sprint("late-",i);in.Sequence=uint64(100+i);in.Revision=in.Sequence;in.BytesUp=200;go func(){<-start;done<-retry(func()error{_,_,err:=store.Complete(t.Context(),in);return err})}()}
            close(start);for k:=0;k<5;k++ {if err:=<-done;err!=nil {t.Fatal(err)}}
            for _,in:=range first {if _,_,err:=store.Complete(t.Context(),in);err!=nil {t.Fatal(err)}}
            var sub model.Subscription;if err:=h.db.First(&sub,c.SubscriptionID).Error;err!=nil||sub.FlowUsed!=2020 {t.Fatal("cold replay changed rounded quota",sub.FlowUsed,err)}
            var total int64;if err:=h.db.Model(&model.TrafficRecord{}).Where("subscription_id=?",c.SubscriptionID).Select("COALESCE(SUM(used_bytes),0)").Scan(&total).Error;err!=nil||total!=2020 {t.Fatal("cold replay changed ledger",total,err)}
+           var cold int64;if err:=h.db.Model(&model.FlowCursorCheckpoint{}).Count(&cold).Error;err!=nil||cold!=12 {t.Fatal("cold transfer did not preserve twelve unaffected connections",cold,err)}
            var duplicates int64;if err:=h.db.Raw("SELECT COUNT(*) FROM (SELECT node_id,flow_id FROM (SELECT node_id,flow_id FROM flow_usages UNION ALL SELECT node_id,flow_id FROM flow_cursor_checkpoints) u GROUP BY node_id,flow_id HAVING COUNT(*)>1) d").Scan(&duplicates).Error;err!=nil||duplicates!=0 {t.Fatal("duplicate authority",duplicates,err)}
            t.Log("16 original completions, 4 concurrent late deltas, compaction and 16 replays: quota and ledger remain 2020")
           }
@@ -72,4 +88,4 @@ jobs:
         run: go test ./internal/datastore -run 'TestMySQL(MeteringIndexBudget|FlowStatistics)' -count=1 -timeout=15m -v
       - name: Validate exact-release late reporting and concurrent transfer
         working-directory: backend
-        run: go test ./internal/handler -run 'TestMySQL(StorageRolloutConcurrentColdTransfer|CompletedFlowStorage|NativeMinute)' -count=1 -timeout=15m -v
+        run: go test ./internal/handler -run 'TestMySQL(StorageRolloutConcurrentColdTransfer|CompletedFlowStorage|NativeMinute)' -count=10 -timeout=15m -v
