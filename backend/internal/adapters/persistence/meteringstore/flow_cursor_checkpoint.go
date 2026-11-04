@@ -120,7 +120,10 @@ func (s FlowCursorCompaction) Drain(ctx context.Context, limit int) (int, error)
 	if ctx == nil || s.DB == nil || limit < 1 || limit > 1000 {
 		return 0, errors.New("flow cursor compaction requires 1..1000 rows")
 	}
-	now := s.now()
+	// MySQL DATETIME(3) rounds fractional milliseconds on persistence. Keep
+	// scheduling comparisons at that precision so the initial due time cannot
+	// round into the future and skip the first batch.
+	now := s.now().Truncate(time.Millisecond)
 	examined := 0
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		initial := model.FlowCursorCompactionState{ID: 1, NextPassAt: now}

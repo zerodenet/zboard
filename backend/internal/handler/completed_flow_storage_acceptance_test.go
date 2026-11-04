@@ -30,11 +30,14 @@ func completedFlowStorageAcceptance(t *testing.T, h *handlers, c model.ProtocolC
 	if _, _, err := store.Complete(t.Context(), in); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().UTC().Add(-48 * time.Hour)
+	// Exercise MySQL's DATETIME(3) rounding boundary deterministically. The
+	// first compaction must run even when the source clock rounds upward.
+	compactionNow := time.Now().UTC().Truncate(time.Second).Add(750 * time.Microsecond)
+	old := compactionNow.Add(-48 * time.Hour)
 	if err := h.db.Model(&model.FlowUsage{}).Where("node_id = ? AND flow_id = ?", c.NodeID, in.FlowID).Update("completed_at", old).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (meteringstore.FlowCursorCompaction{DB: h.db}).Drain(t.Context(), 200); err != nil {
+	if _, err := (meteringstore.FlowCursorCompaction{DB: h.db, Now: func() time.Time { return compactionNow }}).Drain(t.Context(), 200); err != nil {
 		t.Fatal(err)
 	}
 	assertQuota := func(want int64) {
