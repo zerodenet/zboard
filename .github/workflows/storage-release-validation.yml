@@ -1,0 +1,75 @@
+name: storage-release-validation
+on:
+  push:
+    branches: [codex/storage-validation-20261104]
+permissions:
+  contents: read
+jobs:
+  storage:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql: ["8.2.0", "8.4"]
+    services:
+      mysql:
+        image: mysql:${{ matrix.mysql }}
+        env:
+          MYSQL_ROOT_PASSWORD: zboard-isolated-storage
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pzboard-isolated-storage"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      ZBOARD_TEST_MYSQL_DSN: root:zboard-isolated-storage@tcp(127.0.0.1:3306)/?parseTime=true&loc=UTC
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e973b778208ac5c20090b1fbcbf29ae155aa8e1e
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Verify exact release source
+        run: test "$(git rev-parse HEAD)" = e973b778208ac5c20090b1fbcbf29ae155aa8e1e
+      - name: Add isolated cold-transfer acceptance probe
+        shell: bash
+        run: |
+          cat > backend/internal/handler/storage_rollout_canary_test.go <<'GO'
+          package handler
+          import (
+           "errors"
+           "fmt"
+           "testing"
+           "time"
+           mysqlDriver "github.com/go-sql-driver/mysql"
+           "github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+           "github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+           "github.com/zerodenet/zboard/backend/internal/model"
+          )
+          func TestMySQLStorageRolloutConcurrentColdTransfer(t *testing.T) {
+           h,c:=accountingFixtureFromOrder(t,newMySQLBusinessOrderFixture(t))
+           if err:=h.db.Model(&model.ProtocolEndpoint{}).Where("id=?",c.ProtocolEndpointID).Update("multiplier_milli",1001).Error;err!=nil { t.Fatal(err) }
+           store:=h.services.CompletionAccounting(h.credentialCipher)
+           first:=make([]metering.CompletedFlow,16)
+           for i:=range first { first[i]=metering.CompletedFlow{NodeID:c.NodeID,PrincipalKey:c.PrincipalKey,CoreInstanceID:"cold-transfer",FlowID:fmt.Sprint(i),EventID:fmt.Sprint("first-",i),EventType:"flow.completed",Sequence:uint64(i+1),Revision:uint64(i+1),BytesUp:100,OccurredAt:time.Now().UTC().AddDate(-20,0,0)};if _,_,err:=store.Complete(t.Context(),first[i]);err!=nil {t.Fatal(err)} }
+           if err:=h.db.Model(&model.FlowUsage{}).Where("node_id=?",c.NodeID).Update("completed_at",time.Now().UTC().Add(-48*time.Hour)).Error;err!=nil {t.Fatal(err)}
+           retry:=func(run func()error)error {var err error;for k:=0;k<4;k++ {err=run();if err==nil{return nil};var sqlErr *mysqlDriver.MySQLError;if !errors.As(err,&sqlErr)||(sqlErr.Number!=1213&&sqlErr.Number!=1205){return err};time.Sleep(20*time.Millisecond)};return err}
+           start:=make(chan struct{});done:=make(chan error,5)
+           go func(){<-start;done<-retry(func()error{_,err:=(meteringstore.FlowCursorCompaction{DB:h.db}).Drain(t.Context(),200);return err})}()
+           for i:=0;i<4;i++ {in:=first[i];in.EventID=fmt.Sprint("late-",i);in.Sequence=uint64(100+i);in.Revision=in.Sequence;in.BytesUp=200;go func(){<-start;done<-retry(func()error{_,_,err:=store.Complete(t.Context(),in);return err})}()}
+           close(start);for k:=0;k<5;k++ {if err:=<-done;err!=nil {t.Fatal(err)}}
+           for _,in:=range first {if _,_,err:=store.Complete(t.Context(),in);err!=nil {t.Fatal(err)}}
+           var sub model.Subscription;if err:=h.db.First(&sub,c.SubscriptionID).Error;err!=nil||sub.FlowUsed!=2020 {t.Fatal("cold replay changed rounded quota",sub.FlowUsed,err)}
+           var total int64;if err:=h.db.Model(&model.TrafficRecord{}).Where("subscription_id=?",c.SubscriptionID).Select("COALESCE(SUM(used_bytes),0)").Scan(&total).Error;err!=nil||total!=2020 {t.Fatal("cold replay changed ledger",total,err)}
+           var duplicates int64;if err:=h.db.Raw("SELECT COUNT(*) FROM (SELECT node_id,flow_id FROM (SELECT node_id,flow_id FROM flow_usages UNION ALL SELECT node_id,flow_id FROM flow_cursor_checkpoints) u GROUP BY node_id,flow_id HAVING COUNT(*)>1) d").Scan(&duplicates).Error;err!=nil||duplicates!=0 {t.Fatal("duplicate authority",duplicates,err)}
+           t.Log("16 original completions, 4 concurrent late deltas, compaction and 16 replays: quota and ledger remain 2020")
+          }
+          GO
+      - name: Validate migrations and retention on actual MySQL
+        working-directory: backend
+        run: go test ./internal/datastore -run 'TestMySQL(MeteringIndexBudget|FlowStatistics)' -count=1 -timeout=15m -v
+      - name: Validate exact-release late reporting and concurrent transfer
+        working-directory: backend
+        run: go test ./internal/handler -run 'TestMySQL(StorageRolloutConcurrentColdTransfer|CompletedFlowStorage|NativeMinute)' -count=1 -timeout=15m -v
