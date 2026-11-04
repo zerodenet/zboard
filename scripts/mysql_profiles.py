@@ -13,6 +13,9 @@ import time
 JOBSTORE = './internal/adapters/persistence/jobstore'
 COPYSTORE = './internal/adapters/persistence/platformstore'
 TEST_NAME = re.compile(r'Test\w+\Z')
+# The Go timeout applies to a whole package, not each test. Bound accumulated
+# fixture cost without increasing that timeout or excluding any discovered test.
+MAX_PACKAGE_TESTS = 32
 
 
 def read_events(path):
@@ -120,9 +123,18 @@ def groups(selection, inventory):
             # A shared test name must not silently re-add an extended test in
             # another package when a group uses one positive -run expression.
             raise ValueError(f'cross-package selection collision in {label}: {sorted(actual ^ wanted)}')
-        result.append((label, packages, positive_regex(names), wanted))
+        if any(sum(p == package for p, _ in wanted) > MAX_PACKAGE_TESTS for package in packages):
+            for package_number, package in enumerate(packages, 1):
+                package_names = sorted(name for p, name in wanted if p == package)
+                for offset in range(0, len(package_names), MAX_PACKAGE_TESTS):
+                    batch = set(package_names[offset:offset + MAX_PACKAGE_TESTS])
+                    batch_expected = {(package, name) for name in batch}
+                    batch_label = f'{label}-{package_number:02d}-{offset // MAX_PACKAGE_TESTS + 1:02d}'
+                    result.append((batch_label, [package], positive_regex(batch), batch_expected))
+        else:
+            result.append((label, packages, positive_regex(names), wanted))
     covered = set().union(*(item[3] for item in result))
-    if covered != selection:
+    if covered != selection or sum(len(item[3]) for item in result) != len(selection):
         raise ValueError('execution groups do not cover selected profile')
     return result
 

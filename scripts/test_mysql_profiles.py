@@ -115,6 +115,34 @@ class MySQLProfilesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'collision'):
             profiles.groups(parts['core'], inventory)
 
+    def test_large_packages_are_bounded_without_losing_or_repeating_tests(self):
+        large = {('./handler', f'TestMySQLCase{i:03d}') for i in range(75)}
+        # Identical names in another package must still run once per identity.
+        small = {('./other', f'TestMySQLCase{i:03d}') for i in range(5)}
+        jobs = {(profiles.JOBSTORE, f'TestLease{i:03d}') for i in range(35)}
+        copies = {(profiles.COPYSTORE, 'TestMySQLCopy')}
+        selected = large | small | jobs | copies
+        inventory = selected | {('./handler', 'TestMySQLExtendedOnly')}
+        groups = profiles.groups(selected, inventory)
+        self.assertEqual(set().union(*(g[3] for g in groups)), selected)
+        self.assertEqual(sum(len(g[3]) for g in groups), len(selected))
+        for label, packages, expression, expected in groups:
+            self.assertEqual(len(packages), 1)
+            self.assertLessEqual(len(expected), profiles.MAX_PACKAGE_TESTS)
+            actual = {(package, name) for package, name in inventory
+                      if package in packages and re.fullmatch(expression, name)}
+            self.assertEqual(actual, expected)
+        labels = [g[0].split('-')[0] for g in groups]
+        self.assertEqual(labels, sorted(labels, key={'business': 0, 'jobs': 1, 'copy': 2}.get))
+        self.assertEqual(groups, profiles.groups(set(reversed(sorted(selected))), inventory))
+
+    def test_sharding_does_not_bypass_cross_package_extended_collision(self):
+        selected = {('./handler', f'TestMySQLCase{i:03d}') for i in range(40)}
+        selected.add(('./other', 'TestMySQLShared'))
+        inventory = selected | {('./handler', 'TestMySQLShared')}
+        with self.assertRaisesRegex(ValueError, 'collision'):
+            profiles.groups(selected, inventory)
+
     def test_dynamic_inventory_only_accepts_exact_actual_test_output(self):
         events = [{'Action': 'output', 'Package': 'example/backend/internal/a', 'Output': 'TestMySQLMoney\n'},
                   {'Action': 'output', 'Package': 'example/backend/internal/a', 'Output': 'ok example/backend/internal/a\n'},
