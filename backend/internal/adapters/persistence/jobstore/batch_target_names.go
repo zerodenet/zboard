@@ -11,7 +11,7 @@ import (
 
 // Resolve the requested page in groups, never one identity request per item.
 // These are read projections, not additional retained copies of user data.
-func batchTargetNames(tx *gorm.DB, items []jobs.BatchItem) error {
+func batchTargetNames(tx *gorm.DB, items []jobs.BatchItemView) error {
 	labels := map[string]string{"user": "用户", "subscription": "订阅", "node": "节点", "protocol_endpoint": "协议服务", "node_group": "节点组"}
 	ids := map[string]map[uint]struct{}{}
 	for _, item := range items {

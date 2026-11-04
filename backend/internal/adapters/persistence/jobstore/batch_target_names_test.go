@@ -73,10 +73,10 @@ func TestBatchItemsExposeBusinessNamesAndKeepMissingTargets(t *testing.T) {
 func TestBatchTargetNameLookupIsBatchedAndChunksDoNotIntersect(t *testing.T) {
 	db := taskIdentityDB(t)
 	users := make([]model.User, 501)
-	items := make([]jobs.BatchItem, 501)
+	items := make([]jobs.BatchItemView, 501)
 	for i := range users {
 		users[i] = model.User{ID: uint(i + 1), Email: fmt.Sprintf("user%d@example.test", i+1), Password: "unused", Status: "active"}
-		items[i] = jobs.BatchItem{TargetType: "user", TargetID: fmt.Sprint(i + 1)}
+		items[i] = jobs.BatchItemView{BatchItem: jobs.BatchItem{TargetType: "user", TargetID: fmt.Sprint(i + 1)}}
 	}
 	if err := db.CreateInBatches(users, 100).Error; err != nil {
 		t.Fatal(err)

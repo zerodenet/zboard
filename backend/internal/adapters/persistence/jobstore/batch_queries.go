@@ -83,7 +83,7 @@ func (s BatchQueries) Detail(ctx context.Context, actor, id uint, items bool) (j
 	return out, nil
 }
 func (s BatchQueries) Items(ctx context.Context, actor, id uint, f jobs.BatchFilter) (jobs.BatchItemPage, error) {
-	out := jobs.BatchItemPage{Items: []jobs.BatchItem{}, Limit: f.Limit, Offset: f.Offset}
+	out := jobs.BatchItemPage{Items: []jobs.BatchItemView{}, Limit: f.Limit, Offset: f.Offset}
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := batchReader(tx, actor); err != nil {
 			return err

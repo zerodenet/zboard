@@ -11,22 +11,28 @@ var ErrBatchNotFound = errors.New("task not found")
 var ErrBatchQuery = errors.New("invalid task query")
 
 type BatchItem struct {
-	TargetName        string     `json:"target_name,omitempty"`
-	TargetDescription string     `json:"target_description,omitempty"`
-	TargetMissing     bool       `json:"target_missing,omitempty"`
-	DeliveryState     string     `json:"delivery_state,omitempty"`
-	ID                uint       `json:"id"`
-	TaskID            uint       `json:"task_id"`
-	TargetType        string     `json:"target_type"`
-	TargetID          string     `json:"target_id"`
-	Payload           string     `json:"payload"`
-	Status            int16      `json:"status"`
-	Attempts          int        `json:"attempts"`
-	Error             string     `json:"error"`
-	StartedAt         *time.Time `json:"started_at"`
-	FinishedAt        *time.Time `json:"finished_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	DeliveryState string     `json:"delivery_state,omitempty"`
+	ID            uint       `json:"id"`
+	TaskID        uint       `json:"task_id"`
+	TargetType    string     `json:"target_type"`
+	TargetID      string     `json:"target_id"`
+	Payload       string     `json:"payload"`
+	Status        int16      `json:"status"`
+	Attempts      int        `json:"attempts"`
+	Error         string     `json:"error"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// BatchItemView belongs to administrative reads only. Display projections must
+// never become persistence columns when the execution repository loads items.
+type BatchItemView struct {
+	BatchItem
+	TargetName        string `json:"target_name,omitempty"`
+	TargetDescription string `json:"target_description,omitempty"`
+	TargetMissing     bool   `json:"target_missing,omitempty"`
 }
 type BatchView struct {
 	BatchReceipt
@@ -39,7 +45,7 @@ type BatchView struct {
 }
 type BatchDetail struct {
 	BatchView
-	Items []BatchItem `json:"items,omitempty"`
+	Items []BatchItemView `json:"items,omitempty"`
 }
 type BatchSummary struct {
 	Total            int64 `json:"total"`
@@ -66,10 +72,10 @@ type BatchPage struct {
 	Limit  int         `json:"limit"`
 }
 type BatchItemPage struct {
-	Items  []BatchItem `json:"items"`
-	Total  int64       `json:"total"`
-	Offset int         `json:"offset"`
-	Limit  int         `json:"limit"`
+	Items  []BatchItemView `json:"items"`
+	Total  int64           `json:"total"`
+	Offset int             `json:"offset"`
+	Limit  int             `json:"limit"`
 }
 type BatchQueryRepository interface {
 	List(context.Context, uint, BatchFilter) (BatchPage, error)
