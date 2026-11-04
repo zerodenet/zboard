@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
 	"github.com/zerodenet/zboard/backend/internal/application"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -58,6 +60,11 @@ func checkHourlyProjectionCopy(t *testing.T, sourceMySQL, targetMySQL bool) {
 		}
 	}
 	at := time.Date(2026, 10, 20, 1, 15, 0, 0, time.UTC)
+	// Monitor aggregates survive database moves with their weighted minute.
+	history := []platform.SystemMinute{{At: at, Sums: [5]float64{17.5, 2, 3, 4, 5}, Counts: [5]int{12, 12, 12, 12, 12}}}
+	if err := (platformstore.SystemMetricHistory{DB: source}).Save(context.Background(), history, at); err != nil {
+		t.Fatal(err)
+	}
 	old := model.TrafficRecord{NodeID: 3, UserID: 7, SubscriptionID: 2, ProtocolEndpointID: 9, ReportID: "legacy-confirmed", Nonce: "legacy-confirmed", At: at, RawBytes: 7, UsedBytes: 11}
 	if err := source.Create(&old).Error; err != nil {
 		t.Fatal(err)
@@ -92,6 +99,12 @@ func checkHourlyProjectionCopy(t *testing.T, sourceMySQL, targetMySQL bool) {
 		return datastore.CopyApplicationData(source, tx)
 	}); err != nil {
 		t.Fatal(err)
+	}
+	for _, db := range []*gorm.DB{source, target} {
+		got, err := (platformstore.SystemMetricHistory{DB: db}).Load(context.Background(), at)
+		if err != nil || len(got) != 1 || !got[0].At.Equal(at) || got[0].Sums != history[0].Sums || got[0].Counts != history[0].Counts {
+			t.Fatalf("monitor history changed during copy: %#v, %v", got, err)
+		}
 	}
 	assert := func(db *gorm.DB, wantUsed, wantPending int64) {
 		t.Helper()

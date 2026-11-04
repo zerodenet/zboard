@@ -351,6 +351,7 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		"order_discount_redemptions", "traffic_record_meta_archives",
 		"metering_report_receipts", "metering_usage_projection_pending", "traffic_diagnostic_materials", "credential_delivery_confirmations", "node_credential_delivery_states", "network_entry_delivery_confirmations", "closed_entitlements",
 		"menu_revisions", "menu_nodes",
+		"runtime_metric_minutes",
 		"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules",
 		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",
