@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"gorm.io/gorm"
 )
@@ -14,7 +15,8 @@ func loadDashboardTrend(db *gorm.DB, period observability.DashboardPeriod, bucke
 }
 func loadDashboardTrendFacts(db *gorm.DB, period observability.DashboardPeriod, buckets []observability.DashboardTrendBucket) ([]observability.DashboardTrendPoint, string, bool, error) {
 	if len(buckets) == 0 {
-		return []observability.DashboardTrendPoint{}, "CNY", false, nil
+		currency, err := platformstore.DefaultCurrency(db)
+		return []observability.DashboardTrendPoint{}, currency, false, err
 	}
 	parts := make([]string, 0, len(buckets))
 	args := make([]interface{}, 0, len(buckets)*2)
@@ -57,6 +59,13 @@ func loadDashboardTrendFacts(db *gorm.DB, period observability.DashboardPeriod, 
 	}
 	if currency == "" {
 		currency = "CNY"
+		if len(rows) == 0 {
+			var err error
+			currency, err = platformstore.DefaultCurrency(db)
+			if err != nil {
+				return nil, "", false, err
+			}
+		}
 	}
 	if mixed {
 		currency = ""

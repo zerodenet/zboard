@@ -34,7 +34,7 @@
             </RowActions></td>
           </tr></tbody>
       </DataTable>
-      <EmptyState v-else-if="!loading" icon="audit" :title="search || activeFilter ? '没有匹配模板' : '还没有订阅格式'" :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '尚未配置可供用户选择的订阅输出格式；请创建并选择一个系统支持的格式。'">
+      <EmptyState v-else-if="!loading && !error" icon="audit" :title="search || activeFilter ? '没有匹配模板' : '还没有订阅格式'" :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '尚未配置可供用户选择的订阅输出格式；请创建并选择一个系统支持的格式。'">
         <template v-if="!search && !activeFilter" #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建模板</UiButton></template>
       </EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>

@@ -82,7 +82,7 @@
       </DataTable>
 
       <EmptyState
-        v-else-if="!loading"
+        v-else-if="!loading && !error"
         icon="audit"
         :title="search || activeFilter ? '没有匹配规则集' : '还没有规则集'"
         :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '创建规则集后，ZBoard 会保存规范化的 Zero Rule IR，并按客户端格式发布稳定地址。'"

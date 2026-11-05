@@ -22,7 +22,7 @@
           <td class="table-action-column"><RowActions :label="`${account.name} 的操作`" :trigger-key="`provider-${account.id}`"><UiButton size="sm" variant="ghost" :disabled="operatingAccount === account.id" @click="openAccount(account)">编辑</UiButton><UiButton size="sm" variant="secondary" :loading="operatingAccount === account.id" @click="verifyAccount(account)">重新验证</UiButton><UiButton size="sm" variant="danger" :disabled="operatingAccount === account.id" title="删除面板凭据并清理关联" @click="removeAccount(account)">删除</UiButton></RowActions></td>
         </tr></tbody>
       </DataTable>
-      <EmptyState v-else class="provider-empty-state" icon="settings" title="还没有供应商账户" description="先添加可用供应商的访问凭据，随后即可在面板管理 DNS 解析。" />
+      <EmptyState v-else-if="!error" class="provider-empty-state" icon="settings" title="还没有供应商账户" description="先添加可用供应商的访问凭据，随后即可在面板管理 DNS 解析。" />
     </section>
 
     <ModalDialog :open="accountOpen" :title="editingAccount ? '编辑供应商账户' : '添加供应商账户'" description="Token 加密保存且不会再次回显；编辑时留空可保留原凭据。" :busy="savingAccount" :dirty="accountState.dirty.value" @close="accountOpen = false">

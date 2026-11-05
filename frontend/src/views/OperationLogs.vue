@@ -30,7 +30,7 @@
             <td class="table-action-column"><UiButton variant="secondary" size="sm" type="button" :loading="detailLoadingKey === `${item.source}:${item.id}`" @click="openDetail(item)">查看</UiButton></td>
           </tr></tbody>
       </DataTable>
-      <EmptyState v-else icon="terminal" title="没有匹配的运行记录" description="执行协议发布、内核操作或后台任务后，结果会显示在这里。" />
+      <EmptyState v-else-if="!error" icon="terminal" title="没有匹配的运行记录" description="执行协议发布、内核操作或后台任务后，结果会显示在这里。" />
       <template #footer><CursorPager :count="items.length" :total="total" :limit="limit" :loading="loading" :has-previous="Boolean(previousCursor)" :has-next="Boolean(nextCursor)" @previous="changeCursor(previousCursor)" @next="changeCursor(nextCursor)" @limit="changeLimit" /></template>
     </DataWorkbench>
 

@@ -15,8 +15,16 @@
       <div v-if="methods.length || methodsError" class="stack">
         <PageAlert v-if="externalRecoveryError" tone="warning" title="尚未离开当前页面">{{ externalRecoveryError }}</PageAlert>
         <PageAlert v-if="methodsError" tone="warning" title="其他登录方式暂不可用">{{ methodsError }}</PageAlert>
-        <UiButton v-if="methods.length" type="button" :variant="showPassword ? 'secondary' : 'primary'" :title="methods.map(method => method.slot.title).join('、')" :disabled="loading" @click="externalLogin">第三方登录</UiButton>
-        <UiButton v-else type="button" variant="secondary" @click="loadMethods">重新检查登录方式</UiButton>
+        <PluginFrame
+          v-for="method in methods"
+          :key="`${method.plugin_id}:${method.slot.id}:${method.generation}`"
+          :plugin-id="method.plugin_id"
+          :slot="method.slot"
+          surface="public"
+          :title="method.slot.title"
+          :before-identity-login="prepareExternalLogin"
+        />
+        <UiButton v-if="methodsError" type="button" variant="secondary" @click="loadMethods">重新检查登录方式</UiButton>
       </div>
       <UiButton v-if="!showPassword" type="button" variant="secondary" @click="openPasswordLogin">邮箱密码登录</UiButton>
       <PageAlert v-if="!methodsLoading && !methods.length && !methodsError && app.passwordLoginAvailable === false" tone="warning" title="暂无可用登录方式">当前没有可用的第三方登录入口，请联系管理员检查登录插件。</PageAlert>
@@ -26,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useFormErrors } from '../composables/useFormState'
@@ -36,6 +44,7 @@ import FormField from './FormField.vue'
 import UiInput from './UiInput.vue'
 import UiButton from './UiButton.vue'
 import PageAlert from './PageAlert.vue'
+import PluginFrame from '../plugins/PluginFrame.vue'
 import { fetchPluginSlots, type CatalogSlot } from '../api/plugins'
 import { rememberAuthReturnPath } from '../utils/authReturnPath'
 import { captureReauthenticationDrafts, safeReauthenticationRoute } from '../utils/reauthenticationDrafts'
@@ -48,6 +57,8 @@ const password = ref('')
 const loading = ref(false)
 const formElement = ref<HTMLElement | null>(null)
 const errors = useFormErrors()
+watch(email, () => { if (!loading.value) errors.clear('email') }, { flush: 'sync' })
+watch(password, () => { if (!loading.value) errors.clear('password') }, { flush: 'sync' })
 const showPassword = ref(app.passwordLoginAvailable === true)
 const changingAccount = computed(() => email.value.trim().toLowerCase() !== app.user.email.trim().toLowerCase())
 const methods = ref<CatalogSlot[]>([])
@@ -92,19 +103,16 @@ async function logout() {
   await nextTick()
   await router.replace('/')
 }
-async function externalLogin() {
-  if (loading.value) return
+function prepareExternalLogin(): boolean {
+  if (loading.value) return false
   loading.value = true
   const redirect = safeReauthenticationRoute(route.fullPath)
   const accountID = app.user.id
   const recovery = captureReauthenticationDrafts(accountID, redirect)
-  if (!recovery.ok) { externalRecoveryError.value = recovery.message; loading.value = false; return }
+  if (!recovery.ok) { externalRecoveryError.value = recovery.message; loading.value = false; return false }
   externalRecoveryError.value = ''
   app.clear({ preserveReauthenticationDrafts: true })
   rememberAuthReturnPath(redirect, accountID)
-  try {
-    await nextTick()
-    await router.replace({ path: '/login', query: { redirect, reason: 'session-expired' } })
-  } finally { loading.value = false }
+  return true
 }
 </script>

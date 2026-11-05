@@ -76,7 +76,7 @@ describe('operations dashboard',()=>{
  it('shows the hovered bucket amount in the trend currency and prioritizes the selected measure', async () => {
   vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'USD',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:1,renew_orders:1}]})
   const wrapper = await open()
-  const column = wrapper.get('.trend-column')
+  const column = wrapper.get('.trend-point')
   expect(column.attributes('title')).toBeUndefined()
   await column.trigger('pointermove', { pointerType: 'mouse' }); await flushPromises()
   await vi.waitFor(() => expect(document.body.querySelector('.ui-tooltip-content')).not.toBeNull())
@@ -93,7 +93,7 @@ describe('operations dashboard',()=>{
  it('lets keyboard users inspect an empty bucket and dismiss the amount tooltip', async () => {
   vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'CNY',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:0,paid_orders:0,new_orders:0,renew_orders:0}]})
   const wrapper = await open()
-  const column = wrapper.get<HTMLElement>('.trend-column')
+  const column = wrapper.get<HTMLElement>('.trend-point')
   expect(column.attributes('tabindex')).toBe('0')
   column.element.focus(); await flushPromises()
   expect(document.body.querySelector('.ui-tooltip-content')?.textContent).toContain('实收金额 ¥0.00')
@@ -103,7 +103,7 @@ describe('operations dashboard',()=>{
  it('does not invent a combined amount for a mixed-currency bucket', async () => {
   vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'',mixed_currency:true,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:2,renew_orders:0}]})
   const wrapper = await open()
-  await wrapper.get('.trend-column').trigger('pointermove', { pointerType: 'mouse' }); await flushPromises()
+  await wrapper.get('.trend-point').trigger('pointermove', { pointerType: 'mouse' }); await flushPromises()
   await vi.waitFor(() => expect(document.body.querySelector('.ui-tooltip-content')).not.toBeNull())
   const tooltip = document.body.querySelector<HTMLElement>('.ui-tooltip-content')!
   expect(tooltip.querySelector('strong')?.textContent).toBe('已支付订单 2 笔')
@@ -190,10 +190,10 @@ describe('operations dashboard',()=>{
  it('switches trend amount to count without fetching again', async()=>{
   vi.mocked(fetchDashboardTrend).mockResolvedValue({...facts,currency:"CNY",mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:1000,paid_orders:1,new_orders:1,renew_orders:0},{bucket_start:facts.period.to,revenue_cents:500,paid_orders:2,new_orders:1,renew_orders:1}]})
   const wrapper=await open()
-  expect(wrapper.findAll('.trend-bar')[0].attributes('style')).toContain('100%')
+  expect(wrapper.get('.trend-line').attributes('points')).toBe('250,8 750,100')
   wrapper.findAllComponents(UiSegmentedControl)[1].vm.$emit('update:modelValue','orders');await flushPromises()
-  expect(wrapper.findAll('.trend-bar')[0].attributes('style')).toContain('50%')
-  expect(wrapper.text()).toContain('柱高：订单量');expect(fetchDashboardStatistics).toHaveBeenCalledTimes(1)
+  expect(wrapper.get('.trend-line').attributes('points')).toBe('250,100 750,8')
+  expect(wrapper.get('.trend-legend').text()).toBe('订单量');expect(fetchDashboardStatistics).toHaveBeenCalledTimes(1)
  })
 
 })
@@ -243,12 +243,24 @@ it('renders independent trend amounts and currency while business statistics are
  const chart = wrapper.get('.trend-shell')
  expect(chart.text()).toContain('$7.00')
  expect(chart.text()).toContain('USD')
- expect(wrapper.get('.trend-bar').attributes('style')).toContain('100%')
+ expect(wrapper.findAll('.trend-point')).toHaveLength(1)
+ expect(wrapper.get('.trend-dot').classes()).toContain('active')
+ expect(wrapper.get('.trend-line').attributes('points')).not.toMatch(/NaN|Infinity/)
 })
 it('does not label mixed trend amounts with a separate statistics currency', async () => {
  vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'',mixed_currency:true,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:2,renew_orders:0}]})
  const wrapper = await open()
  expect(wrapper.get('.trend-shell').text()).toContain('多币种')
- expect(wrapper.get('.trend-shell').text()).toContain('柱高：订单量')
+ expect(wrapper.get('.trend-legend').text()).toBe('订单量')
  expect(wrapper.get('.trend-shell').text()).not.toContain('¥7.00')
+})
+
+it('draws a stable zero line and lets touch users inspect a bucket', async () => {
+ vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'CNY',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:0,paid_orders:0,new_orders:0,renew_orders:0},{bucket_start:facts.period.to,revenue_cents:0,paid_orders:0,new_orders:0,renew_orders:0}]})
+ const wrapper = await open()
+ expect(wrapper.get('.trend-line').attributes('points')).toBe('250,192 750,192')
+ expect(wrapper.find('.trend-bar').exists()).toBe(false)
+ await wrapper.findAll('.trend-point')[1].trigger('click'); await flushPromises()
+ expect(document.body.querySelector('.ui-tooltip-content')?.textContent).toContain('实收金额 ¥0.00')
+ expect(wrapper.find('.trend-crosshair').exists()).toBe(true)
 })

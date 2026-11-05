@@ -1,5 +1,5 @@
 <template>
-  <UiSection :title="`退订订阅 #${subscriptionId}`" :description="administrative ? '整份终止剩余权益；默认按残值退款，管理员可覆盖金额，包括0元。' : '终止本份订阅的全部剩余权益，按实际成交残值退入站内余额。'">
+  <UiSection :title="subscriptionName ? `退订 · ${subscriptionName}` : `退订订阅 #${subscriptionId}`" :description="administrative ? '整份终止剩余权益；默认按残值退款，管理员可覆盖金额，包括0元。' : '终止本份订阅的全部剩余权益，按实际成交残值退入站内余额。'">
     <div class="panel-body stack">
       <PageAlert v-if="error" tone="danger" title="退订需要核对">{{ error }}</PageAlert>
       <PageAlert v-if="receipt" tone="success" title="订阅已终止">
@@ -36,7 +36,7 @@ import FormField from './FormField.vue'
 import UiSection from './UiSection.vue'
 import UiButton from './UiButton.vue'
 import PageAlert from './PageAlert.vue'
-const props = defineProps<{ subscriptionId: number; administrative?: boolean }>(), emit = defineEmits<{ settled: [] }>()
+const props = defineProps<{ subscriptionId: number; administrative?: boolean; subscriptionName?: string }>(), emit = defineEmits<{ settled: [] }>()
 const app = useAppStore(), actor = computed(() => app.user?.id || 0)
 type Quote = Omit<SubscriptionValueQuote, 'root_order_id' | 'current_minor' | 'future_minor' | 'total_minor'> & Partial<AdministrativeSubscriptionValueQuote>
 interface Intent { request: SubscriptionTerminationRequest & Partial<AdministrativeSubscriptionTerminationRequest>; quote: Quote; receipt?: SubscriptionTerminationReceipt }

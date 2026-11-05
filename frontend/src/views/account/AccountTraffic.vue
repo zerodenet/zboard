@@ -2,48 +2,39 @@
   <section class="account-page stack">
     <PageHeader title="流量明细">
       <template #actions>
-        <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+        <PageRefreshButton label="刷新流量" :loading="loading" @click="loadAll" />
       </template>
     </PageHeader>
 
     <PageAlert v-if="summaryError" tone="danger" title="流量汇总加载失败">{{ summaryError }} <UiButton variant="secondary" @click="summaryResource.load()">重试汇总</UiButton></PageAlert>
 
-    <UiMetricStrip :columns="4">
+    <UiMetricStrip :columns="3" variant="plain">
       <MetricCard
         label="剩余可用"
-        :value="summaryLoaded && !summaryError ? formatBytes(summary.remaining_bytes) : '—'"
+        :value="summaryLoaded ? formatBytes(summary.remaining_bytes) : '—'"
         icon="activity"
-        :status="!summaryLoaded && summaryLoading ? '加载中' : summaryError ? '读取失败' : ''"
-        tone="info"
+        :loading="!summaryLoaded && summaryLoading"
+        tone="neutral"
       />
       <MetricCard
         label="累计使用"
-        :value="summaryLoaded && !summaryError ? formatBytes(summary.total_used_bytes) : '—'"
+        :value="summaryLoaded ? formatBytes(summary.total_used_bytes) : '—'"
         icon="database"
-        :status="!summaryLoaded && summaryLoading ? '加载中' : summaryError ? '读取失败' : ''"
-        tone="info"
-        icon-tone="success"
+        :loading="!summaryLoaded && summaryLoading"
+        tone="neutral"
+        icon-tone="neutral"
       />
       <MetricCard
         label="今日使用"
-        :value="summaryLoaded && !summaryError ? formatBytes(summary.used_bytes_today) : '—'"
+        :value="summaryLoaded ? formatBytes(summary.used_bytes_today) : '—'"
         icon="clock"
-        :status="!summaryLoaded && summaryLoading ? '加载中' : summaryError ? '读取失败' : ''"
-        tone="info"
-        icon-tone="warning"
+        :loading="!summaryLoaded && summaryLoading"
+        tone="neutral"
+        icon-tone="neutral"
       >
         <template #meta><TimeBadge :value="summary.as_of" mode="relative" /></template>
       </MetricCard>
-      <MetricCard
-        label="最高连接数"
-        :value="observabilityError || observability.peak_connections === null ? '—' : observability.peak_connections.toLocaleString('zh-CN')"
-        icon="activity"
-        :status="!observabilityLoaded && observabilityLoading ? '加载中' : observabilityError ? '读取失败' : observabilityProjectionPending ? '统计更新中' : observability.peak_connections === null ? '未采集' : ''"
-        tone="info"
-        :meta="observabilityLoading ? '正在读取连接观测' : observabilityError ? '连接观测读取失败' : observabilityProjectionPending ? observabilitySnapshotAvailable ? '上次完整统计的区间峰值，当前统计正在更新' : '当前范围统计未知，正在等待更新' : ''"
-      />
+
     </UiMetricStrip>
 
     <PageAlert v-if="observabilityError" tone="danger" title="流量趋势加载失败">{{ observabilityError }} <UiButton variant="secondary" @click="observabilityResource.load()">重试趋势</UiButton></PageAlert>
@@ -60,11 +51,9 @@
     />
 
     <PageAlert v-if="nodeSeriesError" tone="danger" title="节点流量趋势加载失败">{{ nodeSeriesError }} <UiButton variant="secondary" @click="nodeSeriesResource.load()">重试节点流量</UiButton></PageAlert>
-    <NodeTrafficChart v-else :data="nodeSeries" :loading="nodeSeriesLoading || !nodeSeriesLoaded" />
+    <NodeTrafficChart v-if="!nodeSeriesError || nodeSeriesLoaded" :data="nodeSeries" :loading="nodeSeriesLoading || !nodeSeriesLoaded" />
 
     <PageAlert v-if="statisticsError" tone="danger" title="流量区间统计加载失败">{{ statisticsError }} <UiButton variant="secondary" @click="recordStatistics.load()">重试区间统计</UiButton></PageAlert>
-    <p v-else-if="statisticsLoading && !statisticsData" role="status">正在计算流量区间统计…</p>
-    <p v-if="statisticsReady && statisticsData" class="muted">区间统计时间：<TimeBadge :value="statisticsData.as_of" /><UiButton variant="ghost" size="sm" :disabled="statisticsLoading" @click="recordStatistics.load()">刷新区间统计</UiButton></p>
 
     <DataWorkbench :total="total" :loading="recordLoading" :refreshing="refreshing">
       <template #filters>
@@ -80,7 +69,7 @@
         </WorkbenchFilterBar>
       </template>
       <template #actions>
-        <span v-if="statisticsReady" class="muted">范围内计费 {{ formatBytes(aggregates.used_bytes) }}</span>
+        <span v-if="statisticsLoading && !statisticsData" class="sr-only" role="status">正在计算流量区间统计…</span><p v-if="statisticsReady && statisticsData" class="sr-only">区间统计时间：<TimeBadge :value="statisticsData.as_of" /></p><span v-if="statisticsReady" class="muted">范围内计费 {{ formatBytes(aggregates.used_bytes) }}</span><PageRefreshButton label="刷新区间统计" :loading="statisticsLoading" @click="recordStatistics.load()" />
       </template>
 
       <PageAlert v-if="recordError" tone="danger" title="流量记录加载失败">{{ recordError }} <UiButton variant="secondary" @click="loadRecords()">重试记录</UiButton></PageAlert>
@@ -127,7 +116,7 @@
         v-else-if="recordsLoaded && !recordLoading && !recordError"
         icon="activity"
         title="还没有流量使用明细"
-        :description="`节点开始产生计费记录后，按${bucketLabel}聚合的使用明细会显示在这里。`"
+        description=""
       />
 
       <template #footer>
@@ -166,6 +155,7 @@ import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import EntityReference from '../../components/EntityReference.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import PageAlert from '../../components/PageAlert.vue'

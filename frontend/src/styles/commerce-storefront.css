@@ -326,15 +326,11 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  box-shadow: none;
+  transition: border-color .15s ease;
 }
 
-.storefront-plan-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--line-tinted);
-  box-shadow: var(--shadow-md);
-}
+.storefront-plan-card:hover { border-color: var(--line-strong); }
 
 .storefront-plan-card__header {
   display: flex;
@@ -359,8 +355,8 @@
 
 .storefront-plan-card__header h2 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
+  font-size: 16px;
+  line-height: 1.4;
 }
 
 .storefront-plan-card__header small {
@@ -374,7 +370,6 @@
 }
 
 .storefront-plan-card__summary {
-  min-height: 42px;
   margin: 0;
   color: var(--muted);
   font-size: 12px;
@@ -401,7 +396,7 @@
 }
 
 .storefront-plan-card__price strong {
-  font-size: clamp(28px, 3vw, 38px);
+  font-size: 28px;
   letter-spacing: -.04em;
 }
 
@@ -448,8 +443,8 @@
   display: grid;
   gap: 10px;
   margin: 0;
-  padding: 17px 0 0;
-  border-top: 1px solid var(--line);
+  padding: 0;
+  border: 0;
   color: var(--text-secondary);
   font-size: 11px;
   list-style: none;

@@ -1,9 +1,11 @@
 <template>
   <DetailDrawer :open="open" title="观察队列" description="全局节点观察处置记录，包括已删除资产。" @close="emit('close')">
     <div class="stack">
+      <details><summary>观察与保留规则</summary>
       <p>这是辅助观察投影记录，不代表当前节点异常或计量失败；来源状态不用于判断在线、采样新鲜度或配置确认。</p>
       <p>待处理记录将自动领取或重试；已保留记录等待核对，不会自动重试。此处展示入队元数据，未重新验证保留材料。</p>
       <p>可选观察材料默认保留7天，单条最多2MiB，新保留材料总预算64MiB；超过期限或容量会明确记录覆盖缺口。当前引用、活跃领取和异常材料保留待核对，计量事实与配额不受此材料窗口影响。</p>
+      </details>
       <div class="queue-controls">
         <label>处置状态 <UiSelect :model-value="status" :options="statusOptions" :disabled="retryBusy" aria-label="观察队列状态" @update:model-value="changeStatus" /></label>
         <UiButton variant="secondary" :loading="loading" :disabled="retryBusy" @click="read(status)">刷新当前状态</UiButton>
@@ -20,9 +22,7 @@
       <template v-if="page">
         <p>已加载状态：{{ statusLabel(page.status) }}。以下时间为入队、调度和处置时间，不是事件采样时间。</p>
         <p v-if="page.status !== status">筛选已改变；当前显示上一次成功加载的记录。</p>
-        <div v-if="page.items.length" class="queue-table-wrap">
-          <table class="queue-table">
-            <caption>全局观察队列元数据</caption>
+        <DataTable v-if="page.items.length" caption="全局观察队列元数据" :row-count="page.items.length" :min-width="840">
             <thead><tr><th>来源引用 / 节点编号</th><th>处置原因</th><th>资产关系</th><th>材料 / 尝试</th><th>队列时间</th></tr></thead>
             <tbody><tr v-for="item in page.items" :key="item.id">
               <td><code>{{ item.id }}</code><div>节点编号 {{ item.node_id }} · {{ statusLabel(item.status) }}</div></td>
@@ -31,8 +31,7 @@
               <td>原始 {{ item.material_bytes }} 字节 / {{ item.part_count }} 段<div>登记保留 {{ item.retained_bytes ?? (item.material_retired_at ? '未知' : item.material_bytes) }} 字节</div><div v-if="item.coverage_gap">观察覆盖有缺口：{{ gapLabel(item.material_gap_reason) }}；不能据此判断当前负载为零。</div><div v-if="item.replay_unavailable">可选原材料已退出重放窗口，回执身份保留；剩余清理量以上述登记字节为准。</div><div v-else-if="item.material_retired_at">原材料已到期回收，回执身份保留</div><div v-if="item.material_cleanup_state === 'quarantined'">材料校验或回收状态异常，剩余材料保留待核对。</div><div>领取尝试 {{ item.attempts }}</div></td>
               <td><div>入队 <TimeBadge :value="item.enqueued_at" /></div><div>调度可用 <TimeBadge :value="item.available_at" /></div><div>处置更新 <TimeBadge :value="item.disposition_updated_at" /></div><div v-if="item.status === 'claimed' && item.lease_until">租约截至 <TimeBadge :value="item.lease_until" /></div></td>
             </tr></tbody>
-          </table>
-        </div>
+        </DataTable>
         <p v-else>此状态暂无记录。</p>
         <UiButton v-if="page.has_more" variant="secondary" :disabled="loading || retryBusy || page.status !== status" @click="read(page.status, page.next_cursor)">下一页</UiButton>
       </template>
@@ -45,6 +44,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchObservationIntents, retryObservationIntent, type ObservationIntentItem, type ObservationIntentPage, type ObservationIntentStatus } from '../api/nodeObservationIntents'
 import { useAppStore } from '../stores/app'
 import { isUtf8LengthInRange } from '../utils/validation'
+import DataTable from './DataTable.vue'
 import UiInput from './UiInput.vue'
 import DetailDrawer from './DetailDrawer.vue'
 import TimeBadge from './TimeBadge.vue'

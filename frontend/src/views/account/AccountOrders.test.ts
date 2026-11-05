@@ -19,7 +19,7 @@ describe('account order terminal subscription history', () => {
     expect(router.currentRoute.value.path).toBe('/account/orders/1')
     expect(router.currentRoute.value.query).toEqual({ payment_plugin: 'old.plugin' })
     expect(wrapper.find('checkout-payment-stub').exists()).toBe(false)
-    expect(wrapper.findAll('a').find(link => link.text() === '详情／支付' && link.attributes('href') === '/account/orders/2')).toBeDefined()
+    expect(wrapper.findAll('a').find(link => link.text() === '继续支付' && link.attributes('href') === '/account/orders/2')).toBeDefined()
     wrapper.unmount()
   })
   it('shows the final service state after its instance has been cleaned', async () => {

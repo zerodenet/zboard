@@ -188,6 +188,12 @@
 /* Shared semantic tokens for the Reka/shadcn component layer. */
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --load-cpu: var(--text-strong);
+  --load-memory: #c68b22;
+  --load-disk: #cf5555;
+  --load-in: #249c77;
+  --load-out: #4b82cf;
+  --workspace-background: #f7f8fa;
   --background: #ffffff;
   --foreground: #181b22;
   --card: #ffffff;
@@ -256,6 +262,11 @@
 
 .dark {
   color-scheme: dark;
+  --load-memory: #dca649;
+  --load-disk: #eb7b7b;
+  --load-in: #5bb994;
+  --load-out: #79a3e0;
+  --workspace-background: #15171b;
   --background: #15171b;
   --foreground: #f2f3f5;
   --card: #1d2025;

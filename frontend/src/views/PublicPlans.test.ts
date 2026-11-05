@@ -42,19 +42,19 @@ describe('public catalog navigation and SKU pager', () => {
     expect(router.currentRoute.value.query.sku).toBe('76')
     expect(fetchPlanCatalogItem).toHaveBeenCalledOnce()
   })
-  it('shows the saved description in the catalog and full detail as plain text', async () => {
+  it('keeps the catalog compact and preserves the full description as plain text in detail', async () => {
     const description = '第一段：试用说明。\n\n第二段：流量用完即止。\n<img src=x onerror=alert(1)>\n末行说明。'
     const plan = { id: 1, name: 'Trial', slug: 'trial', summary: '基础试用套餐', description, traffic_bytes: 100 }
     vi.mocked(fetchPlanCatalogPage).mockResolvedValue({ items: [plan], total: 1 } as any)
     vi.mocked(fetchPlanCatalogItem).mockResolvedValue(plan as any)
     await open('/plans')
     expect(wrapper!.get('.storefront-plan-card__summary').text()).toBe(plan.summary)
-    expect(wrapper!.get('.storefront-plan-card__description').element.textContent).toBe(description)
+    expect(wrapper!.find('.storefront-plan-card__description').exists()).toBe(false)
     expect(wrapper!.find('img').exists()).toBe(false)
     await wrapper!.findAll('button').find(item => item.text().includes('查看详情'))!.trigger('click')
     await flushPromises()
     expect(wrapper!.get('.storefront-detail__hero').text()).toContain(plan.summary)
-    expect(wrapper!.get('section[aria-label="商品描述"] p').element.textContent).toBe(description)
+    expect(wrapper!.get('section[aria-label="套餐说明"] p').element.textContent).toBe(description)
     expect(wrapper!.find('img').exists()).toBe(false)
   })
   it('does not show an empty product description section', async () => {

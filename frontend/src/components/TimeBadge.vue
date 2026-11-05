@@ -7,7 +7,6 @@
     :title="exactLabel"
     :aria-label="ariaLabel"
   >
-    <UiIcon name="clock" />
     <span>{{ label }}</span>
   </time>
 </template>
@@ -15,7 +14,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatCompactDateTime, formatDateTime, formatExactDateTime, formatRelativeTime, isPerpetualDate } from '../utils/format'
-import UiIcon from './UiIcon.vue'
 
 const props = withDefaults(defineProps<{
   value?: string | null

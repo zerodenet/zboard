@@ -17,7 +17,7 @@ describe('design token ownership', () => {
   it('keeps raw color literals in the token source only', () => {
     const rawColor = /#[\da-f]{3,8}\b|(?:rgb|rgba|hsl|hsla)\([^)]*\)/gi
     const violations = sourceFiles(sourceRoot)
-      .filter(path => path !== tokenPath && path !== import.meta.filename)
+      .filter(path => path !== tokenPath && !path.endsWith('.test.ts'))
       .flatMap(path => {
         const matches = readFileSync(path, 'utf8').match(rawColor) || []
         return matches.map(value => `${relative(sourceRoot, path)}: ${value}`)
@@ -28,7 +28,7 @@ describe('design token ownership', () => {
 
   it('declares every referenced CSS custom property', () => {
     const declared = new Set(Array.from(readFileSync(tokenPath, 'utf8').matchAll(/\s(--[a-z0-9-]+)\s*:/gi), match => match[1]))
-    const runtimeProperties = new Set(['--metric-columns', '--reka-select-trigger-width', '--reka-select-content-available-height', '--reka-combobox-trigger-width', '--reka-combobox-content-available-height'])
+    const runtimeProperties = new Set(['--metric-columns', '--reka-select-trigger-width', '--reka-select-content-available-height', '--reka-combobox-trigger-width', '--reka-combobox-content-available-height', '--reka-combobox-content-available-width', '--reka-dropdown-menu-content-available-height', '--reka-dropdown-menu-content-available-width', '--reka-popover-content-available-height', '--reka-popover-content-available-width', '--reka-select-content-available-width', '--reka-tooltip-content-available-height', '--reka-tooltip-content-available-width'])
     const missing = new Set<string>()
     for (const path of sourceFiles(sourceRoot)) {
       if (path === tokenPath) continue

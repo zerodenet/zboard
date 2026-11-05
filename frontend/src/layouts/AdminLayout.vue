@@ -83,7 +83,10 @@ const route = useRoute()
 const router = useRouter()
 const sidebar = ref<HTMLElement | null>(null)
 const { open: navigationOpen, mobile, modal: drawerModal } = useAdminDrawer(sidebar)
-const currentTitle = computed(() => String(route.meta.title || '管理后台'))
+const currentTitle = computed(() => {
+  const page = resolveAdminNavigation(route.path, adminNavigation.value)?.page
+  return page?.to === route.path ? page.label : String(route.meta.title || '管理后台')
+})
 const currentSection = computed(() => resolveAdminNavigation(route.path, adminNavigation.value)?.domain.label || '管理控制台')
 const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to))
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())

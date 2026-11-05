@@ -23,7 +23,7 @@
             <td class="numeric-column">{{ formatBytes(item.upload_bytes) }}</td><td class="numeric-column">{{ formatBytes(item.download_bytes) }}</td>
             <td class="numeric-column">{{ formatBytes(item.raw_bytes) }}</td><td class="numeric-column"><strong>{{ formatBytes(item.used_bytes) }}</strong></td>
             <td class="numeric-column">{{ data.totals.used_bytes ? (item.used_bytes / data.totals.used_bytes * 100).toFixed(1) : '0.0' }}%</td>
-            <td class="table-action-column"><UiButton variant="ghost" size="sm" :disabled="!item.id" @click="emit('drilldown', dimension, item.id, false)">筛选统计</UiButton><UiButton variant="ghost" size="sm" :disabled="!item.id" @click="emit('drilldown', dimension, item.id, true)">用量明细</UiButton></td>
+            <td class="table-action-column"><RowActions label="流量分组操作"><template #primary><UiButton variant="ghost" size="sm" :disabled="!item.id" @click="emit('drilldown', dimension, item.id, false)">筛选统计</UiButton><UiButton variant="ghost" size="sm" :disabled="!item.id" @click="emit('drilldown', dimension, item.id, true)">用量明细</UiButton></template></RowActions></td>
           </tr></tbody>
         </DataTable>
         <EmptyState v-else icon="activity" title="没有维度统计" description="当前筛选区间尚无已入账的用量。" />
@@ -43,6 +43,7 @@ import UiButton from '../components/UiButton.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
 import MetricCard from '../components/MetricCard.vue'
 import PageAlert from '../components/PageAlert.vue'
+import RowActions from '../components/RowActions.vue'
 import DataTable from '../components/DataTable.vue'
 import TablePager from '../components/TablePager.vue'
 import EmptyState from '../components/EmptyState.vue'

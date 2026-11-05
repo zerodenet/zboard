@@ -24,10 +24,10 @@
     <p v-if="statisticsReady && statisticsData" class="muted">区间统计时间：<TimeBadge :value="statisticsData.as_of" />（翻页不刷新统计）<UiButton variant="ghost" size="sm" :disabled="statisticsLoading" @click="recordStatistics.load()">刷新区间统计</UiButton></p>
 
     <UiMetricStrip class="traffic-summary">
-      <MetricCard label="聚合明细" :value="statisticsReady ? formatNumber(recordTotal || 0) : '—'" icon="activity" status="筛选结果" tone="info" :meta="`当前时间范围内的${bucketLabel}聚合结果`" />
-      <MetricCard label="原始流量" :value="statisticsReady ? formatBytes(recordAggregates.raw_bytes || 0) : '—'" icon="database" status="上报汇总" tone="info" meta="不受当前游标页影响" />
-      <MetricCard label="计费流量" :value="statisticsReady ? formatBytes(recordAggregates.used_bytes || 0) : '—'" icon="billing" status="计费汇总" tone="info" icon-tone="warning" meta="已应用实际计费倍率" />
-      <MetricCard label="关联订阅" :value="statisticsReady ? formatNumber(recordAggregates.subscription_count || 0) : '—'" icon="plans" status="覆盖范围" tone="info" icon-tone="success" :meta="statisticsReady ? `${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点` : '区间统计尚未就绪'" />
+      <MetricCard label="聚合明细" :value="statisticsReady ? formatNumber(recordTotal || 0) : '—'" icon="activity" tone="info" :meta="`当前时间范围内的${bucketLabel}聚合结果`" />
+      <MetricCard label="原始流量" :value="statisticsReady ? formatBytes(recordAggregates.raw_bytes || 0) : '—'" icon="database" tone="info" meta="不受当前游标页影响" />
+      <MetricCard label="计费流量" :value="statisticsReady ? formatBytes(recordAggregates.used_bytes || 0) : '—'" icon="billing" tone="info" icon-tone="warning" meta="已应用实际计费倍率" />
+      <MetricCard label="关联订阅" :value="statisticsReady ? formatNumber(recordAggregates.subscription_count || 0) : '—'" icon="plans" tone="info" icon-tone="success" :meta="statisticsReady ? `${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点` : '区间统计尚未就绪'" />
     </UiMetricStrip>
     </template>
 
@@ -92,9 +92,9 @@
     </DataWorkbench>
 
     <UiMetricStrip class="reconciliation-summary">
-      <MetricCard label="对账订阅" :value="reconciliationLoaded && !reconciliationError ? formatNumber(reconciliationAggregates.subscription_count || 0) : '—'" icon="plans" status="完整范围" tone="info" :meta="`订阅 ${formatBytes(reconciliationAggregates.flow_used || 0)} · 记录 ${formatBytes(reconciliationAggregates.recorded_bytes || 0)}`" />
-      <MetricCard label="一致" :value="reconciliationLoaded && !reconciliationError ? formatNumber(reconciliationAggregates.matched_count || 0) : '—'" icon="check" status="已对平" tone="success" icon-tone="success" meta="订阅累计与记录汇总完全一致" />
-      <MetricCard label="缺少记录" :value="reconciliationLoaded && !reconciliationError ? formatNumber(reconciliationAggregates.missing_records_count || 0) : '—'" icon="alert" status="需核查" tone="warning" icon-tone="warning" :meta="`差额 ${formatBytes(reconciliationAggregates.missing_bytes || 0)}`" />
+      <MetricCard label="对账订阅" :value="reconciliationLoaded && !reconciliationError ? formatNumber(reconciliationAggregates.subscription_count || 0) : '—'" icon="plans" tone="info" :meta="`订阅 ${formatBytes(reconciliationAggregates.flow_used || 0)} · 记录 ${formatBytes(reconciliationAggregates.recorded_bytes || 0)}`" />
+      <MetricCard label="一致" :value="reconciliationLoaded && !reconciliationError ? formatNumber(reconciliationAggregates.matched_count || 0) : '—'" icon="check" tone="success" icon-tone="success" meta="订阅累计与记录汇总完全一致" />
+      <MetricCard label="缺少记录" :value="reconciliationLoaded && !reconciliationError ? formatNumber(reconciliationAggregates.missing_records_count || 0) : '—'" icon="alert" :status="reconciliationAggregates.missing_records_count > 0 ? '需核查' : undefined" tone="warning" icon-tone="warning" :meta="`差额 ${formatBytes(reconciliationAggregates.missing_bytes || 0)}`" />
       <MetricCard label="记录超额" :value="reconciliationLoaded && !reconciliationError ? formatNumber(reconciliationAggregates.over_recorded_count || 0) : '—'" icon="alert" status="需核查" tone="danger" icon-tone="danger" :meta="`超额 ${formatBytes(reconciliationAggregates.over_recorded_bytes || 0)}`" />
     </UiMetricStrip>
 

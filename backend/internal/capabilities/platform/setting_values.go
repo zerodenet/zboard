@@ -24,7 +24,11 @@ func NormalizeSettingValue(config Setting, raw json.RawMessage) (string, error) 
 		if len(value) > 100000 {
 			return "", errors.New("string config value is too long")
 		}
-		return strings.TrimSpace(value), nil
+		value = strings.TrimSpace(value)
+		if config.ConfigKey == DefaultCurrencyKey {
+			value = strings.ToUpper(value)
+		}
+		return value, nil
 	case "bool":
 		var value bool
 		if err := json.Unmarshal(raw, &value); err != nil {
@@ -57,6 +61,8 @@ func ValidateSettingValue(key, value string) error {
 		}
 	}
 	switch key {
+	case DefaultCurrencyKey:
+		return ValidateDefaultCurrency(value)
 	case identity.CleanupDaysKey:
 		_, err := identity.ParseCleanupDays(value)
 		return err

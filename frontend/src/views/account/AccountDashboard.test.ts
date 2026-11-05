@@ -2,7 +2,6 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAccountOrdersPage, fetchAccountSubscriptionsPage, fetchTrafficQuota } from '../../api/client'
-import MetricCard from '../../components/MetricCard.vue'
 import AccountDashboard from './AccountDashboard.vue'
 
 vi.mock('../../api/client', () => ({
@@ -37,13 +36,15 @@ describe('dashboard independent sections', () => {
     await open()
     expect(wrapper!.text()).toContain('Fixture service')
     expect(wrapper!.text()).toContain('Fixture order')
-    const cards = wrapper!.findAllComponents(MetricCard)
-    expect(cards.map(card => card.props('value'))).toEqual(['—', 20, 7])
+    expect(wrapper!.find('[data-overview-quota] .summary-skeleton').exists()).toBe(true)
+    expect(wrapper!.get('[data-overview-active]').text()).toBe('20')
+    expect(wrapper!.get('[data-overview-pending]').text()).toBe('7')
     expect(wrapper!.text()).not.toContain('还没有订单')
+    expect(wrapper!.text()).not.toContain('剩余流量：加载中')
   })
   it('shows the complete quota rather than summing the three visible subscriptions', async () => {
     await open()
-    expect(wrapper!.findAllComponents(MetricCard)[0].props('value')).toBe('2.00 KB')
+    expect(wrapper!.get('[data-overview-quota]').text()).toBe('2.00 KB')
     expect(wrapper!.text()).not.toContain('仅加载最近 3 条')
     expect(wrapper!.text()).not.toContain('累计使用')
     expect(fetchTrafficQuota).toHaveBeenCalledWith(false, { signal: expect.any(AbortSignal) })
@@ -53,27 +54,25 @@ describe('dashboard independent sections', () => {
     await open()
     const slow = deferred<any>()
     vi.mocked(fetchTrafficQuota).mockReturnValueOnce(slow.promise)
-    await wrapper!.findAll('button').find(button => button.text().trim().includes('刷新'))!.trigger('click')
+    await wrapper!.get('button[aria-label="刷新概览"]').trigger('click')
     await flushPromises()
-    expect(wrapper!.findAllComponents(MetricCard)[0].props('value')).toBe('2.00 KB')
-    expect(wrapper!.findAllComponents(MetricCard)[0].props('status')).toBeUndefined()
+    expect(wrapper!.get('[data-overview-quota]').text()).toBe('2.00 KB')
     expect(wrapper!.text()).toContain('更新中')
     slow.resolve({ remaining_bytes: 1024, scope_user: 1, as_of: '2026-10-16T00:00:01Z' })
     await flushPromises()
     vi.mocked(fetchTrafficQuota).mockRejectedValueOnce(new Error('offline'))
-    await wrapper!.findAll('button').find(button => button.text().trim().includes('刷新'))!.trigger('click')
+    await wrapper!.get('button[aria-label="刷新概览"]').trigger('click')
     await flushPromises()
-    expect(wrapper!.findAllComponents(MetricCard)[0].props('value')).toBe('1.00 KB')
-    expect(wrapper!.findAllComponents(MetricCard)[0].props('status')).toBeUndefined()
+    expect(wrapper!.get('[data-overview-quota]').text()).toBe('1.00 KB')
     expect(wrapper!.text()).toContain('剩余流量')
     expect(wrapper!.text()).toContain('失败')
   })
-  it('retains both tables without inserting first-load paragraphs during refresh', async () => {
+  it('retains subscriptions and orders without inserting first-load paragraphs during refresh', async () => {
     await open()
     const subscriptions = deferred<any>(), orders = deferred<any>()
     vi.mocked(fetchAccountSubscriptionsPage).mockReturnValueOnce(subscriptions.promise)
     vi.mocked(fetchAccountOrdersPage).mockImplementation(params => params?.status ? Promise.resolve(page([], 7)) : orders.promise)
-    await wrapper!.findAll('button').find(button => button.text().trim().includes('刷新'))!.trigger('click')
+    await wrapper!.get('button[aria-label="刷新概览"]').trigger('click')
     await flushPromises()
     expect(wrapper!.text()).toContain('Fixture service')
     expect(wrapper!.text()).toContain('Fixture order')
@@ -92,7 +91,7 @@ describe('dashboard independent sections', () => {
     expect(wrapper!.text()).toContain('最近订单加载失败')
     expect(wrapper!.text()).not.toContain('还没有有效订阅')
     expect(wrapper!.text()).not.toContain('还没有订单')
-    expect(wrapper!.findAllComponents(MetricCard).at(-1)!.props('value')).toBe('—')
+    expect(wrapper!.get('[data-overview-pending]').text()).toBe('—')
   })
   it('retries only the failed section without re-fetching successful summaries', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockRejectedValueOnce(new Error('offline'))
@@ -111,7 +110,7 @@ describe('dashboard independent sections', () => {
     await open()
     expect(wrapper!.text()).toContain('还没有有效订阅')
     expect(wrapper!.text()).toContain('还没有订单')
-    expect(wrapper!.findAllComponents(MetricCard).at(-1)!.props('value')).toBe(0)
+    expect(wrapper!.get('[data-overview-pending]').text()).toBe('0')
   })
   it('shows an exhausted valid subscription and binds reset to that instance', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([{ id: 61, status: 'active', plan_name: 'Exhausted monthly plan', end_at: '2027-01-01', flow_total: 100, flow_used: 100, reset_quota_bytes: 100, can_reset: true }]))
@@ -119,7 +118,7 @@ describe('dashboard independent sections', () => {
     expect(wrapper!.text()).toContain('Exhausted monthly plan')
     expect(wrapper!.text()).toContain('本周期流量已用完')
     expect(wrapper!.find('a[href="/account/plans?operation=reset&subscription=61"]').exists()).toBe(true)
-    expect(wrapper!.findAllComponents(MetricCard)[1].props('value')).toBe(1)
+    expect(wrapper!.get('[data-overview-active]').text()).toBe('1')
   })
   it('keeps an exhausted buy-only record without an unavailable reset entry', async () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([{ id: 61, status: 'active', plan_name: 'Buy-only plan', end_at: '2027-01-01', flow_total: 100, flow_used: 100, reset_quota_bytes: 100, can_reset: false }]))
@@ -130,8 +129,32 @@ describe('dashboard independent sections', () => {
   it('makes business identities directly navigable without a separate ID-only subscription column', async () => {
     await open()
     expect(wrapper!.get('a[href="/account/subscription?subscription=1"]').text()).toBe('Fixture service')
-    expect(wrapper!.get('a[href="/account/orders/2"]').text()).toBe('#2')
-    expect(wrapper!.findAll('thead')[0].text()).not.toContain('套餐')
+    expect(wrapper!.get('a[href="/account/orders/2"]').text()).toContain('Fixture order')
+    expect(wrapper!.get('a[href="/account/orders/2"]').text()).toContain('#2')
+    expect(wrapper!.find('table').exists()).toBe(false)
+  })
+  it('keeps access, renewal and quota actions bound to each eligible subscription', async () => {
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([
+      { id: 61, plan_name: 'Monthly', flow_total: 100, flow_used: 25, can_renew: true },
+      { id: 62, plan_name: 'Fixed', flow_total: 100, flow_used: 140, can_renew: false, can_reset: false },
+    ]))
+    await open()
+    const cards = wrapper!.findAll('.service-card')
+    expect(cards[0].get('progress').attributes('value')).toBe('75')
+    expect(cards[1].get('progress').attributes('value')).toBe('0')
+    expect(cards[0].get('a[href="/account/subscription?subscription=61"]').text()).toBe('Monthly')
+    expect(cards[0].get('a[href="/account/plans?operation=renew&subscription=61"]').text()).toBe('续费')
+    expect(cards[1].find('a[href*="operation=renew"]').exists()).toBe(false)
+    expect(cards[1].text()).not.toContain('获取订阅')
+  })
+  it('opens a pending top-up by its business name and shows its actual payable amount', async () => {
+    vi.mocked(fetchAccountOrdersPage).mockResolvedValue(page([{ id: 8, order_type: 'topup', amount_cents: 1000, payable_amount: 0, currency: 'CNY', status: 'pending' }]))
+    await open()
+    const order = wrapper!.get('a[href="/account/orders/8"]')
+    expect(order.text()).toContain('余额充值')
+    expect(order.text()).toContain('¥0.00')
+    expect(order.text()).not.toContain('套餐 #')
+    expect(wrapper!.find('a[href="/account/orders?status=pending"]').exists()).toBe(true)
   })
   it('cancels every pending section on unmount' , async () => {
     const late = deferred<any>()

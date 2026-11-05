@@ -1,9 +1,9 @@
 <template>
-  <section class="standard-page" :class="{ 'detail-active': Boolean(selectedTicketID) }">
+  <section class="standard-page" :class="{ 'detail-active': Boolean(selectedTicketID), 'ticket-customer': !admin }">
     <PageHeader
       :title="admin ? '工单中心' : '我的工单'"
       :description="admin ? '集中处理用户问题，所有回复与状态变化都会保留在时间线中。' : ''"
-      eyebrow="Support"
+      :eyebrow="admin ? 'Support' : ''"
     >
       <template #actions>
         <PageRefreshButton label="刷新工单" :loading="loading" @click="loadTickets()" />
@@ -26,11 +26,11 @@
             <WorkbenchFilterSelect v-model="filters.category" label="问题分类" :options="categoryFilterOptions" @apply="applyFilters" />
           </WorkbenchFilterBar>
       </template>
-      <template #actions><span class="muted">按最近活动排序</span></template>
+      <template v-if="admin" #actions><span class="muted">按最近活动排序</span></template>
 
       <div class="ticket-workspace" :class="{ 'detail-open': Boolean(selectedTicketID) }">
       <article class="panel ticket-list-panel">
-        <header class="panel-header"><div><h2>{{ admin ? '处理队列' : '工单记录' }}</h2></div><span class="count-label">本页 {{ tickets.length }} 条</span></header>
+        <header class="panel-header"><div><h2>{{ admin ? '处理队列' : '工单记录' }}</h2></div><span v-if="admin" class="count-label">本页 {{ tickets.length }} 条</span></header>
         <div v-if="tickets.length" class="ticket-list">
           <UiButton
             v-for="ticket in tickets"
@@ -40,6 +40,7 @@
             :class="{ active: selectedTicketID === ticket.id }"
             :aria-current="selectedTicketID === ticket.id ? 'true' : undefined"
             :data-ticket-trigger="ticket.id"
+            :aria-label="`${ticket.subject}，${statusLabel(ticket.status)}`"
             @click="selectTicket(ticket.id)"
           >
             <div class="ticket-list-head"><code>{{ ticket.ticket_no }}</code><StatusBadge :tone="statusTone(ticket.status)">{{ statusLabel(ticket.status) }}</StatusBadge></div>
@@ -619,6 +620,17 @@ onBeforeUnmount(() => detailController?.abort())
 </script>
 
 <style scoped>
+.ticket-customer:not(.detail-active) .ticket-workspace { min-height: 0; grid-template-columns: minmax(0, 1fr); }
+.ticket-customer:not(.detail-active) .ticket-detail-panel { display: none; }
+.ticket-customer .ticket-list { max-height: none; }
+.ticket-customer .ticket-list-panel, .ticket-customer .ticket-detail-panel { border: 0; box-shadow: none; }
+.ticket-customer .ticket-list-panel > .panel-header, .ticket-customer .ticket-detail-header, .ticket-customer .ticket-reply, .ticket-customer .ticket-list-panel > .table-pager { border: 0; }
+.ticket-customer .ticket-list > button { min-height: 92px; height: auto; grid-template-columns: minmax(0, 1fr); justify-content: stretch; border-bottom: 0; }
+.ticket-customer .ticket-list > button > strong { grid-row: 1; }
+.ticket-customer .ticket-list-head { grid-row: 2; }
+.ticket-customer .ticket-list-meta { grid-row: 3; }
+.ticket-customer .ticket-list code { color: var(--muted-foreground); font-weight: 400; }
+
 .ticket-reference-records { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .ticket-reference-records div { display: flex; gap: 8px; }
 .ticket-reference-records dt { color: var(--muted); }

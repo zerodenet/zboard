@@ -82,3 +82,57 @@ func TestDefaultPlacementUpgradePreservesOperatorAndPluginMenus(t *testing.T) {
 		t.Fatal("restart repeated upgrade")
 	}
 }
+
+func TestPlanMenuRenamePreservesPresentationEdits(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		edits map[string]any
+		want  string
+	}{
+		{"untouched", nil, "套餐管理"},
+		{"custom label", map[string]any{"label": "我的商品"}, "我的商品"},
+		{"hidden", map[string]any{"hidden": true}, "商品与套餐"},
+		{"moved", map[string]any{"position": 99}, "商品与套餐"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := fixture(t)
+			fields := map[string]any{"label": "商品与套餐"}
+			for key, value := range tc.edits {
+				fields[key] = value
+			}
+			if err := db.Model(&model.MenuNode{}).Where("id = ?", "admin:/admin/plans").Updates(fields).Error; err != nil {
+				t.Fatal(err)
+			}
+			before := read(t, db, "admin").Revision
+			if err := menustore.Seed(db); err != nil {
+				t.Fatal(err)
+			}
+			var node model.MenuNode
+			if err := db.First(&node, "id = ?", "admin:/admin/plans").Error; err != nil {
+				t.Fatal(err)
+			}
+			if node.Label != tc.want || node.Path != "/admin/plans" || node.ID != "admin:/admin/plans" {
+				t.Fatalf("unexpected menu %+v", node)
+			}
+			if tc.name == "hidden" && !node.Hidden {
+				t.Fatal("visibility overwritten")
+			}
+			if tc.name == "moved" && node.Position != 99 {
+				t.Fatal("position overwritten")
+			}
+			wantRevision := before
+			if tc.edits == nil {
+				wantRevision++
+			}
+			if read(t, db, "admin").Revision != wantRevision {
+				t.Fatal("unexpected revision")
+			}
+			if err := menustore.Seed(db); err != nil {
+				t.Fatal(err)
+			}
+			if read(t, db, "admin").Revision != wantRevision {
+				t.Fatal("rename repeated on restart")
+			}
+		})
+	}
+}

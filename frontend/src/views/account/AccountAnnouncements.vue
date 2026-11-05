@@ -7,24 +7,21 @@
 
     <section v-if="featured.length" :class="['featured-board', `featured-count-${featured.length}`]" aria-label="重点公告">
       <article v-for="item in featured" :key="`featured:${item.id}:${item.revision}`" :class="['featured-card', `severity-${item.severity}`]">
-        <header><h2>{{ item.title }}</h2><StatusBadge :tone="isUnread(item) ? 'info' : 'neutral'">{{ isUnread(item) ? '未读' : '已读' }}</StatusBadge></header>
-        <div class="featured-body">
-          <MarkdownContent :content="item.content" />
-        </div>
-        <footer><time :datetime="item.created_at">{{ formatDate(item.created_at) }}</time><UiButton v-if="isUnread(item)" variant="ghost" size="sm" type="button" @click="markRead(item)">标记已读</UiButton><span v-else-if="item.read_at">阅读于 <time :datetime="item.read_at">{{ formatDate(item.read_at) }}</time></span></footer>
+        <h2><button class="featured-heading" type="button" :aria-expanded="openedId === item.id" @click="toggle(item)"><span><strong>{{ item.title }}</strong><time :datetime="item.created_at">{{ formatDate(item.created_at) }}</time></span><StatusBadge v-if="isUnread(item)" tone="info">未读</StatusBadge><span class="chevron" aria-hidden="true">{{ openedId === item.id ? '−' : '+' }}</span></button></h2>
+        <div v-if="openedId === item.id" class="featured-body"><MarkdownContent :content="item.content" /></div>
       </article>
     </section>
 
-    <UiSection v-if="listItems.length || !featured.length || total > limit" title="全部通知">
+    <UiSection v-if="listItems.length || !featured.length || total > limit" :title="featured.length ? '历史公告' : ''">
+      <TableSkeleton v-if="loading && !loaded" label="正在加载公告" :columns="1" :rows="3" />
       <div v-if="listItems.length" class="announcement-list">
         <article v-for="item in listItems" :key="`${item.id}:${item.revision}`" :class="['announcement-row', { unread: isUnread(item) }]">
           <button class="announcement-heading" type="button" :aria-expanded="openedId === item.id" @click="toggle(item)">
-            <span aria-hidden="true" :class="['severity-dot', `severity-${item.severity}`]"></span>
             <span class="heading-copy"><strong>{{ item.title }}</strong><small>{{ formatDate(item.created_at) }}</small></span>
-            <StatusBadge :tone="badgeTone(item)">{{ badgeLabel(item) }}</StatusBadge>
+            <StatusBadge v-if="isUnread(item)" tone="info">未读</StatusBadge>
             <span class="chevron">{{ openedId === item.id ? '−' : '+' }}</span>
           </button>
-          <div v-if="openedId === item.id" class="announcement-body"><MarkdownContent :content="item.content" /><footer><span>公告版本 {{ item.revision }}</span><span v-if="item.read_at">阅读于 {{ formatDate(item.read_at) }}</span></footer></div>
+          <div v-if="openedId === item.id" class="announcement-body"><MarkdownContent :content="item.content" /></div>
         </article>
       </div>
       <EmptyState v-else-if="loaded && !error && !featured.length" icon="info" title="暂无公告" description="" />
@@ -36,6 +33,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { fetchAccountAnnouncements, type AccountAnnouncement } from '../../api/client'
+import TableSkeleton from '../../components/TableSkeleton.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import MarkdownContent from '../../components/MarkdownContent.vue'
 import PageHeader from '../../components/PageHeader.vue'
@@ -81,14 +79,23 @@ async function markRead(item: AccountAnnouncement) {
 async function toggle(item: AccountAnnouncement) { openedId.value = openedId.value === item.id ? 0 : item.id; if (openedId.value) await markRead(item) }
 function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; void load() }
 function formatDate(value: string) { return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) }
-function badgeLabel(item: AccountAnnouncement) { return !item.active ? '历史' : item.read ? '已读' : '未读' }
-function badgeTone(item: AccountAnnouncement) { return !item.active || item.read ? 'neutral' : 'info' }
 onMounted(load)
 </script>
 
 <style scoped>
 .announcement-count { color: var(--muted-foreground); font-size: 12px; }
-.featured-board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }.featured-board.featured-count-1 { grid-template-columns: minmax(0, 1fr); }.featured-board.featured-count-2 { grid-template-columns: minmax(0, 1fr); }.featured-card { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; padding: 20px; border-block: 1px solid var(--line); background: var(--surface); }.featured-card.severity-critical { border-top-color: var(--danger); }.featured-card.severity-warning { border-top-color: var(--warning); }.featured-card.severity-success { border-top-color: var(--success); }.featured-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }.featured-body { margin-top: 16px; min-width: 0; overflow-wrap: anywhere; }.featured-card h2 { margin: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }.featured-card :deep(.markdown-content) { max-height: 260px; overflow: auto; font-size: 13px; }.featured-card > footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; min-height: 44px; margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-.announcement-list { display: grid; gap: 8px; }.announcement-row { overflow: hidden; border: 1px solid var(--line); border-radius: 0; background: var(--surface); }.announcement-row.unread { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }.announcement-heading { width: 100%; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto 20px; align-items: center; gap: 12px; padding: 13px 15px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }.heading-copy { min-width: 0; display: grid; gap: 4px; }.heading-copy strong { white-space:normal; overflow-wrap:anywhere; }.heading-copy small, .announcement-body footer { color: var(--muted); font-size: 12px; }.severity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }.severity-dot.severity-success { background: var(--success); }.severity-dot.severity-warning { background: var(--warning); }.severity-dot.severity-critical { background: var(--danger); }.chevron { color: var(--muted); font-size: 18px; }.announcement-body { padding: 4px 36px 16px; border-top: 1px solid var(--line); }.announcement-body :deep(.markdown-content) { padding-top: 14px; }.announcement-body footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 9px; border-top: 1px solid var(--line); }
-@media (max-width: 920px) { .featured-board, .featured-board.featured-count-2 { grid-template-columns: 1fr; }.featured-card :deep(.markdown-content) { max-height: 260px; } } @media (max-width: 640px) { .announcement-heading { grid-template-columns: 9px minmax(0, 1fr) auto; }.chevron { display: none; }.announcement-body { padding-inline: 18px; } }
+.featured-board, .announcement-list { display: grid; gap: 12px; }
+.featured-card { min-width: 0; padding: 20px; border: 0; border-radius: var(--radius-md); background: var(--surface-soft); }
+.featured-card.severity-critical { box-shadow: inset 3px 0 var(--danger); }
+.featured-card.severity-warning { box-shadow: inset 3px 0 var(--warning); }
+.featured-card h2 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.featured-heading, .announcement-heading { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.featured-heading > span:first-child, .heading-copy { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.featured-heading strong, .heading-copy strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.featured-heading time, .heading-copy small { font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+.featured-heading:focus-visible, .announcement-heading:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.announcement-row { min-width: 0; padding: 12px 0; border: 0; background: transparent; }
+.chevron { color: var(--muted-foreground); font-size: 18px; }
+.featured-body, .announcement-body { margin-top: 16px; min-width: 0; overflow-wrap: anywhere; }
+.featured-body :deep(.markdown-content), .announcement-body :deep(.markdown-content) { font-size: 13px; }
 </style>

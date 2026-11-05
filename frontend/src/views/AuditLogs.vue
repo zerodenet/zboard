@@ -82,7 +82,7 @@
       </DataTable>
 
       <EmptyState
-        v-else
+        v-else-if="!error"
         icon="audit"
         title="没有匹配事件"
         description="当前筛选条件下没有审计记录。"
@@ -284,6 +284,10 @@ async function loadReferences() {
   try {
     const targets = items.value.map(item => item.target).filter(Boolean)
     if (detail.value?.target) targets.push(detail.value.target)
+    if (!targets.length && !detail.value?.user_id) {
+      references.value = emptyEntityReferenceResponse()
+      return
+    }
     references.value = await fetchAdminEntityReferences({
       targets,
       userIds: detail.value?.user_id ? [detail.value.user_id] : [],

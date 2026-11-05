@@ -51,7 +51,7 @@ func (s SettingUpdate) Update(ctx context.Context, actor uint, in platform.Setti
 		if in.ExpectedRevision != nil && row.Revision != *in.ExpectedRevision {
 			return platform.ErrSettingRevision
 		}
-		value, err := platform.NormalizeSettingValue(platform.Setting{ValueType: row.ValueType}, in.Value)
+		value, err := platform.NormalizeSettingValue(platform.Setting{ConfigKey: row.ConfigKey, ValueType: row.ValueType}, in.Value)
 		if err != nil {
 			return &platform.SettingValidation{Cause: err}
 		}

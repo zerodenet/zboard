@@ -25,6 +25,7 @@ it('does not decorate absent or invalid dates as real timestamps', async () => {
   expect(wrapper.attributes('title')).toBe('无效时间（invalid）')
   await wrapper.setProps({ value: '2026-11-03T00:00:00Z' })
   expect(wrapper.get('time').attributes('datetime')).toBe('2026-11-03T00:00:00.000Z')
-  expect(wrapper.find('svg').exists()).toBe(true)
+  expect(wrapper.find('svg').exists()).toBe(false)
+  expect(wrapper.get('time').attributes('aria-label')).toContain('精确时间')
   wrapper.unmount()
 })

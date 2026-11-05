@@ -1,5 +1,5 @@
 <template>
-  <section class="account-page stack">
+  <section class="account-page stack account-order-page">
     <PageHeader title="我的订单">
       <template #actions>
         <UiButton as-child><RouterLink  to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink></UiButton>
@@ -20,59 +20,19 @@
         </WorkbenchFilterBar>
       </template>
       <template #actions>
-        <UiButton variant="secondary" size="sm" type="button" :disabled="loading" @click="load">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+        <PageRefreshButton label="刷新订单" :loading="loading" @click="load" />
       </template>
 
       <TableSkeleton v-if="loading && !orders.length" label="正在加载我的订单" :columns="6" />
-      <DataTable v-else-if="orders.length" caption="我的订单列表" :row-count="total" :min-width="820">
-        <thead>
-          <tr>
-            <th class="table-primary-column">订单</th>
-            <th>商品规格</th>
-            <th>应付金额</th>
-            <th>状态</th>
-            <th data-column-priority="2">时间</th>
-            <th class="table-action-column"><span class="sr-only">操作</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in orders" :key="item.id">
-            <td class="table-primary-column">
-              <div class="cell-title"><RouterLink :to="`/account/orders/${item.id}`"><strong>#{{ item.id }}</strong></RouterLink><TableText :value="item.trade_no" /></div>
-            </td>
-            <td>
-              <div class="cell-title cell-related">
-                <TableText :value="item.plan_name || `套餐 #${item.plan_id}`" />
-                <TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" />
-                <small v-if="item.subscription_ended_at">原订阅{{ item.subscription_end_reason === 'exhausted' ? '已用完' : '已到期' }} · <TimeBadge :value="item.subscription_ended_at" /></small>
-                <small v-if="item.subscription_ended_at">最终用量 {{ formatBytes(item.subscription_final_flow_used || 0) }} / {{ formatBytes(item.subscription_final_flow_total || 0) }}</small>
-              </div>
-            </td>
-            <td class="value-cell">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency) }}</td>
-            <td><StatusBadge :tone="tone(item.status)">{{ label(item.status) }}</StatusBadge></td>
-            <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
-            <td class="table-action-column">
-              <UiButton as-child variant="secondary" size="sm"><RouterLink  :to="`/account/orders/${item.id}`">{{ ['pending', 'failed'].includes(item.status) ? '详情／支付' : '详情' }}</RouterLink></UiButton>
-              <UiButton
-                v-if="item.status === 'pending'"
-                variant="danger"
-                size="sm"
-                type="button"
-                @click="askCancel(item)"
-              >
-                取消
-              </UiButton>
-            </td>
-          </tr>
-        </tbody>
-      </DataTable>
+      <AccountOrderList v-else-if="orders.length" :orders="orders"><template #actions="{ order }">
+        <UiButton v-if="['pending', 'failed'].includes(order.status)" as-child variant="secondary" size="sm"><RouterLink :to="`/account/orders/${order.id}`">继续支付</RouterLink></UiButton>
+        <UiButton v-if="order.status === 'pending'" variant="ghost" size="sm" type="button" @click="askCancel(order)">取消订单</UiButton>
+      </template></AccountOrderList>
       <EmptyState
         v-else-if="!loading && !error"
         icon="billing"
         title="没有匹配订单"
-        description="从套餐页面创建第一笔订单，或调整筛选条件。"
+        description=""
       />
 
       <template #footer>
@@ -102,26 +62,23 @@
 </template>
 
 <script setup lang="ts">
-import TableText from '../../components/TableText.vue'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelOrder, fetchAccountOrdersPage, type AdminOrderListItem } from '../../api/client'
+import AccountOrderList from '../../components/account/AccountOrderList.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import DataTable from '../../components/DataTable.vue'
 import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import PageHeader from '../../components/PageHeader.vue'
-import StatusBadge from '../../components/StatusBadge.vue'
 import TablePager from '../../components/TablePager.vue'
-import TimeBadge from '../../components/TimeBadge.vue'
 import TransientFeedback from '../../components/TransientFeedback.vue'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
-import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -161,15 +118,6 @@ const { items: orders, total, loading, refreshing, error, load } = useRemoteTabl
   errorMessage: (cause: any) => cause?.response?.data?.message || '订单加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
-
-function tone(value: string): 'success' | 'warning' | 'danger' | 'neutral' {
-  return value === 'paid' ? 'success' : value === 'pending' ? 'warning' : value === 'failed' ? 'danger' : 'neutral'
-}
-
-function label(value: string) {
-  return ({ pending: '待支付', paid: '已支付', failed: '失败', canceled: '已取消' } as Record<string, string>)[value]
-    || formatUnknownValue('状态', value)
-}
 
 async function syncURL(replace = false) {
   const page = Math.floor(offset.value / limit.value) + 1
@@ -238,3 +186,11 @@ watch(() => route.fullPath, async () => {
 
 onMounted(load)
 </script>
+
+<style scoped>
+@media (max-width: 720px) {
+  .account-order-page :deep(.workbench-toolbar) { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .account-order-page :deep(.workbench-filters) { flex: 1 1 160px; width: auto; min-width: 0; }
+  .account-order-page :deep(.workbench-actions) { flex: 0 0 auto; justify-content: flex-end; }
+}
+</style>

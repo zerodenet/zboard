@@ -9,14 +9,8 @@
     <PageAlert v-if="registrationDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ registrationDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="registrationDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <PageAlert v-if="registrationRecoveryConflict || verificationRecoveryConflict" tone="warning" title="注册设置已变化">原开关草稿已保留；存在冲突的开关不能保存，请刷新当前值后重新编辑。</PageAlert>
     <SettingsPageLayout>
-      <UiMetricStrip>
-        <MetricCard label="公开注册" :value="registrationEnabled ? '开放' : '关闭'" icon="users" :tone="registrationEnabled ? 'success' : 'neutral'" status="入口控制" meta="决定访客能否创建账户" />
-        <MetricCard label="邮箱验证码" :value="verificationEnabled ? '必需' : '未启用'" icon="audit" :tone="verificationEnabled ? 'info' : 'neutral'" status="身份验证" :meta="verificationEnabled ? '注册前发送六位验证码' : '保留原直接注册流程'" />
-        <MetricCard label="SMTP 通道" :value="smtpReady ? '可用' : '未就绪'" icon="activity" :tone="smtpReady ? 'success' : 'warning'" status="投递依赖" :meta="smtpReady ? '可发送注册验证码' : '请先完成邮件通道配置'" />
-      </UiMetricStrip>
-
       <div class="registration-grid">
-        <UiSection title="注册入口" description="这是注册功能的总开关；关闭后公开注册页不再接受新账户。">
+        <UiSection title="注册入口">
           <div class="setting-control">
             <div><strong>允许访客注册</strong><p>管理员创建用户、已有用户登录和账户数据不受影响。</p></div>
             <UiSwitch v-model="registrationEnabled" aria-label="允许访客注册" />
@@ -26,19 +20,14 @@
 
         <UiSection title="邮箱验证码" description="启用后，注册表单要求先向目标邮箱发送并填写六位验证码。">
           <div class="setting-control">
-            <div><strong>注册时验证邮箱</strong><p>验证码十分钟有效，并包含重发冷却、尝试次数和请求网络频率限制。</p></div>
+            <div><strong>注册时验证邮箱</strong><p>验证码十分钟有效。</p></div>
             <UiSwitch v-model="verificationEnabled" aria-label="注册时验证邮箱" />
           </div>
           <PageAlert v-if="verificationEnabled && !smtpReady" tone="warning" title="SMTP 通道尚未就绪">请先在“邮件与运营模板”完成 SMTP 主机、发件人、TLS 和凭证配置，再启用邮箱验证。</PageAlert>
           <div class="section-actions"><RouterLink class="settings-link" to="/admin/settings/email">配置邮件通道</RouterLink><UiButton type="button" :loading="savingVerification" :disabled="verificationRecoveryConflict || !verificationDirty || (verificationEnabled && !smtpReady)" @click="saveVerification">保存邮箱验证</UiButton></div>
         </UiSection>
 
-        <UiSection title="页面图形验证码" description="为后续人机验证保留的独立模块，不与邮箱验证码或 SMTP 配置混在一起。">
-          <div class="setting-control disabled-module">
-            <div><strong>图形验证码提供方</strong><p>当前版本尚未接入；后续可在此配置提供方、站点密钥、触发场景和失败策略。</p></div>
-            <StatusBadge tone="neutral">尚未接入</StatusBadge>
-          </div>
-        </UiSection>
+
       </div>
 
       <UiSection title="注册成功通知" description="用户注册成功后自动发送，停用不影响验证码。">
@@ -52,17 +41,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { fetchSystemConfigs, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
 import EmailTemplateManager from '../components/EmailTemplateManager.vue'
-import MetricCard from '../components/MetricCard.vue'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
-import StatusBadge from '../components/StatusBadge.vue'
 import SettingsPageLayout from '../components/SettingsPageLayout.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiButton from '../components/UiButton.vue'
 import UiSwitch from '../components/UiSwitch.vue'
-import UiIcon from '../components/UiIcon.vue'
-import UiMetricStrip from '../components/UiMetricStrip.vue'
 import UiSection from '../components/UiSection.vue'
 import { useUnsavedChangesGuard } from '../composables/useFormState'
 import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
@@ -189,5 +174,12 @@ onMounted(load)
 </script>
 
 <style scoped>
-.registration-grid{display:grid;gap:0}.registration-grid :deep(.ui-section){border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent;box-shadow:none}.registration-settings-page :deep(.settings-page-content > .ui-section){border:0;border-top:1px solid var(--border);border-radius:0;background:transparent;box-shadow:none}.registration-settings-page :deep(.settings-page-content .ui-section > .panel-header){min-height:0;padding:20px 0 8px;border:0}.registration-settings-page :deep(.settings-page-content .ui-section > .panel-body){padding:0}.setting-control{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:10px 0}.setting-control strong{font-size:13px}.setting-control p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.55}.disabled-module{opacity:.82}.section-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:8px 0 20px}.settings-link{margin-right:auto;color:var(--primary);font-size:11px;font-weight:600;text-decoration:none}.registration-flow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px;padding:16px 0}.registration-flow>div{min-height:96px;display:grid;align-content:start;gap:5px;padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--surface-soft)}.registration-flow>div span{width:24px;height:24px;display:grid;place-items:center;border-radius:999px;color:var(--primary);background:var(--primary-soft);font-size:12px;font-weight:600}.registration-flow strong{font-size:11px}.registration-flow small{color:var(--muted);font-size:12px;line-height:1.45}.registration-flow>.ui-icon{color:var(--muted)}@media(max-width:900px){.registration-flow{grid-template-columns:1fr}.registration-flow>.ui-icon{justify-self:center;transform:rotate(90deg)}}
+.registration-grid { display: grid; gap: 28px; }
+.registration-settings-page :deep(.settings-page-content .ui-section > .panel-header) { min-height: 0; padding: 0 0 8px; border: 0; }
+.registration-settings-page :deep(.settings-page-content .ui-section > .panel-body) { padding: 0; }
+.setting-control { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 0; }
+.setting-control strong { font-size: 13px; }
+.setting-control p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.section-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding-top: 8px; }
+.settings-link { margin-right: auto; color: var(--primary); font-size: 12px; font-weight: 600; text-decoration: none; }
 </style>

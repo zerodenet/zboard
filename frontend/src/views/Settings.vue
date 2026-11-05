@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader :title="pageTitle" :description="pageDescription" :show-section-navigation="false">
+    <PageHeader :title="pageTitle" :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新系统设置" :loading="loading" @click="reloadSettings" /></template>
     </PageHeader>
 
@@ -12,8 +12,8 @@
     <SettingsPageLayout>
         <UiSection class="settings-shell">
         <div v-if="activeSection === 'site'" class="settings-panel stack-lg">
-          <UiSection title="站点身份" description="管理公开名称和访问地址；注册开关与验证方式已迁移到独立的“注册与验证”页面。">
-            <template #meta><StatusBadge :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
+          <UiSection title="站点身份" >
+            <template #meta><StatusBadge v-if="siteState.dirty.value" :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
             <form ref="siteFormElement" class="panel-body stack" novalidate @submit.prevent="saveSiteSettings">
               <div class="form-grid">
                 <FormField v-slot="{ controlAttrs }" label="站点名称" name="settings-site-name" :error="siteErrors.fields.site_name" required><UiInput v-model.trim="form.site_name" v-bind="controlAttrs" maxlength="80" /></FormField>
@@ -22,6 +22,10 @@
               <PageAlert v-if="siteErrors.formError.value" tone="danger" title="站点设置未保存">{{ siteErrors.formError.value }}</PageAlert>
               <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="siteRecoveryConflict || !siteState.dirty.value">保存站点身份</UiButton></div>
             </form>
+          </UiSection>
+
+          <UiSection title="货币">
+            <ConfigRow v-if="currencyConfig" :config="currencyConfig" :draft="drafts[currencyConfig.config_key]" :dirty="configDirty(currencyConfig)" :saving="savingKey === currencyConfig.config_key" :error="configErrors[currencyConfig.config_key]" :conflict="Boolean(configConflicts[currencyConfig.config_key])" @update:draft="updateDraft(currencyConfig.config_key, $event)" @reload="reloadConfig(currencyConfig.config_key)" @save="saveConfig(currencyConfig)" />
           </UiSection>
 
           <UiSection title="订阅入口" description="管理员必须手动配置站内路径。留空不提供订阅入口；旧默认地址暂时301到配置路径，保留token及查询参数。修改已有自定义路径后，请重新交付地址。">
@@ -299,7 +303,7 @@ const siteContentKeys = ['site_desc', 'site_home_kicker', 'site_home_title']
 const siteContactKeys = ['site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url']
 const siteSeoKeys = ['site_meta_title', 'site_meta_description']
 const sitePresentationKeys = new Set([...siteVisualKeys, ...siteContentKeys, ...siteContactKeys, ...siteSeoKeys])
-const publicSiteKeys = new Set([...sitePresentationKeys, ...legacyPolicyKeys, ...policyDocumentsKeys, ...legalMetadataKeys])
+const publicSiteKeys = new Set(['default_currency', ...sitePresentationKeys, ...legacyPolicyKeys, ...policyDocumentsKeys, ...legalMetadataKeys])
 const operationalConfigs = computed(() => configs.value
   .filter(item => !hiddenSiteKeys.has(item.config_key) && !deprecatedSiteKeys.has(item.config_key))
   .sort((a, b) => a.id - b.id))
@@ -308,6 +312,7 @@ const legalMetadataConfig = computed(() => operationalConfigs.value.find(item =>
 const alertConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')))
 const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
+const currencyConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'default_currency'))
 const subscriptionEntryConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'subscription_url_prefix'))
 const accountCleanupConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'user_cleanup_inactive_days'))
 const recoveryConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key === 'subscription_renewal_grace_days'))

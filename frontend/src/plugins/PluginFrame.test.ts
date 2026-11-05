@@ -48,6 +48,60 @@ function send(
   window.dispatchEvent(event);
 }
 describe("plugin iframe boundary", () => {
+  const loginSlot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'Provider login', entrypoint: 'ui/login.html' }
+  async function loginFrame(beforeIdentityLogin: () => boolean) {
+    mocks.createSlot.mockResolvedValue({ ...session, url: 'about:blank', purpose: 'slot', slot: 'auth.login.methods' })
+    const wrapper = mount(PluginFrame, { attachTo: document.body, props: { pluginId: 'example.login', surface: 'public', slot: loginSlot, beforeIdentityLogin } })
+    await flushPromises()
+    return wrapper
+  }
+  it('prepares recovery for the exact provider only after validating its authorization URL', async () => {
+    const events: string[] = []
+    const prepare = vi.fn(() => { events.push('prepare'); return true })
+    const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => { events.push('navigate') })
+    const wrapper = await loginFrame(prepare)
+    mocks.bridge.mockResolvedValueOnce({ authorization_url: 'https://login.example.test/authorize?state=opaque' })
+    send(wrapper, 'identity.login.start', { provider_id: 'configured-provider', authorization_url: 'https://forged.test', actor_id: 999 })
+    await flushPromises()
+    expect(mocks.bridge).toHaveBeenCalledWith(expect.anything(), 'identity.login.start', { provider_id: 'configured-provider' }, expect.any(AbortSignal))
+    expect(events).toEqual(['prepare', 'navigate'])
+    expect(navigate).toHaveBeenCalledWith('https://login.example.test/authorize?state=opaque')
+    wrapper.unmount()
+  })
+  it('keeps the editor when recovery refuses navigation and reports that refusal to the selected plugin', async () => {
+    const prepare = vi.fn(() => false)
+    const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    const wrapper = await loginFrame(prepare)
+    const posted = vi.spyOn(wrapper.get('iframe').element.contentWindow!, 'postMessage')
+    mocks.bridge.mockResolvedValueOnce({ authorization_url: 'https://login.example.test/authorize' })
+    send(wrapper, 'identity.login.start', { provider_id: 'configured-provider' }); await flushPromises()
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ ok: false }), '*')
+    wrapper.unmount()
+  })
+  it.each(['javascript:alert(1)', 'http://remote.example.test/login', 'https://user:password@example.test/login'])('does not discard recovery for unsafe provider URL %s', async authorization_url => {
+    const prepare = vi.fn(() => true)
+    const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    const wrapper = await loginFrame(prepare)
+    mocks.bridge.mockResolvedValueOnce({ authorization_url })
+    send(wrapper, 'identity.login.start', { provider_id: 'configured-provider' }); await flushPromises()
+    expect(prepare).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('ignores authorization from a replaced plugin generation without touching the editor', async () => {
+    const prepare = vi.fn(() => true)
+    const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    const wrapper = await loginFrame(prepare)
+    let release!: (value: any) => void
+    mocks.bridge.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    send(wrapper, 'identity.login.start', { provider_id: 'configured-provider' }); await flushPromises()
+    await wrapper.setProps({ pluginId: 'example.replacement' }); await flushPromises()
+    release({ authorization_url: 'https://login.example.test/authorize' }); await flushPromises()
+    expect(prepare).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('preserves public plugin error details without changing the bridge sender identity', async () => {
     const wrapper = mount(PluginFrame, { attachTo: document.body, props: { pluginId: 'example.welcome', pageId: 'home', surface: 'account' } }); await flushPromises()
     const posted = vi.spyOn(wrapper.get('iframe').element.contentWindow!, 'postMessage')

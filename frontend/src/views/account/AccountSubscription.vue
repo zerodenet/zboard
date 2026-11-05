@@ -2,9 +2,7 @@
   <section class="account-page stack">
     <PageHeader title="订阅配置">
       <template #actions>
-        <UiButton variant="secondary" type="button" :disabled="loading || working" @click="loadAll">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+        <PageRefreshButton label="刷新订阅" :loading="loading" :disabled="working" @click="loadAll" />
       </template>
     </PageHeader>
 
@@ -18,14 +16,14 @@
     <PluginSlot name="account.subscriptions.actions" surface="account" />
 
     <div ref="accessPanel" class="subscription-access-panel" tabindex="-1">
-    <UiSection
-      :title="selectedSubscription ? `订阅 #${selectedSubscription.id} 的访问链接` : '订阅访问链接'"
-      :description="selectedSubscription ? `${selectedSubscription.plan_name} · ${selectedSubscription.sku_name}` : '从订阅列表选择需要管理的服务实例。'"
+    <UiSection variant="outlined"
+      :title="selectedSubscription?.plan_name || '订阅链接'"
+      :description="selectedSubscription?.sku_name || ''"
       class="subscription-access-section"
     >
       <template #actions>
         <UiButton v-if="subscriptionUrl" type="button" @click="copy"><UiIcon name="copy" />{{ copyLabel }}</UiButton>
-        <UiButton v-else-if="selectedSubscription && !access.configured" type="button" :disabled="!accessReady || access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('generate')">生成此链接</UiButton>
+        <UiButton v-else-if="selectedSubscription && !access.configured" type="button" :disabled="!accessReady || access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('generate')">生成订阅链接</UiButton>
       </template>
       <div v-if="selectedSubscription" class="panel-body access-panel">
         <PageAlert v-if="selectedSubscriptionResource.stale.value" tone="warning" title="订阅详情尚未更新">
@@ -44,48 +42,26 @@
           <div><span>到期时间</span><TimeBadge :value="selectedSubscription.end_at" /></div>
         </div>
 
-        <FormField v-if="subscriptionUrl" v-slot="{ controlAttrs }" class="access-url" label="完整订阅链接" full>
+        <div v-if="subscriptionUrl" class="access-template-picker">
+          <FormField v-slot="{ controlAttrs }" label="客户端格式" name="subscription-format">
+            <UiSelect v-model="selectedTemplate" v-bind="controlAttrs" :options="templateOptions" />
+          </FormField>
+          <WorkbenchFilterInput v-model="templateDraftQuery" label="查找格式" placeholder="客户端或模板名称" @apply="searchTemplates" />
+          <span v-if="templateTotal > templates.length" class="field-hint">{{ templates.length }} / {{ templateTotal }}</span>
+        </div>
+        <FormField v-if="subscriptionUrl" v-slot="{ controlAttrs }" class="access-url" label="订阅链接" full>
           <UiInput :value="subscriptionUrl" v-bind="controlAttrs" readonly />
         </FormField>
-        <details class="subscription-options"><summary>格式与链接管理</summary><div class="subscription-options-body">
+        <details class="subscription-options"><summary>链接管理</summary><div class="subscription-options-body"><p v-if="deliveryHint" class="muted">{{ deliveryHint }}</p>
         <div v-if="accessReady && access.configured" class="access-meta">
           <p>凭证前缀 <code>{{ access.token_prefix }}…</code></p>
           <div class="access-time"><span>最近使用</span><TimeBadge :value="access.last_used_at" /></div>
         </div>
-        <div v-if="subscriptionUrl" class="access-template-picker">
-          <FormField
-            v-slot="{ controlAttrs }"
-            label="查找导出模板"
-            hint="按客户端或模板名称搜索，选择适合的导出格式。"
-            full
-          >
-            <div class="inline-filter">
-              <UiInput
-                v-model="templateDraftQuery"
-                v-bind="controlAttrs"
-                placeholder="名称、标识或说明"
-                @keyup.enter="searchTemplates"
-              />
-              <UiButton variant="secondary" size="sm" type="button" :loading="templateLoading" @click="searchTemplates">
-                <UiIcon name="search" />搜索
-              </UiButton>
-            </div>
-          </FormField>
-          <FormField
-            v-slot="{ controlAttrs }"
-            class="access-url"
-            label="订阅格式"
-            :hint="deliveryHint"
-            full
-          >
-            <UiSelect v-model="selectedTemplate" v-bind="controlAttrs" :options="templateOptions" />
-          </FormField>
-        </div>
         <div class="access-actions">
           <UiButton v-if="accessReady && access.configured" variant="secondary" size="sm" type="button" :disabled="access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('rotate')">
-            轮换此链接
+            重置链接
           </UiButton>
-          <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working || !selectedContextReady" @click="ask('revoke')">吊销此链接</UiButton>
+          <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working || !selectedContextReady" @click="ask('revoke')">停用链接</UiButton>
         </div>
         </div></details>
       </div>
@@ -100,65 +76,26 @@
           <WorkbenchFilterSelect v-model="status" label="订阅状态" :options="statusOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <template #actions>
-        <span class="muted">{{ activeSubscriptionTotal }} 个有效订阅</span>
-      </template>
 
       <TableSkeleton v-if="listLoading && !subscriptions.length" label="正在加载我的订阅" :columns="5" />
-      <DataTable v-else-if="subscriptions.length" caption="我的订阅列表" :row-count="total" :min-width="740">
-        <thead>
-          <tr>
-            <th class="table-primary-column">订阅</th>
-            <th>状态</th>
-            <th v-if="subscriptions.some(sub => automaticNeedsAttention(sub.automatic_renewal_state))">自动续费</th>
-            <th>流量配额</th>
-            <th data-column-priority="1">到期时间</th>
-            <th class="table-action-column"><span class="sr-only">操作</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="sub in subscriptions" :key="sub.id" :class="{ 'selected-subscription-row': sub.id === selectedSubscriptionID }">
-            <td class="table-primary-column"><div class="cell-title"><strong>{{ sub.plan_name || `订阅 #${sub.id}` }}</strong><span>#{{ sub.id }} · {{ sub.sku_name }}</span></div></td>
-            <td>
-              <StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge>
-            </td>
-            <td v-if="subscriptions.some(row => automaticNeedsAttention(row.automatic_renewal_state))" class="subscription-renewal-result">
-              <UiButton v-if="automaticNeedsAttention(sub.automatic_renewal_state)" variant="ghost" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }"><UiIcon name="alert" />{{ sub.automatic_renewal_state === 'insufficient_balance' ? '余额不足' : '待核验' }}</UiButton>
-              <span v-else>—</span>
-            </td>
-            <td>
-              <div class="quota-cell">
-                <span>{{ formatBytes(sub.flow_used) }} / {{ formatBytes(sub.flow_total) }}</span>
-                <div class="usage-track"><i :style="{ width: `${percent(sub)}%` }"></i></div>
-                <small>{{ sub.flow_used >= sub.flow_total ? '本周期流量已用完' : `剩余 ${formatBytes(sub.flow_total - sub.flow_used)}` }}</small>
-                <small v-if="sub.next_reset_at">下次重置 <TimeBadge :value="sub.next_reset_at" /></small>
-              </div>
-            </td>
-            <td data-column-priority="1"><TimeBadge :value="sub.ended_at || sub.end_at" /><div v-if="sub.renewal_until"><small>续费保留至 <TimeBadge :value="sub.renewal_until" /></small></div></td>
-            <td class="table-action-column">
-              <RowActions :label="`订阅 #${sub.id} 的更多操作`"><template #primary>
-                <UiButton
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  :disabled="sub.status !== 'active' || working"
-                  @click="selectSubscription(sub.id)"
-                >
-                  {{ sub.id === selectedSubscriptionID ? '查看链接' : '管理链接' }}
-                </UiButton>
-                <UiButton v-if="sub.can_renew" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink></UiButton>
-                </template>
-                <UiButton v-if="canReset(sub)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
-                <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="secondary" size="sm" type="button" @click="terminationTarget = sub.id">核对退订</UiButton>
-                <UiButton variant="secondary" size="sm" type="button" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">余额自动续费</UiButton>
-
-                <UiButton v-if="Number.isSafeInteger(sub.id) && sub.id > 0" as-child variant="secondary" size="sm"><RouterLink  :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">就此订阅提交工单</RouterLink></UiButton>
-              </RowActions>
-            </td>
-          </tr>
-        </tbody>
-      </DataTable>
-      <EmptyState v-else icon="plans" title="暂无订阅" description="订单确认后，订阅会自动显示在这里。" />
+      <div v-else-if="subscriptions.length" class="account-service-grid">
+        <AccountSubscriptionCard v-for="sub in subscriptions" :key="sub.id" :subscription="sub" :selected="sub.id === selectedSubscriptionID">
+          <template #name><UiButton variant="ghost" class="subscription-name-button" :disabled="sub.status !== 'active' || working" @click="selectSubscription(sub.id)">{{ sub.plan_name || `订阅 #${sub.id}` }}</UiButton></template>
+          <template #notice><div v-if="automaticNeedsAttention(sub.automatic_renewal_state)" class="subscription-renewal-result"><UiButton variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }"><UiIcon name="alert" />{{ sub.automatic_renewal_state === 'insufficient_balance' ? '自动续费余额不足' : '自动续费待核验' }}</UiButton></div></template>
+          <template #actions>
+            <RowActions :label="`${sub.plan_name || `订阅 #${sub.id}`}的更多操作`"><template #primary>
+              <UiButton variant="secondary" size="sm" :disabled="sub.status !== 'active' || working" @click="selectSubscription(sub.id)">{{ sub.flow_used >= sub.flow_total ? '管理订阅' : sub.id === selectedSubscriptionID ? '查看链接' : '获取订阅' }}</UiButton>
+              <UiButton v-if="sub.can_renew" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink></UiButton>
+            </template>
+              <UiButton v-if="canReset(sub)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
+              <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="ghost" size="sm" @click="terminationTarget = sub.id">退订</UiButton>
+              <UiButton variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">自动续费</UiButton>
+              <UiButton v-if="Number.isSafeInteger(sub.id) && sub.id > 0" as-child variant="ghost" size="sm"><RouterLink :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">提交工单</RouterLink></UiButton>
+            </RowActions>
+          </template>
+        </AccountSubscriptionCard>
+      </div>
+      <EmptyState v-else-if="!listLoading && !listError" icon="plans" title="暂无订阅" description="" />
 
       <template #footer>
         <TablePager
@@ -171,11 +108,11 @@
       </template>
     </DataWorkbench>
 
-    <SubscriptionTermination v-if="terminationTarget" :subscription-id="terminationTarget" @settled="loadAll" />
-    <SubscriptionAutomaticRenewal v-if="automaticTarget" :subscription-id="automaticTarget.id" :plan-id="automaticTarget.planId" @changed="refreshAutomaticRenewal" />
+    <div v-if="terminationTarget" ref="terminationPanel" tabindex="-1"><SubscriptionTermination :subscription-id="terminationTarget" :subscription-name="subscriptions.find(sub => sub.id === terminationTarget)?.plan_name" @settled="loadAll" /></div>
+    <div v-if="automaticTarget" ref="automaticPanel" tabindex="-1"><SubscriptionAutomaticRenewal :subscription-id="automaticTarget.id" :plan-id="automaticTarget.planId" :subscription-name="subscriptions.find(sub => sub.id === automaticTarget?.id)?.plan_name" @changed="refreshAutomaticRenewal" /></div>
 
     <details class="subscription-diagnostics"><summary>查看线路运行情况</summary>
-    <UiSection title="协议实时负载" description="显示当前有效套餐授权的协议，上报延迟不会移除协议。人数和连接数仅展示最近两分钟的负载数据。">
+    <UiSection variant="outlined" title="线路状态">
       <template #meta><RemoteReadStatus compact label="线路运行情况" :phase="protocolLoadResource.phase.value" :error="protocolLoadResource.error.value" :last-success-at="protocolLoadResource.lastSuccessAt.value" @retry="loadProtocolLoads" /></template>
       <div class="panel-body">
         <PageAlert v-if="protocolLoadResource.error.value" tone="danger" title="协议实时负载加载失败">
@@ -217,6 +154,9 @@
 </template>
 
 <script setup lang="ts">
+import AccountSubscriptionCard from '../../components/account/AccountSubscriptionCard.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
+import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
 import SubscriptionTermination from '../../components/SubscriptionTermination.vue'
 import SubscriptionAutomaticRenewal from '../../components/SubscriptionAutomaticRenewal.vue'
 import PluginSlot from '../../plugins/PluginSlot.vue'
@@ -263,7 +203,7 @@ import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
 import { useRemoteResource } from '../../composables/useRemoteResource'
-import { formatBytes, formatUnknownValue } from '../../utils/format'
+import { formatBytes } from '../../utils/format'
 import {
   buildSubscriptionURL,
   isBuiltInDeliveryMode,
@@ -272,8 +212,15 @@ import {
 } from '../../utils/subscriptionDelivery'
 
 const accessPanel = ref<HTMLElement | null>(null)
+const automaticPanel = ref<HTMLElement | null>(null), terminationPanel = ref<HTMLElement | null>(null)
+
 const terminationTarget = ref(0)
 const automaticTarget = ref<{ id: number; planId: number } | null>(null)
+watch([automaticTarget, terminationTarget], async ([automatic, termination], previous) => {
+  await nextTick()
+  const panel = automatic !== previous?.[0] && automatic ? automaticPanel.value : termination ? terminationPanel.value : null
+  panel?.focus({ preventScroll: true }); panel?.scrollIntoView?.({ block: 'start' })
+})
 function automaticNeedsAttention(state?: string) {
   return Boolean(state && !['waiting', 'renewed', 'disabled', 'window_closed'].includes(state))
 }
@@ -407,7 +354,6 @@ const accessResource = useRemoteResource<SubscriptionAccess>({
 })
 
 const activeSubscriptions = computed(() => activeSubscriptionResource.data.value.items)
-const activeSubscriptionTotal = computed(() => activeSubscriptionResource.data.value.total)
 const templates = computed(() => templateResource.data.value.items)
 const templateTotal = computed(() => templateResource.data.value.total)
 const templateLoading = templateResource.loading
@@ -429,7 +375,7 @@ const templateOptions = computed(() => [
   { label: 'ZBoard 原生格式（Base64）', value: subscriptionDeliveryNative },
   ...templates.value
     .filter(item => !isBuiltInDeliveryMode(item.slug))
-    .map(item => ({ label: `${item.name} · ${item.content_type || '系统格式'}`, value: item.slug })),
+    .map(item => ({ label: item.name, value: item.slug })),
 ])
 const deliveryHint = computed(() => {
   if (templateTotal.value > templates.value.length) {
@@ -462,19 +408,6 @@ function exhaustedMessage(sub: AdminSubscriptionListItem) {
   if (sub.can_addon) return '此订阅流量已用完，可前往套餐中心购买流量包。'
   if (sub.can_renew) return '此订阅流量已用完，可前往套餐中心续费或购买新的订阅。'
   return '此订阅流量已用完，可前往套餐中心购买新的订阅。'
-}
-
-function percent(sub: AdminSubscriptionListItem) {
-  return sub.flow_total ? Math.min(100, Math.round(sub.flow_used / sub.flow_total * 100)) : 0
-}
-
-function subTone(value: string): 'success' | 'warning' | 'danger' | 'neutral' {
-  return value === 'active' ? 'success' : value === 'expired' ? 'warning' : value === 'exhausted' ? 'danger' : 'neutral'
-}
-
-function subLabel(value: string) {
-  return ({ active: '有效', expired: '已到期', exhausted: '流量耗尽', canceled: '已取消', inactive: '无效' } as Record<string, string>)[value]
-    || formatUnknownValue('状态', value)
 }
 
 function selectDefaultSubscription() {
@@ -736,9 +669,15 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.subscription-name-button { justify-content: flex-start; height: auto; min-height: 0; padding: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; font-size: 16px; font-weight: 600; }
+.subscription-name-button:disabled { opacity: 1; color: var(--foreground); }
+.access-template-picker { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.access-template-picker > .form-field { flex: 1; min-width: min(100%, 240px); max-width: 480px; }
+.subscription-renewal-result { color: var(--destructive); }
+
 .subscription-access-panel { scroll-margin-top: 100px; }
 .subscription-access-panel:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
-.subscription-options, .subscription-diagnostics { border-top: 1px solid var(--border); padding-top: 12px; }
+.subscription-options, .subscription-diagnostics { padding-top: 12px; }
 .subscription-options summary, .subscription-diagnostics summary { width: fit-content; cursor: pointer; font-size: 13px; color: var(--foreground); }
 .subscription-options summary:focus-visible, .subscription-diagnostics summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
 .subscription-options-body { display: grid; gap: 16px; padding-top: 16px; }
@@ -792,10 +731,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.access-template-picker {
-  display: grid;
-  gap: 12px;
-}
+.access-template-picker { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 
 .inline-filter {
   display: grid;
@@ -804,9 +740,8 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
-  .subscription-access-context,
-  .inline-filter {
-    grid-template-columns: 1fr;
-  }
+  .subscription-access-context { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inline-filter { grid-template-columns: 1fr; }
+  .access-template-picker > .form-field { min-width: 0; flex-basis: 170px; }
 }
 </style>

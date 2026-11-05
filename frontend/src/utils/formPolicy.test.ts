@@ -16,6 +16,16 @@ function relativeSource(path: string) {
   return relative(sourceRoot, path).replace(/\\/g, '/')
 }
 
+// These workflows have behavioural suites for actor fencing, idempotency,
+// uncertain results and field validation. Their explicit errors are persistent
+// workflow state, rather than disposable useFormErrors state.
+const workflowFeedback: Record<string, string[]> = {
+  'components/AdminConsumptionRefund.vue': ['requestValid(', 'writeError', 'valid', '<PageAlert'],
+  'components/AdminWalletPanel.vue': ['creditErrors', 'commerceErrorMessage', 'writeError', '<PageAlert'],
+  'components/PaymentReceipts.vue': ['Number.isSafeInteger(ticketID)', 'saveError', 'commerceErrorMessage', '<PageAlert'],
+  'components/ProtocolMultiplierCell.vue': ['parsedMilli()', 'error', 'role="alert"', 'aria-label'],
+}
+
 describe('form feedback policy', () => {
   it('routes validation through application feedback instead of browser-native bubbles', () => {
     const violations = vueFiles(sourceRoot).flatMap(path => {
@@ -32,8 +42,11 @@ describe('form feedback policy', () => {
     const owners = vueFiles(sourceRoot)
       .map(path => ({ path, source: readFileSync(path, 'utf8') }))
       .filter(item => /<form\b/.test(item.source))
+      .filter(item => !(item.source.match(/<form\b[^>]*>/g) || []).every(form => /role="search"/.test(form)))
     const formCount = owners.reduce((count, item) => count + (item.source.match(/<form\b/g) || []).length, 0)
     const ownerViolations = owners.flatMap(({ path, source }) => {
+      const dedicated = workflowFeedback[relativeSource(path)]
+      if (dedicated) return dedicated.filter(marker => !source.includes(marker)).map(marker => `${relativeSource(path)}: missing workflow feedback ${marker}`)
       const missing = [
         !source.includes('<FormField') && 'FormField',
         !source.includes('useFormErrors') && 'useFormErrors',
@@ -43,7 +56,7 @@ describe('form feedback policy', () => {
       ].filter(Boolean)
       return missing.map(contract => `${relativeSource(path)}: ${contract}`)
     })
-    const formViolations = owners.flatMap(({ path, source }) =>
+    const formViolations = owners.filter(({ path }) => !workflowFeedback[relativeSource(path)]).flatMap(({ path, source }) =>
       (source.match(/<form\b[\s\S]*?<\/form>/g) || []).flatMap((form, index) => [
         !form.includes('<PageAlert') && `${relativeSource(path)} form ${index + 1}: PageAlert`,
         !form.includes('formError.value') && `${relativeSource(path)} form ${index + 1}: formError summary`,

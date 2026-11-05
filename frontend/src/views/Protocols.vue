@@ -3,7 +3,7 @@
     <PageHeader title="节点协议">
       <template #actions>
         <PageRefreshButton label="刷新协议服务" :loading="loading" @click="refresh()" />
-        <UiButton variant="secondary" type="button" data-testid="protocol-delivery-order" :aria-pressed="orderingOpen" @click="orderingOpen ? closeOrdering() : openOrdering()"><UiIcon name="sort" />{{ orderingOpen ? '退出排序' : '调整展示顺序' }}</UiButton>
+        <UiButton variant="ghost" type="button" data-testid="protocol-delivery-order" :aria-pressed="orderingOpen" @click="orderingOpen ? closeOrdering() : openOrdering()"><UiIcon name="sort" />{{ orderingOpen ? '退出排序' : '调整展示顺序' }}</UiButton>
         <UiButton type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
@@ -32,7 +32,7 @@
     </ModalDialog>
     <NetworkEntries ref="forwardServices" embedded editor-only @saved="refresh()" />
     <ModalDialog :open="serviceTypeOpen" title="创建协议服务" @close="serviceTypeOpen=false">
-      <div class="stack"><p>选择服务接入方式。</p><UiButton @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton @click="createService('forward')">前置端口转发</UiButton><p>复用现有父协议，可登记外部转发地址，也可由面板托管入口服务器的 Zero 转发。</p></div>
+      <div class="stack"><p>选择服务接入方式。</p><UiButton variant="secondary" @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton variant="secondary" @click="createService('forward')">前置端口转发</UiButton><p>复用现有父协议，可登记外部转发地址，也可由面板托管入口服务器的 Zero 转发。</p></div>
     </ModalDialog>
     <div class="protocol-listener-content">
     <PageAlert v-if="protocolDraftRecovery.message.value" tone="info" title="登录后草稿恢复">{{ protocolDraftRecovery.message.value }}</PageAlert>

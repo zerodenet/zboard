@@ -2,7 +2,7 @@
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown, max: number): value is string => typeof value === 'string' && new TextEncoder().encode(value).byteLength <= max
 const revision = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0
-export const recoverableSiteKeys = ['site_logo', 'site_logo_dark', 'site_favicon', 'site_desc', 'site_home_kicker', 'site_home_title', 'site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url', 'site_meta_title', 'site_meta_description'] as const
+export const recoverableSiteKeys = ['default_currency', 'site_logo', 'site_logo_dark', 'site_favicon', 'site_desc', 'site_home_kicker', 'site_home_title', 'site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url', 'site_meta_title', 'site_meta_description'] as const
 // These are public content, never arbitrary JSON configuration or SMTP drafts.
 export const recoverableLegalKeys = ['site_policy_documents', 'site_legal_items', 'site_terms_content', 'site_privacy_content', 'site_refund_content'] as const
 const recoverableSettingsKeys: readonly string[] = [...recoverableSiteKeys, ...recoverableLegalKeys]

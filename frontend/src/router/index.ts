@@ -23,7 +23,7 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../layouts/AccountLayout.vue'),
     meta: { requiresAuth: true, layout: 'account' },
     children: [
-      { path: '', component: () => import('../views/account/AccountDashboard.vue'), meta: { title: '我的概览' } },
+      { path: '', component: () => import('../views/account/AccountDashboard.vue'), meta: { title: '概览' } },
       { path: 'extensions/:pluginId/:pageId', component: () => import('../views/PluginPage.vue'), meta: { pluginPage: true, title: '扩展' } },
       { path: 'security', component: () => import('../views/account/AccountSecurity.vue'), meta: { title: '账户安全' } },
       { path: 'integrations', component: () => import('../views/account/AccountIntegrations.vue'), meta: { title: '外部集成' } },
@@ -55,7 +55,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'subscriptions', component: () => import('../views/Subscriptions.vue'), meta: { title: '订阅管理', section: '订阅系统' } },
       { path: 'fair-use', component: () => import('../views/FairUse.vue'), meta: { title: 'Fair Use 观测', section: '用户系统' } },
       { path: 'tickets', component: () => import('../views/Tickets.vue'), meta: { title: '工单中心', section: '用户系统' } },
-      { path: 'plans', component: () => import('../views/Plans.vue'), meta: { title: '商品与套餐', section: '订阅系统' } },
+      { path: 'plans', component: () => import('../views/Plans.vue'), meta: { title: '套餐管理', section: '订阅系统' } },
       { path: 'subscription-templates', component: () => import('../views/SubscriptionTemplates.vue'), meta: { title: '订阅模板', section: '订阅系统' } },
       { path: 'subscription-templates/rule-sets', component: () => import('../views/SubscriptionRuleSets.vue'), meta: { title: '规则集', section: '订阅模板' } },
       { path: 'subscription-rule-sets', redirect: '/admin/subscription-templates/rule-sets' },

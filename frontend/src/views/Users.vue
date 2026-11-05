@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page">
     <PageHeader title="用户管理">
-      <template #actions><UiButton as-child variant="secondary"><RouterLink to="/admin/settings/runtime#account-cleanup">自动清理规则</RouterLink></UiButton><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
+      <template #actions><UiButton as-child variant="ghost"><RouterLink to="/admin/settings/runtime#account-cleanup">自动清理规则</RouterLink></UiButton><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error || (!detailID ? actionError : '')" success-title="用户信息已更新" error-title="用户操作失败" />
@@ -18,7 +18,7 @@
         </WorkbenchFilterBar>
       </template>
       <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="5" />
-      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="640">
+      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="640" table-class="users-table">
         <thead><tr><SortableHeader field="email" label="用户" class="table-primary-column" :sort-field="sortField" :direction="sortDirection" @sort="setSort" /><th>账户状态</th><th class="numeric-column">余额<template v-if="balanceCurrency">（{{ balanceCurrency }}）</template></th><th>预计自动删除</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody>
           <tr v-for="user in users" :key="user.id">
@@ -28,18 +28,18 @@
               <span :id="`user-status-${user.id}`" class="sr-only" role="status">{{ statusBusy.has(user.id) ? '保存中' : statusName(user.status) }}</span>
               <p v-if="statusErrors[user.id]" :id="`user-status-error-${user.id}`" class="user-status-error" role="alert">{{ statusErrors[user.id] }}</p>
             </td>
-            <td class="numeric-column">
-              <div class="user-wallet-balances">
+            <td class="numeric-column user-wallet-cell">
+              <span class="user-mobile-label" aria-hidden="true">余额</span><div class="user-wallet-balances">
                 <RouterLink v-for="wallet in user.wallet_balances" :key="wallet.currency" :to="{ query: { ...route.query, user: String(user.id), section: 'wallet', wallet_currency: wallet.currency } }" :aria-label="`查看 ${user.email} 的 ${wallet.currency} 余额（${formatWalletMoney(wallet.balance_minor, wallet.currency)}）`" class="user-wallet-link"><BalanceValue :amount="wallet.balance_minor" :currency="wallet.currency" :show-currency="balanceCurrency !== wallet.currency" /><small v-if="wallet.reserved_minor !== '0'">含冻结 <BalanceValue :amount="wallet.reserved_minor" :currency="wallet.currency" :show-currency="balanceCurrency !== wallet.currency" /></small></RouterLink>
                 <RouterLink v-if="!user.wallet_balances?.length" :to="{ query: { ...route.query, user: String(user.id), section: 'wallet' } }" :aria-label="`查看 ${user.email} 的余额（${user.wallet_balances ? '0.00' : '未知'}）`" class="user-wallet-link">-</RouterLink>
               </div>
             </td>
-            <td><AccountCleanupSummary :status="user.cleanup" /></td>
+            <td class="user-cleanup-cell"><span class="user-mobile-label" aria-hidden="true">自动删除</span><AccountCleanupSummary :status="user.cleanup" /></td>
             <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :disabled="statusBusy.has(user.id)" :loading="openingUserID === user.id" @click="openEdit(user)">编辑账户</UiButton><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
           </tr>
         </tbody>
       </DataTable>
-      <EmptyState v-else icon="users" title="没有匹配用户" description="调整搜索条件，或创建一个新的平台账户。"><template #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!error" icon="users" title="没有匹配用户" description="调整搜索条件，或创建一个新的平台账户。"><template #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
@@ -93,7 +93,7 @@
             </div>
           </section>
         </template>
-        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :key="`${selectedUserDetail.id}:${route.query.wallet_currency || 'CNY'}`" :user-id="selectedUserDetail.id" :user-label="selectedUserDetail.email" @changed="walletChanged" :initial-currency="String(route.query.wallet_currency || 'CNY')" />
+        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :key="`${selectedUserDetail.id}:${route.query.wallet_currency || ''}`" :user-id="selectedUserDetail.id" :user-label="selectedUserDetail.email" @changed="walletChanged" :initial-currency="detailWalletCurrency" />
         <template v-else-if="userDetailSection === 'identities'">
           <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
           <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
@@ -187,6 +187,7 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { nextSortDirection, resolveSortDirection, resolveSortField } from '../composables/tableState'
 import { useAppStore } from '../stores/app'
+import { platformDefaultCurrency } from '../utils/platformCurrency'
 import { formatNumber } from '../utils/format'
 import BalanceValue from '../components/BalanceValue.vue'
 import { formatWalletMoney } from '../utils/walletMoney'
@@ -392,6 +393,7 @@ const { items: users, total, loading, refreshing, error, load: refresh } = useRe
   onOffsetCorrected: () => syncURL(true),
 })
 
+const detailWalletCurrency = computed(() => String(route.query.wallet_currency || selectedUserDetail.value?.wallet_balances?.[0]?.currency || platformDefaultCurrency(app.publicConfigs)))
 const balanceCurrency = computed(() => {
   const currencies = [...new Set(users.value.flatMap(user => user.wallet_balances?.map(wallet => wallet.currency) || []))]
   return currencies.length === 1 ? currencies[0] : ''
@@ -544,4 +546,23 @@ onMounted(() => { void refresh(); void syncDetailFromRoute() })
 .user-security-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .user-security-row strong { font-size: 13px; font-weight: 500; }
 .user-security-row p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; }
+</style>
+
+<style scoped>
+.user-mobile-label { display: none; }
+@media (max-width: 600px) {
+  :deep(.users-table) { display: block; min-width: 0 !important; }
+  :deep(.users-table thead) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :deep(.users-table tbody) { display: grid; gap: 16px; }
+  :deep(.users-table tbody tr) { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 8px; padding: 12px 0; }
+  :deep(.users-table td) { min-width: 0; height: auto; padding: 0; border: 0; }
+  :deep(.users-table .table-primary-column) { grid-column: 1; grid-row: 1; }
+  :deep(.users-table .cell-title) { min-width: 0; max-width: 100%; }
+  :deep(.users-table td:nth-child(2)) { grid-column: 2; grid-row: 1; padding-top: 4px; }
+  :deep(.users-table .user-wallet-cell) { grid-column: 1; grid-row: 2; display: flex; gap: 8px; text-align: left; }
+  :deep(.users-table .user-cleanup-cell) { grid-column: 1; grid-row: 3; display: flex; gap: 8px; }
+  :deep(.users-table .table-action-column) { grid-column: 3; grid-row: 1; min-width: 40px; }
+  .user-mobile-label { display: inline; flex: none; color: var(--muted-foreground); font-size: 12px; }
+  .user-wallet-link { align-items: flex-start; }
+}
 </style>

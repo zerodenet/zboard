@@ -7,9 +7,8 @@
     <div class="storefront-detail__layout">
       <div class="storefront-detail__main">
         <header class="storefront-detail__hero">
-          <span>{{ plan.slug }}</span>
           <h1>{{ plan.name }}</h1>
-          <p>{{ plan.summary || '稳定、透明的订阅服务。' }}</p>
+          <p v-if="plan.summary">{{ plan.summary }}</p>
         </header>
 
         <div class="storefront-entitlement-grid">
@@ -43,15 +42,14 @@
           </template>
         </div>
 
-        <section v-if="plan.description?.trim()" class="storefront-plan-description" aria-label="商品描述">
-          <h2>商品描述</h2>
+        <section v-if="plan.description?.trim()" class="storefront-plan-description" aria-label="套餐说明">
+          <h2>套餐说明</h2>
           <p>{{ plan.description }}</p>
         </section>
 
         <section class="storefront-specifications">
           <div class="storefront-section-heading">
             <div>
-              <span>{{ operationLabel }}</span>
               <h2>选择规格</h2>
             </div>
             <small v-if="skuTotal">{{ skuTotal }} 个可用规格</small>
@@ -92,8 +90,7 @@
       </div>
 
       <aside class="storefront-order-summary">
-        <span>订单摘要</span>
-        <h2>{{ plan.name }}</h2>
+        <h2>订单摘要</h2>
         <dl>
           <div v-if="targetName"><dt>目标订阅</dt><dd>{{ targetName }}</dd></div>
           <div><dt>操作</dt><dd>{{ operationLabel }}</dd></div>

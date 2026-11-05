@@ -13,10 +13,10 @@
         <div v-if="!domain.to && domain.id === expandedDomainId" :id="`domain-pages-${domain.id}`" class="domain-panel">
           <nav class="domain-pages" :aria-label="`${domain.label}页面`">
             <section v-for="section in domain.sections" :key="section.id" class="page-section">
-              <RouterLink :to="section.pages[0].to"
-                class="page-link" :class="{ selected: currentSection?.id === section.id }"
-                :aria-current="currentSection?.id === section.id ? 'page' : undefined"
-                @click="$emit('selectPage')"><UiIcon :name="section.icon" />{{ section.label }}</RouterLink>
+              <RouterLink v-for="page in section.pages" :key="page.to" :to="page.to"
+                class="page-link" :class="{ selected: currentPage?.to === page.to }"
+                :aria-current="currentPage?.to === page.to ? 'page' : undefined"
+                @click="$emit('selectPage')"><UiIcon :name="section.icon" />{{ page.label }}</RouterLink>
             </section>
           </nav>
         </div>
@@ -37,7 +37,7 @@ defineEmits<{ selectPage: [] }>()
 const route = useRoute()
 const current = computed(() => resolveAdminNavigation(route.path, adminNavigation.value))
 const currentDomain = computed(() => current.value?.domain)
-const currentSection = computed(() => current.value?.section)
+const currentPage = computed(() => current.value?.page)
 const expandedDomainId = ref<string | null>(currentDomain.value?.id || null)
 function toggleDomain(id: string) { expandedDomainId.value = expandedDomainId.value === id ? null : id }
 watch(() => currentDomain.value?.id, id => { expandedDomainId.value = id || null })

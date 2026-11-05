@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page">
     <PageHeader v-if="!embedded" title="前置转发服务">
-      <template #actions><UiButton variant="secondary" :loading="loading" @click="load">刷新</UiButton><UiButton @click="edit()">创建入口</UiButton></template>
+      <template #actions><PageRefreshButton label="刷新前置转发" :loading="loading" @click="load" /><UiButton @click="edit()">创建入口</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" />
     <section v-if="!editorOnly" class="panel">
@@ -48,6 +48,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { fetchNetworkEntries, saveNetworkEntry, deleteNetworkEntry, fetchProtocolEndpoints, fetchNodeProxyPools, type NetworkEntry, type ProtocolEndpointNodeGroupMembership } from '../api/client'
 import ResourceDeletionDialog from '../components/ResourceDeletionDialog.vue'
+import PageRefreshButton from '../components/PageRefreshButton.vue'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import EndpointAddress from '../components/EndpointAddress.vue'

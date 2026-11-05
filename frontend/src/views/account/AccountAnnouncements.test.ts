@@ -17,9 +17,10 @@ async function render() {
   wrapper = mount(AccountAnnouncements, { global: { plugins: [createPinia()], components: { UiSection, UiButton, PageRefreshButton } } })
   await flushPromises(); return wrapper
 }
-it('keeps one state label and expands different content, rather than repeating the heading', async () => {
+it('uses the historical section heading once and expands the announcement body', async () => {
   const w = await render(), trigger = w.get('.announcement-heading')
-  expect(trigger.text().match(/历史/g)).toHaveLength(1)
+  expect(w.text().match(/历史公告/g)).toHaveLength(1)
+  expect(trigger.text()).not.toContain('历史')
   expect(trigger.text()).not.toContain('已结束')
   expect(w.find('.announcement-body').exists()).toBe(false)
   await trigger.trigger('click'); await flushPromises()
@@ -34,4 +35,14 @@ it('retains confirmed announcements after a failed refresh without replacing the
   expect(w.text()).toContain('维护通知')
   expect(w.text()).toContain('客户端更新')
   expect(w.text()).not.toContain('暂无公告')
+})
+
+it('keeps announcement bodies collapsed until opened and omits redundant read-state labels', async () => {
+  const w = await render(), trigger = w.get('.featured-heading')
+  expect(trigger.attributes('aria-expanded')).toBe('false')
+  expect(trigger.text()).not.toContain('已读')
+  expect(w.find('.featured-body').exists()).toBe(false)
+  await trigger.trigger('click'); await flushPromises()
+  expect(w.get('.featured-body').text()).toContain('本周维护窗口调整')
+  expect(api.read).not.toHaveBeenCalled()
 })

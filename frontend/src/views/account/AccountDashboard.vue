@@ -1,137 +1,49 @@
 <template>
-  <section class="account-page stack">
-    <PageHeader
-      title="我的概览"
-    >
+  <section class="account-page account-overview stack">
+    <PageHeader title="概览">
       <template #actions>
-        <UiButton variant="secondary" type="button" :disabled="loading" @click="load">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+        <PageRefreshButton label="刷新概览" :loading="loading" @click="load" />
+        <UiButton as-child variant="secondary"><RouterLink to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink></UiButton>
       </template>
     </PageHeader>
 
-    <RemoteReadStatus label="剩余流量" :phase="quotaResource.phase.value" :error="quotaError" :last-success-at="quotaResource.lastSuccessAt.value" @retry="quotaResource.load()" />
+    <RemoteReadStatus v-if="quotaLoaded || quotaError" label="剩余流量" :phase="quotaResource.phase.value" :error="quotaError" :last-success-at="quotaResource.lastSuccessAt.value" @retry="quotaResource.load()" />
     <PageAlert v-if="pendingError" tone="danger" title="待处理订单统计加载失败">{{ pendingError }} <UiButton variant="secondary" @click="pendingResource.load()">重试订单统计</UiButton></PageAlert>
 
-    <UiMetricStrip :columns="3">
-      <MetricCard
-        label="剩余流量"
-        :value="quotaLoaded ? formatBytes(quota.remaining_bytes) : '—'"
-        icon="activity"
-        :loading="!quotaLoaded && quotaLoading"
-        :tone="quotaError ? 'danger' : 'neutral'"
-        :meta="quotaError ? (quotaLoaded ? '上次成功读取的可用流量' : '尚未取得额度') : ''"
-      />
-      <MetricCard
-        label="有效订阅"
-        :value="activeLoaded ? activeSubscriptionTotal : '—'"
-        icon="plans"
-        :loading="!activeLoaded && activeLoading"
-        :tone="activeError ? 'danger' : 'neutral'"
-
-      />
-      <MetricCard
-        label="待处理订单"
-        :value="pendingLoaded ? pendingOrderTotal : '—'"
-        icon="billing"
-        :loading="!pendingLoaded && pendingLoading"
-        :tone="pendingError ? 'danger' : 'neutral'"
-
-      />
-    </UiMetricStrip>
+    <dl class="account-overview-summary" aria-label="账户概况">
+      <div :aria-busy="quotaLoading || undefined"><dt>剩余流量</dt><dd data-overview-quota><Skeleton v-if="!quotaLoaded && quotaLoading" class="summary-skeleton" /><template v-else>{{ quotaLoaded ? formatBytes(quota.remaining_bytes) : '—' }}</template></dd></div>
+      <div :aria-busy="activeLoading || undefined"><dt>有效订阅</dt><dd data-overview-active><Skeleton v-if="!activeLoaded && activeLoading" class="summary-skeleton" /><template v-else>{{ activeLoaded ? activeSubscriptionTotal : '—' }}</template></dd></div>
+      <div :aria-busy="pendingLoading || undefined"><dt>待支付订单</dt><dd data-overview-pending><Skeleton v-if="!pendingLoaded && pendingLoading" class="summary-skeleton" /><RouterLink v-else-if="pendingLoaded && pendingOrderTotal" to="/account/orders?status=pending">{{ pendingOrderTotal }}<UiIcon name="chevron" /></RouterLink><template v-else>{{ pendingLoaded ? 0 : '—' }}</template></dd></div>
+    </dl>
 
     <PluginSlot name="account.overview.cards" surface="account" />
 
-    <div class="section-grid account-overview-grid">
-      <UiSection class="span-8" title="当前订阅">
-        <template #actions>
-          <UiButton as-child variant="ghost" size="sm"><RouterLink  to="/account/subscription">
-            管理订阅<UiIcon name="chevron" />
-          </RouterLink></UiButton>
-        </template>
-        <PageAlert v-if="activeError" tone="danger" title="有效订阅加载失败">{{ activeError }} <UiButton variant="secondary" @click="activeResource.load()">重试订阅</UiButton></PageAlert>
-        <TableSkeleton v-if="activeLoading && !activeLoaded" label="正在加载有效订阅" :columns="3" :rows="3" />
-        <DataTable v-if="activeSubscriptions.length" caption="最近三条有效订阅" :row-count="activeSubscriptionTotal" :min-width="620">
-          <thead>
-            <tr>
-              <th class="table-primary-column">订阅</th>
-              <th class="numeric-column">剩余流量</th>
-              <th data-column-priority="1">到期时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="sub in activeSubscriptions" :key="sub.id">
-              <td class="table-primary-column"><div class="cell-related">
-                <RouterLink v-overflow-title="sub.plan_name" :to="{ path: '/account/subscription', query: { subscription: String(sub.id) } }">{{ sub.plan_name || `订阅 #${sub.id}` }}</RouterLink>
-                <TableText v-if="sub.sku_name" :value="sub.sku_name" />
-              </div></td>
-              <td class="value-cell numeric-column"><strong>{{ formatBytes(remaining(sub)) }}</strong><div v-if="sub.flow_used >= sub.flow_total"><small>本周期流量已用完</small><UiButton v-if="sub.can_reset" as-child variant="ghost" size="sm"><RouterLink  :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton></div></td>
-              <td data-column-priority="1"><TimeBadge :value="sub.end_at" mode="relative" /></td>
-            </tr>
-          </tbody>
-        </DataTable>
-        <EmptyState
-          v-else-if="activeLoaded && !activeLoading && !activeError"
-          icon="plans"
-          title="还没有有效订阅"
-          description="选择一个套餐并创建订单，订单确认后即可获得订阅服务。"
-        >
-          <template #actions><UiButton as-child size="sm"><RouterLink  to="/account/plans">选择套餐</RouterLink></UiButton></template>
-        </EmptyState>
-      </UiSection>
+    <section class="overview-section" aria-labelledby="overview-subscriptions">
+      <header class="overview-section-header"><h2 id="overview-subscriptions">当前套餐</h2><UiButton as-child variant="ghost" size="sm"><RouterLink to="/account/subscription">全部订阅<UiIcon name="chevron" /></RouterLink></UiButton></header>
+      <PageAlert v-if="activeError" tone="danger" title="有效订阅加载失败">{{ activeError }} <UiButton variant="secondary" @click="activeResource.load()">重试订阅</UiButton></PageAlert>
+      <div v-if="activeLoading && !activeLoaded" class="service-card service-card-skeleton" role="status" aria-label="正在加载有效订阅"><Skeleton class="skeleton-heading" /><Skeleton class="skeleton-value" /><Skeleton class="skeleton-line" /><Skeleton class="skeleton-action" /></div>
+      <div v-if="activeSubscriptions.length" class="account-service-grid">
+        <AccountSubscriptionCard v-for="(sub, index) in activeSubscriptions" :key="sub.id" :subscription="sub" :primary="index === 0" />
+      </div>
+      <EmptyState v-else-if="activeLoaded && !activeLoading && !activeError" icon="plans" title="还没有有效订阅" description=""><template #actions><UiButton as-child size="sm"><RouterLink to="/account/plans">选择套餐</RouterLink></UiButton></template></EmptyState>
+    </section>
 
-      <UiSection class="span-4" title="快捷操作">
-        <div class="panel-body quick-links">
-          <RouterLink to="/account/plans"><span><UiIcon name="plans" /></span><div><strong>购买套餐</strong></div><UiIcon name="chevron" /></RouterLink>
-          <RouterLink to="/account/subscription"><span><UiIcon name="key" /></span><div><strong>订阅配置</strong></div><UiIcon name="chevron" /></RouterLink>
-          <RouterLink to="/account/traffic"><span><UiIcon name="activity" /></span><div><strong>流量明细</strong></div><UiIcon name="chevron" /></RouterLink>
-        </div>
-      </UiSection>
-    </div>
-
-    <UiSection title="最近订单">
-      <template #actions>
-        <UiButton as-child variant="ghost" size="sm"><RouterLink  to="/account/orders">
-          全部订单<UiIcon name="chevron" />
-        </RouterLink></UiButton>
-      </template>
+    <section class="overview-section" aria-labelledby="overview-orders">
+      <header class="overview-section-header"><h2 id="overview-orders">最近订单</h2><UiButton as-child variant="ghost" size="sm"><RouterLink to="/account/orders">全部订单<UiIcon name="chevron" /></RouterLink></UiButton></header>
       <PageAlert v-if="ordersError" tone="danger" title="最近订单加载失败">{{ ordersError }} <UiButton variant="secondary" @click="ordersResource.load()">重试最近订单</UiButton></PageAlert>
-      <TableSkeleton v-if="ordersLoading && !ordersLoaded" label="正在加载最近订单" :columns="4" :rows="3" />
-      <DataTable v-if="orders.length" caption="最近三笔订单" :row-count="recentOrderTotal" :min-width="680">
-        <thead>
-          <tr>
-            <th class="table-primary-column">订单</th>
-            <th>商品</th>
-            <th class="numeric-column">金额</th>
-            <th>状态</th>
-            <th data-column-priority="2">创建时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="order in orders" :key="order.id">
-            <td class="table-primary-column"><RouterLink :to="`/account/orders/${order.id}`">#{{ order.id }}</RouterLink></td>
-            <td>
-              <div class="cell-title cell-related">
-                <TableText :value="order.plan_name || `套餐 #${order.plan_id}`" />
-                <TableText :value="order.sku_name || `SKU #${order.plan_sku_id}`" />
-              </div>
-            </td>
-            <td class="value-cell numeric-column">{{ formatCurrency(order.amount_cents, order.currency) }}</td>
-            <td><StatusBadge :tone="orderTone(order.status)">{{ orderLabel(order.status) }}</StatusBadge></td>
-            <td data-column-priority="2"><TimeBadge :value="order.created_at" /></td>
-          </tr>
-        </tbody>
-      </DataTable>
-      <EmptyState v-else-if="ordersLoaded && !ordersLoading && !ordersError" icon="billing" title="还没有订单" description="从套餐页面创建第一笔订单。" />
-    </UiSection>
+      <div v-if="ordersLoading && !ordersLoaded" class="recent-orders-skeleton" role="status" aria-label="正在加载最近订单"><Skeleton v-for="row in 3" :key="row" class="skeleton-order" /></div>
+      <AccountOrderList v-if="orders.length" :orders="orders" />
+      <EmptyState v-else-if="ordersLoaded && !ordersLoading && !ordersError" icon="billing" title="还没有订单" description="" />
+    </section>
   </section>
 </template>
 
 <script setup lang="ts">
-import { vOverflowTitle } from '../../directives/overflowTitle'
-import TableSkeleton from '../../components/TableSkeleton.vue'
+import AccountOrderList from '../../components/account/AccountOrderList.vue'
+import AccountSubscriptionCard from '../../components/account/AccountSubscriptionCard.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
+import { Skeleton } from '../../components/ui/skeleton'
 import PluginSlot from '../../plugins/PluginSlot.vue'
-import TableText from '../../components/TableText.vue'
 import { computed, onMounted } from 'vue'
 import {
   fetchAccountOrdersPage,
@@ -141,23 +53,15 @@ import {
   type AdminOrderListItem,
   type AdminSubscriptionListItem,
 } from '../../api/client'
-import DataTable from '../../components/DataTable.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import PageHeader from '../../components/PageHeader.vue'
-import StatusBadge from '../../components/StatusBadge.vue'
-import TimeBadge from '../../components/TimeBadge.vue'
 import PageAlert from '../../components/PageAlert.vue'
 import RemoteReadStatus from '../../components/RemoteReadStatus.vue'
-import MetricCard from '../../components/MetricCard.vue'
-import UiMetricStrip from '../../components/UiMetricStrip.vue'
-import UiSection from '../../components/UiSection.vue'
 import { useRemoteResource } from '../../composables/useRemoteResource'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
-import { useAppStore } from '../../stores/app'
-import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
+import { formatBytes } from '../../utils/format'
 
-const app = useAppStore()
 const quotaResource = useRemoteResource<TrafficQuotaSnapshot>({
   initial: () => ({ remaining_bytes: 0, scope_user: 0, as_of: '' }), fetch: ({ signal }) => fetchTrafficQuota(false, { signal }), errorMessage: '剩余流量加载失败。',
 })
@@ -182,21 +86,7 @@ const { data: pendingOrderTotal, loading: pendingLoading, error: pendingError, l
 const activeSubscriptions = computed(() => activeResource.data.value.items)
 const activeSubscriptionTotal = computed(() => activeResource.data.value.total)
 const orders = computed(() => ordersResource.data.value.items)
-const recentOrderTotal = computed(() => ordersResource.data.value.total)
 const loading = computed(() => quotaLoading.value || activeLoading.value || ordersLoading.value || pendingLoading.value)
-function remaining(sub: AdminSubscriptionListItem) {
-  return Math.max(0, (sub.flow_total || 0) - (sub.flow_used || 0))
-}
-
-function orderTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' {
-  return status === 'paid' ? 'success' : status === 'pending' ? 'warning' : status === 'failed' ? 'danger' : 'neutral'
-}
-
-function orderLabel(status: string) {
-  return ({ pending: '待支付', paid: '已支付', failed: '失败', canceled: '已取消' } as Record<string, string>)[status]
-    || formatUnknownValue('状态', status)
-}
-
 async function load() {
   await Promise.all([quotaResource.load(), activeResource.load(), ordersResource.load(), pendingResource.load()])
 }
@@ -205,5 +95,32 @@ onMounted(load)
 </script>
 
 <style scoped>
-.account-overview-grid { align-items: start; }
+.account-overview { gap: 28px; }
+.account-overview-summary { border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); padding: 20px; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 24px; margin: 0; }
+.account-overview-summary > div { min-width: 0; }
+.account-overview-summary dt { margin-bottom: 8px; color: var(--muted-foreground); font-size: 12px; }
+.account-overview-summary dd { min-height: 34px; margin: 0; font-size: 20px; line-height: 1.3; font-weight: 500; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.account-overview-summary > div:first-child dd { font-size: 30px; font-weight: 600; }
+.account-overview-summary dd a { display: inline-flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; }
+.account-overview-summary dd a .ui-icon { width: 14px; color: var(--muted-foreground); }
+.summary-skeleton { width: 70px; height: 30px; }
+.overview-section { min-width: 0; }
+.overview-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.overview-section-header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.service-card-skeleton { min-height: 196px; display: grid; gap: 20px; padding: 22px 24px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.service-card-skeleton { gap: 20px; }
+.skeleton-heading { width: 140px; height: 24px; }
+.skeleton-value { width: 100px; height: 48px; }
+.skeleton-line { height: 5px; }
+.skeleton-action { width: 110px; height: 32px; }
+.recent-orders-skeleton { display: grid; gap: 1px; }
+.skeleton-order { height: 56px; }
+.account-overview-summary a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 4px; }
+@media (max-width: 600px) {
+  .account-overview { gap: 24px; }
+  .account-overview-summary { grid-template-columns: 1.5fr 1fr 1fr; gap: 12px; padding: 16px; }
+  .account-overview-summary dd { min-height: 26px; font-size: 20px; }
+  .account-overview-summary > div:first-child dd { font-size: 26px; }
+
+}
 </style>

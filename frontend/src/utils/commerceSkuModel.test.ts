@@ -24,7 +24,7 @@ describe('commerce SKU model', () => {
 
     expect(plans).toContain("form.sku.entitlement_mode === 'traffic_addon'")
     expect(plans).toContain("skuDraft.entitlement_mode === 'traffic_addon'")
-    expect(plans).toContain("notify('无法创建商品'")
+    expect(plans).toContain("notify('无法创建套餐'")
     expect(plans).toContain("notify('无法保存规格'")
     // Toasts announce failure immediately; the draft must retain its error
     // summary after that transient notification disappears.

@@ -95,3 +95,13 @@ describe('administrator wallet credits', () => {
   expect(creditWallet).not.toHaveBeenCalled();expect(form.text()).toContain('增加余额记录无法读取');expect(localStorage.getItem('zboard:wallet-adjustment:1:27:CNY:credit')).toBe('{broken');wrapper.unmount()
  })
 })
+
+it('uses the platform default for an empty wallet and honors an explicitly selected historical wallet', async () => {
+ state.app.publicConfigs = [{ config_key: 'default_currency', value: 'USD' }]
+ const fresh = open(); await flushPromises()
+ expect(fetchAdministrativeWallet).toHaveBeenCalledWith(27, 'USD', 0, expect.any(AbortSignal))
+ fresh.unmount(); vi.mocked(fetchAdministrativeWallet).mockClear()
+ const existing = mount(AdminWalletPanel, { props: { userId: 27, initialCurrency: 'CNY' } }); await flushPromises()
+ expect(fetchAdministrativeWallet).toHaveBeenCalledWith(27, 'CNY', 0, expect.any(AbortSignal))
+ existing.unmount()
+})

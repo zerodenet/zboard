@@ -2,14 +2,12 @@
   <article class="storefront-plan-card">
     <header class="storefront-plan-card__header">
       <div>
-        <span>{{ plan.slug }}</span>
         <h2>{{ plan.name }}</h2>
       </div>
       <small v-if="offerCount > 0">{{ offerCount }} 个规格</small>
     </header>
 
-    <p class="storefront-plan-card__summary">{{ plan.summary || '稳定、透明的订阅服务。' }}</p>
-    <p v-if="plan.description?.trim()" class="storefront-plan-card__description">{{ plan.description }}</p>
+    <p v-if="plan.summary" class="storefront-plan-card__summary">{{ plan.summary }}</p>
 
     <div v-if="loading" class="storefront-plan-card__loading">
       <UiIcon name="refresh" />正在加载价格
@@ -29,7 +27,7 @@
       <li><UiIcon name="check" />{{ plan.device_limit > 0 ? `${plan.device_limit} 台设备` : '不限设备' }}</li>
     </ul>
 
-    <UiButton type="button" :disabled="loading || (disabled && Boolean(offer))" @click="$emit('select')">
+    <UiButton variant="secondary" type="button" :disabled="loading || (disabled && Boolean(offer))" @click="$emit('select')">
       {{ actionLabel }}<UiIcon name="chevron" />
     </UiButton>
   </article>

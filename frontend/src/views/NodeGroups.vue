@@ -20,7 +20,7 @@
         <template #cell-updated_at="{ row: group }"><TimeBadge :value="group.updated_at" /></template>
         <template #cell-actions="{ row: group }"><UiButton variant="secondary" size="sm" type="button" :loading="editingID === group.id" :disabled="Boolean(editingID)" @click="openEdit(group)"><UiIcon name="edit" />编辑</UiButton></template>
       </DataTable>
-      <EmptyState v-else icon="nodes" title="没有匹配的权限组" description="调整筛选条件，或创建第一个权限组。"><template #actions><UiButton  type="button" @click="openCreate"><UiIcon name="plus" />创建权限组</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!error" icon="nodes" title="没有匹配的权限组" description="调整筛选条件，或创建第一个权限组。"><template #actions><UiButton  type="button" @click="openCreate"><UiIcon name="plus" />创建权限组</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 

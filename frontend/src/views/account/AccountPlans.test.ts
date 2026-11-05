@@ -13,7 +13,7 @@ import { fetchDiscountProviders } from '../../api/commerceDiscounts'
 import { safeReauthenticationRoute } from '../../utils/reauthenticationDrafts'
 
 const actor = reactive({ id: 1 })
-vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: actor }) }))
+vi.mock('../../stores/app', () => ({ useAppStore: () => ({ user: actor, siteProfile: { policyDocuments: [] } }) }))
 vi.mock('../../api/plugins', () => ({ fetchPluginSlots: vi.fn() }))
 vi.mock('../../api/commerceDiscounts', async importOriginal => ({ ...await importOriginal<typeof import('../../api/commerceDiscounts')>(), fetchDiscountProviders: vi.fn() }))
 const paymentAction = vi.fn()
@@ -72,7 +72,7 @@ describe('account catalog bounded reads and route isolation', () => {
     })
   })
   afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
-  async function open(path = '/account/plans') {
+  async function open(path = '/account/plans', realDetail = false) {
     router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/account/plans', component: { template: '<div />' } },
       { path: '/account/orders', component: { template: '<div />' } },
@@ -80,7 +80,7 @@ describe('account catalog bounded reads and route isolation', () => {
     ] })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: true, PluginFrame: defineComponent({ emits: ['checkoutOptions'], setup(_, { emit, expose }) { expose({ checkoutAction: paymentAction }); onMounted(() => emit('checkoutOptions', [{ id: 'card', title: '测试支付', prepare_action: 'pay.prepare', reconcile_action: 'pay.check' }])); return () => null } }) } } })
+    wrapper = mount(AccountPlans, { global: { plugins: [router], stubs: { CommercePlanDetail: !realDetail, PluginFrame: defineComponent({ emits: ['checkoutOptions'], setup(_, { emit, expose }) { expose({ checkoutAction: paymentAction }); onMounted(() => emit('checkoutOptions', [{ id: 'card', title: '测试支付', prepare_action: 'pay.prepare', reconcile_action: 'pay.check' }])); return () => null } }) } } })
     await flushPromises()
   }
   async function click(text: string) { await wrapper!.findAll('button').find(button => button.text() === text)!.trigger('click'); await flushPromises() }
@@ -96,6 +96,21 @@ describe('account catalog bounded reads and route isolation', () => {
     await open('/account/plans?plan=1&step=checkout')
     await selectDiscount(); await click('核对优惠')
   }
+  it('keeps existing subscription management available without crowding the new-purchase catalog', async () => {
+    await open()
+    expect(wrapper!.get('h1').text()).toBe('购买套餐')
+    expect(wrapper!.get('.commerce-existing-subscriptions').attributes('open')).toBeUndefined()
+    expect(wrapper!.findAllComponents(CommercePlanCard)).toHaveLength(9)
+    expect(wrapper!.get('.commerce-existing-subscriptions summary').text()).toContain('105')
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+  it('shows one product heading and keeps its description and order summary accessible', async () => {
+    await open('/account/plans?plan=1', true)
+    expect(wrapper!.findAll('h1').map(heading => heading.text())).toEqual(['Plan 1'])
+    expect(wrapper!.text()).toContain('商品 1 的详细说明')
+    expect(wrapper!.get('.storefront-order-summary h2').text()).toBe('订单摘要')
+    expect(createOrder).not.toHaveBeenCalled()
+  })
   it('binds a newly opened intent over an older pointer and recovers it after OAuth trims route state without another POST', async () => {
     vi.mocked(fetchPlanCatalogSKUs).mockResolvedValue(page([sku(1)]))
     const older = 'a'.repeat(32), active = 'zboard-checkout-active:1:purchase:1:0'
@@ -538,7 +553,7 @@ describe('account catalog bounded reads and route isolation', () => {
   it('renders nine cards with two reads and no per-card SKU request', async () => {
     await open()
     expect(wrapper!.findAllComponents(CommercePlanCard)).toHaveLength(9)
-    expect(wrapper!.get('.storefront-plan-card__description').text()).toBe('商品 1 的详细说明')
+    expect(wrapper!.find('.storefront-plan-card__description').exists()).toBe(false)
     expect(fetchPlanCatalogPage).toHaveBeenCalledOnce()
     expect(fetchAccountSubscriptionsPage).toHaveBeenCalledOnce()
     expect(fetchPlanCatalogSKUs).not.toHaveBeenCalled()
@@ -676,7 +691,7 @@ describe('account catalog bounded reads and route isolation', () => {
     late.resolve(page([subscription(1)]))
     await flushPromises()
     expect(fetchPlanCatalogSKUs).not.toHaveBeenCalled()
-    expect(wrapper!.text()).toContain('购买新的订阅')
+    expect(wrapper!.text()).toContain('选择套餐')
   })
   it('shows the server renewal price and binds its confirmation instead of the current SKU price', async () => {
     vi.mocked(previewOrder).mockResolvedValue({ order_type: 'renewal', amount_cents: 60, payable_amount: 60, credit_amount: 0, currency: 'CNY', time_credit: 0, traffic_credit: 0, traffic_bytes: 100, used_bytes: 1, quote_fingerprint: 'renewal-lock' })

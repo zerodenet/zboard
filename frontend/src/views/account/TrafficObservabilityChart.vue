@@ -7,7 +7,7 @@
       <div class="observability-status">
         <span v-if="hasConnectionSamples">连接峰值按{{ points.some(point => (point.connection_resolution_seconds ?? 0) >= 3600) ? '小时' : '分钟' }}统计</span>
         <span v-if="truncated" class="observability-warning">当前范围数据已截断</span>
-        <span v-if="snapshotAvailable && asOf">完整统计时间：<TimeBadge :value="asOf" /></span>
+        <span v-if="snapshotAvailable && asOf">统计于 <TimeBadge :value="asOf" /></span>
         <UiButton variant="ghost" size="sm" :disabled="loading" @click="emit('refresh')">刷新趋势</UiButton>
       </div>
     </header>
@@ -38,7 +38,6 @@
       <article class="observability-chart-card traffic-card">
         <div class="chart-heading">
           <div>
-            <span class="chart-eyebrow">TRAFFIC</span>
             <h3>流量使用</h3>
           </div>
           <div class="chart-legend" aria-label="流量图例">
@@ -140,7 +139,6 @@
       <article class="observability-chart-card connection-card">
         <div class="chart-heading">
           <div>
-            <span class="chart-eyebrow">CONNECTIONS</span>
             <h3>最高连接数</h3>
           </div>
           <div class="connection-summary">

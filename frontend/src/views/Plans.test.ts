@@ -12,7 +12,8 @@ import { fetchPlanDetail, fetchPlanSKU, fetchPlanSKUs, fetchPlansPage, updatePla
 import { confirmAction } from '../utils/feedback'
 
 vi.mock('../api/client', () => ({ createPlan: vi.fn(), createPlanSKU: vi.fn(), fetchPlanDetail: vi.fn(), fetchPlanSKU: vi.fn(), fetchPlanSKUs: vi.fn(), fetchPlansPage: vi.fn(), updatePlan: vi.fn(), updatePlanSKU: vi.fn(), deletePlan: vi.fn(), deletePlanSKU: vi.fn() }))
-vi.mock('../stores/app', () => ({ useAppStore: () => ({ isAdmin: true }) }))
+const currencyState = vi.hoisted(() => ({ configs: [] as { config_key: string; value: string }[] }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ isAdmin: true, publicConfigs: currencyState.configs }) }))
 vi.mock('../utils/feedback', () => ({ notify: vi.fn(), confirmAction: vi.fn() }))
 const plan = { id: 1, name: 'Starter', slug: 'starter', summary: '', description: '', node_group_id: 1, traffic_bytes: 1024 ** 3, speed_limit_mbps: 0, max_active_subscriptions: 0, is_renewable: true, device_limit: 1, family_limit: 0, reset_policy: 2, traffic_calc_mode: 0, is_active: true, sort_order: 0, revision: 1, sku_count: 1, active_sku_count: 1 }
 const sku = { id: 1, plan_id: 1, code: 'starter-month', name: 'Month', sku_type: 'new', billing_mode: 'periodic', entitlement_mode: 'plan', renewal_effect: 'none', allowed_operations: ['purchase'], billing_unit: 'month', billing_value: 1, currency: 'CNY', price_cents: 1000, is_active: true, sort_order: 0, grant_traffic_bytes: 0 }
@@ -21,6 +22,7 @@ const button = defineComponent({ template: '<button><slot /></button>' })
 let wrapper: VueWrapper | undefined
 beforeEach(() => {
   vi.resetAllMocks()
+  currencyState.configs = []
   vi.mocked(confirmAction).mockResolvedValue(true)
   vi.mocked(fetchPlanDetail).mockResolvedValue(structuredClone(plan) as any)
   vi.mocked(fetchPlanSKU).mockResolvedValue(structuredClone(sku) as any)
@@ -120,7 +122,7 @@ it('keeps a group-change draft and original revision on retryable 503 until an e
   expect(editor.get('#edit-plan-name').attributes('modelvalue')).toBe('Changed name')
   expect(editor.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('true')
   expect(editor.get('.editor-version-meta').text()).toContain('版本 1')
-  expect(editor.text()).toContain('请稍后再次点击“保存商品”重试')
+  expect(editor.text()).toContain('请稍后再次点击“保存套餐”重试')
   await flushPromises()
   expect(updatePlan).toHaveBeenCalledTimes(1)
   expect(fetchPlanDetail).toHaveBeenCalledTimes(1)
@@ -138,14 +140,14 @@ it('deletes an inactive SKU and reloads the counts', async () => {
 })
 it('removes a product and closes its detail after confirmation', async () => {
   const view = await open('')
-  await view.findAll('button').find(button => button.text() === '删除商品')!.trigger('click'); await flushPromises()
+  await view.findAll('button').find(button => button.text() === '删除套餐')!.trigger('click'); await flushPromises()
   expect(deletePlan).toHaveBeenCalledWith(1)
   expect(view.find('.detail-toolbar').exists()).toBe(false)
 })
 it('leaves catalog data intact when deletion confirmation is cancelled', async () => {
   vi.mocked(confirmAction).mockResolvedValue(false)
   const view = await open('')
-  await view.findAll('button').find(button => button.text() === '删除商品')!.trigger('click'); await flushPromises()
+  await view.findAll('button').find(button => button.text() === '删除套餐')!.trigger('click'); await flushPromises()
   expect(deletePlan).not.toHaveBeenCalled()
 })
 
@@ -163,4 +165,15 @@ it('renders backend sales summaries without loading each listed product SKU', as
   const values = view.findAllComponents(TableText).map(item=>item.props('value'))
   expect(values).toContain('新购 · 重置流量');expect(values).toContain('新购 ¥10.00 起 · 重置流量 ¥5.00')
   expect(fetchPlanSKUs).toHaveBeenCalledTimes(1) // Only the explicitly opened detail.
+})
+
+it('uses the platform currency for a new SKU while retaining the currency on an existing SKU', async () => {
+  currencyState.configs = [{ config_key: 'default_currency', value: 'USD' }]
+  await open('&sku=new')
+  expect((wrapper!.vm as any).skuDraft.currency).toBe('USD')
+  currencyState.configs[0]!.value = 'EUR'
+  expect((wrapper!.vm as any).skuDraft.currency).toBe('USD')
+  wrapper!.unmount(); wrapper = undefined
+  await open('&sku=1')
+  expect((wrapper!.vm as any).skuDraft.currency).toBe('CNY')
 })

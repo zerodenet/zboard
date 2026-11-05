@@ -1,5 +1,5 @@
 <template>
-  <UiSection :title="title" :description="`本期计费流量前 10 名 · ${comparisonLabel}`">
+  <UiSection variant="outlined" :title="title" :description="`本期计费流量前 10 名 · ${comparisonLabel}`">
     <template #meta>
       <UiSelect class="ranking-period" :model-value="range" :aria-label="`${title}周期`" :options="periodOptions" @update:model-value="emit('update:range', $event as DashboardRange)" />
       <UiButton size="sm" variant="ghost" :loading="loading" :aria-label="`刷新${title}`" @click="emit('refresh')"><UiIcon name="refresh" /></UiButton>

@@ -36,7 +36,7 @@
           </RowActions></td>
         </tr></tbody>
       </DataTable>
-      <EmptyState v-else icon="shield" :title="search || statusFilter ? '没有匹配的证书' : '还没有托管证书'" :description="search || statusFilter ? '调整搜索词或证书状态后重试。' : '申请证书后，可以在这里查看签发、有效期和续期状态。'"><template #actions><UiButton v-if="search || statusFilter" type="button" variant="secondary" size="sm" @click="clearFilters">清除筛选</UiButton><UiButton v-else type="button" @click="openCreate"><UiIcon name="plus" />申请第一张证书</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!error" icon="shield" :title="search || statusFilter ? '没有匹配的证书' : '还没有托管证书'" :description="search || statusFilter ? '调整搜索词或证书状态后重试。' : '申请证书后，可以在这里查看签发、有效期和续期状态。'"><template #actions><UiButton v-if="search || statusFilter" type="button" variant="secondary" size="sm" @click="clearFilters">清除筛选</UiButton><UiButton v-else type="button" variant="secondary" @click="openCreate"><UiIcon name="plus" />申请第一张证书</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 

@@ -167,10 +167,15 @@ describe('AdminLayout navigation', () => {
     const value = menuFixture('admin')
     value.nodes = value.nodes.filter(node => node.path !== '/admin/protocols')
     value.nodes.find(node => node.id === 'infrastructure')!.label = '服务接入'
+    value.nodes.find(node => node.path === '/admin/nodes')!.label = '我的服务器'
     value.nodes.push({ ...value.nodes.find(node => node.path === '/admin/nodes')!, id: 'plugin:custom', label: '扩展控制台', path: '/admin/extensions/example/home', owner: 'plugin', plugin_id: 'example', page_id: 'home' })
     vi.mocked(fetchNavigation).mockResolvedValueOnce(value)
     const { wrapper } = await setup('/admin/nodes')
     expect(wrapper.get('.domain-group.selected > .domain-link').text()).toContain('服务接入')
+    expect(wrapper.get('.page-link[href="/admin/nodes"]').text()).toBe('我的服务器')
+    expect(wrapper.get('.topbar-breadcrumb strong').text()).toBe('我的服务器')
+    expect(wrapper.get('main h1').text()).toBe('我的服务器')
+    expect(wrapper.get('.page-link[href="/admin/extensions/example/home"]').text()).toBe('扩展控制台')
     expect(wrapper.find('.admin-page-navigation-link[href="/admin/protocols"]').exists()).toBe(false)
     expect(wrapper.get('.admin-page-navigation-link[href="/admin/extensions/example/home"]').text()).toBe('扩展控制台')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
@@ -180,6 +185,26 @@ describe('AdminLayout navigation', () => {
     await flushPromises()
     expect(document.querySelectorAll('.admin-quick-search-results a')).toHaveLength(1)
     expect(document.querySelector('.admin-quick-search-results a')?.getAttribute('href')).toBe('/admin/extensions/example/home')
+  })
+
+  it('exposes each subscription page by its own name and navigates directly without a group landing page', async () => {
+    const { wrapper, router } = await setup('/admin/plans')
+    const expected = [
+      ['/admin/plans', '套餐管理'], ['/admin/orders', '订单管理'],
+      ['/admin/subscriptions', '订阅管理'], ['/admin/subscription-templates', '订阅模板'],
+      ['/admin/subscription-templates/rule-sets', '规则集'],
+    ]
+    expect(wrapper.findAll('.page-link')).toHaveLength(expected.length)
+    for (const [path, label] of expected) {
+      const link = wrapper.get(`.page-link[href="${path}"]`)
+      expect(link.text()).toBe(label)
+      await link.trigger('click'); await flushPromises()
+      expect(router.currentRoute.value.path).toBe(path)
+      expect(wrapper.findAll('.page-link[aria-current="page"]')).toHaveLength(1)
+      expect(wrapper.get('.page-link.selected').text()).toBe(label)
+      expect(wrapper.get('.topbar-breadcrumb strong').text()).toBe(label)
+      expect(wrapper.get('main h1').text()).toBe(label)
+    }
   })
 
   it('searches admin pages from the topbar shortcut and follows a result', async () => {
@@ -207,8 +232,8 @@ describe('AdminLayout navigation', () => {
     expect(wrapper.findAll('.domain-link')).toHaveLength(5)
     expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('订阅系统')
     expect(wrapper.findAll('.page-link[aria-current="page"]')).toHaveLength(1)
-    expect(wrapper.get('.page-link.selected').text()).toBe('配置交付')
-    expect(wrapper.findAll('.page-link')).toHaveLength(3)
+    expect(wrapper.get('.page-link.selected').text()).toBe('规则集')
+    expect(wrapper.findAll('.page-link')).toHaveLength(5)
     expect(wrapper.get('.admin-page-navigation-link[aria-current="page"]').text()).toBe('规则集')
     expect(wrapper.get('.topbar-context').text()).toBe('订阅系统')
     expect(wrapper.get('.admin-build-info').text()).toContain('版本 0.3.0')

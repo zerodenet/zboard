@@ -1,5 +1,5 @@
 <template>
-  <form v-if="inline" class="workbench-inline-search" role="search" :aria-label="label" @submit.prevent="apply()">
+  <form novalidate v-if="inline" class="workbench-inline-search" role="search" :aria-label="label" @submit.prevent="apply()">
     <UiInput v-model="draft" v-bind="$attrs" type="search" :aria-label="fieldLabel || label" :placeholder="placeholder || label" />
     <UiButton variant="secondary" size="sm" type="submit">搜索</UiButton>
   </form>

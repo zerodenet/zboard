@@ -249,3 +249,20 @@ it('refreshes the list balance and account protection details after a wallet cha
  expect(api.list).toHaveBeenCalledTimes(2);expect(api.detail).toHaveBeenCalledTimes(2)
  expect(wrapper.get('.user-wallet-link').text()).toBe('223.45')
 })
+
+
+it('keeps the wallet panel mounted when the first currency balance appears after an adjustment', async () => {
+  const empty = { ...user, wallet_balances: [] }
+  api.detail.mockResolvedValueOnce(empty)
+  const { wrapper } = await render()
+  await wrapper.get('[data-user-detail-trigger="22"]').trigger('click'); await flushPromises()
+  await wrapper.get('[role="tab"][data-state="inactive"]').trigger('mousedown', { button: 0 }); await flushPromises()
+  const panel = wrapper.getComponent({ name: 'AdminWalletPanel' })
+  const identity = panel.vm.$.uid
+  const changed = { ...user, wallet_balances: [{ currency: 'EUR', balance_minor: '1000', reserved_minor: '0' }] }
+  api.detail.mockResolvedValueOnce(changed)
+  api.list.mockResolvedValueOnce({ items: [changed], total: 1 })
+  panel.vm.$emit('changed'); await flushPromises()
+  expect(wrapper.getComponent({ name: 'AdminWalletPanel' }).vm.$.uid).toBe(identity)
+  expect(wrapper.get('.user-wallet-link').text()).toBe('10.00')
+})

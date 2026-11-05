@@ -80,6 +80,8 @@ func SettingInputSchemaFor(config Setting) SettingInputSchema {
 	}
 
 	switch config.ConfigKey {
+	case DefaultCurrencyKey:
+		schema = SettingInputSchema{Control: "select", Required: true, Options: DefaultCurrencyOptions()}
 	case "traffic_report_diagnostics":
 		maxBytes := 1024
 		schema = SettingInputSchema{Control: "json", MaxBytes: &maxBytes, Placeholder: `null 或 {"until":"RFC3339到期时间","reason":"采集原因"}`}

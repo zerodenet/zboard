@@ -12,5 +12,6 @@
   {"id": "admin:/admin/runtime-jobs", "parent_id": "operations.daily", "surface": "admin", "label": "后台任务", "icon": "activity", "path": "/admin/runtime-jobs", "position": 20, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
   {"id": "operations.logs", "parent_id": "operations", "surface": "admin", "label": "日志与审计", "icon": "audit", "path": "", "position": 10, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
   {"id": "settings", "parent_id": "", "surface": "admin", "label": "设置", "icon": "settings", "path": "", "position": 50, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
-  {"id": "settings.site", "parent_id": "settings", "surface": "admin", "label": "站点设置", "icon": "settings", "path": "", "position": 0, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""}
+  {"id": "settings.site", "parent_id": "settings", "surface": "admin", "label": "站点设置", "icon": "settings", "path": "", "position": 0, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""},
+  {"id": "admin:/admin/plans", "parent_id": "commerce.transactions", "surface": "admin", "label": "商品与套餐", "icon": "billing", "path": "/admin/plans", "position": 0, "hidden": false, "owner": "core", "plugin_id": "", "page_id": "", "condition": ""}
 ]

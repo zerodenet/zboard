@@ -16,6 +16,7 @@
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
+  text-decoration: none;
   transition: background-color .15s ease-out, border-color .15s ease-out, color .15s ease-out;
 }
 .ui-button-sm { min-height: 32px; padding-inline: 10px; font-size: 12px; }
@@ -37,6 +38,7 @@
 .ui-button-destructive { color: var(--destructive-foreground); background: var(--destructive); }
 .ui-button-destructive:hover:not(:disabled) { background: var(--destructive-hover); }
 .ui-button:disabled { opacity: .55; cursor: not-allowed; }
+.ui-button-default:disabled { color: var(--muted-foreground); background: var(--muted-surface); border-color: transparent; opacity: 1; }
 .ui-button:focus-visible, .ui-input:focus-visible, .ui-textarea:focus-visible,
 .ui-select:focus-visible, .ui-checkbox:focus-visible, .ui-tabs-trigger:focus-visible {
   outline: 2px solid var(--ring);
@@ -153,7 +155,11 @@
 .ui-tabs-trigger { min-height: 38px; display: inline-flex; align-items: center; gap: 6px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; color: var(--muted-foreground); background: transparent; font-size: 13px; white-space: nowrap; }
 .ui-tabs-trigger:hover { color: var(--foreground); }
 .ui-tabs-trigger[data-state='active'] { border-bottom-color: var(--foreground); color: var(--foreground); font-weight: 500; }
-.status-badge { border-radius: 6px; font-weight: 500; }
+.status-badge { border-radius: 4px; font-weight: 400; font-size: 12px; }
+.status-badge:is([data-tone='neutral'], [data-tone='success'], [data-tone='info']) { padding: 0; background: transparent; color: var(--text-secondary); }
+.status-badge[data-tone='success'] .status-icon { color: var(--success); }
+.status-badge[data-tone='info'] .status-icon { color: var(--info); }
+.status-badge[data-tone='neutral'] .status-icon { color: var(--muted-foreground); }
 
 .ui-dialog-overlay { position: fixed; inset: 0; z-index: var(--z-dialog); background: var(--dialog-overlay); }
 .ui-sheet-overlay { z-index: var(--z-drawer); }
@@ -198,7 +204,7 @@
 .page-description, .admin-stripe-surface .standard-page > .page-header .page-description { font-size: 13px; line-height: 1.5; }
 .standard-page, .account-page { gap: 18px; }
 .admin-stripe-surface .data-workbench { border: 0; border-radius: 0; box-shadow: none; background: transparent; }
-.admin-stripe-surface .data-workbench .workbench-toolbar { min-height: 44px; padding: 0 0 12px; border-bottom: 1px solid var(--border); background: transparent; }
+.admin-stripe-surface .data-workbench .workbench-toolbar { min-height: 44px; padding: 0 0 12px; border: 0; background: transparent; }
 .admin-stripe-surface .data-workbench .workbench-content,
 .admin-stripe-surface .data-workbench .workbench-footer { background: transparent; }
 .admin-stripe-surface .ui-section { box-shadow: none; }
@@ -213,4 +219,24 @@
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* Composition shared by every console page, independent of business data. */
+.ui-section-flat > .panel-header h2 { font-size: 15px; font-weight: 600; }
+.ui-section-flat > .panel-header p { max-width: 720px; line-height: 1.5; }
+.data-table th { background: transparent; }
+.admin-stripe-surface .data-workbench .data-table th { background: var(--muted-surface); border-top: 0; }
+.data-table td { border-bottom-color: var(--line-soft); }
+.data-table .table-action-column { box-shadow: none; }
+.table-column-toggle { font-weight: 400; }
+@media (max-width: 720px) {
+  .workbench-toolbar { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .workbench-filters { flex: 1 1 240px; min-width: 0; width: auto; }
+  .workbench-actions { margin-left: auto; justify-content: flex-end; }
+  .ui-section > .panel-header { flex-wrap: wrap; align-items: flex-start; }
+  .ui-section-actions { max-width: 100%; }
+}
+@media (pointer: coarse) {
+  .ui-button-sm, .ui-button-icon { min-height: 40px; }
+  .ui-button-icon { min-width: 40px; width: 40px; }
 }

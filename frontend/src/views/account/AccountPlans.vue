@@ -1,12 +1,11 @@
 <template>
   <section class="account-page commerce-account-page commerce-hub-page stack">
-    <PageHeader
+    <PageHeader v-if="!selectedPlan || checkoutOpen"
       :title="pageTitle"
-      :description="pageDescription"
     >
       <template #actions>
         <UiButton v-if="checkoutOpen" variant="secondary" type="button" :disabled="creating" @click="backToDetail">
-          返回商品详情
+          返回套餐详情
         </UiButton>
         <UiButton v-else-if="!selectedPlan && route.query.plan" variant="secondary" type="button" @click="backToCatalog">
           返回套餐列表
@@ -14,9 +13,7 @@
         <UiButton v-else-if="operation !== 'purchase'" variant="secondary" type="button" @click="returnToOverview">
           返回套餐中心
         </UiButton>
-        <UiButton v-if="!selectedPlan && !checkoutOpen" variant="secondary" type="button" :disabled="loading" @click="refreshAll">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+<PageRefreshButton v-if="!selectedPlan && !checkoutOpen" label="刷新套餐" :loading="loading" @click="refreshAll" />
       </template>
     </PageHeader>
 
@@ -43,10 +40,6 @@
       <div class="purchase-checkout__layout">
         <div class="purchase-checkout__main">
           <section class="purchase-checkout__section">
-            <header>
-              <span>{{ checkoutAttempt ? '已提交订单' : currentOperation.label }}</span>
-              <h2>订单确认</h2>
-            </header>
 
             <article class="purchase-checkout__product">
               <div>
@@ -56,7 +49,6 @@
                 <p v-if="operation === 'renew' && quote">按原购买基础价续费，金额以本次报价为准。</p>
                 <p v-if="operation === 'change' && quote">原价 {{ formatCurrency(quote.amount_cents, quote.currency) }} · 抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}</p>
               </div>
-              <strong>{{ checkoutAmountLabel }}</strong>
             </article>
 
             <dl v-if="!checkoutAttempt && !attemptError" class="purchase-checkout__details">
@@ -131,7 +123,7 @@
               <div><dt>结余入余额</dt><dd>{{ formatWalletMoney(quote.surplus_amount ?? '0', quote.currency) }}</dd></div>
               <div><dt>另需支付</dt><dd>{{ formatWalletMoney(quote.additional_amount ?? '0', quote.currency) }}</dd></div>
             </template>
-            <div><dt>商品</dt><dd>{{ checkoutPlanName }}</dd></div>
+            <div><dt>套餐</dt><dd>{{ checkoutPlanName }}</dd></div>
             <div><dt>规格</dt><dd>{{ checkoutSKUName }}</dd></div>
           </dl>
           <PageAlert v-if="checkoutRecoveryError" tone="danger" title="订单恢复记录无法保存">{{ checkoutRecoveryError }}</PageAlert>
@@ -141,12 +133,11 @@
           <p v-if="!checkoutAttempt && !attemptError && !quoteError && needsQuote && !quote" role="status">请核对本次报价后确认订单。<UiButton variant="secondary" :disabled="quoteLoading" @click="loadQuote">重新报价</UiButton></p>
           <CheckoutPayment v-show="!checkoutAttempt" name="account.checkout.payment" :key="checkoutIntent" embedded handoff-to-funding :actor-id="app.user.id" :currency="checkoutCurrency" :create-order="ensureOrder" :create-only="submitOrder" :disabled="creating || quoteLoading || (needsQuote && !quote) || Boolean(attemptError || checkoutRecoveryError) || (discountRequired && (!discountQuote || discountLoading || Boolean(discountError) || Boolean(discountProvidersError)))" @paid="router.push('/account/orders')" @created="id => router.push(`/account/orders/${id}`)" />
           <UiButton v-if="checkoutAttempt" :disabled="creating || Boolean(attemptError || checkoutRecoveryError)" :loading="creating" @click="restoreOrder">恢复上次订单</UiButton>
-          <p>订单及付款进度可在“我的订单”中查看。</p>
         </aside>
       </div>
     </section>
 
-    <CommercePlanDetail
+    <CommercePlanDetail class="account-plan-detail"
       v-else-if="selectedPlan"
       :plan="selectedPlan"
       :skus="detailSKUs"
@@ -172,22 +163,13 @@
     />
 
     <template v-else-if="!detailLoading && !detailError">
-      <section v-if="operation === 'purchase' && (!subscriptionsLoaded || subscriptionLoading || subscriptionError || subscriptionTotal > 0)" class="commerce-hub-section" aria-labelledby="active-subscriptions-title">
-        <div class="commerce-hub-heading">
-          <div>
-            <span>当前服务</span>
-            <h2 id="active-subscriptions-title">管理现有订阅</h2>
-            <p>续费、切换套餐、购买流量包和重置流量从具体订阅发起。</p>
-          </div>
-          <small v-if="subscriptionTotal">{{ subscriptionTotal }} 个可管理订阅</small>
-        </div>
-
-        <div v-if="subscriptionLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
+      <details v-if="operation === 'purchase' && (!subscriptionsLoaded || subscriptionLoading || subscriptionError || subscriptionTotal > 0)" class="commerce-existing-subscriptions">
+        <summary>当前套餐<span v-if="subscriptionsLoaded">{{ subscriptionTotal }}</span></summary>
+        <div v-if="subscriptionLoading && !subscriptionsLoaded" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
         <div v-else-if="subscriptions.length" class="commerce-subscription-cards">
           <article v-for="subscription in subscriptions" :key="subscription.id" class="commerce-subscription-card">
             <header>
               <div>
-                <span>订阅 #{{ subscription.id }}</span>
                 <h3>{{ subscription.plan_name }}</h3>
                 <p>{{ subscription.sku_name }}</p>
                 <p v-if="subscription.renewal_until">服务已停止 · 续费保留至 <TimeBadge :value="subscription.renewal_until" /></p>
@@ -212,21 +194,19 @@
           title="当前没有可操作订阅"
           description="从下方选择套餐即可创建新的订阅。"
         />
-      </section>
+        <TablePager v-if="subscriptionTotal > subscriptionLimit" :total="subscriptionTotal" :offset="subscriptionOffset" :limit="subscriptionLimit" :loading="subscriptionLoading" :page-sizes="[6, 25, 50]" @change="changeSubscriptionPage" />
+      </details>
 
       <section v-else-if="operation !== 'purchase'" class="commerce-hub-section" aria-labelledby="target-subscription-title">
         <div class="commerce-hub-heading">
           <div>
-            <span>操作对象</span>
             <h2 id="target-subscription-title">{{ selectedSubscription ? '目标订阅' : '选择目标订阅' }}</h2>
-            <p>{{ selectedSubscription ? '本次操作只作用于这条订阅。' : '请选择需要处理的订阅。' }}</p>
           </div>
         </div>
 
-        <div v-if="subscriptionLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
+        <div v-if="subscriptionLoading && !subscriptionsLoaded" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
         <div v-else-if="selectedSubscription" class="commerce-context-card">
           <div>
-            <span>订阅 #{{ selectedSubscription.id }}</span>
             <h3>{{ selectedSubscription.plan_name }}</h3>
             <p>{{ selectedSubscription.sku_name }} · {{ selectedSubscription.status === 'expired' ? '服务已停止，可在保留期内续费恢复' : `到期 ${formatDate(selectedSubscription.end_at)}` }}</p>
           </div>
@@ -244,7 +224,6 @@
             @click="selectTargetSubscription(subscription.id)"
           >
             <div>
-              <span>订阅 #{{ subscription.id }}</span>
               <strong>{{ subscription.plan_name }}</strong>
               <small v-overflow-title="subscription.sku_name">{{ subscription.sku_name }}</small>
             </div>
@@ -262,7 +241,7 @@
       </section>
 
       <TablePager
-        v-if="subscriptionTotal > subscriptionLimit && (operation === 'purchase' || !selectedSubscription)"
+        v-if="subscriptionTotal > subscriptionLimit && operation !== 'purchase' && !selectedSubscription"
         :total="subscriptionTotal" :offset="subscriptionOffset" :limit="subscriptionLimit"
         :loading="subscriptionLoading" :page-sizes="[6, 25, 50]" @change="changeSubscriptionPage"
       />
@@ -270,9 +249,8 @@
       <section v-if="catalogVisible" class="commerce-hub-section" aria-labelledby="commerce-catalog-title">
         <div class="commerce-hub-heading">
           <div>
-            <span>{{ currentOperation.label }}</span>
             <h2 id="commerce-catalog-title">{{ catalogTitle }}</h2>
-            <p>{{ catalogDescription }}</p>
+            <p v-if="operation === 'reset'">{{ catalogDescription }}</p>
           </div>
         </div>
 
@@ -291,7 +269,7 @@
           />
         </WorkbenchFilterBar>
 
-        <div v-if="planLoading" class="commerce-loading-state"><UiIcon name="refresh" />正在加载套餐</div>
+        <div v-if="planLoading && !plans.length" class="commerce-loading-state"><UiIcon name="refresh" />正在加载套餐</div>
         <div v-else-if="plans.length" class="commerce-catalog-grid commerce-account-catalog-grid">
           <CommercePlanCard
             v-for="plan in plans"
@@ -337,6 +315,7 @@ import CommercePlanCard from '../../components/CommercePlanCard.vue'
 import CommercePlanDetail from '../../components/CommercePlanDetail.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import PageAlert from '../../components/PageAlert.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import TablePager from '../../components/TablePager.vue'
 import UiButton from '../../components/UiButton.vue'
@@ -356,7 +335,7 @@ import { formatBytes, formatCurrency, isPerpetualDate } from '../../utils/format
 
 type PurchaseOperation = CatalogOperation
 const operationOptions = [
-  { value: 'purchase', label: '新购', title: '套餐中心', description: '选择套餐，进入详情比较规格并确认订单。' },
+  { value: 'purchase', label: '新购', title: '购买套餐', description: '选择套餐，进入详情比较规格并确认订单。' },
   { value: 'renew', label: '续费', title: '续费订阅', description: '选择续费规格并确认服务周期。' },
   { value: 'change', label: '切换套餐', title: '切换套餐', description: '为指定订阅选择新的套餐和规格。' },
   { value: 'addon', label: '流量包', title: '购买流量包', description: '为指定订阅当前周期增加可用流量；定期重置时失效。' },
@@ -563,9 +542,8 @@ const currentOperation = computed(() => {
 const loading = computed(() => subscriptionLoading.value || planLoading.value || detailLoading.value || creating.value)
 const catalogVisible = computed(() => operation.value === 'purchase' || Boolean(selectedSubscription.value))
 const pageTitle = computed(() => checkoutOpen.value ? '确认订单' : selectedPlan.value?.name || currentOperation.value.title)
-const pageDescription = computed(() => checkoutOpen.value || selectedPlan.value || operation.value === 'purchase' ? '' : currentOperation.value.description)
 const catalogTitle = computed(() => ({
-  purchase: '购买新的订阅', renew: `${selectedSubscription.value?.plan_name || ''} ${currentOperation.value.label}`,
+  purchase: '选择套餐', renew: `${selectedSubscription.value?.plan_name || ''} ${currentOperation.value.label}`,
   change: '选择新的套餐', addon: `${selectedSubscription.value?.plan_name || ''} 流量包`, reset: '购买流量重置',
 }[operation.value]))
 const catalogDescription = computed(() => ({
@@ -798,3 +776,22 @@ async function submitOrder() {
   }
 }
 </script>
+
+<style scoped>
+.commerce-existing-subscriptions { padding: 4px 0; }
+.commerce-existing-subscriptions > summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; font-size: 13px; font-weight: 500; }
+.commerce-existing-subscriptions > summary::before { content: '▸'; color: var(--muted-foreground); }
+.commerce-existing-subscriptions[open] > summary::before { content: '▾'; }
+.commerce-existing-subscriptions > summary span { color: var(--muted-foreground); font-size: 12px; }
+.commerce-existing-subscriptions > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.commerce-existing-subscriptions .commerce-subscription-cards { margin-top: 16px; }
+.commerce-account-page .commerce-hub-section { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.commerce-account-page .commerce-hub-heading h2 { font-size: 16px; }
+.account-plan-detail :deep(.storefront-detail__hero), .account-plan-detail :deep(.storefront-plan-description), .account-plan-detail :deep(.storefront-specifications) { padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.account-plan-detail :deep(.storefront-detail__hero h1) { margin: 0; font-size: 28px; }
+.account-plan-detail :deep(.storefront-plan-description h2), .account-plan-detail :deep(.storefront-section-heading h2), .account-plan-detail :deep(.storefront-order-summary h2) { font-size: 16px; }
+.account-plan-detail :deep(.storefront-entitlement-grid) { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.account-plan-detail :deep(.storefront-entitlement-grid article) { padding: 16px 0; border: 0; border-radius: 0; background: transparent; }
+.account-plan-detail :deep(.storefront-order-summary) { box-shadow: none; }
+@media (max-width: 600px) { .account-plan-detail :deep(.storefront-entitlement-grid) { gap: 12px; } }
+</style>

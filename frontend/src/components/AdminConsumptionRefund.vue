@@ -5,7 +5,7 @@
       <p>来源订单 #{{ order.id }} · 用户 #{{ order.user_id }} · {{ order.currency }}。已退款、已换购或退订转换的价值不能再次退还；最终可退预算由服务器核对。</p>
       <p>原始渠道收款请核对本订单的“渠道收款归属”。本次退款不会终止、恢复或调整该用户当前的其他权益。</p>
       <PageAlert v-if="writeError" tone="danger" title="退款操作需要核对">{{ writeError }}</PageAlert>
-      <form data-test="consumption-refund" class="stack" @submit.prevent="requestApproval">
+      <form novalidate data-test="consumption-refund" class="stack" @submit.prevent="requestApproval">
         <FormField v-slot="{ controlAttrs }" label="获批退款金额" :name="`consumption-refund-amount-${order.id}`" :hint="`${order.currency}，最多两位小数；不包含优惠金额。`">
           <UiInput v-model="amount" v-bind="controlAttrs" inputmode="decimal" :disabled="locked" />
         </FormField>

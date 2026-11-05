@@ -57,6 +57,7 @@ const props = defineProps<{
   title?: string;
   optional?: boolean;
   managed?: boolean;
+  beforeIdentityLogin?: () => boolean;
   checkout?: { currency: string; order_id?: number };
 }>();
 const emit = defineEmits<{ ready: []; checkoutOptions: [options: PaymentOption[]]; checkoutStatus: [status: PaymentStatus]; unavailable: [] }>();
@@ -263,6 +264,12 @@ async function receive(event: MessageEvent) {
       const target = new URL(raw);
       const localHTTP = target.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname);
       if (target.username || target.password || (target.protocol !== "https:" && !localHTTP)) throw new Error("unsafe navigation");
+      if (message.type === "identity.login.start" && props.beforeIdentityLogin) {
+        if (props.surface !== "public" || props.slot?.slot !== "auth.login.methods") throw new Error("denied");
+        // Recovery is prepared only after the host has validated the actual
+        // provider URL, immediately before leaving the mounted editor.
+        if (!props.beforeIdentityLogin()) throw new Error("尚未离开当前页面，请先处理页面中的恢复提示。");
+      }
       window.location.assign(target.href);
     }
     respond({ ok: true, result });

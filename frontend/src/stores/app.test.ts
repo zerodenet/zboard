@@ -1,9 +1,9 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { me } from '../api/client'
+import { me, fetchPublicSystemConfigs } from '../api/client'
 import { useAppStore } from './app'
 vi.mock('../api/identities', () => ({ fetchIdentityPasswordStatus: vi.fn(async () => ({ password_set: true })) }))
-vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), me: vi.fn() }))
+vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), me: vi.fn(), fetchPublicSystemConfigs: vi.fn() }))
 beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()) })
 describe('account identity refresh', () => {
   it('retains login and identity when the server cannot be reached', async () => {
@@ -29,4 +29,12 @@ describe('account identity refresh', () => {
     expect(app.user.email).toBe('new@example.test')
     expect(app.isAdmin).toBe(false)
   })
+})
+
+it('preserves a known platform currency during a temporary configuration refresh failure', async () => {
+ const app = useAppStore()
+ app.publicConfigs = [{ config_key:'default_currency', value:'USD' }] as any
+ vi.mocked(fetchPublicSystemConfigs).mockRejectedValueOnce(new Error('offline'))
+ await app.loadPublicConfigs()
+ expect(app.publicConfigs).toEqual([{ config_key:'default_currency',value:'USD' }])
 })

@@ -20,9 +20,9 @@
         <UiButton v-else type="button" :loading="configuring" @click="configure(pendingChoice)">恢复本次资金分配</UiButton>
       </template>
       <template v-else>
-        <p>订单总额 {{ money(funding.amount_minor) }} · 余额分配 {{ money(funding.wallet_minor) }} · 渠道补差 {{ money(funding.cash_minor) }}</p>
+        <dl class="funding-summary"><div><dt>订单金额</dt><dd>{{ money(funding.amount_minor) }}</dd></div><div><dt>余额抵扣</dt><dd>{{ money(funding.wallet_minor) }}</dd></div><div><dt>还需支付</dt><dd>{{ money(funding.cash_minor) }}</dd></div></dl>
         <p v-if="funding.change_mode === 'full_term'">现有余额实际预留 {{ money(funding.reserved_minor ?? '0') }}；旧权益抵扣在结算成功前尚未入账或预留。</p>
-        <p v-if="funding.state === 'reserved'">资金分配已冻结，请在 <TimeBadge :value="funding.expires_at" /> 前完成付款。取消、失败或失效会释放预留；迟到的渠道款进入余额。</p>
+        <p v-if="funding.state === 'reserved'">请在 <TimeBadge :value="funding.expires_at" /> 前付款。取消、失败或到期后释放预留；迟到款项进入余额。</p>
         <PageAlert v-if="funding.expired || funding.state === 'released'" tone="warning">本次资金分配已失效，请核对余额并重新创建订单。已有渠道扣款会单独核对归属。</PageAlert>
         <template v-if="funding.state === 'reserved' && !funding.expired">
           <UiButton v-if="funding.cash_minor === '0'" type="button" :loading="paying" @click="pay">{{ funding.change_mode === 'full_term' ? '确认结算旧权益并购买新套餐' : funding.amount_minor === '0' ? '确认完成零金额订单' : `确认使用余额支付 ${money(funding.wallet_minor)}` }}</UiButton>
@@ -89,3 +89,11 @@ async function cancel() {
 watch(() => [props.orderId, app.user.id], () => { resource.reset(); pendingChoice.value = null; writeError.value = ''; if (props.orderId && app.user.id) void load() }, { immediate: true })
 watch(() => funding.value?.state, value => { if (value === 'released' || value === 'captured') changed() })
 </script>
+
+<style scoped>
+.funding-summary { display: grid; gap: 12px; margin: 0; }
+.funding-summary > div { display: flex; justify-content: space-between; gap: 16px; }
+.funding-summary dt { color: var(--muted-foreground); font-size: 12px; }
+.funding-summary dd { margin: 0; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .stack > .ui-button { max-width: 100%; min-height: 40px; white-space: normal; } }
+</style>

@@ -53,7 +53,7 @@ describe('account order detail payment ownership', () => {
     const { wrapper } = await open()
     expect(wrapper.text()).toContain('订单不存在')
     expect(wrapper.find('order-funding-payment-stub').exists()).toBe(false)
-    await wrapper.findAll('button').find(button => button.text() === '刷新订单')!.trigger('click'); await flushPromises()
+    await wrapper.get('button[aria-label="刷新订单"]').trigger('click'); await flushPromises()
     expect(wrapper.get('order-funding-payment-stub').attributes('orderid')).toBe('27')
     wrapper.unmount()
   })
@@ -78,14 +78,14 @@ describe('account order detail payment ownership', () => {
   })
   it('links only the loaded account order to a new unsubmitted ticket context', async () => {
     const { wrapper, router } = await open()
-    const support = wrapper.findAll('a').find(link => link.text() === '就此订单提交工单')!
+    const support = wrapper.findAll('a').find(link => link.text() === '提交工单')!
     expect(support.attributes('href')).toBe('/account/tickets?new=1&order_id=27')
     expect(router.currentRoute.value.path).toBe('/account/orders/27')
     expect(support.attributes('href')).not.toContain('user_id')
     wrapper.unmount()
     vi.mocked(fetchAccountOrder).mockRejectedValue(new Error('inaccessible'))
     const unavailable = await open()
-    expect(unavailable.wrapper.text()).not.toContain('就此订单提交工单')
+    expect(unavailable.wrapper.text()).not.toContain('提交工单')
     unavailable.wrapper.unmount()
   })
 })

@@ -4,11 +4,11 @@
       <div>
         <h2 id="node-traffic-title">节点流量分布</h2>
       </div>
-      <span v-if="data" class="bucket-label">{{ bucketLabel(data.bucket) }}粒度</span>
+      <span v-if="data" class="bucket-label">按{{ bucketLabel(data.bucket) }}</span>
     </header>
 
     <p v-if="data?.truncated" class="series-limit-notice">
-      为控制查询与浏览器开销，仅展示流量最高的 {{ data.node_limit }} 个节点；选择单个节点可查看更长时间范围。
+      显示流量最高的 {{ data.node_limit }} 个节点；可选择单个节点查看。
     </p>
 
     <div v-if="loading && !data" class="chart-state" aria-live="polite">
@@ -17,7 +17,7 @@
     <div v-else-if="!data" class="chart-state empty" role="status">尚未取得节点流量统计</div>
     <div v-else-if="!series.length" class="chart-state empty">
       <UiIcon name="activity" />
-      <div><strong>当前范围没有节点流量</strong><p>产生计费记录后，这里会按节点绘制时间趋势。</p></div>
+      <div><strong>当前范围没有节点流量</strong></div>
     </div>
     <div v-else class="node-chart-body">
       <div class="node-legend" aria-label="节点图例">

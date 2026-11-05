@@ -6,7 +6,7 @@
       <nav id="account-navigation" :class="{ open: menuOpen }" aria-label="用户中心导航">
         <NavigationLinks surface="account" @select-page="menuOpen = false" />
       </nav>
-      <div class="account-identity"><AppearanceSwitch /><span class="avatar">{{ userInitial }}</span><div class="account-identity-details"><strong>{{ app.user.email }}</strong><span v-if="app.isAdmin">已授予管理员权限</span></div><UiButton variant="ghost" icon class="icon-button" type="button" aria-label="退出登录" title="退出登录" @click="logout"><UiIcon name="logout" /></UiButton></div>
+      <div class="account-identity"><AppearanceSwitch /><span class="avatar">{{ userInitial }}</span><div class="account-identity-details"><strong>{{ app.user.email }}</strong></div><UiButton variant="ghost" icon class="icon-button" type="button" aria-label="退出登录" title="退出登录" @click="logout"><UiIcon name="logout" /></UiButton></div>
     </header>
     <main class="account-content"><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><AccountCleanupNotice class="account-cleanup-notice" /><RouterView /></NavigationPage></main>
   </div>

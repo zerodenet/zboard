@@ -142,11 +142,6 @@ defineExpose({ refresh })
 <style scoped>
 .system-load-region { container: system-load / inline-size; min-width: 0; }
 .system-load {
-  --load-cpu: var(--text-strong);
-  --load-memory: #f59e0b;
-  --load-disk: #ef4444;
-  --load-in: #10b981;
-  --load-out: #3b82f6;
   display: grid;
   grid-template-columns: minmax(0, 1.9fr) minmax(270px, 1fr);
   align-items: stretch;
@@ -154,9 +149,9 @@ defineExpose({ refresh })
   min-width: 0;
 }
 .load-trend, .load-current { min-width: 0; }
-.system-load :deep(.panel-header) { padding: 15px 18px 8px; border-bottom: 0; gap: 12px; min-height: 46px; }
+.system-load :deep(.panel-header) { padding: 0 0 10px; border-bottom: 0; gap: 12px; min-height: 46px; }
 .system-load :deep(.panel-header h2) { font-size: 14px; line-height: 20px; font-weight: 600; }
-.trend-body { padding: 0 18px 16px; }
+.trend-body { padding: 0; }
 .chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 26px; margin-bottom: 7px; color: var(--text-secondary); font-size: 11px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .chart-legend i { width: 7px; height: 7px; border-radius: 50%; }
@@ -187,7 +182,7 @@ svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .time-axis span:first-child { transform: none; }
 .time-axis span:last-child { transform: translateX(-100%); }
 .history-start { display: block; color: var(--muted); font-size: 11px; }
-.load-current-body { display: grid; gap: 12px; padding: 7px 18px 16px; }
+.load-current-body { display: grid; gap: 12px; padding: 0; }
 .gauge-heading, .network-current { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
 .gauge-heading>span, .network-current>span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); white-space: nowrap; }
 .gauge-heading .ui-icon, .network-current .ui-icon, .instance-summary .ui-icon { width: 13px; height: 13px; flex: none; }
@@ -215,11 +210,11 @@ svg { display: block; width: 100%; height: 100%; overflow: visible; }
   .capacity-warning, .instance-summary, .process-details { grid-column: 1 / -1; }
 }
 @container system-load (max-width: 520px) {
-  .system-load :deep(.panel-header) { padding-inline: 14px; }
+  .system-load :deep(.panel-header) { padding-inline: 0; }
   .trend-body { padding-inline: 12px; }
   .chart-legend { gap: 11px; font-size: 11px; }
   .network-legend { padding-left: 10px; }
   .chart-stage { height: 170px; }
-  .load-current-body { padding-inline: 14px; grid-template-columns: minmax(0, 1fr); gap: 13px; }
+  .load-current-body { padding-inline: 0; grid-template-columns: minmax(0, 1fr); gap: 13px; }
 }
 </style>

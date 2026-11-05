@@ -61,7 +61,7 @@ it('shows the old Plan draft but blocks even programmatic submit after a concurr
 })
 it('restores first-SKU fields in an unsubmitted new Plan', async () => {
   const path = '/admin/plans'
-  await open(path); await view!.findAll('button').find(button => button.text().includes('创建商品'))!.trigger('click')
+  await open(path); await view!.findAll('button').find(button => button.text().includes('创建套餐'))!.trigger('click')
   await view!.get('#create-plan-name').setValue('New unsaved product')
   await view!.get('#create-plan-sku-name').setValue('Annual')
   await view!.get('#create-plan-sku-code').setValue('annual')

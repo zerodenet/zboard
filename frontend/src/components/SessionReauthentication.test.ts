@@ -30,6 +30,7 @@ let externalMethods: object[] = []
 let actor = { id: 1, email: 'first@example.test', is_admin: true }
 const writes = vi.fn()
 const requests = vi.fn()
+const identityNavigations = vi.fn()
 const adapter: AxiosAdapter = async config => {
   requests(config.url)
   if (config.url === '/auth/me' && identityGate) await identityGate
@@ -56,7 +57,7 @@ beforeEach(() => {
   expired = false; failVerification = false; networkFailure = false; navigationForbidden = false
   passwordSet = true; externalMethods = []
   actor = { id: 1, email: 'first@example.test', is_admin: true }
-  writes.mockClear(); requests.mockClear(); api.defaults.adapter = adapter
+  writes.mockClear(); requests.mockClear(); identityNavigations.mockClear(); api.defaults.adapter = adapter
 })
 afterEach(() => { wrapper?.unmount(); cleanup?.(); clearAuthToken(); clearReauthenticationDrafts(); resetAuthSessionExpired(); vi.restoreAllMocks() })
 
@@ -86,6 +87,11 @@ async function render() {
   cleanup = installAuthSessionNavigation(router, () => store.clear(), () => store.suspendSession())
   wrapper = mount(App, { global: { plugins: [pinia, router], components: { UiButton }, stubs: {
     ModalDialog: { template: '<section role="dialog"><slot /><slot name="footer" /></section>' },
+    PluginFrame: defineComponent({ name: 'PluginFrame', props: ['pluginId', 'slot', 'surface', 'title', 'beforeIdentityLogin'], setup(props) {
+      return () => h('section', { 'data-plugin-auth': props.pluginId }, [h('button', { type: 'button', onClick: () => {
+        if (props.beforeIdentityLogin()) identityNavigations(props.pluginId)
+      } }, props.pluginId === 'github' ? '使用 GitHub 登录' : '使用 测试SSO 登录')])
+    } }),
     NavigationProgress: true, FeedbackHost: true, MaintenanceScreen: true, AnnouncementStack: true,
   } } })
   await flushPromises()
@@ -217,15 +223,31 @@ describe('in-page session restoration', () => {
     expect(store.passwordLoginAvailable).toBe(false)
     await expire()
     expect(wrapper!.find('input[type="password"]').exists()).toBe(false)
-    const externalButton = wrapper!.findAll('button').find(button => button.text() === '第三方登录')!
-    expect(externalButton.attributes('title')).toBe('OIDC 登录')
+    const externalButton = wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!
+    expect(externalButton.text()).toBe('使用 测试SSO 登录')
+    expect(wrapper!.findComponent({ name: 'PluginFrame' }).props()).toMatchObject({ pluginId: 'oidc', surface: 'public', title: 'OIDC 登录' })
+    expect(wrapper!.text()).not.toContain('第三方登录')
     expect(wrapper!.get('[role="dialog"]').findAll('p')).toHaveLength(0)
-    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click')
+    await wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/login')
-    expect(router.currentRoute.value.query).toEqual({ redirect: '/admin/edit?page=3#draft', reason: 'session-expired' })
+    expect(router.currentRoute.value.path).toBe('/admin/edit')
+    expect(identityNavigations).toHaveBeenCalledOnce()
+    expect(router.currentRoute.value.fullPath).toBe('/admin/edit?page=3#draft')
+    expect(store.user.id).toBe(0)
     expect(wrapper!.find('[data-draft]').exists()).toBe(false)
     expect(requests.mock.calls.filter(([url]) => url === '/auth/login')).toHaveLength(0)
+  })
+
+  it('keeps each installed login widget separate and uses the selected plugin', async () => {
+    passwordSet = false
+    externalMethods = ['oidc', 'github'].map(plugin_id => ({ plugin_id, generation: 1, slot: { title: plugin_id, id: 'login', surface: 'public', slot: 'auth.login.methods', entrypoint: 'ui/login.html' } }))
+    const { store } = await render(); await expire()
+    expect(wrapper!.findAllComponents({ name: 'PluginFrame' })).toHaveLength(2)
+    await wrapper!.findAll('button').find(button => button.text() === '使用 GitHub 登录')!.trigger('click'); await flushPromises()
+    expect(identityNavigations).toHaveBeenCalledWith('github')
+    expect(identityNavigations).toHaveBeenCalledOnce()
+    expect(store.user.id).toBe(0)
+    expect(sessionStorage.getItem('zboard.reauth-drafts.manifest.v1')).not.toBeNull()
   })
 
   it('treats unknown password availability as an explicit choice rather than a working login promise', async () => {
@@ -246,7 +268,7 @@ describe('full-page identity recovery uses verified identity and permission', ()
     externalMethods = [{ plugin_id: 'oidc', generation: 1, slot: { title: 'OIDC 登录', id: 'login', surface: 'public', slot: 'auth.login.methods', entrypoint: 'ui/login.html' } }]
     const current = await render()
     await expire()
-    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click')
+    await wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!.trigger('click')
     await flushPromises()
     return current
   }
@@ -284,9 +306,10 @@ describe('full-page identity recovery uses verified identity and permission', ()
     passwordSet = false
     externalMethods = [{ plugin_id: 'oidc', generation: 1, slot: { title: 'OIDC 登录', id: 'login', surface: 'public', slot: 'auth.login.methods', entrypoint: 'ui/login.html' } }]
     const { router } = await render(); await expire()
-    const button = wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.element as HTMLButtonElement
+    const button = wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!.element as HTMLButtonElement
     button.click(); button.click(); await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.path).toBe('/admin/edit')
+    expect(identityNavigations).toHaveBeenCalledOnce()
     expect(sessionStorage.getItem('zboard.reauth-drafts.manifest.v1')).not.toBeNull()
     expect(writes).toHaveBeenCalledOnce()
   })
@@ -296,7 +319,7 @@ describe('full-page identity recovery uses verified identity and permission', ()
     const { router, store } = await render(); await expire()
     const original = wrapper!.get('[data-draft]').element
     const storageWrite = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => { throw new DOMException('quota', 'QuotaExceededError') })
-    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click'); await flushPromises()
+    await wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!.trigger('click'); await flushPromises()
     expect(storageWrite).toHaveBeenCalledOnce()
     expect(router.currentRoute.value.fullPath).toBe('/admin/edit?page=3#draft')
     expect(wrapper!.get('[data-draft]').element).toBe(original)
@@ -312,7 +335,7 @@ describe('full-page identity recovery uses verified identity and permission', ()
     const { router } = await render()
     await wrapper!.get('[data-draft]').setValue('x'.repeat(70_000))
     await expire()
-    await wrapper!.findAll('button').find(button => button.text() === '第三方登录')!.trigger('click'); await flushPromises()
+    await wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!.trigger('click'); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/admin/edit')
     expect((wrapper!.get('[data-draft]').element as HTMLInputElement).value.length).toBe(70_000)
     expect(wrapper!.text()).toContain('尚未离开此页')

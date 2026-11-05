@@ -6,6 +6,7 @@ import Settings from './Settings.vue'
 import RegistrationSettings from './RegistrationSettings.vue'
 import EmailTemplateManager from '../components/EmailTemplateManager.vue'
 import FormField from '../components/FormField.vue'
+import SettingsConfigRow from '../components/SettingsConfigRow.vue'
 import { fetchSystemConfigs, updateSiteSettings, updateSystemConfig, fetchEmailTemplates, updateEmailTemplate, createEmailTemplate, previewEmailTemplate, testSMTP } from '../api/client'
 import { fetchNavigation } from '../api/menus'
 import { captureReauthenticationDrafts, clearReauthenticationDrafts, confirmReauthenticationDraftIdentity } from '../utils/reauthenticationDrafts'
@@ -136,4 +137,25 @@ it('uses the original public-config revision only on an explicit save', async ()
   vi.mocked(updateSystemConfig).mockResolvedValue(config('site_desc', 'Recovered description', 2) as any)
   await (view!.vm as any).saveConfigGroup('content', '公开文案', ['site_desc'])
   expect(updateSystemConfig).toHaveBeenCalledWith('site_desc', 'Recovered description', 1)
+})
+
+it('offers a single currency setting on the site page and refreshes public defaults after saving', async () => {
+ const currency = { ...config('default_currency', 'CNY'), name: '默认币种', is_public: true, input: { control: 'select', options: [{label: '人民币 · CNY',value:'CNY'},{label:'美元 · USD',value:'USD'}] } }
+ vi.mocked(fetchSystemConfigs).mockResolvedValue([currency] as any)
+ vi.mocked(updateSystemConfig).mockResolvedValue({ ...currency, value: 'USD', revision: 2 } as any)
+ await open('site')
+ const row = view!.findAllComponents(SettingsConfigRow).filter(row => row.props('config').config_key === 'default_currency')
+ expect(row).toHaveLength(1)
+ row[0]!.vm.$emit('update:draft', 'USD'); await flushPromises()
+ row[0]!.vm.$emit('save'); await flushPromises()
+ expect(updateSystemConfig).toHaveBeenCalledWith('default_currency','USD',1)
+ expect(state.app.loadPublicConfigs).toHaveBeenCalledOnce()
+})
+it('restores a currency setting draft without changing its server value', async () => {
+ vi.mocked(fetchSystemConfigs).mockResolvedValue([{ ...config('default_currency','CNY'), is_public:true }] as any)
+ const path = await open('site')
+ ;(view!.vm as any).drafts.default_currency = 'USD'
+ await roundTrip('site',path)
+ expect((view!.vm as any).drafts.default_currency).toBe('USD')
+ expect(updateSystemConfig).not.toHaveBeenCalled()
 })

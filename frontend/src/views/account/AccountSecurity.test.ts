@@ -18,3 +18,17 @@ it('always provides native password change for password accounts', async () => {
 it('retains initial password setup for external-only accounts', async () => {
  mocks.status.mockResolvedValue({ password_set: false }); const w = render(); await flushPromises(); expect(w.text()).toContain('设置本地密码'); expect(w.findAll('input[type=password]')).toHaveLength(2);w.unmount()
 })
+
+it('keeps the server password error visible after clearing the secret fields', async () => {
+ mocks.change.mockRejectedValueOnce({ response: { data: { message: '新密码不可用', error: { version: 1, code: 'validation_failed', fields: { password: '请选择不同的新密码。' } } } } })
+ const w = render(); await flushPromises()
+ const inputs = w.findAll('input[type=password]')
+ await inputs[0].setValue('current-password'); await inputs[1].setValue('new-password-123'); await inputs[2].setValue('new-password-123')
+ await w.get('button').trigger('click'); await flushPromises()
+ expect((inputs[1].element as HTMLInputElement).value).toBe('')
+ expect(w.text()).toContain('请选择不同的新密码。')
+ expect(inputs[1].attributes('aria-invalid')).toBe('true')
+ await inputs[1].setValue('another-password-123')
+ expect(w.text()).not.toContain('请选择不同的新密码。')
+ w.unmount()
+})

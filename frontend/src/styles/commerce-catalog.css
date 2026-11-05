@@ -20,14 +20,13 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  box-shadow: none;
+  transition: border-color .15s ease;
 }
 
 .commerce-product-card:hover {
-  transform: translateY(-2px);
   border-color: var(--line-tinted);
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
 }
 
 .commerce-product-head {

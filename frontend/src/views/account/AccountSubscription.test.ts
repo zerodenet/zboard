@@ -82,7 +82,7 @@ describe('account subscription independent loading and access identity', () => {
     wrapper = mount(routed ? RouterView : AccountSubscription, { attachTo: realActions ? document.body : undefined, global: {
       plugins: [pinia, router], components: { UiButton, UiInput, UiSelect, UiTextarea, TimeBadge },
       stubs: {
-        ConfirmDialog: true, TicketAttachmentEditor: true, PageRefreshButton: true,
+        ConfirmDialog: true, TicketAttachmentEditor: true, PageRefreshButton: false,
         // Credential/commerce tests exercise handlers independently of menu mounting.
         // The actual row-menu path is covered below and in RowActionMenu.test.ts.
         RowActions: realActions ? false : { template: '<div><slot name="primary" /><slot /></div>' },
@@ -93,6 +93,7 @@ describe('account subscription independent loading and access identity', () => {
     return wrapper
   }
   function button(text: string) {
+    if (text === '刷新') return wrapper!.find('button[aria-label="刷新订阅"]')
     const match = wrapper!.findAll('button').find(item => item.text().includes(text))
     expect(match, `button ${text}`).toBeDefined()
     return match!
@@ -105,18 +106,18 @@ describe('account subscription independent loading and access identity', () => {
     expect(accessPanel.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(wrapper!.get('.subscription-access-section button').text()).toBe('复制链接')
     expect(wrapper!.get('.subscription-diagnostics').attributes('open')).toBeUndefined()
-    expect(wrapper!.find('tbody a[href^="/account/tickets"]').exists()).toBe(false)
-    await wrapper!.get('tbody button[aria-haspopup="menu"]').trigger('click')
+    expect(wrapper!.find('.account-service-grid a[href^="/account/tickets"]').exists()).toBe(false)
+    await wrapper!.get('.account-service-grid button[aria-haspopup="menu"]').trigger('click')
     await flushPromises()
-    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('就此订阅提交工单')
-    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('余额自动续费')
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('提交工单')
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('自动续费')
   })
 
   it('offers generation in the main access header without opening technical options or submitting automatically', async () => {
     vi.mocked(fetchSubscriptionAccess).mockResolvedValue({ configured: false, subscription_id: 1 })
     await open('/account/subscription?subscription=1')
     const generate = wrapper!.get('.subscription-access-section .ui-section-actions button')
-    expect(generate.text()).toBe('生成此链接')
+    expect(generate.text()).toBe('生成订阅链接')
     expect(generate.attributes('disabled')).toBeUndefined()
     expect(wrapper!.get('.subscription-options').attributes('open')).toBeUndefined()
     await generate.trigger('click')
@@ -127,7 +128,7 @@ describe('account subscription independent loading and access identity', () => {
   it.each([1, 2])('prefills a ticket for row %i independently of the managed credential without submitting or rotating', async id => {
     const selected = 3 - id
     await open(`/account/subscription?subscription=${selected}`, true)
-    const rows = wrapper!.findAll('tbody tr')
+    const rows = wrapper!.findAll('.account-service-grid > .service-card')
     expect(rows.map(row => row.find('a[href^="/account/tickets"]').attributes('href'))).toEqual([
       '/account/tickets?new=1&subscription_id=1',
       '/account/tickets?new=1&subscription_id=2',
@@ -135,7 +136,7 @@ describe('account subscription independent loading and access identity', () => {
     expect(wrapper!.text()).toContain(`fixture-${selected}`)
     const accessReads = vi.mocked(fetchSubscriptionAccess).mock.calls.length
     const support = rows[id - 1]!.get('a[href^="/account/tickets"]')
-    expect(support.text()).toBe('就此订阅提交工单')
+    expect(support.text()).toBe('提交工单')
     await support.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/account/tickets')
@@ -183,9 +184,9 @@ describe('account subscription independent loading and access identity', () => {
       subscriptions[1],
     ]))
     await open()
-    const rows = wrapper!.findAll('tbody tr')
-    expect(rows[0]!.get('td:nth-child(2)').findAll('.status-badge')).toHaveLength(1)
-    expect(rows[0]!.get('td:nth-child(2)').text()).not.toContain('余额不足')
+    const rows = wrapper!.findAll('.account-service-grid > .service-card')
+    expect(rows[0]!.find('.service-card-heading .status-badge').exists()).toBe(false)
+    expect(rows[0]!.get('.service-card-heading').text()).not.toContain('余额不足')
     expect(rows[0]!.get('.subscription-renewal-result button').text()).toContain('余额不足')
     expect(rows[0]!.text()).not.toContain('最近检查')
     expect(rows[1]!.text()).not.toContain('余额不足')
@@ -250,7 +251,7 @@ describe('account subscription independent loading and access identity', () => {
       { protocol_endpoint_id: 25, name: 'No observations', region: '', protocol: 'hysteria2', connector_online: true, load_fresh: false, active_users: 0, active_flows: 0 },
     ] })
     await open()
-    const rows = wrapper!.findAll('tbody tr')
+    const rows = wrapper!.findAll('.subscription-diagnostics tbody tr')
     const stale = rows.find(row => row.text().includes('日本 SS [02]'))!
     expect(stale.text()).toContain('上报延迟')
     expect(stale.text()).toContain('负载数据已过期')
@@ -267,8 +268,8 @@ describe('account subscription independent loading and access identity', () => {
     vi.mocked(fetchSubscriptionAccess).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
     await open()
     expect(wrapper!.text()).toContain('正在读取链接状态')
-    expect(button('生成此链接').attributes('disabled')).toBeDefined()
-    await button('管理链接').trigger('click')
+    expect(button('生成订阅链接').attributes('disabled')).toBeDefined()
+    await button('获取订阅').trigger('click')
     await flushPromises()
     expect(vi.mocked(fetchSubscriptionAccess).mock.calls[0][1]?.signal?.aborted).toBe(true)
     current.resolve(access(2))
@@ -285,7 +286,7 @@ describe('account subscription independent loading and access identity', () => {
     await open()
     const next = deferred<SubscriptionAccess>()
     vi.mocked(fetchSubscriptionAccess).mockReturnValue(next.promise)
-    await button('管理链接').trigger('click')
+    await button('获取订阅').trigger('click')
     expect(wrapper!.text()).not.toContain('fixture-1')
     expect(wrapper!.text()).not.toContain('此订阅尚未生成可用链接')
     expect(wrapper!.findAll('button').some(item => item.text().includes('复制链接'))).toBe(false)
@@ -296,7 +297,7 @@ describe('account subscription independent loading and access identity', () => {
     await open()
     expect(wrapper!.text()).toContain('订阅链接读取失败')
     expect(wrapper!.text()).not.toContain('此订阅尚未生成可用链接')
-    expect(button('生成此链接').attributes('disabled')).toBeDefined()
+    expect(button('生成订阅链接').attributes('disabled')).toBeDefined()
     await button('重试链接').trigger('click')
     await flushPromises()
     expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Plan 1')
@@ -315,7 +316,7 @@ describe('account subscription independent loading and access identity', () => {
     const mutate = action === 'rotate' ? rotateSubscriptionAccess : revokeSubscriptionAccess
     vi.mocked(mutate).mockReturnValue(mutation.promise)
     await open()
-    await button(action === 'rotate' ? '轮换此链接' : '吊销此链接').trigger('click')
+    await button(action === 'rotate' ? '重置链接' : '停用链接').trigger('click')
     wrapper!.findComponent(ConfirmDialog).vm.$emit('confirm')
     await flushPromises()
     expect(mutate).toHaveBeenCalledWith(1)
@@ -332,15 +333,15 @@ describe('account subscription independent loading and access identity', () => {
   it('requires a fresh read after a mutation fails instead of offering a blind retry', async () => {
     vi.mocked(rotateSubscriptionAccess).mockRejectedValueOnce(new Error('fixture timeout'))
     await open()
-    await button('轮换此链接').trigger('click')
+    await button('重置链接').trigger('click')
     wrapper!.findComponent(ConfirmDialog).vm.$emit('confirm')
     await flushPromises()
     expect(wrapper!.findComponent(ConfirmDialog).props('open')).toBe(false)
     expect(wrapper!.text()).toContain('请重新读取状态后再试')
-    expect(button('生成此链接').attributes('disabled')).toBeDefined()
+    expect(button('生成订阅链接').attributes('disabled')).toBeDefined()
     await button('重试链接').trigger('click')
     await flushPromises()
-    expect(button('轮换此链接').attributes('disabled')).toBeUndefined()
+    expect(button('重置链接').attributes('disabled')).toBeUndefined()
     expect(rotateSubscriptionAccess).toHaveBeenCalledOnce()
   })
 
@@ -348,7 +349,7 @@ describe('account subscription independent loading and access identity', () => {
     const mutation = deferred<SubscriptionAccess>()
     vi.mocked(rotateSubscriptionAccess).mockReturnValue(mutation.promise)
     await open()
-    await button('轮换此链接').trigger('click')
+    await button('重置链接').trigger('click')
     wrapper!.findComponent(ConfirmDialog).vm.$emit('confirm')
     await flushPromises()
     await router.push({ path: '/account/subscription', query: { subscription: '2' } })
@@ -390,7 +391,7 @@ describe('account subscription independent loading and access identity', () => {
 
   it('rechecks the exact selected target after termination settles and never selects another active subscription', async () => {
     await open('/account/subscription?subscription=1')
-    await button('核对退订').trigger('click')
+    await button('退订').trigger('click')
     await flushPromises()
     vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId === 1
       ? page([]) : page([subscriptions[1]]))
@@ -433,8 +434,8 @@ describe('account subscription independent loading and access identity', () => {
     expect(wrapper!.get('.subscription-access-context').text()).toContain(formatBytes(90))
     expect(wrapper!.get('.access-panel').text()).toContain('fixture-2')
     expect(button('复制链接').exists()).toBe(true)
-    expect(button('轮换此链接').attributes('disabled')).toBeDefined()
-    expect(button('吊销此链接').attributes('disabled')).toBeDefined()
+    expect(button('重置链接').attributes('disabled')).toBeDefined()
+    expect(button('停用链接').attributes('disabled')).toBeDefined()
     expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
     expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
   })
@@ -495,8 +496,8 @@ describe('account subscription independent loading and access identity', () => {
   it.each([1, 2])('refreshes only the changed automatic-renewal row %i and the managed target if identical', async id => {
     vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page(subscriptions.map(sub => ({ ...sub, automatic_renewal_state: 'insufficient_balance' }))))
     await open('/account/subscription?subscription=1')
-    const row = wrapper!.findAll('tbody tr')[id - 1]!
-    await row.findAll('button').find(item => item.text().includes('余额自动续费'))!.trigger('click')
+    const row = wrapper!.findAll('.account-service-grid > .service-card')[id - 1]!
+    await row.findAll('button').find(item => item.text().includes('自动续费'))!.trigger('click')
     await flushPromises()
     const calls = vi.mocked(fetchAccountSubscriptionsPage).mock.calls.length
     const accessCalls = vi.mocked(fetchSubscriptionAccess).mock.calls.length
@@ -507,7 +508,7 @@ describe('account subscription independent loading and access identity', () => {
     const refreshed = vi.mocked(fetchAccountSubscriptionsPage).mock.calls.slice(calls)
     expect(refreshed.length).toBe(id === 1 ? 2 : 1)
     expect(refreshed.every(([params]) => params?.subscriptionId === id && params.limit === 1)).toBe(true)
-    const afterRows = wrapper!.findAll('tbody tr')
+    const afterRows = wrapper!.findAll('.account-service-grid > .service-card')
     expect(afterRows[id - 1]!.text()).not.toContain('余额不足')
     expect(afterRows[2 - id]!.text()).toContain('余额不足')
     expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(accessCalls + (id === 1 ? 1 : 0))
@@ -545,7 +546,7 @@ describe('account subscription independent loading and access identity', () => {
   expect(wrapper.text()).toContain('本周期流量已用完')
   expect(wrapper.text()).toContain('下次重置')
   expect(wrapper.find('a[href="/account/plans?operation=reset&subscription=1"]').exists()).toBe(true)
-  const generate = wrapper.findAll('button').find(button => button.text().includes('生成此链接'))!
+  const generate = wrapper.findAll('button').find(button => button.text().includes('生成订阅链接'))!
   expect(generate.attributes('disabled')).toBeDefined()
   expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
   wrapper.unmount()
@@ -561,8 +562,8 @@ it('offers renewal recovery on a stopped service without offering link managemen
   const wrapper = mount(AccountSubscription, { global: { plugins: [createPinia(), router] } })
   await flushPromises()
   expect(wrapper.find('a[href="/account/plans?operation=renew&subscription=1"]').text()).toBe('续费恢复')
-  expect(wrapper.text()).toContain('续费保留至')
-  expect(wrapper.findAll('button').find(button => button.text() === '管理链接')!.attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).toContain('可续费至')
+  expect(wrapper.findAll('button').find(button => button.text() === '获取订阅')!.attributes('disabled')).toBeDefined()
   wrapper.unmount()
 })
 

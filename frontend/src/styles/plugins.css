@@ -116,19 +116,17 @@
   font-weight: 600;
 }
 .plugin-status {
-  padding: 5px 9px;
-  border-radius: 20px;
-  background: var(--surface-muted);
+  padding: 2px 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 11px;
 }
 .plugin-status.active {
-  background: var(--success-soft);
-  color: var(--success);
+  color: var(--foreground);
 }
 .plugin-status.failed,
 .plugin-status.incompatible {
-  background: var(--danger-soft);
   color: var(--danger);
 }
 .plugin-card h2 .entity-title-link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -188,14 +186,15 @@
 .plugins-empty {
   padding: 48px 24px;
   text-align: center;
-  border-top: 1px solid var(--border);
+  border: 0;
 }
 .plugins-empty h2 {
   font-size: 18px;
 }
 .plugins-empty p {
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--muted);
-  line-height: 1.7;
 }
 .plugin-detail {
   display: grid;
@@ -302,3 +301,10 @@
 
 .plugin-tabs { flex-wrap: wrap; gap: 10px 24px; }
 .plugin-digest { overflow-wrap: anywhere; font-size: 12px; }
+
+@media (max-width: 820px) {
+  .plugins-page > .admin-page-navigation,
+  .plugins-page > header > .admin-page-navigation { display: none; }
+}
+
+.plugins-toolbar { border-bottom: 0; }

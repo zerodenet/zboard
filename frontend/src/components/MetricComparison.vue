@@ -1,12 +1,12 @@
 <template>
   <span class="metric-comparison" :class="direction" :title="`${label}：${format(previous)}`">
-    <span>{{ text }}</span><span class="comparison-period">{{ label }}</span>
+    <span>{{ text }}</span><span class="comparison-period" :class="{ 'sr-only': compact }">{{ label }}</span>
   </span>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatNumber } from '../utils/format'
-const props = withDefaults(defineProps<{ current: number; previous: number; label?: string; format?: (value: number) => string }>(), { label: '对比上期', format: formatNumber })
+const props = withDefaults(defineProps<{ current: number; previous: number; label?: string; format?: (value: number) => string; compact?: boolean }>(), { label: '对比上期', format: formatNumber })
 const direction = computed(() => props.current > props.previous ? 'increase' : props.current < props.previous ? 'decrease' : 'unchanged')
 const text = computed(() => {
   if (!Number.isFinite(props.current) || !Number.isFinite(props.previous)) return '暂无可比数据'

@@ -2,7 +2,7 @@
   <section class="standard-page">
     <PageHeader title="服务器管理">
       <template #actions>
-        <UiButton variant="secondary" type="button" @click="observationQueueOpen = true">观察队列</UiButton>
+        <UiButton variant="ghost" type="button" @click="observationQueueOpen = true">观察队列</UiButton>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
         <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>
       </template>
@@ -52,7 +52,7 @@
             </tr>
           </tbody>
       </DataTable>
-      <EmptyState v-else-if="!initialLoading" icon="nodes" :title="filters.q || filters.lifecycle || filters.connector ? '没有匹配节点' : '还没有 VPS'" :description="filters.q || filters.lifecycle || filters.connector ? '调整或清除筛选条件后重试。' : '先登记主机资产，协议和套餐可以稍后配置。'" />
+      <EmptyState v-else-if="!initialLoading && !error" icon="nodes" :title="filters.q || filters.lifecycle || filters.connector ? '没有匹配节点' : '还没有 VPS'" :description="filters.q || filters.lifecycle || filters.connector ? '调整或清除筛选条件后重试。' : '先登记主机资产，协议和套餐可以稍后配置。'" />
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 

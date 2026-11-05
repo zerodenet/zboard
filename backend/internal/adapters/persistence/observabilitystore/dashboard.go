@@ -6,6 +6,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"gorm.io/gorm"
 )
@@ -273,6 +274,13 @@ func (s Dashboard) loadDashboard(ctx context.Context, period observability.Dashb
 	currency, mixed := orders.Currency, orders.CurrencyCount > 1
 	if orders.CurrencyCount == 0 {
 		currency = "CNY"
+		if orders.PaidOrders == 0 && orders.PreviousPaidOrders == 0 && (view == "" || view == "statistics") {
+			var err error
+			currency, err = platformstore.DefaultCurrency(db)
+			if err != nil {
+				return observability.DashboardSnapshot{}, err
+			}
+		}
 	} else if mixed {
 		currency = ""
 	}

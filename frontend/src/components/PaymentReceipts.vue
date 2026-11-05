@@ -12,7 +12,7 @@
       <PageAlert v-if="receipt.disposition === 'review_required'" tone="warning">旧人工付款缺少渠道身份，尚不能判断本收据是否已计入原付款；款项已留存待核对，请关联工单处理。</PageAlert>
       <p v-if="receipt.ticket_id">关联工单 #{{ receipt.ticket_id }} · {{ receipt.resolution_reason }}</p>
       <UiButton v-if="admin && receipt.disposition === 'review_required' && reviewing !== receipt.id" variant="secondary" :disabled="saving" @click="reviewing = receipt.id; ticket = ''; reason = ''; decision = ''">核对这笔收据</UiButton>
-      <form class="receipt-review-form" v-if="admin && receipt.disposition === 'review_required' && reviewing === receipt.id" @submit.prevent="resolve(receipt.id)">
+      <form novalidate class="receipt-review-form" v-if="admin && receipt.disposition === 'review_required' && reviewing === receipt.id" @submit.prevent="resolve(receipt.id)">
         <FormField v-slot="{ controlAttrs }" label="该用户的工单编号" :name="`receipt-ticket-${receipt.id}`"><UiInput v-model="ticket" v-bind="controlAttrs" inputmode="numeric" :disabled="saving" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="核对结论" :name="`receipt-decision-${receipt.id}`"><UiSelect v-model="decision" v-bind="controlAttrs" :disabled="saving" :options="[{ value: '', label: '请选择核对结论' }, { value: 'credit_wallet', label: '确认是尚未入账的新款项，转入余额' }, { value: 'already_applied', label: '确认已计入原付款，关联原履约' }]" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="核对依据" :name="`receipt-reason-${receipt.id}`"><UiInput v-model="reason" v-bind="controlAttrs" maxlength="500" :disabled="saving" /></FormField>

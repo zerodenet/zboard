@@ -71,6 +71,8 @@ export const useAppStore = defineStore('app', {
         applySiteMetadata(buildSiteProfile(this.publicConfigs, this.installation?.site_name || ''))
         return this.publicConfigs
       } catch (_) {
+        // Keep known defaults during a temporary refresh failure.
+        if (this.publicConfigs.length) return this.publicConfigs
         this.publicConfigs = []
         this.setSystemTimeZone(DEFAULT_SYSTEM_TIME_ZONE)
         applySiteMetadata(buildSiteProfile([], this.installation?.site_name || ''))

@@ -41,7 +41,7 @@
           </td>
         </tr></tbody>
       </DataTable>
-      <EmptyState v-else class="dns-empty-state" icon="nodes" :title="search || statusFilter ? '没有匹配的解析记录' : '还没有 DNS 解析'" :description="search || statusFilter ? '调整搜索词或同步状态后重试。' : '添加解析后，可以在这里查看同步和公共解析状态。'">
+      <EmptyState v-else-if="!error" class="dns-empty-state" icon="nodes" :title="search || statusFilter ? '没有匹配的解析记录' : '还没有 DNS 解析'" :description="search || statusFilter ? '调整搜索词或同步状态后重试。' : '添加解析后，可以在这里查看同步和公共解析状态。'">
         <template #actions><UiButton v-if="search || statusFilter" type="button" variant="secondary" size="sm" @click="clearFilters">清除筛选</UiButton><UiButton v-else as-child variant="secondary" size="sm"><RouterLink to="/admin/providers">管理供应商账户</RouterLink></UiButton></template>
       </EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>

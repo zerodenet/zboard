@@ -4,7 +4,7 @@
       <PopoverRoot v-model:open="currencyOpen">
         <PopoverTrigger as-child><UiButton variant="ghost" size="sm" :disabled="saving || creditSaving" aria-label="切换余额币种">{{ currency }}<UiIcon name="chevron" class="wallet-currency-chevron" /></UiButton></PopoverTrigger>
         <PopoverPortal><PopoverContent as-child align="start" :side-offset="6" :collision-padding="16">
-          <form class="ui-popover-content wallet-currency-editor" @submit.prevent="applyCurrency">
+          <form novalidate class="ui-popover-content wallet-currency-editor" @submit.prevent="applyCurrency">
             <FormField v-slot="{ controlAttrs }" label="币种" name="admin-wallet-currency"><UiInput v-model="currencyInput" v-bind="controlAttrs" maxlength="3" autocomplete="off" :disabled="saving || creditSaving" /></FormField>
             <UiButton type="submit" size="sm" :disabled="saving || creditSaving">切换</UiButton>
           </form>
@@ -27,7 +27,7 @@
       <CollapsibleRoot v-model:open="payoutOpen" class="wallet-payouts">
         <CollapsibleTrigger as-child><UiButton variant="ghost" size="sm" data-test="payout-toggle"><UiIcon name="chevron" :class="{ 'wallet-payout-expanded': payoutOpen }" />人工出款</UiButton></CollapsibleTrigger>
         <CollapsibleContent class="wallet-payout-body">
-          <form data-test="debit" class="form-grid" @submit.prevent="debit">
+          <form novalidate data-test="debit" class="form-grid" @submit.prevent="debit">
             <FormField v-slot="{ controlAttrs }" :label="`扣减金额（${currency}）`" name="admin-wallet-amount"><UiInput v-model="amount" v-bind="controlAttrs" inputmode="decimal" :disabled="saving || Boolean(debitIntent)" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="工单编号" name="admin-wallet-ticket"><UiInput v-model="ticket" v-bind="controlAttrs" inputmode="numeric" :disabled="saving || Boolean(debitIntent)" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="扣减原因（用户可见）" name="admin-wallet-reason" full><UiInput v-model="reason" v-bind="controlAttrs" maxlength="400" :disabled="saving || Boolean(debitIntent)" /></FormField>
@@ -48,13 +48,13 @@
             <div class="wallet-case-heading"><strong>{{ money(selected.amount_minor) }}</strong><span>工单 #{{ selected.ticket_id }}</span></div>
             <p v-if="selected.reversal_entry_id">{{ selected.reversal_reason }}</p>
             <p v-for="result in selected.results || []" :key="result.id">{{ label(result.outcome) }} · {{ result.reference || result.note }} · <TimeBadge :value="result.occurred_at" /></p>
-            <form data-test="payout" class="form-grid" @submit.prevent="report">
+            <form novalidate data-test="payout" class="form-grid" @submit.prevent="report">
               <FormField v-slot="{ controlAttrs }" label="核对结果" name="admin-wallet-outcome" full><UiSelect v-model="outcome" v-bind="controlAttrs" :disabled="saving || Boolean(reportIntent)" :options="[{value:'unknown',label:'尚未确定'}, {value:'succeeded',label:'已确认出款成功'}, {value:'failed',label:'已确认出款失败'}]" /></FormField>
               <FormField v-slot="{ controlAttrs }" label="外部流水（仅管理员可见）" name="admin-wallet-reference"><UiInput v-model="reference" v-bind="controlAttrs" maxlength="128" :disabled="saving || Boolean(reportIntent)" /></FormField>
               <FormField v-slot="{ controlAttrs }" label="核对依据（仅管理员可见）" name="admin-wallet-note"><UiInput v-model="note" v-bind="controlAttrs" maxlength="500" :disabled="saving || Boolean(reportIntent)" /></FormField>
               <div class="wallet-form-actions"><UiButton type="submit" :loading="saving" :disabled="creditSaving || reportBlocked || Boolean(reportIntent?.result)">{{ reportIntent && !reportIntent.result ? '重试原结果记录' : '记录核对结果' }}</UiButton><UiButton v-if="reportIntent?.result" type="button" variant="secondary" :disabled="saving" @click="newReport">添加核对记录</UiButton></div>
             </form>
-            <form v-if="selected.external_status === 'failed' && !selected.reversal_entry_id" data-test="reverse" class="form-grid" @submit.prevent="reverse">
+            <form novalidate v-if="selected.external_status === 'failed' && !selected.reversal_entry_id" data-test="reverse" class="form-grid" @submit.prevent="reverse">
               <FormField v-slot="{ controlAttrs }" label="恢复余额原因（用户可见）" name="admin-wallet-reversal" full><UiInput v-model="reversalReason" v-bind="controlAttrs" maxlength="400" :disabled="saving" /></FormField>
               <div class="wallet-form-actions"><UiButton type="submit" :loading="saving" :disabled="creditSaving || reversalReason.trim().length < 3">确认失败并恢复本笔扣减</UiButton></div>
             </form>
@@ -85,6 +85,7 @@ import PageRefreshButton from './PageRefreshButton.vue'
 import UiIcon from './UiIcon.vue'
 import { notify } from '../utils/feedback'
 import { useAppStore } from '../stores/app'
+import { platformDefaultCurrency } from '../utils/platformCurrency'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { newCheckoutIntent } from '../composables/checkoutOrder'
 import { commerceErrorMessage } from '../utils/commerceErrors'
@@ -102,7 +103,7 @@ const props = defineProps<{ userId: number; initialCurrency?: string; userLabel?
 const emit = defineEmits<{ changed: [] }>()
 const currencyOpen = ref(false), payoutOpen = ref(false)
 const actor = computed(() => app.user?.id || 0)
-const initialCurrency = /^[A-Z]{3,16}$/.test(props.initialCurrency || '') ? props.initialCurrency! : 'CNY'
+const initialCurrency = /^[A-Z]{3,16}$/.test(props.initialCurrency || '') ? props.initialCurrency! : platformDefaultCurrency(app.publicConfigs)
 const currency = ref(initialCurrency), currencyInput = ref(initialCurrency), after = ref(0), ledgerAfter = ref(0)
 const amount = ref(''), ticket = ref(''), reason = ref(''), outcome = ref('unknown'), reference = ref(''), note = ref(''), reversalReason = ref('')
 const debitBlocked = ref(false), reportBlocked = ref(false)
