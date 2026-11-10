@@ -91,6 +91,15 @@ it('sends explicit historical quota synchronization and retains its draft on fai
   expect(view.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('true')
   expect(view.find('#edit-plan-form').exists()).toBe(true)
 })
+it('synchronizes reset policy independently and retains the selection on failure', async () => {
+  vi.mocked(updatePlan).mockRejectedValueOnce(new Error('temporary save failure'))
+  const view = await open('&editor=plan')
+  expect(view.get('#edit-plan-sync-reset-policy').attributes('aria-checked')).toBe('false')
+  await view.get('#edit-plan-sync-reset-policy').trigger('click')
+  await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_reset_policy: true, sync_traffic_quota: false, reset_policy: 2 }))
+  expect(view.get('#edit-plan-sync-reset-policy').attributes('aria-checked')).toBe('true')
+})
 it('explains automatic group synchronization independently of the optional quota checkbox', async () => {
   const view = await open('&editor=plan')
   const editor = view.get('#edit-plan-form')

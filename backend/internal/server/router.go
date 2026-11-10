@@ -32,7 +32,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 // assistance in the server composition root. All existing callers retain the
 // complete single-process behavior through RegisterRoutes above.
 func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options, supervisor *application.ProjectionSupervisorOptions, fileStorageDir ...string) (func() error, error) {
-	services := application.New(db, jwtSecret)
+	var services *application.Services
+	_ = runStartupPhase("application_services", func() error { services = application.New(db, jwtSecret); return nil })
 	directory := ""
 	if len(fileStorageDir) > 0 {
 		directory = fileStorageDir[0]
@@ -48,7 +49,7 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 	if err != nil {
 		return nil, err
 	}
-	if _, err := services.RecoverLegacyOperations(context.Background()); err != nil {
+	if err := runStartupPhase("legacy_operation_recovery", func() error { _, err := services.RecoverLegacyOperations(context.Background()); return err }); err != nil {
 		return nil, err
 	}
 	srv.Use(h.InstallationMiddleware)
@@ -344,36 +345,42 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodDelete, "/api/v1/admin/subscription-templates/:id", h.AdminSubscriptionTemplateDeleteHandler),
 		newRoute(http.MethodGet, "/api/v1/system/info", h.SystemInfoHandler),
 	})
-	if err := h.ReconcileSystemConfigDefaults(); err != nil {
+	if err := runStartupPhase("system_defaults", h.ReconcileSystemConfigDefaults); err != nil {
 		return nil, err
 	}
-	if err := services.RecoverLegacyDatabaseMigrations(context.Background()); err != nil {
+	if err := runStartupPhase("legacy_database_migration_recovery", func() error { return services.RecoverLegacyDatabaseMigrations(context.Background()) }); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileSiteCustomizationDefaults(); err != nil {
+	if err := runStartupPhase("site_defaults", h.ReconcileSiteCustomizationDefaults); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileSubscriptionTemplateDefaults(); err != nil {
+	if err := runStartupPhase("subscription_templates", h.ReconcileSubscriptionTemplateDefaults); err != nil {
 		return nil, err
 	}
-	if err := h.SeedSubscriptionClientTemplateDefaults(); err != nil {
+	if err := runStartupPhase("subscription_client_templates", h.SeedSubscriptionClientTemplateDefaults); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+	if err := runStartupPhase("mieru_credentials", h.ReconcileMieruEndpointCredentials); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileSubscriptionAccessTokens(); err != nil {
+	if err := runStartupPhase("subscription_access", h.ReconcileSubscriptionAccessTokens); err != nil {
 		return nil, err
 	}
-	closeTrafficReads, err := h.ConfigureTrafficReads()
+	var closeTrafficReads func() error
+	err = runStartupPhase("traffic_read_pool", func() error { var err error; closeTrafficReads, err = h.ConfigureTrafficReads(); return err })
 	if err != nil {
 		return nil, err
 	}
-	if err := h.ConfigureZeroEventSpool(zeroEventSpoolConfig); err != nil {
+	if err := runStartupPhase("zero_event_spool_recovery", func() error { return h.ConfigureZeroEventSpool(zeroEventSpoolConfig) }); err != nil {
 		_ = closeTrafficReads()
 		return nil, err
 	}
-	pluginManager, pluginErr := plugins.NewManager(db, credentialCipher, pluginOptions, version.Version)
+	var pluginManager *plugins.Manager
+	pluginErr := runStartupPhase("plugin_runtime", func() error {
+		var err error
+		pluginManager, err = plugins.NewManager(db, credentialCipher, pluginOptions, version.Version)
+		return err
+	})
 	if pluginErr != nil {
 		logx.Errorf("plugin runtime unavailable; core service remains online: %v", pluginErr)
 	} else {

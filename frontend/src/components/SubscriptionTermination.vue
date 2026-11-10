@@ -1,5 +1,5 @@
 <template>
-  <UiSection :title="subscriptionName ? `退订 · ${subscriptionName}` : `退订订阅 #${subscriptionId}`" :description="administrative ? '整份终止剩余权益；默认按残值退款，管理员可覆盖金额，包括0元。' : '终止本份订阅的全部剩余权益，按实际成交残值退入站内余额。'">
+  <component :is="embedded ? 'div' : UiSection" v-bind="embedded ? {} : { title: subscriptionName ? `退订 · ${subscriptionName}` : `退订订阅 #${subscriptionId}`, description: administrative ? '整份终止剩余权益；默认按残值退款，管理员可覆盖金额，包括0元。' : '终止本份订阅的全部剩余权益，按实际成交残值退入站内余额。' }">
     <div class="panel-body stack">
       <PageAlert v-if="error" tone="danger" title="退订需要核对">{{ error }}</PageAlert>
       <PageAlert v-if="receipt" tone="success" title="订阅已终止">
@@ -7,24 +7,31 @@
         节点撤权等待核验；当前连接终止取决于节点的实际能力。其他订阅继续独立使用。
       </PageAlert>
       <template v-else>
-        <p>{{ administrative ? '默认退款为剩余价值，实际金额由管理员确认；0元只终止权益，不退款。' : '退的是剩余价值，不是原支付全款；不保留部分套餐。' }}确认后不再保留续费恢复窗口。余额退款不提供提现；历史订单和计量记录保留。</p>
+        <p v-if="embedded" class="termination-consequence">退订后停止此订阅，退款进入用户余额；不保留续费恢复窗口。</p>
+        <p v-else>{{ administrative ? '默认退款为剩余价值，实际金额由管理员确认；0元只终止权益，不退款。' : '退的是剩余价值，不是原支付全款；不保留部分套餐。' }}确认后不再保留续费恢复窗口。余额退款不提供提现；历史订单和计量记录保留。</p>
         <PageAlert v-if="quote?.valuation_status === 'unavailable'" tone="warning" title="默认残值未知">{{ quote.message }}本次只能明确确认0元终止，不提供任何自动退款。</PageAlert>
-        <p v-else-if="quote">本周期残值 {{ money(quote.current_minor, quote.currency) }}，后续已付周期 {{ money(quote.future_minor, quote.currency) }}，合计 {{ money(quote.total_minor, quote.currency) }}。确认时会重新校验用量和权益。</p>
+        <template v-else-if="quote">
+          <div v-if="embedded" class="termination-values">
+            <div class="termination-default"><span>默认退款 · {{ quote.currency }}</span><strong>{{ major(quote.total_minor) }}</strong></div>
+            <dl><div><dt>本周期</dt><dd>{{ major(quote.current_minor) }}</dd></div><div><dt>后续已付周期</dt><dd>{{ major(quote.future_minor) }}</dd></div><div v-if="administrative"><dt>实付上限</dt><dd>{{ major(quote.max_refund_minor) }}</dd></div></dl>
+          </div>
+          <p v-else>本周期残值 {{ money(quote.current_minor, quote.currency) }}，后续已付周期 {{ money(quote.future_minor, quote.currency) }}，合计 {{ money(quote.total_minor, quote.currency) }}。确认时会重新校验用量和权益。</p>
+        </template>
         <template v-if="administrative && quote && !intent">
-          <p v-if="quote.valuation_status !== 'unavailable'">可退实付上限 {{ money(quote.max_refund_minor || '', quote.currency) }}；退款进入订阅所属用户余额，不发起外部资金退款。</p>
+          <p v-if="!embedded && quote.valuation_status !== 'unavailable'">可退实付上限 {{ money(quote.max_refund_minor || '', quote.currency) }}；退款进入订阅所属用户余额，不发起外部资金退款。</p>
           <FormField v-slot="{ controlAttrs }" label="实际退款金额（可为0）" :name="`termination-amount-${subscriptionId}`" :hint="quote.valuation_status === 'unavailable' ? '只允许明确输入0，不推断未知币种或成交金额。' : quote.currency + '，最多两位小数。'"><UiInput v-model="amount" v-bind="controlAttrs" inputmode="decimal" /></FormField>
-          <FormField v-slot="{ controlAttrs }" label="管理员退订原因" :name="`termination-reason-${subscriptionId}`" hint="3–400个UTF-8字节；默认残值与实际金额均保留审计。"><UiInput v-model="reason" v-bind="controlAttrs" maxlength="400" /></FormField>
+          <FormField v-slot="{ controlAttrs }" label="管理员退订原因" :name="`termination-reason-${subscriptionId}`" :required="embedded" :hint="embedded ? '' : '3–400个UTF-8字节；默认残值与实际金额均保留审计。'"><UiInput v-model="reason" v-bind="controlAttrs" maxlength="400" /></FormField>
         </template>
         <p v-if="administrative && intent">已保留管理员审批：实际退款 {{ intent.quote.valuation_status === 'unavailable' ? '0（不退款）' : money(String(intent.request.amount_minor), intent.quote.currency) }}，原默认残值 {{ money(intent.quote.total_minor, intent.quote.currency) }}；原因：{{ intent.request.reason }}。</p>
         <p v-if="intent">已有一笔待核对请求。重新登录或刷新页面后，需要再次点击才能重试原请求。</p>
         <UiButton v-if="!intent || knownConflict" type="button" variant="secondary" :disabled="busy || blocked" @click="loadQuote">{{ quote ? '重新核对残值' : '核对退订残值' }}</UiButton>
-        <UiButton v-if="quote && !knownConflict" type="button" :disabled="busy || blocked || (administrative && !intent && !validApproval)" :loading="busy" @click="submitTermination">{{ intent ? '核对并重试原退订请求' : administrative && approvalMinor === 0 ? '确认终止订阅（不退款）' : '确认终止订阅并退款至余额' }}</UiButton>
+        <UiButton v-if="quote && !knownConflict" type="button" :variant="embedded ? 'danger' : 'primary'" :disabled="busy || blocked || (administrative && !intent && !validApproval)" :loading="busy" @click="submitTermination">{{ intent ? '核对并重试原退订请求' : administrative && approvalMinor === 0 ? '确认终止订阅（不退款）' : '确认终止订阅并退款至余额' }}</UiButton>
       </template>
     </div>
-  </UiSection>
+  </component>
 </template>
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { fetchSubscriptionValue, terminateSubscription, fetchAdministrativeSubscriptionValue, administrativelyTerminateSubscription, type AdministrativeSubscriptionTerminationRequest, type AdministrativeSubscriptionValueQuote, type SubscriptionValueQuote, type SubscriptionTerminationRequest, type SubscriptionTerminationReceipt } from '../api/subscriptionValue'
 import { newCheckoutIntent } from '../composables/checkoutOrder'
@@ -36,18 +43,22 @@ import FormField from './FormField.vue'
 import UiSection from './UiSection.vue'
 import UiButton from './UiButton.vue'
 import PageAlert from './PageAlert.vue'
-const props = defineProps<{ subscriptionId: number; administrative?: boolean; subscriptionName?: string }>(), emit = defineEmits<{ settled: [] }>()
+import { confirmAction } from '../utils/feedback'
+const props = defineProps<{ subscriptionId: number; administrative?: boolean; subscriptionName?: string; embedded?: boolean; autoloadQuote?: boolean }>(), emit = defineEmits<{ settled: []; busy: [value: boolean] }>()
 const app = useAppStore(), actor = computed(() => app.user?.id || 0)
 type Quote = Omit<SubscriptionValueQuote, 'root_order_id' | 'current_minor' | 'future_minor' | 'total_minor'> & Partial<AdministrativeSubscriptionValueQuote>
 interface Intent { request: SubscriptionTerminationRequest & Partial<AdministrativeSubscriptionTerminationRequest>; quote: Quote; receipt?: SubscriptionTerminationReceipt }
 const quote = ref<Quote | null>(null), receipt = ref<SubscriptionTerminationReceipt | null>(null), intent = ref<Intent | null>(null)
 const busy = ref(false), blocked = ref(false), knownConflict = ref(false), error = ref('')
+watch(busy, value => emit('busy', value), { flush: 'sync' })
+onMounted(() => { if (props.autoloadQuote) void loadQuote() })
 const amount = ref(''), reason = ref('')
 const approvalMinor = computed(() => /^0(?:\.0{1,2})?$/.test(amount.value.trim()) ? 0 : parseWalletAmount(amount.value))
 const validApproval = computed(() => approvalMinor.value !== null && /^\d+$/.test(quote.value?.max_refund_minor || '') && BigInt(approvalMinor.value!) <= BigInt(quote.value!.max_refund_minor!) && isUtf8LengthInRange(reason.value.trim(), 3, 400))
 const scope = () => `zboard:${props.administrative ? 'admin-unsubscribe' : 'unsubscribe'}:${actor.value}:${props.subscriptionId}`
 let generation = 0
 function money(value: string | null | undefined, currency: string) { return typeof value === 'string' ? formatWalletMoney(value, currency) : '金额未知' }
+function major(value: string | null | undefined) { return typeof value === 'string' && /^\d+$/.test(value) ? walletMajor(value) : '金额未知' }
 watch([actor, () => props.subscriptionId, () => props.administrative, () => app.user?.isAdmin], () => {
   generation++; quote.value = null; receipt.value = null; intent.value = null; knownConflict.value = false; error.value = ''; blocked.value = true
   amount.value = ''; reason.value = ''; if (!actor.value || props.administrative && !app.user?.isAdmin) return
@@ -90,6 +101,11 @@ async function submitTermination() {
   if (busy.value || blocked.value || knownConflict.value || !quote.value || !actor.value || props.administrative && (!app.user?.isAdmin || !intent.value && !validApproval.value)) return
   const version = generation, id = props.subscriptionId, key = scope(); busy.value = true; error.value = ''
   try {
+    if (props.embedded) {
+      const refund = intent.value?.request.amount_minor ?? approvalMinor.value
+      const confirmed = await confirmAction({ title: '确认退订此订阅？', message: refund === 0 ? '此订阅将停止服务，本次不退款。' : `此订阅将停止服务，${money(String(refund), quote.value.currency)} 将退入用户余额。`, confirmText: '确认退订', tone: 'danger' })
+      if (!confirmed || generation !== version || key !== scope()) return
+    }
     let attempt = intent.value
     if (!attempt) {
       const request: Intent['request'] = { quote_fingerprint: quote.value.quote_fingerprint, idempotency_key: newCheckoutIntent() }
@@ -111,3 +127,13 @@ async function submitTermination() {
   } finally { busy.value = false }
 }
 </script>
+<style scoped>
+.termination-consequence { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.termination-values { display: grid; gap: 14px; padding: 16px; background: var(--surface-soft); border-radius: var(--radius-card); }
+.termination-default { display: grid; gap: 6px; }
+.termination-default > span,.termination-values dt { color: var(--muted); font-size: 12px; }
+.termination-default strong { color: var(--text-strong); font-size: 28px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.termination-values dl { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 0; }
+.termination-values dl > div { display: grid; gap: 4px; }
+.termination-values dd { margin: 0; font-size: 13px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+</style>

@@ -42,6 +42,9 @@ func ApplyPlanUpdate(current Plan, req PlanUpdateRequest) (Plan, []string, error
 	if req.SyncTrafficQuota && req.TrafficBytes == nil {
 		return Plan{}, nil, validationError("套餐策略校验失败。", map[string]string{"traffic_bytes": "同步历史订阅需要明确指定流量配额。"})
 	}
+	if req.SyncResetPolicy && req.ResetPolicy == nil {
+		return Plan{}, nil, validationError("套餐策略校验失败。", map[string]string{"sync_reset_policy": "同步重置策略需要明确指定流量重置策略。"})
+	}
 	candidate := current
 	fields := []string{}
 	if req.Name != nil {

@@ -19,7 +19,7 @@
           <div v-if="queue.failed || queue.stale" class="queue-anomalies">{{ [queue.stale ? `${queue.stale} 项待接管` : '', queue.failed ? `${queue.failed} 项失败记录` : ''].filter(Boolean).join(' · ') }}</div>
         </article>
         <span v-if="!data.queues.length" class="unavailable">{{ queuesLoading ? '正在读取…' : '队列状态未取得' }}</span>
-        <div class="spool-line"><span>流量事件入账</span><strong v-if="data.runtime.event_spool">{{ data.runtime.event_spool.pending_events }} <small>· {{ formatBytes(data.runtime.event_spool.pending_bytes) }}</small></strong><span v-else class="unavailable">{{ diagnosticsUnavailable ? '状态未取得' : '未启用' }}</span></div>
+        <div class="spool-line"><span>流量事件入账</span><span v-if="data.runtime.event_spool?.pending_unknown" class="unavailable" role="status">{{ data.runtime.event_spool.read_error || '缓冲队列读取失败' }}</span><strong v-else-if="data.runtime.event_spool">{{ data.runtime.event_spool.pending_events }} <small>· {{ formatBytes(data.runtime.event_spool.pending_bytes) }}</small></strong><span v-else class="unavailable">{{ diagnosticsUnavailable ? '状态未取得' : '未启用' }}</span></div>
       </div>
     </UiSection>
   </div>

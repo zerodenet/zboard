@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import Plans from './Plans.vue'
 import FormField from '../components/FormField.vue'
+import UiCheckbox from '../components/UiCheckbox.vue'
 import { createPlan, createPlanSKU, fetchPlanDetail, fetchPlanSKU, fetchPlanSKUs, fetchPlansPage, updatePlan, updatePlanSKU } from '../api/client'
 import { captureReauthenticationDrafts, clearReauthenticationDrafts, confirmReauthenticationDraftIdentity } from '../utils/reauthenticationDrafts'
 vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: 'verified', user: { id: 1 }, isAdmin: true, reauthRequired: false, sessionEpoch: 0 }) }))
@@ -28,8 +29,8 @@ async function open(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/plans', component: Plans }] })
   await router.push(path)
   view = shallowMount(Plans, { global: { plugins: [router], renderStubDefaultSlot: true,
-    components: { UiInput: input, UiTextarea: input, UiNumberInput: number, UiButton: defineComponent({ template: '<button><slot /></button>' }) },
-    stubs: { UiInput: false, UiTextarea: false, UiNumberInput: false, UiButton: false, MoneyInput: number, FormField, ModalDialog: modal, DetailDrawer: modal, PageHeader: { template: '<header><slot /><slot name="actions" /></header>' }, PageAlert: { template: '<aside><slot /><slot name="actions" /></aside>' } },
+    components: { UiCheckbox, UiInput: input, UiTextarea: input, UiNumberInput: number, UiButton: defineComponent({ template: '<button><slot /></button>' }) },
+    stubs: { UiCheckbox: false, CheckboxRoot: false, UiInput: false, UiTextarea: false, UiNumberInput: false, UiButton: false, MoneyInput: number, FormField, ModalDialog: modal, DetailDrawer: modal, PageHeader: { template: '<header><slot /><slot name="actions" /></header>' }, PageAlert: { template: '<aside><slot /><slot name="actions" /></aside>' } },
   } })
   await flushPromises()
   return router
@@ -58,6 +59,16 @@ it('shows the old Plan draft but blocks even programmatic submit after a concurr
   expect(view!.text()).toContain('当前草稿基于旧版本')
   await view!.get('#edit-plan-form').trigger('submit'); await flushPromises()
   expect(updatePlan).not.toHaveBeenCalled()
+})
+it('restores the explicit reset-sync choice after reauthentication without auto-submitting', async () => {
+  const path = '/admin/plans?plan=1&editor=plan'
+  await open(path)
+  await view!.get('#edit-plan-sync-reset-policy').trigger('click')
+  await roundTrip(path)
+  expect(view!.get('#edit-plan-sync-reset-policy').attributes('aria-checked')).toBe('true')
+  expect(updatePlan).not.toHaveBeenCalled()
+  await view!.get('#edit-plan-form').trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_reset_policy: true, sync_traffic_quota: false, expected_revision: 1 }))
 })
 it('restores first-SKU fields in an unsubmitted new Plan', async () => {
   const path = '/admin/plans'

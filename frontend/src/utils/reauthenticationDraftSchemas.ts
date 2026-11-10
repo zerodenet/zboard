@@ -17,12 +17,13 @@ export function pickPlanDraft(value: any): Record<string, Scalar> | undefined {
   }
   return out
 }
-export interface PlanRecoveryDraft { entityID: number; revision: number; baseline: string; syncTraffic: boolean; fields: Record<string, Scalar> }
+export interface PlanRecoveryDraft { entityID: number; revision: number; baseline: string; syncTraffic: boolean; syncReset: boolean; fields: Record<string, Scalar> }
 export function planRecoveryDraft(value: any): PlanRecoveryDraft | undefined {
   const fields = pickPlanDraft(value?.fields)
   if (!fields || !Number.isSafeInteger(value.entityID) || value.entityID < 0 || !Number.isSafeInteger(value.revision) || value.revision < 0 || typeof value.baseline !== 'string' || value.baseline.length > 32_000) return
   if (value.syncTraffic !== undefined && typeof value.syncTraffic !== 'boolean') return
-  return { entityID: value.entityID, revision: value.revision, baseline: value.baseline, syncTraffic: value.syncTraffic === true, fields }
+  if (value.syncReset !== undefined && typeof value.syncReset !== 'boolean') return
+  return { entityID: value.entityID, revision: value.revision, baseline: value.baseline, syncTraffic: value.syncTraffic === true, syncReset: value.syncReset === true, fields }
 }
 const skuKeys = ['code', 'name', 'sku_type', 'billing_mode', 'entitlement_mode', 'renewal_effect', 'billing_unit', 'billing_value', 'price_cents', 'currency', 'grant_traffic_bytes', 'is_active', 'sort_order'] as const
 export function pickSKUDraft(value: any): Record<string, Scalar | string[]> | undefined {

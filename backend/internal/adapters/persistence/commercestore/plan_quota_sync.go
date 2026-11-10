@@ -34,6 +34,13 @@ func synchronizePlanTrafficQuota(tx *gorm.DB, plan commerce.Plan, actor uint, sc
 			if sub.EndsOnQuotaExhaustion && sub.FlowUsed >= sub.FlowTotal {
 				continue
 			}
+			// An unchanged ordinary cycle requires no resize proof. In particular,
+			// editing only reset policy must not fail on old payment evidence when
+			// the optional quota checkbox is also selected. Mixed/add-on bases
+			// still go through the existing authoritative source reconciliation.
+			if sub.ResetQuotaBytes == plan.TrafficBytes && sub.CycleStartUsed >= 0 && sub.FlowUsed >= sub.CycleStartUsed && sub.FlowTotal >= sub.CycleStartUsed && sub.FlowTotal-sub.CycleStartUsed == sub.ResetQuotaBytes {
+				continue
+			}
 			var baseSync *commerce.PerpetualBaseQuotaSyncDetail
 			var timedSync *commerce.TimedPlanQuotaSyncDetail
 			var historyBytes int64

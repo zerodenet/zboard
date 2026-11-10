@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import AccountCleanupSummary from './AccountCleanupSummary.vue'
 import type { AccountCleanupStatus } from '../api/client'
@@ -66,3 +66,20 @@ it('does not invent a date for permanent subscriptions or invalid deadlines', as
   expect(wrapper.classes()).not.toContain('account-cleanup-due')
   wrapper.unmount()
  })
+
+it('keeps the dash compact but exposes a protected reason and the user’s orders on click', async () => {
+  vi.useRealTimers()
+  const wrapper = mount(AccountCleanupSummary, { attachTo: document.body, props: { userId: 27, status: { ...status, state: 'protected', eligible_at: null, reason: '有未结订单' } }, global: { stubs: { RouterLink: { props: ['to'], template: `<a :href="'/admin/orders?user_id=' + to.query.user_id"><slot /></a>` } } } })
+  try {
+    expect(wrapper.text()).toBe('-')
+    expect(wrapper.get('button').attributes('aria-label')).toBe('暂不自动删除：有未结订单')
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(document.body.querySelector('.cleanup-reason-content')?.textContent).toContain('有未结订单')
+    expect(document.body.querySelector('.cleanup-reason-content a')?.getAttribute('href')).toBe('/admin/orders?user_id=27')
+    expect(wrapper.find('time').exists()).toBe(false)
+    await wrapper.setProps({ status: { ...status, state: 'protected', eligible_at: null, reason: '有未结订单' } }); await flushPromises()
+    expect(document.body.querySelector('.cleanup-reason-content')?.textContent).toContain('有未结订单')
+    await wrapper.setProps({ userId: 28 }); await flushPromises()
+    expect(document.body.querySelector('.cleanup-reason-content')).toBeNull()
+  } finally { wrapper.unmount(); document.body.innerHTML = '' }
+})

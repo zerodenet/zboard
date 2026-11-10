@@ -29,8 +29,10 @@ func (h *handlers) AdminSubscriptionQuotaHandler(w http.ResponseWriter, r *http.
 	req.SubscriptionID = id
 	err = h.services.SubscriptionQuota(h.credentialCipher, h.zeroMieruAccess).Update(r.Context(), actor.UserID, req)
 	switch {
+	case errors.Is(err, entitlements.ErrSubscriptionResetPolicyNotApplicable):
+		BadRequest(w, "固定流量及永久订阅不支持周期重置。")
 	case errors.Is(err, entitlements.ErrSubscriptionQuotaInvalid):
-		BadRequest(w, "流量参数或调整原因无效。")
+		BadRequest(w, "流量参数、重置策略或调整原因无效。")
 	case errors.Is(err, entitlements.ErrSubscriptionQuotaConflict):
 		writeJSON(w, http.StatusConflict, "请求标识已用于不同的修改，请重新提交。", nil)
 	case err != nil:

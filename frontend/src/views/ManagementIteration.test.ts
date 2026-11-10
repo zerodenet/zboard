@@ -22,7 +22,7 @@ beforeEach(()=>{vi.resetAllMocks();for(const fn of [fetchUsersPage,fetchOrdersPa
 afterEach(()=>{view?.unmount();view=undefined})
 async function open(component:any,url:string){
  const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component:{template:'<div />'}}]});await router.push(url);await router.isReady()
- view=shallowMount(component,{global:{plugins:[router],components:{UiButton,FormField,PageRefreshButton},renderStubDefaultSlot:true,stubs:{DataWorkbench:workbench,DetailDrawer:drawer,WorkbenchFilterBar:false,FormField:false,TimeBadge:defineComponent({props:['value'],template:'<time>{{ value }}</time>'})}}});await flushPromises();return {view,router}
+ view=shallowMount(component,{global:{plugins:[router],components:{UiButton,FormField,PageRefreshButton},renderStubDefaultSlot:true,stubs:{SubscriptionDetail:false,DataWorkbench:workbench,DetailDrawer:drawer,WorkbenchFilterBar:false,FormField:false,TimeBadge:defineComponent({props:['value'],template:'<time>{{ value }}</time>'})}}});await flushPromises();return {view,router}
 }
 it('restores false role and verification filters, resets paging, clears filters and handles route restoration',async()=>{
  const {view,router}=await open(Users,'/admin/users?is_admin=false&email_verified=false&page=2&return_to=/admin')
@@ -43,13 +43,13 @@ it('shows order purpose and customer email, and restores optional filters',async
  await router.push('/admin/orders?order_type=traffic_reset&user_id=2');await flushPromises();expect(view.get('button[aria-controls]').attributes('aria-expanded')).toBe('true')
  expect(fetchOrdersPage).toHaveBeenLastCalledWith(expect.objectContaining({orderType:'traffic_reset',userId:2}),expect.anything())
 })
-it('separates renewal recovery from quota exhaustion and starts quota editing collapsed',async()=>{
+it('separates renewal recovery from quota exhaustion and keeps editing out of the read view',async()=>{
  const sub={id:3,user_id:2,plan_name:'Monthly',status:'expired',flow_used:100,flow_total:100,ended_at:'2026-09-28',end_reason:'expired',can_renew:true,renewal_until:'2026-10-05',active_credential_count:0}
  vi.mocked(fetchAdminSubscriptionDetail).mockResolvedValue(sub as any)
- const {view,router}=await open(Subscriptions,'/admin/subscriptions?subscription=3');expect(view.text()).toContain('服务已停止，可在');expect(view.text()).toContain('2026-10-05')
- expect(view.get('details.quota-disclosure').attributes('open')).toBeUndefined();expect(view.findComponent({name:'SubscriptionQuotaEditor'}).exists()).toBe(true)
+ const {view,router}=await open(Subscriptions,'/admin/subscriptions?subscription=3');expect(view.text()).toContain('前续费恢复');expect(view.text()).toContain('2026/10/05')
+ expect(view.findComponent({name:'SubscriptionQuotaEditor'}).exists()).toBe(false)
  await router.push('/admin/subscriptions');await flushPromises();vi.mocked(fetchAdminSubscriptionDetail).mockResolvedValue({...sub,status:'active',ended_at:null,can_renew:false} as any)
- await router.push('/admin/subscriptions?subscription=3');await flushPromises();expect(view.text()).toContain('订阅仍在有效期内');expect(view.text()).not.toContain('服务已停止，可在')
+ await router.push('/admin/subscriptions?subscription=3');await flushPromises();expect(view.findAllComponents({name:'PageAlert'}).some(alert=>alert.props('title')==='本周期流量已用完')).toBe(true);expect(view.text()).not.toContain('前续费恢复')
 })
 it('filters plugins by actual state and purpose and clears filters while preserving unrelated context',async()=>{
  const manifest={capabilities:[],surfaces:['admin'],components:{server:{}},contributions:{pages:[]}}
@@ -67,7 +67,7 @@ it('shows ended subscription history without recovery or quota writes',async()=>
  vi.mocked(fetchAdminSubscriptionDetail).mockResolvedValue(sub as any)
  const {view}=await open(Subscriptions,'/admin/subscriptions?subscription=3&status=ended')
  expect(fetchSubscriptionsPage).toHaveBeenCalledWith(expect.objectContaining({status:'ended'}),expect.anything())
- expect(view.text()).toContain('已结束');expect(view.text()).toContain('历史权益与用量可在订单中追溯')
+ expect(view.text()).toContain('已结束');expect(view.text()).toContain('用户订单')
  expect(view.findComponent({name:'SubscriptionQuotaEditor'}).exists()).toBe(false)
  expect(view.text()).not.toContain('服务已停止，可在')
 })

@@ -385,6 +385,7 @@
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="edit-plan-max-subscriptions" :error="planErrors.fields.max_active_subscriptions"><UiNumberInput v-model="planDraft.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="家庭共享人数" name="edit-plan-family-limit" :error="planErrors.fields.family_limit"><UiNumberInput v-model="planDraft.family_limit" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量重置" name="edit-plan-reset-policy" :error="planErrors.fields.reset_policy"><UiSelect v-model.number="planDraft.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="现有订阅重置" name="edit-plan-sync-reset-policy" :error="planErrors.fields.sync_reset_policy" hint="仅调整后续重置，不清零当前用量。永久和固定流量订阅不参与。"><label class="check-field"><UiCheckbox v-model="planDraft.sync_reset_policy" v-bind="controlAttrs" /><span>同步重置策略</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="消耗计算" name="edit-plan-traffic-mode" :error="planErrors.fields.traffic_calc_mode"><UiSelect v-model.number="planDraft.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="续费" name="edit-plan-is_renewable"><label class="check-field"><UiCheckbox v-model="planDraft.is_renewable" v-bind="controlAttrs" /><span>允许用户续费</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="发布状态" name="edit-plan-is_active"><label class="check-field"><UiCheckbox v-model="planDraft.is_active" v-bind="controlAttrs" /><span>套餐已发布</span></label></FormField>
@@ -491,6 +492,7 @@ import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composab
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
 import { createPlanRecoveryDraft, pickPlanDraft, pickSKUDraft, planRecoveryDraft, skuRecoveryDraft } from '../utils/reauthenticationDraftSchemas'
+import { resetPolicyOptions } from '../utils/resetPolicy'
 import { useAppStore } from '../stores/app'
 import { platformDefaultCurrency } from '../utils/platformCurrency'
 import { confirmAction, notify } from '../utils/feedback'
@@ -576,6 +578,7 @@ const emptyPlanForm = () => ({
 })
 const emptyPlanDraft = () => ({
   sync_traffic_quota: false,
+  sync_reset_policy: false,
   id: 0,
   name: '',
   slug: '',
@@ -617,7 +620,7 @@ const createDraftRecovery = useReauthenticationDraft({
 const planDraftRecovery = useReauthenticationDraft({
   scope: 'admin.plans.edit', permission: 'admin',
   ready: () => recoveryReady.value && planEditorOpen.value && detailPlan.value?.id === planDraft.id,
-  read: () => planEditorOpen.value && !createOpen.value && !skuOpen.value ? { entityID: planDraft.id, revision: Number.isSafeInteger(planDraft.revision) ? planDraft.revision : 0, baseline: planDraftBaseline.value, syncTraffic: planDraft.sync_traffic_quota, fields: planDraft } : null,
+  read: () => planEditorOpen.value && !createOpen.value && !skuOpen.value ? { entityID: planDraft.id, revision: Number.isSafeInteger(planDraft.revision) ? planDraft.revision : 0, baseline: planDraftBaseline.value, syncTraffic: planDraft.sync_traffic_quota, syncReset: planDraft.sync_reset_policy, fields: planDraft } : null,
   sanitize: planRecoveryDraft,
   restore: value => {
     if (value.entityID !== planDraft.id || !detailPlan.value) return false
@@ -628,6 +631,7 @@ const planDraftRecovery = useReauthenticationDraft({
     planDraft.revision = value.revision
     planDraftBaseline.value = value.baseline
     planDraft.sync_traffic_quota = value.syncTraffic
+    planDraft.sync_reset_policy = value.syncReset
     planRevisionConflict.value = changed || !value.baseline
   },
 })
@@ -711,6 +715,7 @@ const createPlanFieldMap: Record<string, string> = {
 }
 const planFieldMap: Record<string, string> = {
   sync_traffic_quota: 'sync_traffic_quota',
+  sync_reset_policy: 'sync_reset_policy',
   name: 'name',
   slug: 'slug',
   summary: 'summary',
@@ -772,14 +777,6 @@ const timedRenewalEffectOptions = [
 ]
 const permanentRenewalEffectOptions = [
   { label: '只补充套餐流量', value: 'add_quota_only' },
-]
-const resetPolicyOptions = [
-  { label: '未设置（不重置）', value: 0 },
-  { label: '每月 1 日', value: 1 },
-  { label: '按购买日每月', value: 2 },
-  { label: '每年 1 月 1 日', value: 3 },
-  { label: '按购买日每年', value: 4 },
-  { label: '不重置', value: 5 },
 ]
 const trafficCalcOptions = [
   { label: '上行 + 下行', value: 0 },
@@ -1410,6 +1407,7 @@ function assignPlanDraft(detail: PlanDetail) {
   planDraftBaseline.value = JSON.stringify(pickPlanDraft(detail)) || ''
   Object.assign(planDraft, {
     sync_traffic_quota: false,
+    sync_reset_policy: false,
     id: detail.id,
     name: detail.name,
     slug: detail.slug,
@@ -1462,6 +1460,7 @@ function planValidation() {
 async function savePlan() {
   if (planRevisionConflict.value) return
   const syncTrafficQuota = planDraft.sync_traffic_quota
+  const syncResetPolicy = planDraft.sync_reset_policy
   planDraft.name = planDraft.name.trim()
   planDraft.slug = planDraft.slug.trim().toLowerCase()
   planDraft.summary = planDraft.summary.trim()
@@ -1481,6 +1480,7 @@ async function savePlan() {
       node_group_id: planDraft.node_group_id,
       traffic_bytes: planDraft.traffic_bytes,
       sync_traffic_quota: syncTrafficQuota,
+      sync_reset_policy: syncResetPolicy,
       speed_limit_mbps: planDraft.speed_limit_mbps,
       max_active_subscriptions: planDraft.max_active_subscriptions,
       is_renewable: planDraft.is_renewable,
@@ -1495,7 +1495,7 @@ async function savePlan() {
     planEditorState.markClean()
     planEditorOpen.value = false
     await setRoute({ editor: null }, true)
-    message.value = syncTrafficQuota ? '套餐已保存，符合条件的历史订阅流量配额已同步。' : '套餐信息和套餐策略已保存。'
+    message.value = syncResetPolicy ? '套餐及所选现有订阅设置已保存。' : syncTrafficQuota ? '套餐已保存，符合条件的历史订阅流量配额已同步。' : '套餐信息和套餐策略已保存。'
     await refreshAll()
   } catch (cause: any) {
     if (cause?.response?.status === 409 || cause?.response?.status === 428) {

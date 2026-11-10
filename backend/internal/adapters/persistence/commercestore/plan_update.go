@@ -55,7 +55,7 @@ func (s PlanUpdate) Update(ctx context.Context, actor, id uint, request commerce
 		if result.RowsAffected != 1 {
 			return &commerce.PlanRevisionError{Current: current.Revision}
 		}
-		syncScope, err := preparePlanSubscriptionSync(tx, current, candidate, request.SyncTrafficQuota)
+		syncScope, err := preparePlanSubscriptionSync(tx, current, candidate, request.SyncTrafficQuota, request.SyncResetPolicy)
 		if err != nil {
 			return err
 		}
@@ -75,7 +75,14 @@ func (s PlanUpdate) Update(ctx context.Context, actor, id uint, request commerce
 				return err
 			}
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "plan.update", Target: fmt.Sprintf("plan:%d", id), Detail: fmt.Sprintf("fields=%d node_group=%d previous_node_group=%d group_subscriptions=%d revision=%d sync_traffic_quota=%t subscriptions=%d", len(fields)-1, candidate.NodeGroupID, current.NodeGroupID, groupSynced, candidate.Revision, request.SyncTrafficQuota, synced)}).Error; err != nil {
+		resetSynced := 0
+		if request.SyncResetPolicy {
+			resetSynced, err = synchronizePlanResetPolicy(tx, candidate, actor, syncScope)
+			if err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "plan.update", Target: fmt.Sprintf("plan:%d", id), Detail: fmt.Sprintf("fields=%d node_group=%d previous_node_group=%d group_subscriptions=%d revision=%d sync_traffic_quota=%t subscriptions=%d sync_reset_policy=%t reset_subscriptions=%d", len(fields)-1, candidate.NodeGroupID, current.NodeGroupID, groupSynced, candidate.Revision, request.SyncTrafficQuota, synced, request.SyncResetPolicy, resetSynced)}).Error; err != nil {
 			return err
 		}
 		if err := tx.Preload("SKUs", "archived_at IS NULL").First(&updated, id).Error; err != nil {

@@ -215,6 +215,13 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 			continue
 		}
 		if segment.codec != CompressionNone {
+			// Only this exact read horizon is a verified prefix. Other callers
+			// retain the full integrity check; cursor formats cannot be compared
+			// approximately when a raw segment becomes compressed.
+			if s.hasInflight && checkpoint == s.inflightNext {
+				_, _, err := compressedCheckpointRecordOffset(segment.path, checkpoint)
+				return err
+			}
 			if _, _, err := s.inspectSegment(segment); err != nil {
 				return err
 			}
@@ -277,32 +284,46 @@ func (s *FileSpool) Status() Status {
 	if err == nil {
 		status.Segments = len(segments)
 		for _, segment := range segments {
+			committed := checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment
+			var records, consumed uint64
 			if segment.codec != CompressionNone {
 				status.CompressedSegments++
 				status.CompressedStoredBytes += segment.size
-				if original, originalErr := compressedSegmentOriginalBytes(segment.path); originalErr == nil {
-					status.CompressedOriginalBytes += original
+				var position *Checkpoint
+				if segment.sequence == checkpoint.Segment {
+					position = &checkpoint
 				}
-			}
-			if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
-				continue
-			}
-			records, _, inspectErr := s.inspectSegment(segment)
-			if inspectErr != nil {
-				continue
-			}
-			pending := records
-			if segment.sequence == checkpoint.Segment {
-				consumed, total, offsetErr := s.segmentCheckpointRecordOffset(segment, checkpoint)
-				if offsetErr != nil {
+				metadata, err := inspectCompressedMetadata(segment.path, position)
+				if err != nil {
+					if !committed {
+						status.PendingUnknown = true
+						status.ReadError = fmt.Sprintf("事件段 %d 元数据读取失败", segment.sequence)
+					}
 					continue
 				}
-				if consumed >= total {
-					pending = 0
-				} else {
-					pending = total - consumed
+				status.CompressedOriginalBytes += metadata.originalBytes
+				records, consumed = metadata.records, metadata.consumed
+			} else if !committed {
+				var err error
+				records, _, err = s.inspectSegment(segment)
+				if err != nil {
+					status.PendingUnknown = true
+					status.ReadError = fmt.Sprintf("事件段 %d 暂时无法读取", segment.sequence)
+					continue
+				}
+				if segment.sequence == checkpoint.Segment {
+					if checkpoint.Block != 0 || checkpoint.Record > records {
+						status.PendingUnknown = true
+						status.ReadError = "事件游标与活动段不一致"
+						continue
+					}
+					consumed = checkpoint.Record
 				}
 			}
+			if committed {
+				continue
+			}
+			pending := records - consumed
 			status.PendingEvents += int64(pending)
 			if pending > 0 {
 				status.PendingBytes += segment.size

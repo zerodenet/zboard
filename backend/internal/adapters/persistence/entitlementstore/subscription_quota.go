@@ -64,13 +64,22 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 			return entitlements.ErrSubscriptionQuotaInvalid
 		}
 		now := time.Now().UTC()
-		if sub.EndedAt == nil && (sub.Status == "active" || sub.Status == "expired") && sub.EndAt.After(now) {
+		quotaEdited := in.FlowTotal != nil || in.FlowUsed != nil || in.ResetQuotaBytes != nil
+		if in.ResetPolicy == nil && sub.EndedAt == nil && (sub.Status == "active" || sub.Status == "expired") && sub.EndAt.After(now) {
 			if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {
 				return err
 			}
 		}
 		total, used := entitlements.CycleQuota(entitlements.Subscription(sub))
 		old := map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": sub.ResetQuotaBytes}
+		if in.ResetPolicy != nil {
+			old["reset_policy"], old["next_reset_at"] = sub.ResetPolicy, sub.NextResetAt
+			changed, err := entitlements.ChangeTrafficResetSchedule(entitlements.Subscription(sub), *in.ResetPolicy, now)
+			if err != nil {
+				return err
+			}
+			sub.ResetPolicy, sub.NextResetAt = changed.ResetPolicy, changed.NextResetAt
+		}
 		resetQuota := sub.ResetQuotaBytes
 		if in.FlowTotal != nil {
 			total = *in.FlowTotal
@@ -82,32 +91,40 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 			resetQuota = *in.ResetQuotaBytes
 		}
 		baseline := sub.CycleStartUsed
-		if baseline < 0 || baseline > sub.FlowTotal || baseline > sub.FlowUsed || baseline > math.MaxInt64-max(total, used) {
+		if quotaEdited && (baseline < 0 || baseline > sub.FlowTotal || baseline > sub.FlowUsed || baseline > math.MaxInt64-max(total, used)) {
 			return entitlements.ErrSubscriptionQuotaInvalid
 		}
 		before := sub.FlowTotal - sub.FlowUsed
-		sub.FlowTotal, sub.FlowUsed = baseline+total, baseline+used
-		sub.ResetQuotaBytes = resetQuota
-		sub.Status = entitlements.EffectiveStatus(entitlements.Subscription(sub), now)
-		// A legacy exhausted instance can be restored by this adjustment.
-		if sub.EndedAt == nil && sub.Status == "expired" && sub.EndAt.After(now) {
-			sub.Status = "active"
+		if quotaEdited {
+			sub.FlowTotal, sub.FlowUsed = baseline+total, baseline+used
+			sub.ResetQuotaBytes = resetQuota
+			sub.Status = entitlements.EffectiveStatus(entitlements.Subscription(sub), now)
+			// A legacy exhausted instance can be restored by a quota adjustment.
+			if sub.EndedAt == nil && sub.Status == "expired" && sub.EndAt.After(now) {
+				sub.Status = "active"
+			}
 		}
 		sub.UpdatedAt = now
 		if err := tx.Save(&sub).Error; err != nil {
 			return err
 		}
-		if entitlements.AccessAvailable(entitlements.Subscription(sub), now) {
-			if _, err := EnsureCredentials(tx, sub, s.Issuer); err != nil {
+		if quotaEdited {
+			if entitlements.AccessAvailable(entitlements.Subscription(sub), now) {
+				if _, err := EnsureCredentials(tx, sub, s.Issuer); err != nil {
+					return err
+				}
+			} else if err := ExpireSubscriptionCredentials(tx, sub.ID, now); err != nil {
 				return err
 			}
-		} else if err := ExpireSubscriptionCredentials(tx, sub.ID, now); err != nil {
-			return err
+			if err := s.Publish(tx, sub.ID, actor); err != nil {
+				return err
+			}
 		}
-		if err := s.Publish(tx, sub.ID, actor); err != nil {
-			return err
+		updated := map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": resetQuota}
+		if in.ResetPolicy != nil {
+			updated["reset_policy"], updated["next_reset_at"] = sub.ResetPolicy, sub.NextResetAt
 		}
-		detail, err := json.Marshal(map[string]any{"hash": hash, "actor_id": actor, "reason": in.Reason, "before": old, "after": map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": resetQuota}})
+		detail, err := json.Marshal(map[string]any{"hash": hash, "actor_id": actor, "reason": in.Reason, "before": old, "after": updated})
 		if err != nil {
 			return err
 		}

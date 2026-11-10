@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -172,15 +173,26 @@ func listSegments(directory string) ([]segmentFile, error) {
 	return segments, nil
 }
 
-func createActiveSegment(directory string) (*activeSegment, error) {
+func createActiveSegment(directory string, floors ...uint64) (*activeSegment, error) {
 	segments, err := listSegments(directory)
 	if err != nil {
 		return nil, err
 	}
-	var sequence uint64 = 1
-	if len(segments) > 0 {
-		sequence = segments[len(segments)-1].sequence + 1
+	var floor uint64
+	for _, value := range floors {
+		if value > floor {
+			floor = value
+		}
 	}
+	if len(segments) > 0 {
+		if value := segments[len(segments)-1].sequence; value > floor {
+			floor = value
+		}
+	}
+	if floor == math.MaxUint64 {
+		return nil, errors.New("event segment sequence exhausted")
+	}
+	sequence := floor + 1
 	path := segmentPath(directory, sequence, segmentActiveSuffix)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o640)
 	if err != nil {
@@ -194,45 +206,74 @@ func createActiveSegment(directory string) (*activeSegment, error) {
 }
 
 func recoverSegments(directory string) (*activeSegment, error) {
+	return recoverSegmentsAtCheckpoint(directory, Checkpoint{})
+}
+
+// Sealed records are verified by ReadBatch before projection and checkpoint
+// advancement. Revalidating retained, already committed history here made every
+// restart proportional to the entire decompressed history. Only mutable tails
+// require crash repair before accepting a new append.
+func recoverSegmentsAtCheckpoint(directory string, checkpoint Checkpoint) (*activeSegment, error) {
 	segments, err := listSegments(directory)
 	if err != nil {
 		return nil, err
 	}
 	activeIndexes := make([]int, 0, 1)
+	var activeRecords uint64
 	for i, segment := range segments {
+		if segment.active {
+			if segment.sequence < checkpoint.Segment || segment.sequence == checkpoint.Segment && checkpoint.Block != 0 {
+				return nil, errors.New("event checkpoint conflicts with active segment; files retained for reconciliation")
+			}
+			activeIndexes = append(activeIndexes, i)
+		}
+	}
+	for i, segment := range segments {
+		if !segment.active {
+			continue
+		}
 		records, validSize, err := inspectSegment(segment.path, segment.size, segment.active)
 		if err != nil {
-			quarantined, quarantineErr := quarantineSegment(segment.path)
-			if quarantineErr != nil {
-				return nil, fmt.Errorf("recover segment %s: %v; quarantine: %w", filepath.Base(segment.path), err, quarantineErr)
-			}
-			return nil, fmt.Errorf("recover segment %s: %w; quarantined as %s", filepath.Base(segment.path), err, filepath.Base(quarantined))
+			// Keep a corrupt active file at its original identity. Renaming it
+			// out of discovery would let a restart silently skip acknowledged
+			// evidence and reuse its sequence.
+			return nil, fmt.Errorf("recover active segment %s: %w; file retained", filepath.Base(segment.path), err)
 		}
 		segments[i].size = validSize
 		if segment.active {
-			activeIndexes = append(activeIndexes, i)
+			activeRecords = records
+			if segment.sequence == checkpoint.Segment && checkpoint.Record > records {
+				return nil, errors.New("event checkpoint exceeds active durable records; files retained")
+			}
 			if validSize != segment.size {
 				if err := os.Truncate(segment.path, validSize); err != nil {
 					return nil, fmt.Errorf("truncate incomplete active segment: %w", err)
 				}
 			}
 		}
-		_ = records
 	}
 	if len(activeIndexes) == 0 {
 		return nil, nil
 	}
-	for _, index := range activeIndexes[:len(activeIndexes)-1] {
+	keepLast := segments[activeIndexes[len(activeIndexes)-1]].sequence == segments[len(segments)-1].sequence
+	sealCount := len(activeIndexes)
+	if keepLast {
+		sealCount--
+	}
+	for _, index := range activeIndexes[:sealCount] {
 		segment := segments[index]
 		readyPath := segmentPath(directory, segment.sequence, segmentReadySuffix)
 		if err := os.Rename(segment.path, readyPath); err != nil {
 			return nil, fmt.Errorf("seal recovered active segment: %w", err)
 		}
 	}
-	if len(activeIndexes) > 1 {
+	if sealCount > 0 {
 		if err := syncDirectory(directory); err != nil {
 			return nil, err
 		}
+	}
+	if !keepLast {
+		return nil, nil
 	}
 	segment := segments[activeIndexes[len(activeIndexes)-1]]
 	file, err := os.OpenFile(segment.path, os.O_RDWR|os.O_APPEND, 0o640)
@@ -244,10 +285,9 @@ func recoverSegments(directory string) (*activeSegment, error) {
 		file.Close()
 		return nil, err
 	}
-	records, _, err := inspectSegment(segment.path, info.Size(), false)
-	if err != nil {
+	if info.Size() != segment.size {
 		file.Close()
-		return nil, err
+		return nil, errors.New("active event segment changed during recovery")
 	}
 	return &activeSegment{
 		sequence:  segment.sequence,
@@ -255,7 +295,7 @@ func recoverSegments(directory string) (*activeSegment, error) {
 		file:      file,
 		createdAt: info.ModTime(),
 		size:      info.Size(),
-		records:   records,
+		records:   activeRecords,
 	}, nil
 }
 

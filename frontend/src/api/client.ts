@@ -1654,6 +1654,7 @@ export interface SubscriptionQuotaUpdate {
   flow_total?: number
   flow_used?: number
   reset_quota_bytes?: number
+  reset_policy?: number
   reason: string
   idempotency_key: string
 }

@@ -18,7 +18,7 @@ export interface RuntimeJobs {
   execution_queue?: { pending: number; running: number; delayed: number; unknown: number; maintenance_reserved?: boolean; pending_limit?: number; plugin_pending_limit?: number; plugin_owner_pending_limit?: number }; execution_concurrency?: number; external_execution_concurrency?: number; admin_task_concurrency: number; admin_item_concurrency: number
   plugin_tasks?: PluginTask[] | null; plugin_task_concurrency?: number
   plugin_host: { state: string; epoch: number; lease_until: string | null; renewal_failures: number; interval_seconds: number } | null
-  runtime: { accounting_db?: DatabasePool; traffic_read_db?: DatabasePool; shared_pool?: boolean; event_spool: { pending_events: number; pending_bytes: number; oldest_event_at?: string; pressure_level: string } | null }
+  runtime: { accounting_db?: DatabasePool; traffic_read_db?: DatabasePool; shared_pool?: boolean; event_spool: { pending_unknown?: boolean; read_error?: string; pending_events: number; pending_bytes: number; oldest_event_at?: string; pressure_level: string } | null }
 }
 export type RuntimeJobsView = 'execution' | 'queues' | 'runtime' | 'plugins'
 export function fetchRuntimeJobs(signal?: AbortSignal): Promise<RuntimeJobs>

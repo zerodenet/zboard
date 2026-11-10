@@ -51,7 +51,8 @@ func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
 			if !ok {
 				return false, nil
 			}
-			return value.(*zeroEventRuntime).spool.Status().PendingEvents > 0, nil
+			status := value.(*zeroEventRuntime).spool.Status()
+			return status.PendingUnknown || status.PendingEvents > 0, nil
 		}
 		if id == "admin_tasks" {
 			return h.services.BatchLifecycle().Pending(ctx)

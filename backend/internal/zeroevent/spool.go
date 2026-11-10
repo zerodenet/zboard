@@ -81,6 +81,8 @@ func (r CompactionResult) BytesSaved() int64 {
 }
 
 type Status struct {
+	PendingUnknown            bool       `json:"pending_unknown,omitempty"`
+	ReadError                 string     `json:"read_error,omitempty"`
 	Driver                    string     `json:"driver"`
 	PendingEvents             int64      `json:"pending_events"`
 	PendingBytes              int64      `json:"pending_bytes"`

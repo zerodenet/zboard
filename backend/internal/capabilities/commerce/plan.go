@@ -4,6 +4,7 @@ import "time"
 
 type PlanUpdateRequest struct {
 	SyncTrafficQuota       bool    `json:"sync_traffic_quota"`
+	SyncResetPolicy        bool    `json:"sync_reset_policy"`
 	Name                   *string `json:"name"`
 	Slug                   *string `json:"slug"`
 	Summary                *string `json:"summary"`

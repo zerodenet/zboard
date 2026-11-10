@@ -228,7 +228,7 @@ func (h *handlers) consumeZeroEventCycle(ctx context.Context, runtime *zeroEvent
 		if count < limit {
 			// A byte-limited window may still have a backlog even though its
 			// record count is below the configured limit.
-			if runtime.spool.Status().PendingEvents > 0 {
+			if status := runtime.spool.Status(); status.PendingUnknown || status.PendingEvents > 0 {
 				return capabilityjobs.ErrContinue
 			}
 			return nil

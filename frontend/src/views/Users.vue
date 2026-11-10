@@ -35,7 +35,7 @@
               </div>
             </td>
             <td class="numeric-column user-traffic-cell"><span class="user-mobile-label" aria-hidden="true">近 7 天</span><UserTrafficActivity :item="activityByUser.get(user.id)" :user-label="user.email" :link="activityLink(user.id)" :loading="activityLoading" :error="activityError" :pending="activityData?.projection_pending" @retry="loadActivity" /></td>
-            <td class="user-cleanup-cell"><span class="user-mobile-label" aria-hidden="true">自动删除</span><AccountCleanupSummary :status="user.cleanup" /></td>
+            <td class="user-cleanup-cell"><span class="user-mobile-label" aria-hidden="true">自动删除</span><AccountCleanupSummary :status="user.cleanup" :user-id="user.id" /></td>
             <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :disabled="statusBusy.has(user.id)" :loading="openingUserID === user.id" @click="openEdit(user)">编辑账户</UiButton><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
           </tr>
         </tbody>
@@ -83,7 +83,7 @@
           </section>
           <section class="user-cleanup-detail" aria-label="账号自动删除">
             <h3>自动删除</h3>
-            <AccountCleanupSummary :status="selectedUserDetail.cleanup" />
+            <AccountCleanupSummary :status="selectedUserDetail.cleanup" :user-id="selectedUserDetail.id" />
             <RouterLink to="/admin/settings/runtime#account-cleanup">管理清理规则</RouterLink>
           </section>
           <section class="user-security" aria-label="账户安全">

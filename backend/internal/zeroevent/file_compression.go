@@ -525,29 +525,8 @@ func inspectCompressedSegmentForCodec(path, expectedCodec string) (uint64, int64
 }
 
 func compressedSegmentOriginalBytes(path string) (int64, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-	reader := bufio.NewReader(file)
-	var total int64
-	for {
-		header, err := readCompressedBlockHeader(reader)
-		if errors.Is(err, io.EOF) {
-			return total, nil
-		}
-		if err != nil {
-			return 0, err
-		}
-		if total > int64(^uint64(0)>>1)-int64(header.OriginalLength) {
-			return 0, errors.New("compressed original byte count overflow")
-		}
-		total += int64(header.OriginalLength)
-		if _, err := io.CopyN(io.Discard, reader, int64(header.CompressedLength)); err != nil {
-			return 0, err
-		}
-	}
+	metadata, err := inspectCompressedMetadata(path, nil)
+	return metadata.originalBytes, err
 }
 
 func readCompressedSegmentBatch(ctx context.Context, segment segmentFile, checkpoint Checkpoint, limit int) ([]Envelope, Checkpoint, error) {
@@ -612,6 +591,9 @@ func readCompressedSegmentBatchBudget(ctx context.Context, segment segmentFile, 
 		decoded, err := decodeCompressedBlock(reader, header)
 		if err != nil {
 			return nil, checkpoint, fmt.Errorf("decode compressed block from %s: %w", filepath.Base(segment.path), err)
+		}
+		if err := validateCompressedRecordFrames(decoded, header.RecordCount); err != nil {
+			return nil, checkpoint, err
 		}
 		blockReader := bufio.NewReader(bytes.NewReader(decoded))
 		var recordIndex uint64

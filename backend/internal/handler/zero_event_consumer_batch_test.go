@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -119,4 +121,54 @@ func TestConsumerContinuesByteLimitedWindowOnlyWhenPending(t *testing.T) {
 		t.Fatalf("drained window kept yielding: position=%d err=%v", spool.position, err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 90, subStatusActive)
+}
+
+func TestConsumerRebasedLegacySpoolReplaysAccountingExactlyOnce(t *testing.T) {
+	h, credential := accountingBenchmarkFixture(t)
+	events := accountingBenchmarkEvents(credential, 0, 33)
+	prior := &checkpointTestSpool{events: events, commitErr: errors.New("old cursor persistence failed")}
+	if _, err := h.consumeZeroEventBatch(context.Background(), prior, 32); err == nil {
+		t.Fatal("fixture did not leave committed accounting behind")
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 960, subStatusActive)
+	cfg := zeroevent.DefaultConfig()
+	cfg.Directory = t.TempDir()
+	cfg.Compression.Enabled = false
+	cfg.Compression.Algorithm = zeroevent.CompressionNone
+	cfg.Compaction.Enabled = false
+	cfg.Storage.MinFreeSpace = 0
+	cfg.Storage.EmergencyReserve = 0
+	spool, err := zeroevent.NewFileSpool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := spool.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if err := spool.Append(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := spool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// A retained pre-reuse cursor, matching the production failure shape.
+	if err := os.WriteFile(filepath.Join(cfg.Directory, "checkpoint.json"), []byte(`{"segment":2975,"block":1,"record":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := zeroevent.NewFileSpool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recovered.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer recovered.Close()
+	for _, want := range []int{32, 1, 0} {
+		if count, err := h.consumeZeroEventBatch(context.Background(), recovered, 32); err != nil || count != want {
+			t.Fatalf("count=%d want=%d err=%v", count, want, err)
+		}
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 990, subStatusActive)
 }

@@ -29,8 +29,8 @@ type planSubscriptionSyncScope struct {
 // Lock the entire union of subscription authorities before taking endpoint,
 // credential or publication locks. Locking just each next page after writing
 // the preceding page would introduce a new reverse lock order.
-func preparePlanSubscriptionSync(tx *gorm.DB, current model.Plan, next commerce.Plan, syncQuota bool) (planSubscriptionSyncScope, error) {
-	scope := planSubscriptionSyncScope{planID: next.ID, groupID: next.NodeGroupID, now: tx.NowFunc().UTC(), group: current.NodeGroupID != next.NodeGroupID, quota: syncQuota}
+func preparePlanSubscriptionSync(tx *gorm.DB, current model.Plan, next commerce.Plan, syncQuota, syncReset bool) (planSubscriptionSyncScope, error) {
+	scope := planSubscriptionSyncScope{planID: next.ID, groupID: next.NodeGroupID, now: tx.NowFunc().UTC(), group: current.NodeGroupID != next.NodeGroupID, quota: syncQuota || syncReset}
 	if !scope.group && !scope.quota {
 		return scope, nil
 	}
