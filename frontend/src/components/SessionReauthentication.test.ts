@@ -16,6 +16,7 @@ import { useUnsavedChangesGuard } from '../composables/useFormState'
 import { clearTrackedTasks, trackedTaskIDs } from '../utils/taskTracker'
 import IdentityLoginComplete from '../views/IdentityLoginComplete.vue'
 import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { clearPluginComposition } from '../plugins/composition'
 import { clearReauthenticationDrafts, REAUTH_DRAFT_TTL_MS } from '../utils/reauthenticationDrafts'
 
 let wrapper: VueWrapper | undefined
@@ -39,13 +40,15 @@ const adapter: AxiosAdapter = async config => {
     throw new AxiosError('forbidden', undefined, config, undefined, { status: 403, data: {}, config, headers: {}, statusText: '' })
   }
   if (config.method === 'post' && config.url === '/payment') writes()
-  if ((expired && !['/auth/login', '/auth/me', '/plugin-ui/slots'].includes(config.url || '')) || config.url === '/auth/me' && failVerification) {
+  if ((expired && !config.url?.endsWith('/identity-start') && !['/auth/login', '/auth/me', '/plugin-ui/slots', '/plugin-ui/composition'].includes(config.url || '')) || config.url === '/auth/me' && failVerification) {
     throw new AxiosError('expired', undefined, config, undefined, { status: 401, data: {}, config, headers: {}, statusText: '' })
   }
   const data = config.url === '/auth/oidc/finish' ? { auth: { token: `oauth-${actor.id}` }, user: { ...actor, is_admin: true } }
     : config.url === '/auth/login' ? { auth: { token: `new-${actor.id}` }, user: { ...actor, is_admin: true } }
     : config.url === '/auth/me' ? actor
     : config.url === '/account/identities/security' ? { password_set: passwordSet }
+    : config.url === '/plugin-ui/composition' ? { revision: 'fixture', slots: externalMethods.map((method:any) => ({...method,config_revision:1,availability:'ready',presentation:'identity',providers:[{id:method.plugin_id,name:method.plugin_id==='github'?'使用 GitHub':'使用 测试SSO'}]})) }
+    : config.url?.endsWith('/identity-start') ? {authorization_url:`https://identity.example.test/auth?plugin_id=${config.url.split('/')[2]}`}
     : config.url === '/plugin-ui/slots' ? externalMethods
     : config.url === '/navigation' ? { revision: 1, page_available: true, nodes: [] }
     : { maintenance: { enabled: false }, announcements: [], announcement_unread_count: 0 }
@@ -53,11 +56,12 @@ const adapter: AxiosAdapter = async config => {
 }
 
 beforeEach(() => {
-  localStorage.clear(); sessionStorage.clear(); clearReauthenticationDrafts(); identityGate = undefined; resetAuthSessionExpired(); clearTrackedTasks()
+  clearPluginComposition(); localStorage.clear(); sessionStorage.clear(); clearReauthenticationDrafts(); identityGate = undefined; resetAuthSessionExpired(); clearTrackedTasks()
   expired = false; failVerification = false; networkFailure = false; navigationForbidden = false
   passwordSet = true; externalMethods = []
   actor = { id: 1, email: 'first@example.test', is_admin: true }
   writes.mockClear(); requests.mockClear(); identityNavigations.mockClear(); api.defaults.adapter = adapter
+  vi.spyOn(window.location,'assign').mockImplementation(url => { identityNavigations(new URL(String(url)).searchParams.get('plugin_id')) })
 })
 afterEach(() => { wrapper?.unmount(); cleanup?.(); clearAuthToken(); clearReauthenticationDrafts(); resetAuthSessionExpired(); vi.restoreAllMocks() })
 
@@ -225,7 +229,8 @@ describe('in-page session restoration', () => {
     expect(wrapper!.find('input[type="password"]').exists()).toBe(false)
     const externalButton = wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!
     expect(externalButton.text()).toBe('使用 测试SSO 登录')
-    expect(wrapper!.findComponent({ name: 'PluginFrame' }).props()).toMatchObject({ pluginId: 'oidc', surface: 'public', title: 'OIDC 登录' })
+    expect(wrapper!.find('iframe').exists()).toBe(false)
+    expect(wrapper!.findComponent({name:'PluginLoginMethods'}).exists()).toBe(true)
     expect(wrapper!.text()).not.toContain('第三方登录')
     expect(wrapper!.get('[role="dialog"]').findAll('p')).toHaveLength(0)
     await wrapper!.findAll('button').find(button => button.text() === '使用 测试SSO 登录')!.trigger('click')
@@ -242,7 +247,8 @@ describe('in-page session restoration', () => {
     passwordSet = false
     externalMethods = ['oidc', 'github'].map(plugin_id => ({ plugin_id, generation: 1, slot: { title: plugin_id, id: 'login', surface: 'public', slot: 'auth.login.methods', entrypoint: 'ui/login.html' } }))
     const { store } = await render(); await expire()
-    expect(wrapper!.findAllComponents({ name: 'PluginFrame' })).toHaveLength(2)
+    expect(wrapper!.findAll('.login-method-button')).toHaveLength(2)
+    expect(wrapper!.find('iframe').exists()).toBe(false)
     await wrapper!.findAll('button').find(button => button.text() === '使用 GitHub 登录')!.trigger('click'); await flushPromises()
     expect(identityNavigations).toHaveBeenCalledWith('github')
     expect(identityNavigations).toHaveBeenCalledOnce()

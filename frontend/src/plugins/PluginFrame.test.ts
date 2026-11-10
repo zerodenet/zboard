@@ -285,7 +285,7 @@ describe("plugin iframe boundary", () => {
     expect(wrapper.find('iframe').exists()).toBe(true);
     wrapper.unmount();
   });
-  it("allows compact slots to shrink to their intrinsic content height", async () => {
+  it("keeps the host viewport stable while isolated content reports its intrinsic height", async () => {
     const slot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'OAuth', entrypoint: 'ui/login.html' };
     const wrapper = mount(PluginFrame, { props: { pluginId: 'zboard.oauth', slot, surface: 'public' } });
     await flushPromises();
@@ -298,7 +298,7 @@ describe("plugin iframe boundary", () => {
     wrapper.unmount();
   });
 
-  it("uses the default height when a slot never reports its content height", async () => {
+  it("reveals a loaded legacy frame without waiting for a resize timer", async () => {
     const slot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'OAuth', entrypoint: 'ui/login.html' };
     const wrapper = mount(PluginFrame, { props: { pluginId: 'zboard.oauth', slot, surface: 'public' } });
     await flushPromises();
@@ -318,13 +318,41 @@ describe("plugin iframe boundary", () => {
     }
   });
 
-  it("keeps an optional login method out of the form when its session fails", async () => {
+  it('shows a host-owned read failure without removing the isolated frame or replaying operations', async () => {
+    const slot={id:'security',surface:'account' as const,slot:'account.security.identities',title:'外部账号',entrypoint:'ui/index.html'}
+    const wrapper=mount(PluginFrame,{props:{pluginId:'example.login',surface:'account',slot,reservedHeight:224}})
+    await flushPromises();await wrapper.get('iframe').trigger('load')
+    mocks.bridge.mockRejectedValueOnce({response:{status:503,data:{message:'offline'}}})
+    send(wrapper,'identity.providers.list');await flushPromises()
+    expect(wrapper.get('.plugin-read-error').text()).toContain('外部账号')
+    expect(wrapper.get('iframe').attributes('sandbox')).toBe('allow-scripts')
+    expect(wrapper.attributes('style')).toContain('224px')
+    const calls=mocks.bridge.mock.calls.length;await flushPromises();expect(mocks.bridge).toHaveBeenCalledTimes(calls)
+    mocks.bridge.mockResolvedValueOnce([]);send(wrapper,'identity.providers.list',{request_id:'retry-read'});await flushPromises()
+    expect(wrapper.find('.plugin-read-error').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('ends a hanging slot startup with a visible retry while keeping the sandbox and host height', async () => {
+    vi.useFakeTimers()
+    mocks.createSlot.mockImplementationOnce(() => new Promise(() => {}))
+    const slot = {id:'slow',surface:'account' as const,slot:'account.overview.cards',title:'服务信息',entrypoint:'ui/index.html'}
+    const wrapper = mount(PluginFrame,{props:{pluginId:'example.slow',slot,surface:'account',reservedHeight:224}})
+    await flushPromises()
+    expect(wrapper.attributes('style')).toContain('224px')
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(wrapper.get('[role="alert"]').text()).toContain('加载超时')
+    expect(wrapper.attributes('style')).toContain('224px')
+    wrapper.unmount();vi.useRealTimers()
+  })
+
+  it("retains a retryable host region when an optional legacy frame session fails", async () => {
     const slot = { id: 'login', surface: 'public' as const, slot: 'auth.login.methods', title: 'OAuth', entrypoint: 'ui/login.html' };
     mocks.createSlot.mockRejectedValueOnce(new Error('unavailable'));
     const wrapper = mount(PluginFrame, { props: { pluginId: 'zboard.oauth', slot, surface: 'public', optional: true } });
     await flushPromises();
-    expect(wrapper.find('.plugin-frame').exists()).toBe(false);
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(wrapper.find('.plugin-frame').exists()).toBe(true);
+    expect(wrapper.get('[role="alert"]').text()).toContain('暂不可用');
     wrapper.unmount();
   });
 

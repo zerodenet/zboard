@@ -105,3 +105,7 @@ func (s *Services) Records() metering.Records {
 func (s *Services) Usage(cache metering.StatisticsCache, incremental *meteringstore.IncrementalCache) metering.Usage {
 	return metering.Usage{Repository: meteringstore.Usage{DB: s.Identity.db, ReadDB: s.trafficDatabase(), Statistics: meteringstore.UsageStatisticsReader{Cache: cache, Incremental: incremental}}}
 }
+
+func (s *Services) UserTrafficActivity() metering.UserActivity {
+	return metering.UserActivity{Repository: meteringstore.TrafficTrends{DB: s.Identity.db, ReadDB: s.trafficDatabase()}}
+}

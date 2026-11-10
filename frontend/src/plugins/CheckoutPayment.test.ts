@@ -3,7 +3,7 @@ import { defineComponent, onMounted } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CheckoutPayment from './CheckoutPayment.vue'
 const mocks = vi.hoisted(() => ({ slots: vi.fn(), action: vi.fn(), context: vi.fn(), order: vi.fn() }))
-vi.mock('../api/plugins', () => ({ fetchPluginSlots: mocks.slots }))
+vi.mock('./composition', () => ({ compositionSlots: mocks.slots }))
 vi.mock('../api/client', () => ({ fetchAccountOrder: mocks.order }))
 const slot = (id: string) => ({ plugin_id: id, generation: 1, slot: { id: 'checkout', slot: 'account.checkout.payment', title: id, surface: 'account', entrypoint: 'ui/pay.html' } })
 const Frame = defineComponent({

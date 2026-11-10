@@ -46,3 +46,23 @@ it('does not invent a date for permanent subscriptions or invalid deadlines', as
   expect(wrapper.text()).toBe('-')
   wrapper.unmount()
 })
+
+ it('uses the configured cleanup days as the visible horizon and includes the boundary', async () => {
+  const wrapper = mount(AccountCleanupSummary, { props: { status: { ...status, inactive_days: 14, eligible_at: '2026-11-17T00:00:00Z' } } })
+  expect(wrapper.find('time').exists()).toBe(true)
+  await wrapper.setProps({ status: { ...status, inactive_days: 7, eligible_at: '2026-11-17T00:00:00Z' } })
+  expect(wrapper.text()).toBe('-')
+  expect(wrapper.find('time').exists()).toBe(false)
+  await wrapper.setProps({ status: { ...status, inactive_days: 30, eligible_at: '2026-11-17T00:00:00Z' } })
+  expect(wrapper.find('time').exists()).toBe(true)
+  wrapper.unmount()
+ })
+
+ it('reveals a distant deadline once it enters the configured window', async () => {
+  const wrapper = mount(AccountCleanupSummary, { props: { status: { ...status, inactive_days: 7, eligible_at: '2026-11-11T00:00:00Z' } } })
+  expect(wrapper.text()).toBe('-')
+  await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+  expect(wrapper.get('time').attributes('datetime')).toBe('2026-11-11T00:00:00Z')
+  expect(wrapper.classes()).not.toContain('account-cleanup-due')
+  wrapper.unmount()
+ })

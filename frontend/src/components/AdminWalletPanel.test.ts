@@ -2,11 +2,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminWalletPanel from './AdminWalletPanel.vue'
-import { creditWallet, debitWallet, fetchAdministrativeWallet, fetchWalletAdjustments, fetchWalletAdjustment, recordWalletPayout, reverseWalletAdjustment } from '../api/walletAdjustments'
+import { directlyDebitWallet, creditWallet, debitWallet, fetchAdministrativeWallet, fetchWalletAdjustments, fetchWalletAdjustment, recordWalletPayout, reverseWalletAdjustment } from '../api/walletAdjustments'
 import UiSelect from './UiSelect.vue'
 const state = vi.hoisted(() => ({ app: null as any }))
 vi.mock('../stores/app', () => ({ useAppStore: () => state.app }))
-vi.mock('../api/walletAdjustments', () => ({ creditWallet: vi.fn(), debitWallet: vi.fn(), fetchAdministrativeWallet: vi.fn(), fetchWalletAdjustments: vi.fn(), fetchWalletAdjustment: vi.fn(), recordWalletPayout: vi.fn(), reverseWalletAdjustment: vi.fn() }))
+vi.mock('../api/walletAdjustments', () => ({ directlyDebitWallet: vi.fn(), creditWallet: vi.fn(), debitWallet: vi.fn(), fetchAdministrativeWallet: vi.fn(), fetchWalletAdjustments: vi.fn(), fetchWalletAdjustment: vi.fn(), recordWalletPayout: vi.fn(), reverseWalletAdjustment: vi.fn() }))
 const row = { id: 9, user_id: 27, currency: 'CNY', amount_minor: '900', reason: '工单特殊出款', ticket_id: 12, actor_id: 1, entry_id: 6, external_status: 'pending', created_at: '2026-10-19T00:00:00Z' }
 function open() { return mount(AdminWalletPanel, { props: { userId: 27 }, global: { stubs: { ModalDialog: { props: ['open'], template: '<section v-if="open"><slot/><slot name="footer" :request-close="() => {}"/></section>' } } } }) }
 async function expandPayout(wrapper: ReturnType<typeof open>) { if (wrapper.get('[data-test="payout-toggle"]').attributes('aria-expanded') !== 'true') { await wrapper.get('[data-test="payout-toggle"]').trigger('click'); await flushPromises() } }
@@ -54,9 +54,9 @@ it('blocks a corrupt financial draft even if read-only records are refreshed', a
 
 async function openCredit(wrapper: ReturnType<typeof open>) {
  await wrapper.get('[data-test="credit-open"]').trigger('click'); await flushPromises()
- const form = wrapper.get('form[data-test="credit"]')
- await form.get('#admin-wallet-credit-amount').setValue('5.00')
- await form.get('#admin-wallet-credit-reason').setValue('活动赠送')
+ const form = wrapper.get('form[data-test="balance-change"]')
+ await form.get('#admin-wallet-change-amount').setValue('5.00')
+ await form.get('#admin-wallet-change-reason').setValue('活动赠送')
  return form
 }
 describe('administrator wallet credits', () => {
@@ -69,8 +69,8 @@ describe('administrator wallet credits', () => {
  })
  it('rejects extra fractional precision at the amount field', async () => {
   const wrapper=open();await flushPromises();const form=await openCredit(wrapper)
-  await form.get('#admin-wallet-credit-amount').setValue('5.001');await form.trigger('submit');await flushPromises()
-  expect(creditWallet).not.toHaveBeenCalled();expect(form.get('#admin-wallet-credit-amount').attributes('aria-invalid')).toBe('true');wrapper.unmount()
+  await form.get('#admin-wallet-change-amount').setValue('5.001');await form.trigger('submit');await flushPromises()
+  expect(creditWallet).not.toHaveBeenCalled();expect(form.get('#admin-wallet-change-amount').attributes('aria-invalid')).toBe('true');wrapper.unmount()
  })
  it('keeps the same credit intent after a lost response, refresh and remount', async () => {
   const wrapper=open();await flushPromises();let form=await openCredit(wrapper)
@@ -78,7 +78,7 @@ describe('administrator wallet credits', () => {
   const original=vi.mocked(creditWallet).mock.calls[0]![0];expect(form.findAll('input').every(input=>input.attributes('disabled')!==undefined)).toBe(true)
   await wrapper.get('button[aria-label="刷新余额"]').trigger('click');await flushPromises();expect(creditWallet).toHaveBeenCalledTimes(1);wrapper.unmount()
   const restored=open();await flushPromises();await restored.get('[data-test="credit-open"]').trigger('click');await flushPromises()
-  form=restored.get('form[data-test="credit"]');await form.trigger('submit');await flushPromises()
+  form=restored.get('form[data-test="balance-change"]');await form.trigger('submit');await flushPromises()
   expect(creditWallet).toHaveBeenLastCalledWith(original);expect(creditWallet).toHaveBeenCalledTimes(2);restored.unmount()
  })
  it('does not expose old credit results after switching the target or identity', async () => {
@@ -86,7 +86,7 @@ describe('administrator wallet credits', () => {
   let finish!:(value:any)=>void;vi.mocked(creditWallet).mockReturnValueOnce(new Promise(resolve=>{finish=resolve}))
   await form.trigger('submit');await wrapper.setProps({userId:28});await flushPromises()
   finish({id:20,kind:'admin_credit',balance_delta:'500',reserved_delta:'0'});await flushPromises()
-  expect(wrapper.emitted('changed')).toBeUndefined();expect(wrapper.find('form[data-test="credit"]').exists()).toBe(false)
+  expect(wrapper.emitted('changed')).toBeUndefined();expect(wrapper.find('form[data-test="balance-change"]').exists()).toBe(false)
   expect(JSON.parse(localStorage.getItem('zboard:wallet-adjustment:1:27:CNY:credit')!).result).toBe(20);wrapper.unmount()
  })
  it('blocks corrupt credit intents without replaying or erasing them', async () => {
@@ -104,4 +104,83 @@ it('uses the platform default for an empty wallet and honors an explicitly selec
  const existing = mount(AdminWalletPanel, { props: { userId: 27, initialCurrency: 'CNY' } }); await flushPromises()
  expect(fetchAdministrativeWallet).toHaveBeenCalledWith(27, 'CNY', 0, expect.any(AbortSignal))
  existing.unmount()
+})
+
+async function openDirectDebit(wrapper: ReturnType<typeof open>) {
+ await wrapper.get('[data-test="direct-debit-open"]').trigger('click'); await flushPromises()
+ const form = wrapper.get('form[data-test="balance-change"]')
+ await form.get('#admin-wallet-change-amount').setValue('5.00')
+ await form.get('#admin-wallet-change-reason').setValue('纠正误加余额')
+ return form
+}
+describe('direct administrator balance deductions', () => {
+ beforeEach(() => {
+  vi.mocked(directlyDebitWallet).mockResolvedValue({id:21,kind:'admin_debit',balance_delta:'-500',reserved_delta:'0',balance_after:'500',reserved_after:'100',reason:'管理员扣减余额：纠正误加余额',created_at:'2026-11-10T00:00:00Z'})
+ })
+ it('deducts with amount and reason only, without opening a payout or writing on open', async () => {
+  const wrapper=open();await flushPromises();const form=await openDirectDebit(wrapper)
+  expect(form.findAll('input')).toHaveLength(2)
+  expect(wrapper.find('form[data-test="debit"]').exists()).toBe(false)
+  expect(form.text()).toContain('扣减原因（用户可见）')
+  expect(directlyDebitWallet).not.toHaveBeenCalled()
+  await form.trigger('submit');await flushPromises()
+  expect(directlyDebitWallet).toHaveBeenCalledWith({user_id:27,currency:'CNY',amount_minor:500,reason:'纠正误加余额',idempotency_key:expect.stringMatching(/^[a-f0-9]{32}$/)})
+  expect(debitWallet).not.toHaveBeenCalled();expect(creditWallet).not.toHaveBeenCalled();expect(recordWalletPayout).not.toHaveBeenCalled()
+  expect(wrapper.emitted('changed')).toHaveLength(1);expect(fetchAdministrativeWallet).toHaveBeenCalledTimes(2);wrapper.unmount()
+ })
+ it('preserves one deduction across a lost response, reload, and explicit retry', async () => {
+  const wrapper=open();await flushPromises();const form=await openDirectDebit(wrapper)
+  vi.mocked(directlyDebitWallet).mockRejectedValueOnce(new Error('response lost'))
+  await form.trigger('submit');await flushPromises();const original=vi.mocked(directlyDebitWallet).mock.calls[0]![0]
+  expect(form.findAll('input').every(input=>input.attributes('disabled')!==undefined)).toBe(true)
+  wrapper.unmount();const restored=open();await flushPromises()
+  expect(directlyDebitWallet).toHaveBeenCalledTimes(1)
+  await restored.get('[data-test="direct-debit-open"]').trigger('click');await flushPromises()
+  await restored.get('form[data-test="balance-change"]').trigger('submit');await flushPromises()
+  expect(directlyDebitWallet).toHaveBeenLastCalledWith(original);expect(directlyDebitWallet).toHaveBeenCalledTimes(2);restored.unmount()
+ })
+ it('shows insufficient balance in place and allows correcting a definitively rejected request', async () => {
+  const wrapper=open();await flushPromises();const form=await openDirectDebit(wrapper)
+  vi.mocked(directlyDebitWallet).mockRejectedValueOnce({response:{status:400,data:{message:'可用余额不足，不能扣减已预留的资金。'}}})
+  await form.trigger('submit');await flushPromises()
+  expect(form.text()).toContain('可用余额不足')
+  expect(form.get('#admin-wallet-change-amount').attributes('disabled')).toBeUndefined()
+  expect(wrapper.emitted('changed')).toBeUndefined()
+  const first=vi.mocked(directlyDebitWallet).mock.calls[0]![0]
+  await form.get('#admin-wallet-change-amount').setValue('4.00')
+  vi.mocked(directlyDebitWallet).mockResolvedValueOnce({id:21,kind:'admin_debit',balance_delta:'-400',reserved_delta:'0'} as any)
+  await form.trigger('submit');await flushPromises()
+  expect(vi.mocked(directlyDebitWallet).mock.calls[1]![0].idempotency_key).not.toBe(first.idempotency_key)
+  expect(wrapper.emitted('changed')).toHaveLength(1);wrapper.unmount()
+ })
+ it('prevents duplicate submission and ignores the old target response after switching users', async () => {
+  const wrapper=open();await flushPromises();const form=await openDirectDebit(wrapper)
+  let finish!:(value:any)=>void;vi.mocked(directlyDebitWallet).mockReturnValueOnce(new Promise(resolve=>{finish=resolve}))
+  await form.trigger('submit');await form.trigger('submit');expect(directlyDebitWallet).toHaveBeenCalledTimes(1)
+  await wrapper.setProps({userId:28});await flushPromises()
+  // Opening a credit for a new user must not reinterpret an older debit response.
+  await wrapper.get('[data-test="credit-open"]').trigger('click');await flushPromises()
+  finish({id:21,kind:'admin_debit',balance_delta:'-500',reserved_delta:'0'});await flushPromises()
+  expect(wrapper.emitted('changed')).toBeUndefined()
+  expect(JSON.parse(localStorage.getItem('zboard:wallet-adjustment:1:27:CNY:direct-debit')!).result).toBe(21)
+  wrapper.unmount()
+ })
+ it('rejects invalid deductions locally and does not accept a positive credit as a debit confirmation', async () => {
+  const wrapper=open();await flushPromises();const form=await openDirectDebit(wrapper)
+  await form.get('#admin-wallet-change-amount').setValue('-1');await form.trigger('submit');await flushPromises()
+  expect(directlyDebitWallet).not.toHaveBeenCalled();expect(form.get('#admin-wallet-change-amount').attributes('aria-invalid')).toBe('true')
+  await form.get('#admin-wallet-change-amount').setValue('5.00')
+  vi.mocked(directlyDebitWallet).mockResolvedValueOnce({id:20,kind:'admin_credit',balance_delta:'500',reserved_delta:'0'} as any)
+  await form.trigger('submit');await flushPromises()
+  expect(wrapper.emitted('changed')).toBeUndefined();expect(form.text()).toContain('扣减结果待确认')
+  expect(form.get('#admin-wallet-change-amount').attributes('disabled')).toBeDefined();wrapper.unmount()
+ })
+ it('blocks corrupt debit drafts without erasing them', async () => {
+  localStorage.setItem('zboard:wallet-adjustment:1:27:CNY:direct-debit','{broken')
+  const wrapper=open();await flushPromises();const form=await openDirectDebit(wrapper)
+  await form.trigger('submit');await flushPromises();expect(directlyDebitWallet).not.toHaveBeenCalled()
+  expect(form.text()).toContain('扣减余额记录无法读取')
+  expect(localStorage.getItem('zboard:wallet-adjustment:1:27:CNY:direct-debit')).toBe('{broken')
+  wrapper.unmount()
+ })
 })

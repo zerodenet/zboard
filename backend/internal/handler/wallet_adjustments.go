@@ -59,6 +59,31 @@ func (h *handlers) AdminWalletCreditHandler(w http.ResponseWriter, r *http.Reque
 	OK(w, out)
 }
 
+// AdminWalletDirectDebitHandler changes the ledger without creating a payout case.
+func (h *handlers) AdminWalletDirectDebitHandler(w http.ResponseWriter, r *http.Request) {
+	actor, err := h.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	raw, err := integrationBody(w, r)
+	if err != nil {
+		BadRequest(w, "扣减余额请求无效。")
+		return
+	}
+	in, err := catalog.DecodeObject[commerce.WalletBalanceRequest](raw)
+	if err != nil {
+		BadRequest(w, "扣减余额请求包含无效或多余字段。")
+		return
+	}
+	out, err := h.services.WalletAdjustments.DirectDebit(r.Context(), actor.UserID, in)
+	if err != nil {
+		adjustmentError(w, err, "该请求标识已用于不同的扣减内容，请核对余额流水。")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	OK(w, out)
+}
+
 func (h *handlers) AdminUserWalletHandler(w http.ResponseWriter, r *http.Request) {
 	actor, err := h.requireAdmin(w, r)
 	if err != nil {

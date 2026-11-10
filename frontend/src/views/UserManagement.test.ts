@@ -9,15 +9,16 @@ import UiSelect from '../components/UiSelect.vue'
 import UiCheckbox from '../components/UiCheckbox.vue'
 import FormField from '../components/FormField.vue'
 
-const api = vi.hoisted(() => ({ list: vi.fn(), detail: vi.fn(), update: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), detail: vi.fn(), update: vi.fn(), traffic: vi.fn() }))
 vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), fetchUsersPage: api.list, fetchAdminUserDetail: api.detail, updateAdminUser: api.update }))
+vi.mock('../api/userTrafficActivity', () => ({ fetchUserTrafficActivity: api.traffic }))
 vi.mock('../stores/app', () => ({ useAppStore: () => ({ user: { id: 1 }, token: 'fixture', reauthRequired: false }) }))
 const user = { id: 22, email: 'customer@example.test', is_admin: false, status: 'active', active_subscription_count: 1, total_subscription_count: 2, pending_order_count: 0, total_order_count: 3, created_at: '2026-11-01', wallet_balances: [{ currency: 'CNY', balance_minor: '12345', reserved_minor: '0' }], cleanup: { enabled: true, inactive_days: 14, state: 'scheduled', eligible_at: '2026-11-15T00:00:00Z', reason: '从注册或最后一份订阅结束日起计算' } }
 let wrapper: VueWrapper | undefined
-beforeEach(() => { vi.resetAllMocks(); api.list.mockResolvedValue({ items: [user], total: 1 }); api.detail.mockResolvedValue(user); api.update.mockResolvedValue(user) })
-afterEach(() => { wrapper?.unmount(); document.body.innerHTML = '' })
+beforeEach(() => { vi.resetAllMocks(); vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-10T00:00:00Z')); api.list.mockResolvedValue({ items: [user], total: 1 }); api.detail.mockResolvedValue(user); api.update.mockResolvedValue(user); api.traffic.mockImplementation(async (ids: number[]) => ({ from: '2026-11-04', to: '2026-11-10', timezone: 'Asia/Shanghai', projection_pending: false, items: ids.map(user_id => ({ user_id, used_bytes: '7168', days: Array.from({length:7}, (_,i) => ({ date: `2026-11-${String(i+4).padStart(2,'0')}`, used_bytes: '1024' })) })) })) })
+afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); document.body.innerHTML = '' })
 async function render() {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/users', component: Users }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/users', component: Users }, { path: '/admin/subscriptions', component: { template: '<div />' } }, { path: '/admin/traffic', component: { template: '<div />' } }] })
   await router.push('/admin/users?q=customer'); await router.isReady()
   wrapper = mount(Users, { attachTo: document.body, global: {
     plugins: [router], components: { UiButton, UiInput, UiSelect, UiCheckbox, FormField },
@@ -265,4 +266,41 @@ it('keeps the wallet panel mounted when the first currency balance appears after
   panel.vm.$emit('changed'); await flushPromises()
   expect(wrapper.getComponent({ name: 'AdminWalletPanel' }).vm.$.uid).toBe(identity)
   expect(wrapper.get('.user-wallet-link').text()).toBe('10.00')
+})
+
+it('opens only this user’s active subscriptions directly from the list and preserves the return filter', async () => {
+ const { wrapper, router } = await render()
+ const link = wrapper.get('.user-subscription-link')
+ expect(link.text()).toBe('有效订阅 1')
+ expect(link.attributes('aria-label')).toContain(user.email)
+ await link.trigger('click'); await flushPromises()
+ expect(router.currentRoute.value.path).toBe('/admin/subscriptions')
+ expect(router.currentRoute.value.query).toMatchObject({ user_id: '22', status: 'active', return_to: '/admin/users?q=customer' })
+ expect(api.detail).not.toHaveBeenCalled()
+})
+
+it('omits subscription shortcuts for users without active subscriptions', async () => {
+ api.list.mockResolvedValue({ items: [{ ...user, active_subscription_count: 0 }], total: 1 })
+ const { wrapper } = await render()
+ expect(wrapper.find('.user-subscription-link').exists()).toBe(false)
+})
+
+it('loads one activity batch for the visible page and opens the user’s exact seven-day traffic range', async () => {
+ api.list.mockResolvedValue({ items: [user,{...user,id:23,email:'other@example.test'}], total:2 })
+ const {wrapper,router}=await render()
+ expect(api.traffic).toHaveBeenCalledTimes(1)
+ expect(api.traffic).toHaveBeenCalledWith([22,23],expect.any(AbortSignal))
+ expect(wrapper.findAll('.activity-day')).toHaveLength(14)
+ await wrapper.get('.activity-total').trigger('click');await flushPromises()
+ expect(router.currentRoute.value.path).toBe('/admin/traffic')
+ expect(router.currentRoute.value.query).toMatchObject({user_id:'22',from:'2026-11-04',to:'2026-11-10',bucket:'day'})
+})
+it('keeps account operations available when the independent activity read fails', async () => {
+ api.traffic.mockRejectedValue(new Error('statistics unavailable'))
+ const {wrapper}=await render()
+ expect(wrapper.get('tbody [role="switch"]').attributes('disabled')).toBeUndefined()
+ expect(wrapper.find('.activity-total').exists()).toBe(false)
+ expect(wrapper.get('.activity-retry').text()).toBe('重试')
+ await wrapper.get('.activity-retry').trigger('click');await flushPromises()
+ expect(api.traffic).toHaveBeenCalledTimes(2)
 })

@@ -6,9 +6,9 @@
     <p v-if="!loading && !contributions.length && !error && !paid && !canceled && !handoffToFunding">{{ reconcileOnly ? '原付款渠道暂不可用，请核对本站订单与余额流水。' : '暂无在线支付方式，可创建订单后联系管理员确认收款。' }}</p>
     <p v-if="handoffToFunding">先创建待付款订单，再核对余额与渠道补差。</p>
     <PageAlert v-if="handoffToFunding && paymentError" tone="danger">{{ paymentError }}</PageAlert>
-    <div v-for="contribution in contributions" :key="key(contribution)" class="checkout-payment__provider">
+    <div v-for="contribution in contributions" :key="`${key(contribution)}:${generation}`" class="checkout-payment__provider">
       <strong v-if="contributions.length > 1">{{ contribution.slot.title }}</strong>
-      <PluginFrame
+      <PluginFrame v-if="contribution.availability !== 'unavailable'"
         :ref="value => setFrame(key(contribution), value)"
         :plugin-id="contribution.plugin_id" :slot="contribution.slot" surface="account"
         :title="contribution.slot.title" managed :checkout="{ currency, order_id: currentOrder || undefined }"
@@ -16,15 +16,18 @@
         @checkout-status="value => receiveStatus(key(contribution), value)"
         @unavailable="receiveStatus(key(contribution), { state: 'error', code: 'session_unavailable' })"
       />
-      <PageAlert v-if="statuses[key(contribution)]?.state === 'error'" tone="danger">{{ paymentStatusMessage(statuses[key(contribution)].code) }}</PageAlert>
+      <div class="checkout-payment__options">
+      <PageAlert v-if="contribution.availability === 'unavailable'" tone="danger">{{ contribution.slot.title }}暂不可用，请重试。</PageAlert>
+      <PageAlert v-else-if="statuses[key(contribution)]?.state === 'error'" tone="danger">{{ paymentStatusMessage(statuses[key(contribution)].code) }}</PageAlert>
       <p v-else-if="!options[key(contribution)]" role="status">正在加载支付方式…</p>
       <p v-else-if="!options[key(contribution)].length">暂无可用支付方式，请联系管理员。</p>
       <label v-for="option in options[key(contribution)] || []" :key="option.id">
         <input v-model="selected" type="radio" :value="`${key(contribution)}:${option.id}`" :disabled="busy || option.disabled || paid" name="payment-option">
         {{ option.title }}<span v-if="option.disabled">（暂不可用）</span>
       </label>
+      </div>
     </div>
-    <UiButton v-if="canRetry" type="button" variant="secondary" size="sm" :disabled="busy || loading" @click="load">重新加载支付方式</UiButton>
+    <UiButton v-if="canRetry" type="button" variant="secondary" size="sm" :disabled="busy || loading" @click="load(true)">重新加载支付方式</UiButton>
     <div class="checkout-payment__actions">
       <UiButton v-if="handoffToFunding && !reconcileOnly" type="button" :loading="busy" :disabled="busy || disabled" @click="handoff">{{ currentOrder ? '继续选择付款方式' : '创建订单并选择付款方式' }}</UiButton>
       <UiButton v-else-if="currentOrder" :id="paymentTriggerId" type="button" @click="paymentDialogOpen = true">{{ reconcileOnly ? '查看原付款核对' : paid ? '查看支付结果' : '查看支付状态' }}</UiButton>
@@ -53,7 +56,8 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowReactive, useId, watch } from 'vue'
-import { fetchPluginSlots, type CatalogSlot } from '../api/plugins'
+import { compositionSlots } from './composition'
+import { type CatalogSlot } from '../api/plugins'
 import { fetchAccountOrder } from '../api/client'
 import UiButton from '../components/UiButton.vue'
 import PluginFrame from './PluginFrame.vue'
@@ -71,7 +75,7 @@ type Frame = { checkoutAction(id: number, action: string, payload: Record<string
 const frames = shallowReactive(new Map<string, Frame>())
 const contributions = ref<CatalogSlot[]>([]), options = reactive<Record<string, PaymentOption[]>>({})
 const statuses = reactive<Record<string, PaymentStatus>>({})
-const canRetry = computed(() => !busy.value && (Boolean(error.value) || contributions.value.some(c => ['error', 'empty'].includes(statuses[key(c)]?.state))))
+const canRetry = computed(() => !busy.value && (Boolean(error.value) || contributions.value.some(c => c.availability === 'unavailable' || ['error', 'empty'].includes(statuses[key(c)]?.state))))
 const loading = ref(true), busy = ref(false), error = ref(''), selected = ref('')
 const confirmedOrder = ref<{ amount: number; currency: string }>()
 const currentOrder = ref(props.orderId || 0), waiting = ref(false), paid = ref(false)
@@ -145,20 +149,20 @@ async function handoff() {
   } catch (cause: any) { if (current === generation) paymentError.value = cause?.response?.data?.message || cause?.message || '订单创建结果暂无法确认，请核对原订单后重试。' }
   finally { if (current === generation) busy.value = false }
 }
-async function load() {
+async function load(force = false) {
   if (busy.value) return
   if (props.handoffToFunding && !props.reconcileOnly) { generation++; controller.abort(); clearOptionTimers(); contributions.value = []; loading.value = false; return }
   clearOptionTimers()
   controller.abort(); controller = new AbortController(); const current = ++generation
   restored = false
-  loading.value = true; error.value = ''; contributions.value = []; selected.value = ''
+  loading.value = true; error.value = ''; selected.value = ''
   for (const id of Object.keys(options)) delete options[id]
   for (const id of Object.keys(statuses)) delete statuses[id]
   if (currentOrder.value) void refreshOrder(currentOrder.value, current).catch(() => {
     if (current === generation) paymentError.value = '订单状态暂时无法读取，请重新核对。'
   })
   try {
-    const values = await fetchPluginSlots('account', props.name, controller.signal)
+    const values = await compositionSlots('account', props.name, controller.signal, force)
     if (current === generation) {
       contributions.value = values
       for (const c of values) {
@@ -256,6 +260,8 @@ onBeforeUnmount(() => { generation++; controller.abort(); clearOptionTimers() })
 .checkout-payment header, .checkout-payment__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .checkout-payment header { justify-content: space-between; }
 .checkout-payment h3, .checkout-payment p { margin: 0; }
+.checkout-payment__options { height: 144px; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
+.checkout-payment__options label { flex-shrink: 0; }
 .checkout-payment__provider { display: grid; gap: 8px; min-width: 0; }
 .checkout-payment__provider label { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-md); cursor: pointer; }
 .checkout-payment__provider label:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }

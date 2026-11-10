@@ -14,12 +14,20 @@ type TrafficScope struct{ UserID, SubscriptionID, NodeID, ProtocolEndpointID uin
 // Exact pending increments overlay complete-hour projections in one snapshot;
 // partial calendar edges read the ledger. Continuous ingress never has to drain.
 func TrafficAggregateSource(db *gorm.DB, from, to time.Time, scope TrafficScope) *gorm.DB {
+	return trafficAggregateSourceForUsers(db, from, to, scope, nil)
+}
+
+// Batch user predicates are pushed into every projection, pending and edge source.
+func trafficAggregateSourceForUsers(db *gorm.DB, from, to time.Time, scope TrafficScope, users []uint) *gorm.DB {
 	start := from.UTC().Truncate(time.Hour)
 	if start.Before(from) {
 		start = start.Add(time.Hour)
 	}
 	end := to.UTC().Truncate(time.Hour)
 	apply := func(query *gorm.DB) *gorm.DB {
+		if len(users) > 0 {
+			query = query.Where("user_id IN ?", users)
+		}
 		for _, filter := range []struct {
 			column string
 			id     uint
@@ -46,7 +54,7 @@ func TrafficAggregateSource(db *gorm.DB, from, to time.Time, scope TrafficScope)
 		hourly = hourly.Where("record_at < ?", end.Format("2006-01-02 15:04:05"))
 	}
 	parts := []string{"?", "?"}
-	queries := []interface{}{hourly, pendingHourlySource(db, start, end, scope)}
+	queries := []interface{}{hourly, pendingHourlySourceForUsers(db, start, end, scope, users)}
 	if !from.IsZero() && from.Before(start) {
 		parts = append(parts, "?")
 		queries = append(queries, apply(db.Table("traffic_records").Select(columns+", record_count").Where("record_at >= ? AND record_at < ?", from, start)))
@@ -62,11 +70,18 @@ func TrafficAggregateSource(db *gorm.DB, from, to time.Time, scope TrafficScope)
 // this never rescans financial history. Legacy pending rows own their entire
 // contribution; minute checkpoints own only the unprojected increment.
 func pendingHourlySource(db *gorm.DB, from, to time.Time, scope TrafficScope) *gorm.DB {
+	return pendingHourlySourceForUsers(db, from, to, scope, nil)
+}
+
+func pendingHourlySourceForUsers(db *gorm.DB, from, to time.Time, scope TrafficScope, users []uint) *gorm.DB {
 	selected := []string{"r.record_at", "r.user_id", "r.subscription_id", "r.node_id", "r.protocol_endpoint_id", "r.protocol_multiplier_milli"}
 	for _, column := range []string{"raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "record_count"} {
 		selected = append(selected, "CASE WHEN r.is_aggregate=1 THEN p.delta_"+column+" ELSE r."+column+" END AS "+column)
 	}
 	q := db.Table("metering_usage_projection_pending").Where("hourly_pending = ?", true).Limit(UsageProjectionBatchLimit)
+	if len(users) > 0 {
+		q = q.Where("user_id IN ?", users)
+	}
 	if !from.IsZero() {
 		q = q.Where("record_at >= ?", from)
 	}

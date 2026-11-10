@@ -12,29 +12,19 @@
         <p v-if="changingAccount" class="muted">切换账户将清除未保存内容。</p>
         <UiButton type="submit" :loading="loading">重新登录</UiButton>
       </form>
-      <div v-if="methods.length || methodsError" class="stack">
+      <div class="stack">
         <PageAlert v-if="externalRecoveryError" tone="warning" title="尚未离开当前页面">{{ externalRecoveryError }}</PageAlert>
-        <PageAlert v-if="methodsError" tone="warning" title="其他登录方式暂不可用">{{ methodsError }}</PageAlert>
-        <PluginFrame
-          v-for="method in methods"
-          :key="`${method.plugin_id}:${method.slot.id}:${method.generation}`"
-          :plugin-id="method.plugin_id"
-          :slot="method.slot"
-          surface="public"
-          :title="method.slot.title"
-          :before-identity-login="prepareExternalLogin"
-        />
-        <UiButton v-if="methodsError" type="button" variant="secondary" @click="loadMethods">重新检查登录方式</UiButton>
+        <PluginLoginMethods :before-identity-login="prepareExternalLogin" @state="value => { methodCount = value.count; methodsLoading = value.loading; methodsError = value.error }" />
       </div>
       <UiButton v-if="!showPassword" type="button" variant="secondary" @click="openPasswordLogin">邮箱密码登录</UiButton>
-      <PageAlert v-if="!methodsLoading && !methods.length && !methodsError && app.passwordLoginAvailable === false" tone="warning" title="暂无可用登录方式">当前没有可用的第三方登录入口，请联系管理员检查登录插件。</PageAlert>
+      <PageAlert v-if="!methodsLoading && !methodCount && !methodsError && app.passwordLoginAvailable === false" tone="warning" title="暂无可用登录方式">当前没有可用的第三方登录入口，请联系管理员检查登录插件。</PageAlert>
     </div>
     <template #footer><UiButton type="button" variant="ghost" :disabled="loading" @click="logout">退出并返回首页</UiButton></template>
   </ModalDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, watch, ref } from 'vue'
+import { computed, nextTick, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useFormErrors } from '../composables/useFormState'
@@ -44,8 +34,7 @@ import FormField from './FormField.vue'
 import UiInput from './UiInput.vue'
 import UiButton from './UiButton.vue'
 import PageAlert from './PageAlert.vue'
-import PluginFrame from '../plugins/PluginFrame.vue'
-import { fetchPluginSlots, type CatalogSlot } from '../api/plugins'
+import PluginLoginMethods from '../plugins/PluginLoginMethods.vue'
 import { rememberAuthReturnPath } from '../utils/authReturnPath'
 import { captureReauthenticationDrafts, safeReauthenticationRoute } from '../utils/reauthenticationDrafts'
 
@@ -61,19 +50,10 @@ watch(email, () => { if (!loading.value) errors.clear('email') }, { flush: 'sync
 watch(password, () => { if (!loading.value) errors.clear('password') }, { flush: 'sync' })
 const showPassword = ref(app.passwordLoginAvailable === true)
 const changingAccount = computed(() => email.value.trim().toLowerCase() !== app.user.email.trim().toLowerCase())
-const methods = ref<CatalogSlot[]>([])
+const methodCount = ref(0)
 const methodsError = ref('')
 const externalRecoveryError = ref('')
 const methodsLoading = ref(true)
-async function loadMethods() {
-  methodsLoading.value = true
-  try {
-    methods.value = await fetchPluginSlots('public', 'auth.login.methods')
-    methodsError.value = ''
-  } catch { methodsError.value = '无法读取登录方式，请检查网络后重试。' }
-  finally { methodsLoading.value = false }
-}
-onMounted(loadMethods)
 
 async function openPasswordLogin() {
   showPassword.value = true

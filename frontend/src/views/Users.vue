@@ -17,12 +17,12 @@
           </template>
         </WorkbenchFilterBar>
       </template>
-      <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="5" />
-      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="640" table-class="users-table">
-        <thead><tr><SortableHeader field="email" label="用户" class="table-primary-column" :sort-field="sortField" :direction="sortDirection" @sort="setSort" /><th>账户状态</th><th class="numeric-column">余额<template v-if="balanceCurrency">（{{ balanceCurrency }}）</template></th><th>预计自动删除</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+      <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="6" />
+      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="780" table-class="users-table">
+        <thead><tr><SortableHeader field="email" label="用户" class="table-primary-column" :sort-field="sortField" :direction="sortDirection" @sort="setSort" /><th>账户状态</th><th class="numeric-column">余额<template v-if="balanceCurrency">（{{ balanceCurrency }}）</template></th><th class="numeric-column">近 7 天消耗</th><th>预计自动删除</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
         <tbody>
           <tr v-for="user in users" :key="user.id">
-            <td class="table-primary-column"><div class="cell-title"><RouterLink :to="{ query: { ...route.query, user: String(user.id) } }" :data-user-detail-trigger="user.id" v-overflow-title="user.email" :aria-label="`查看用户 ${user.email}`" class="user-detail-link">{{ user.email }}</RouterLink><span class="table-secondary-text"><span class="mono">#{{ user.id }}</span><template v-if="user.admin_note"> · <span class="user-admin-note" v-overflow-title="user.admin_note">{{ user.admin_note }}</span></template><template v-if="user.is_admin"> · 管理员</template><template v-if="user.active_subscription_count"> · 有效订阅 {{ formatNumber(user.active_subscription_count) }}</template></span></div></td>
+            <td class="table-primary-column"><div class="cell-title"><RouterLink :to="{ query: { ...route.query, user: String(user.id) } }" :data-user-detail-trigger="user.id" v-overflow-title="user.email" :aria-label="`查看用户 ${user.email}`" class="user-detail-link">{{ user.email }}</RouterLink><span class="table-secondary-text"><span class="mono">#{{ user.id }}</span><template v-if="user.admin_note"> · <span class="user-admin-note" v-overflow-title="user.admin_note">{{ user.admin_note }}</span></template><template v-if="user.is_admin"> · 管理员</template><template v-if="user.active_subscription_count"> · <RouterLink class="user-subscription-link" :aria-label="`查看 ${user.email} 的 ${user.active_subscription_count} 份有效订阅`" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id), status: 'active' })">有效订阅 {{ formatNumber(user.active_subscription_count) }}</RouterLink></template></span></div></td>
             <td>
               <UiSwitch :model-value="user.status === 'active'" :disabled="statusBusy.has(user.id)" :aria-label="`启用账户 ${user.email}`" :aria-busy="statusBusy.has(user.id)" :aria-describedby="`user-status-${user.id}${statusErrors[user.id] ? ` user-status-error-${user.id}` : ''}`" :title="statusBusy.has(user.id) ? '保存中' : statusName(user.status)" @update:model-value="toggleUserStatus(user, $event)" />
               <span :id="`user-status-${user.id}`" class="sr-only" role="status">{{ statusBusy.has(user.id) ? '保存中' : statusName(user.status) }}</span>
@@ -34,6 +34,7 @@
                 <RouterLink v-if="!user.wallet_balances?.length" :to="{ query: { ...route.query, user: String(user.id), section: 'wallet' } }" :aria-label="`查看 ${user.email} 的余额（${user.wallet_balances ? '0.00' : '未知'}）`" class="user-wallet-link">-</RouterLink>
               </div>
             </td>
+            <td class="numeric-column user-traffic-cell"><span class="user-mobile-label" aria-hidden="true">近 7 天</span><UserTrafficActivity :item="activityByUser.get(user.id)" :user-label="user.email" :link="activityLink(user.id)" :loading="activityLoading" :error="activityError" :pending="activityData?.projection_pending" @retry="loadActivity" /></td>
             <td class="user-cleanup-cell"><span class="user-mobile-label" aria-hidden="true">自动删除</span><AccountCleanupSummary :status="user.cleanup" /></td>
             <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :disabled="statusBusy.has(user.id)" :loading="openingUserID === user.id" @click="openEdit(user)">编辑账户</UiButton><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
           </tr>
@@ -190,6 +191,8 @@ import { useAppStore } from '../stores/app'
 import { platformDefaultCurrency } from '../utils/platformCurrency'
 import { formatNumber } from '../utils/format'
 import BalanceValue from '../components/BalanceValue.vue'
+import UserTrafficActivity from '../components/UserTrafficActivity.vue'
+import { useUserTrafficActivity } from '../composables/useUserTrafficActivity'
 import { formatWalletMoney } from '../utils/walletMoney'
 import { collectFieldErrors, isEmail, isOneOf, isUtf8LengthInRange } from '../utils/validation'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
@@ -393,6 +396,11 @@ const { items: users, total, loading, refreshing, error, load: refresh } = useRe
   onOffsetCorrected: () => syncURL(true),
 })
 
+const { data: activityData, byUser: activityByUser, loading: activityLoading, error: activityError, load: loadActivity } = useUserTrafficActivity(users, loading, () => `${app.user?.id}:${app.token}:${app.systemTimeZone}`)
+function activityLink(userID: number) {
+  return adminContextLink('/admin/traffic', { user_id: String(userID), from: activityData.value?.from || '', to: activityData.value?.to || '', bucket: 'day' })
+}
+
 const detailWalletCurrency = computed(() => String(route.query.wallet_currency || selectedUserDetail.value?.wallet_balances?.[0]?.currency || platformDefaultCurrency(app.publicConfigs)))
 const balanceCurrency = computed(() => {
   const currencies = [...new Set(users.value.flatMap(user => user.wallet_balances?.map(wallet => wallet.currency) || []))]
@@ -522,6 +530,9 @@ onMounted(() => { void refresh(); void syncDetailFromRoute() })
 .user-admin-note { color: var(--text-body); }
 .user-note-detail { white-space: pre-wrap; overflow-wrap: anywhere; }
 .user-status-error { margin: 4px 0 0; color: var(--destructive); font-size: 12px; max-width: 180px; }
+.user-subscription-link { color: inherit; text-decoration: none; }
+.user-subscription-link:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
+.user-subscription-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .user-wallet-balances { display: grid; gap: 4px; }
 .user-wallet-link { display: grid; gap: 4px; color: var(--foreground); font-variant-numeric: tabular-nums; text-decoration: none; white-space: nowrap; }
 .user-wallet-link:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -560,7 +571,9 @@ onMounted(() => { void refresh(); void syncDetailFromRoute() })
   :deep(.users-table .cell-title) { min-width: 0; max-width: 100%; }
   :deep(.users-table td:nth-child(2)) { grid-column: 2; grid-row: 1; padding-top: 4px; }
   :deep(.users-table .user-wallet-cell) { grid-column: 1; grid-row: 2; display: flex; gap: 8px; text-align: left; }
-  :deep(.users-table .user-cleanup-cell) { grid-column: 1; grid-row: 3; display: flex; gap: 8px; }
+  :deep(.users-table .user-traffic-cell) { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 8px; text-align: left; }
+  :deep(.users-table .user-traffic-cell .user-traffic-activity) { flex: 1; min-width: 0; }
+  :deep(.users-table .user-cleanup-cell) { grid-column: 1 / -1; grid-row: 4; display: flex; gap: 8px; }
   :deep(.users-table .table-action-column) { grid-column: 3; grid-row: 1; min-width: 40px; }
   .user-mobile-label { display: inline; flex: none; color: var(--muted-foreground); font-size: 12px; }
   .user-wallet-link { align-items: flex-start; }

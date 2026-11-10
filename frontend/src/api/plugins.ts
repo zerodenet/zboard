@@ -110,6 +110,11 @@ export interface CatalogPage {
   generation: number;
 }
 export interface CatalogSlot {
+  config_revision?: number;
+  availability?: "ready" | "unavailable";
+  presentation?: "frame" | "identity";
+  reserved_height?: number;
+  providers?: { id: string; name: string }[];
   plugin_id: string;
   slot: PluginSlotContribution;
   generation: number;
@@ -260,3 +265,7 @@ export const revokePluginSession = (session: PluginSession) =>
 export const fetchPluginMigrations = (id: string, signal?: AbortSignal) => api.get(`/admin/plugins/${id}/migrations`, { signal }).then(data<PluginMigration[]>);
 export const capabilityLabel = (c: string) => ({ 'zboard.ui.page.v1': '展示插件页面', 'zboard.config.v1': '管理自身配置', 'zboard.identity.provider.v1': '验证第三方身份', 'zboard.storage.v1': '读写自身私有数据', 'zboard.task.v1': '注册定时任务' })[c] || c;
 export const pluginBusinessLabel = (p: Plugin) => p.manifest.capabilities.includes('zboard.identity.provider.v1') ? '第三方登录与注册' : p.manifest.components.server ? '服务扩展' : '页面扩展';
+
+export interface PluginComposition { revision: string; slots: CatalogSlot[] }
+export const fetchPluginComposition = (surface: Surface, signal?: AbortSignal) => api.get('/plugin-ui/composition', { params: { surface }, signal, timeout: 3500 }).then(data<PluginComposition>);
+export const startPluginIdentity = (plugin: string, slot: string, provider: string, generation: number, revision: number) => api.post(`/plugin-ui/${encodeURIComponent(plugin)}/identity-start`, {slot_id: slot, provider_id: provider, generation, config_revision: revision}).then(data<{authorization_url: string}>);

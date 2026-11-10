@@ -7,6 +7,10 @@ import type { TicketAttachment } from './files'
 
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
+export function isPublicPluginRequest(config: { method?: string; url?: string; params?: any }) {
+ return config.method === 'get' && (config.url === '/plugin-ui/composition' && config.params?.surface === 'public' || config.url === '/plugin-ui/slots' && config.params?.surface === 'public' && config.params?.slot === 'auth.login.methods') || config.method === 'post' && /^\/plugin-ui\/[a-zA-Z0-9._-]+\/identity-start$/.test(config.url || '')
+}
+
 const tokenKey = 'zboard.auth.token'
 export const MAINTENANCE_STATE_EVENT = 'zboard:maintenance-state'
 
@@ -16,7 +20,7 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use((cfg) => {
-  const loginMethods = cfg.method === 'get' && cfg.url === '/plugin-ui/slots' && cfg.params?.surface === 'public' && cfg.params?.slot === 'auth.login.methods'
+  const loginMethods = isPublicPluginRequest(cfg)
   // Reauthentication only verifies identity. Never queue or replay business calls.
   if (isAuthSessionExpired() && cfg.url !== '/auth/login' && cfg.url !== '/auth/me' && !loginMethods) {
     throw new AxiosError('登录已过期，请重新登录后确认并重试操作。', 'AUTH_SESSION_EXPIRED', cfg)
@@ -32,7 +36,7 @@ api.interceptors.request.use((cfg) => {
 api.interceptors.response.use(
   response => {
     const credential = response.config.headers?.Authorization
-    if (typeof credential === 'string' && credential.startsWith('Bearer ') && credential !== `Bearer ${getAuthToken()}`) {
+    if (!isPublicPluginRequest(response.config) && typeof credential === 'string' && credential.startsWith('Bearer ') && credential !== `Bearer ${getAuthToken()}`) {
       throw new AxiosError('登录身份已变化，请刷新后核对操作结果。', 'AUTH_SESSION_CHANGED', response.config)
     }
     return response
@@ -44,7 +48,7 @@ api.interceptors.response.use(
     const config = cause?.config
     // Only the credential used by this request can invalidate the current login.
     // Password confirmations and plugin proofs have their own expiry lifecycle.
-    if (cause?.response?.status === 401 && token && config?.headers?.Authorization === `Bearer ${token}` && config.url !== '/auth/login') {
+    if (cause?.response?.status === 401 && token && config?.headers?.Authorization === `Bearer ${token}` && config.url !== '/auth/login' && !isPublicPluginRequest(config)) {
       if (config.headers['X-Plugin-Session'] || config.url?.startsWith('/account/security/')) {
         verifyAuthSession(token)
       } else {
@@ -73,11 +77,14 @@ export function getAuthToken() {
 
 export function setAuthToken(token: string, resetExpiry = true) {
   if (resetExpiry) resetAuthSessionExpired()
+  const changed = getAuthToken() !== token
   localStorage.setItem(tokenKey, token)
+  if (changed && typeof window !== 'undefined') window.dispatchEvent(new Event('zboard:plugin-ui-identity-changed'))
 }
 
 export function clearAuthToken() {
   localStorage.removeItem(tokenKey)
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('zboard:plugin-ui-identity-changed'))
 }
 
 function unwrap(response: any) {

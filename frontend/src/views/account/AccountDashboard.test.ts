@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAccountOrdersPage, fetchAccountSubscriptionsPage, fetchTrafficQuota } from '../../api/client'
 import AccountDashboard from './AccountDashboard.vue'
 
+vi.mock('../../plugins/PluginSlot.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../../api/client', () => ({
   fetchAccountOrdersPage: vi.fn(), fetchAccountSubscriptionsPage: vi.fn(), fetchTrafficQuota: vi.fn(),
 }))

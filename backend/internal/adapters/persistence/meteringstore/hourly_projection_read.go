@@ -123,9 +123,16 @@ func EnsureHourlyUsageWindowsReadable(tx *gorm.DB, scope TrafficScope, windows [
 }
 
 func inspectHourlyUsageWindows(tx *gorm.DB, scope TrafficScope, windows [][2]time.Time) (bool, error) {
+	return inspectHourlyUsageWindowsForUsers(tx, scope, windows, nil)
+}
+
+func inspectHourlyUsageWindowsForUsers(tx *gorm.DB, scope TrafficScope, windows [][2]time.Time, users []uint) (bool, error) {
 	q, err := hourlyPendingQuery(tx, scope, windows)
 	if err != nil || q == nil {
 		return false, err
+	}
+	if len(users) > 0 {
+		q = q.Where("user_id IN ?", users)
 	}
 	var pending []model.MeteringUsageProjectionPending
 	if err := q.Limit(UsageProjectionBatchLimit + 1).Find(&pending).Error; err != nil {

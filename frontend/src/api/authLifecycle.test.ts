@@ -29,6 +29,21 @@ describe('API login lifecycle', () => {
     await expect(api.get('/plugin-ui/slots', { params: { surface: 'admin', slot: 'admin.orders' }, adapter: transport })).rejects.toMatchObject({ code: 'AUTH_SESSION_EXPIRED' })
     expect(transport).toHaveBeenCalledOnce()
   })
+  it('allows only public composition and native login starts during reauthentication', async () => {
+    setAuthToken('current')
+    await api.get('/navigation', { adapter: rejectStatus(401) }).catch(() => undefined)
+    const transport = vi.fn(ok)
+    await api.get('/plugin-ui/composition', { params:{surface:'public'},adapter:transport })
+    await api.post('/plugin-ui/example.login/identity-start', {slot_id:'login',provider_id:'example.login'}, {adapter:transport})
+    await expect(api.get('/plugin-ui/composition', {params:{surface:'admin'},adapter:transport})).rejects.toMatchObject({code:'AUTH_SESSION_EXPIRED'})
+    await expect(api.post('/plugin-ui/example.login/slot-session', {}, {adapter:transport})).rejects.toMatchObject({code:'AUTH_SESSION_EXPIRED'})
+    expect(transport).toHaveBeenCalledTimes(2)
+  })
+  it('does not expire the platform session when a public login start returns 401',async()=>{
+    setAuthToken('current')
+    await api.post('/plugin-ui/example.login/identity-start', {}, {adapter:rejectStatus(401)}).catch(()=>undefined)
+    expect(isAuthSessionExpired()).toBe(false)
+  })
   it('expires the current session once for concurrent bare HTTP 401 failures', async () => {
     setAuthToken('current')
     const listener = vi.fn()

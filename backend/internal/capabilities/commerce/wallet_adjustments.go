@@ -10,13 +10,16 @@ import (
 
 var ErrWalletAdjustmentConflict = errors.New("wallet adjustment conflict")
 
-type WalletCreditRequest struct {
+// WalletBalanceRequest records a direct balance change without an external payout.
+type WalletBalanceRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	UserID         uint   `json:"user_id"`
 	Currency       string `json:"currency"`
 	AmountMinor    int64  `json:"amount_minor"`
 	Reason         string `json:"reason"`
 }
+
+type WalletCreditRequest = WalletBalanceRequest
 
 type WalletDebitRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
@@ -68,6 +71,7 @@ type WalletAdjustmentPage struct {
 }
 type WalletAdjustmentsRepository interface {
 	Credit(context.Context, uint, WalletCreditRequest) (WalletEntry, error)
+	DirectDebit(context.Context, uint, WalletBalanceRequest) (WalletEntry, error)
 	Debit(context.Context, uint, WalletDebitRequest) (WalletAdjustmentSummary, error)
 	Read(context.Context, uint, uint) (WalletAdjustmentSummary, error)
 	List(context.Context, uint, uint, string, uint, int) (WalletAdjustmentPage, error)
@@ -91,6 +95,22 @@ func (s WalletAdjustments) Credit(ctx context.Context, actor uint, in WalletCred
 		return WalletEntry{}, &ValidationError{Message: "请填写用户、正金额、增加原因和请求标识。"}
 	}
 	return s.Repository.Credit(ctx, actor, in)
+}
+
+func (s WalletAdjustments) DirectDebit(ctx context.Context, actor uint, in WalletBalanceRequest) (WalletEntry, error) {
+	if actor == 0 {
+		return WalletEntry{}, ErrOrderPermission
+	}
+	var err error
+	in.Currency, err = NormalizeWalletCurrency(in.Currency)
+	if err != nil {
+		return WalletEntry{}, err
+	}
+	in.Reason = strings.TrimSpace(in.Reason)
+	if in.UserID == 0 || in.AmountMinor <= 0 || in.AmountMinor > MaxWalletInputMinor || in.Reason == "" || utf8.RuneCountInString(in.Reason) > 400 || len(in.IdempotencyKey) < 8 || len(in.IdempotencyKey) > 80 {
+		return WalletEntry{}, &ValidationError{Message: "请填写用户、正金额、扣减原因和请求标识。"}
+	}
+	return s.Repository.DirectDebit(ctx, actor, in)
 }
 
 func (s WalletAdjustments) Debit(ctx context.Context, actor uint, in WalletDebitRequest) (WalletAdjustmentSummary, error) {

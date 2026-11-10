@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHistory, isNavigationFailure, NavigationFailureType, type RouteLocationNormalized } from 'vue-router'
 import App from './App.vue'
+import { preparePluginComposition } from './plugins/composition'
 import { useAppearance } from './theme/appearance'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
@@ -114,6 +115,12 @@ router.beforeEach(async (to) => {
 	return '/account'
   }
 	if (meta.requiresRegistration && !store.installation?.allow_registration) return '/login'
+
+  if (store.isInstalled) {
+    const surface = to.path.startsWith('/admin') ? 'admin' : to.path.startsWith('/account') ? 'account' : 'public'
+    await preparePluginComposition(surface, false, store.token)
+    if (surface !== 'public') void preparePluginComposition('public')
+  }
 
   return true
 })

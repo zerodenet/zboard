@@ -7,6 +7,7 @@ import FormField from '../components/FormField.vue'
 import UiInput from '../components/UiInput.vue'
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), preview: vi.fn(), remove: vi.fn(), app: { token: 'verified', user: { id: 1 }, reauthRequired: false, sessionEpoch: 0 } }))
+vi.mock('../api/userTrafficActivity', () => ({ fetchUserTrafficActivity: async () => ({from:'2026-11-04',to:'2026-11-10',timezone:'UTC',projection_pending:true,items:[]}) }))
 vi.mock('../stores/app', () => ({ useAppStore: () => mocks.app }))
 vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), fetchUsersPage: mocks.list, fetchUserDeletionPreview: mocks.preview, deleteAdminUser: mocks.remove }))
 const user = { id: 2, email: 'owner@example.test', status: 'active', is_admin: false, created_at: '2026-10-01', active_subscription_count: 0 }
