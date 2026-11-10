@@ -565,7 +565,7 @@ func TestStaleLedgerEvidenceIsUnassigned(t *testing.T) {
 
 func TestLocalWorkerRuntimeSitesKeepExactJobsOwnership(t *testing.T) {
 	root := t.TempDir()
-	files := []string{"internal/localworkers/process.go", "internal/localworkers/supervisor.go", "internal/application/projection_supervisor.go", "internal/localworkers/future.go"}
+	files := []string{"internal/localworkers/process.go", "internal/localworkers/supervisor.go", "internal/application/projection_supervisor.go", "internal/capabilities/jobs/execution_lease.go", "internal/localworkers/future.go", "internal/capabilities/jobs/future_lease.go"}
 	for _, name := range files {
 		target := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
@@ -585,7 +585,7 @@ func TestLocalWorkerRuntimeSitesKeepExactJobsOwnership(t *testing.T) {
 			continue
 		}
 		want := "jobs"
-		if row.File == "internal/localworkers/future.go" {
+		if row.File == "internal/localworkers/future.go" || row.File == "internal/capabilities/jobs/future_lease.go" {
 			want = "unassigned"
 		}
 		if row.Owner != want {

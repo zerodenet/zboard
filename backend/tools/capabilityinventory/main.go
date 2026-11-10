@@ -216,6 +216,7 @@ var explicitRuntimeSiteOwners = map[string]string{
 	"internal/adapters/persistence/networkstore/inventory.go": "network",
 	"internal/application/runtime_status.go":                  "jobs",
 	"internal/capabilities/jobs/jobs.go":                      "jobs",
+	"internal/capabilities/jobs/execution_lease.go":           "jobs",
 	"internal/capabilities/jobs/batch_runner.go":              "jobs",
 	"internal/capabilities/jobs/runtime_queues.go":            "jobs",
 	"internal/capabilities/jobs/runtime.go":                   "jobs",
