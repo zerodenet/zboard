@@ -1,5 +1,5 @@
 <template>
-  <div class="subscription-detail">
+  <div class="business-detail subscription-detail">
     <div class="subscription-context">
       <div><StatusBadge :tone="statusTone">{{ statusLabel }}</StatusBadge><span>{{ subscription.sku_name || '-' }}</span></div>
       <RowActions label="订阅更多操作" :trigger-key="`subscription-detail-${subscription.id}`">
@@ -125,7 +125,7 @@ defineExpose({ confirmLeave, dirty: computed(() => Boolean(editor.value?.dirty |
 .subscription-summary { display: grid; grid-template-columns: 1fr auto; gap: 20px 24px; padding: 20px; background: var(--surface-soft); border-radius: var(--radius-card); }
 .subscription-remaining,.subscription-expiry { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .subscription-remaining > span,.subscription-expiry > span { color: var(--muted); font-size: 12px; }
-.subscription-remaining strong { color: var(--text-strong); font-size: 30px; line-height: 1.2; font-weight: 650; font-variant-numeric: tabular-nums; }
+.subscription-remaining strong { color: var(--text-strong); font-size: 30px; line-height: 1.2; font-weight: 600; font-variant-numeric: tabular-nums; }
 .subscription-expiry strong,.subscription-expiry time { color: var(--text-strong); font-size: 13px; line-height: 1.6; font-weight: 500; font-variant-numeric: tabular-nums; }
 .subscription-expiry { text-align: right; }
 .subscription-warning { color: var(--destructive) !important; }
