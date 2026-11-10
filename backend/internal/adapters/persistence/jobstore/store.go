@@ -188,6 +188,15 @@ func (s *Store) lock(tx *gorm.DB) (Budget, error) {
 }
 
 func (s *Store) Claim(ctx context.Context, worker string, handlers []string, timeout time.Duration) (out jobs.Claim, err error) {
+	return s.claim(ctx, worker, handlers, timeout, false)
+}
+func (s *Store) ClaimRenewable(ctx context.Context, worker string, handlers []string, timeout time.Duration) (out jobs.Claim, err error) {
+	if timeout < time.Millisecond {
+		return out, jobs.ErrInvalid
+	}
+	return s.claim(ctx, worker, handlers, timeout, true)
+}
+func (s *Store) claim(ctx context.Context, worker string, handlers []string, timeout time.Duration, renewable bool) (out jobs.Claim, err error) {
 	if worker == "" || len(worker) > 160 || len(handlers) == 0 || timeout <= 0 || timeout > time.Hour {
 		return out, jobs.ErrInvalid
 	}
@@ -207,16 +216,11 @@ func (s *Store) Claim(ctx context.Context, worker string, handlers []string, tim
 			return err
 		}
 		now := s.now().UTC().Truncate(time.Millisecond)
-		// Persist uncertainty even when no next job can be claimed.
-		if err := tx.Model(&Attempt{}).Where("state IN ? AND expires_at <= ?", []jobs.State{jobs.Running, jobs.CancelRequested}, now).Updates(map[string]any{"state": jobs.Unknown, "finished_at": now}).Error; err != nil {
+		// Expire only active fenced claims, never rescan retained attempt history.
+		if err := expireExecutionLeases(tx, now); err != nil {
 			return err
 		}
-		if err := tx.Model(&Record{}).Where("state IN ? AND expires_at <= ?", []jobs.State{jobs.Running, jobs.CancelRequested}, now).Updates(map[string]any{"state": jobs.Unknown, "finished_at": now}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&Schedule{}).Where("state IN ? AND run_id IN (?)", []jobs.State{jobs.Running, jobs.CancelRequested}, tx.Model(&Record{}).Select("id").Where("state = ?", jobs.Unknown)).Updates(map[string]any{"state": jobs.Unknown, "last_state": jobs.Unknown, "last_finished_at": now, "failures": gorm.Expr("failures + 1")}).Error; err != nil {
-			return err
-		}
+
 		var n int64
 		if err := tx.Model(&Record{}).Where("state IN ?", []jobs.State{jobs.Running, jobs.CancelRequested}).Count(&n).Error; err != nil {
 			return err
@@ -287,8 +291,15 @@ func (s *Store) Claim(ctx context.Context, worker string, handlers []string, tim
 		}
 		token := uuid.NewString()
 		expiry := now.Add(timeout)
+		if renewable {
+			expiry = expiry.Truncate(time.Millisecond)
+		}
+		leaseExpiry := expiry
+		if renewable && now.Add(workerLeaseTTL).Before(leaseExpiry) {
+			leaseExpiry = now.Add(workerLeaseTTL)
+		}
 		attempt := row.AttemptCount + 1
-		res := tx.Model(&Record{}).Where("id = ? AND state IN ? AND attempt_count = ?", row.ID, []jobs.State{jobs.Queued, jobs.RetryWait}, row.AttemptCount).Updates(map[string]any{"state": jobs.Running, "token": token, "worker": worker, "expires_at": expiry, "attempt_count": attempt})
+		res := tx.Model(&Record{}).Where("id = ? AND state IN ? AND attempt_count = ?", row.ID, []jobs.State{jobs.Queued, jobs.RetryWait}, row.AttemptCount).Updates(map[string]any{"state": jobs.Running, "token": token, "worker": worker, "expires_at": leaseExpiry, "attempt_count": attempt})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -311,7 +322,10 @@ func (s *Store) Claim(ctx context.Context, worker string, handlers []string, tim
 		}
 		row.State = string(jobs.Running)
 		row.AttemptCount = attempt
-		out = jobs.Claim{Run: view(row), Token: token, Worker: worker, ExpiresAt: expiry}
+		out = jobs.Claim{Run: view(row), Token: token, Worker: worker, ExpiresAt: leaseExpiry}
+		if renewable {
+			out.DeadlineAt = expiry
+		}
 		return nil
 	})
 	if err == nil && empty {

@@ -135,6 +135,15 @@ type Claim struct {
 	Token     string
 	Worker    string
 	ExpiresAt time.Time
+	// DeadlineAt is the immutable execution limit. ExpiresAt may instead be a
+	// short renewable worker lease; losing a worker must not hold capacity for
+	// the entire business-operation timeout.
+	DeadlineAt time.Time
+}
+
+type RenewableLeaseStore interface {
+	ClaimRenewable(context.Context, string, []string, time.Duration) (Claim, error)
+	RenewLease(context.Context, Claim) (time.Time, error)
 }
 
 type Store interface {
@@ -181,13 +190,23 @@ func (e Executor) runOne(ctx context.Context) (claimed Claim, err error) {
 		}
 		names = append(names, name)
 	}
-	c, err := e.Store.Claim(ctx, e.Worker, names, e.Timeout)
+	var c Claim
+	if renewable, ok := e.Store.(RenewableLeaseStore); ok {
+		c, err = renewable.ClaimRenewable(ctx, e.Worker, names, e.Timeout)
+	} else {
+		c, err = e.Store.Claim(ctx, e.Worker, names, e.Timeout)
+	}
 	if err != nil {
 		return claimed, err
 	}
 	claimed = c
-	runCtx, cancel := context.WithDeadline(ctx, c.ExpiresAt)
+	deadline := c.DeadlineAt
+	if deadline.IsZero() {
+		deadline = c.ExpiresAt
+	}
+	runCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
+	stopLease := keepExecutionLease(runCtx, cancel, e.Store, c)
 	pollCtx, stopPolling := context.WithCancel(runCtx)
 	defer stopPolling()
 	if observer, ok := e.Store.(CancellationObserver); ok {
@@ -214,7 +233,13 @@ func (e Executor) runOne(ctx context.Context) (claimed Claim, err error) {
 			state = Unknown
 			err = errors.New("job handler panicked; result requires verification")
 		}
-		if errors.Is(err, ErrCanceled) {
+		leaseErr := stopLease()
+		if leaseErr != nil {
+			err = errors.Join(err, leaseErr)
+		}
+		if leaseErr != nil {
+			state = Unknown
+		} else if errors.Is(err, ErrCanceled) {
 			state = Canceled
 		} else if runCtx.Err() != nil || errors.Is(err, ErrUncertain) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			state = Unknown

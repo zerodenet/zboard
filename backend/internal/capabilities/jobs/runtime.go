@@ -505,6 +505,18 @@ type runtimeExecutionStore struct {
 }
 
 func (s runtimeExecutionStore) Claim(ctx context.Context, worker string, handlers []string, timeout time.Duration) (Claim, error) {
+	return s.claim(ctx, worker, handlers, timeout, false)
+}
+func (s runtimeExecutionStore) ClaimRenewable(ctx context.Context, worker string, handlers []string, timeout time.Duration) (Claim, error) {
+	return s.claim(ctx, worker, handlers, timeout, true)
+}
+func (s runtimeExecutionStore) RenewLease(ctx context.Context, claim Claim) (time.Time, error) {
+	if renewable, ok := s.Store.(RenewableLeaseStore); ok {
+		return renewable.RenewLease(ctx, claim)
+	}
+	return time.Time{}, ErrInvalid
+}
+func (s runtimeExecutionStore) claim(ctx context.Context, worker string, handlers []string, timeout time.Duration, renewable bool) (Claim, error) {
 	if s.runtime == nil {
 		return Claim{}, ErrInvalid
 	}
@@ -537,7 +549,13 @@ func (s runtimeExecutionStore) Claim(ctx context.Context, worker string, handler
 	if now.Before(s.runtime.emptyUntil) {
 		return Claim{}, ErrEmpty
 	}
-	claim, err := s.Store.Claim(ctx, worker, handlers, timeout)
+	var claim Claim
+	var err error
+	if store, ok := s.Store.(RenewableLeaseStore); renewable && ok {
+		claim, err = store.ClaimRenewable(ctx, worker, handlers, timeout)
+	} else {
+		claim, err = s.Store.Claim(ctx, worker, handlers, timeout)
+	}
 	s.runtime.observeClaim(now, claim, err)
 	if errors.Is(err, ErrEmpty) {
 		s.runtime.emptyUntil = now.Add(time.Second)
