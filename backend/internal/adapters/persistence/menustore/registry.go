@@ -23,6 +23,20 @@ func Seed(db *gorm.DB) error {
 		return err
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		var existing []model.MenuNode
+		if err := tx.Select("id,surface").Where("owner = ?", "core").Find(&existing).Error; err != nil {
+			return err
+		}
+		ids, initialized := map[string]bool{}, map[string]bool{}
+		for _, n := range existing {
+			ids[n.ID], initialized[n.Surface] = true, true
+		}
+		introduced := map[string]bool{}
+		for _, n := range defaults {
+			if !ids[n.ID] && initialized[n.Surface] {
+				introduced[n.Surface] = true
+			}
+		}
 		for _, surface := range []string{"public", "account", "admin"} {
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.MenuRevision{Surface: surface, Revision: 1}).Error; err != nil {
 				return err
@@ -31,7 +45,7 @@ func Seed(db *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 			return err
 		}
-		return convergeDefaultPlacements(tx, defaults)
+		return convergeDefaultPlacements(tx, defaults, introduced)
 	})
 }
 

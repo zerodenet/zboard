@@ -14,7 +14,7 @@
       <NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" />
       <AdminNavigation @select-page="navigationOpen = false" />
 
-      <AdminVersionStatus :info="systemInfo" />
+      <AdminVersionStatus :info="systemInfo" :about="aboutPage" @navigate="navigationOpen = false" />
     </aside>
 
     <div class="app-workspace" :inert="drawerModal">
@@ -22,7 +22,7 @@
         <div class="topbar-leading">
           <button class="nav-icon-button menu-button" type="button" :aria-label="navigationOpen ? '关闭导航' : '打开导航'" :aria-expanded="navigationOpen" aria-controls="admin-navigation" @click="navigationOpen = !navigationOpen"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></button>
           <AdminQuickSearch />
-          <nav class="topbar-breadcrumb" aria-label="当前位置"><span class="topbar-context">{{ currentSection }}</span><span class="topbar-breadcrumb-separator" aria-hidden="true">/</span><strong>{{ currentTitle }}</strong></nav>
+          <nav class="topbar-breadcrumb" aria-label="当前位置"><span class="topbar-context">{{ currentSection }}</span><span class="topbar-breadcrumb-separator" aria-hidden="true">/</span><span v-if="workspaceTitle" class="topbar-workspace-crumb"><span class="topbar-workspace">{{ workspaceTitle }}</span><span class="topbar-breadcrumb-separator" aria-hidden="true">/</span></span><strong>{{ currentTitle }}</strong></nav>
         </div>
         <div class="topbar-actions"><AppearanceSwitch /><DropdownMenuRoot>
           <DropdownMenuTrigger as-child>
@@ -83,6 +83,16 @@ const route = useRoute()
 const router = useRouter()
 const sidebar = ref<HTMLElement | null>(null)
 const { open: navigationOpen, mobile, modal: drawerModal } = useAdminDrawer(sidebar)
+const currentNavigation = computed(() => resolveAdminNavigation(route.path, adminNavigation.value))
+const workspaceTitle = computed(() => {
+  const entry = currentNavigation.value
+  return entry?.section.workspace?.entry_path && entry.section.label !== entry.page.label ? entry.section.label : ''
+})
+const aboutPage = computed(() => {
+  const snapshot = menus.snapshot.value
+  const node = snapshot.nodes.find(node => snapshot.presentation?.footer_ids?.includes(node.id))
+  return node ? { to: node.path, label: node.label } : undefined
+})
 const currentTitle = computed(() => {
   const page = resolveAdminNavigation(route.path, adminNavigation.value)?.page
   return page?.to === route.path ? page.label : String(route.meta.title || '管理后台')
@@ -116,6 +126,8 @@ function logout() { app.clear(); router.push('/') }
 .admin-shell .topbar-leading { min-width: 0; gap: 18px; }
 .topbar-breadcrumb { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .topbar-breadcrumb strong { overflow: hidden; color: var(--foreground); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-workspace-crumb { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.topbar-workspace { color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
 .topbar-context { color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
 .topbar-context::after { content: none; }
 .topbar-breadcrumb-separator { color: var(--input); font-size: 13px; }
@@ -140,6 +152,7 @@ function logout() { app.clear(); router.push('/') }
 @media (max-width: 1100px) and (min-width: 821px) { .admin-shell { grid-template-columns: 224px minmax(0, 1fr); } .admin-shell .topbar { padding-inline: 24px; } .admin-shell .app-content { padding-inline: 24px; } }
 @media (max-width: 1100px) { .topbar-account-name { display: none; } .topbar-account-trigger { padding-inline: 3px; } }
 @media (max-width: 820px) {
+  .topbar-workspace-crumb { display: none; }
   :deep(.page-header-navigation) { display: none; }
   .mobile-section-navigation { position: sticky; top: 64px; z-index: calc(var(--z-topbar) - 1); max-width: 100vw; padding: 0 18px; background: var(--card); scrollbar-width: thin; }
   .admin-sidebar { width: min(320px, 92vw); }

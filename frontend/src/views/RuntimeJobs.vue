@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page runtime-jobs" :class="{ 'queue-focused': queueFocused }">
-    <PageHeader :title="queueFocused ? `${queueName}队列` : '后台任务'">
-      <template #actions><RouterLink class="task-link" :to="queueFocused ? '/admin/runtime-jobs' : '/admin/tasks'">{{ queueFocused ? '全部后台任务' : '运营任务' }}</RouterLink><PageRefreshButton label="刷新后台任务" :loading="loading || (queueFocused && queueLoading)" @click="refresh" /></template>
+    <PageHeader :title="queueFocused ? `${queueName}队列` : '运行状态'">
+      <template #actions><RouterLink class="task-link" :to="queueFocused ? '/admin/runtime-jobs' : '/admin/tasks'">{{ queueFocused ? '运行状态' : '任务记录' }}</RouterLink><PageRefreshButton label="刷新后台任务" :loading="loading || (queueFocused && queueLoading)" @click="refresh" /></template>
     </PageHeader>
     <SystemLoadPanel v-if="!queueFocused" ref="systemLoad" />
     <RemoteReadStatus v-if="!queueFocused && error" label="运行状态" :phase="runtimeResource.phase.value" :error="error" :last-success-at="runtimeResource.lastSuccessAt.value" @retry="runtimeResource.load()" />

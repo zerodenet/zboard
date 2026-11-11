@@ -4,11 +4,11 @@
       <RouterLink class="public-brand" to="/"><img v-if="logo" class="account-logo" :src="logo" :alt="app.siteName" /><span v-else class="brand-mark">{{ brandInitial }}</span><strong>{{ app.siteName }}</strong></RouterLink>
       <UiButton variant="ghost" icon class="icon-button account-menu" type="button" :aria-label="menuOpen ? '关闭用户导航' : '打开用户导航'" :aria-expanded="menuOpen" aria-controls="account-navigation" @click="menuOpen = !menuOpen"><UiIcon :name="menuOpen ? 'close' : 'menu'" /></UiButton>
       <nav id="account-navigation" :class="{ open: menuOpen }" aria-label="用户中心导航">
-        <NavigationLinks surface="account" @select-page="menuOpen = false" />
+        <AccountNavigation @select-page="menuOpen = false" />
       </nav>
       <div class="account-identity"><AppearanceSwitch /><span class="avatar">{{ userInitial }}</span><div class="account-identity-details"><strong>{{ app.user.email }}</strong></div><UiButton variant="ghost" icon class="icon-button" type="button" aria-label="退出登录" title="退出登录" @click="logout"><UiIcon name="logout" /></UiButton></div>
     </header>
-    <main class="account-content"><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><AccountCleanupNotice class="account-cleanup-notice" /><RouterView /></NavigationPage></main>
+    <main class="account-content"><NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" /><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><AccountCleanupNotice class="account-cleanup-notice" /><AccountPageNavigation /><RouterView /></NavigationPage></main>
   </div>
 </template>
 
@@ -16,7 +16,8 @@
 import AccountCleanupNotice from '../components/AccountCleanupNotice.vue'
 import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import { useAppearance } from '../theme/appearance'
-import NavigationLinks from '../components/NavigationLinks.vue'
+import AccountNavigation from '../components/AccountNavigation.vue'
+import AccountPageNavigation from '../components/AccountPageNavigation.vue'
 import NavigationNotice from '../components/NavigationNotice.vue'
 import NavigationPage from '../components/NavigationPage.vue'
 import { useNavigation } from '../stores/navigation'

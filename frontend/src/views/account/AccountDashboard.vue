@@ -1,6 +1,6 @@
 <template>
   <section class="account-page account-overview stack">
-    <PageHeader title="概览">
+    <PageHeader title="我的服务">
       <template #actions>
         <PageRefreshButton label="刷新概览" :loading="loading" @click="load" />
         <UiButton as-child variant="secondary"><RouterLink to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink></UiButton>

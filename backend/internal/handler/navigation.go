@@ -72,12 +72,16 @@ func (h *handlers) NavigationHandler(w http.ResponseWriter, r *http.Request) {
 	var available *bool
 	if pagePath != "" {
 		value := navigation.PageAvailable(all, snapshot.Nodes, pagePath)
+		if workspaceAvailable, workspace := navigation.WorkspaceAvailable(surface, snapshot.Nodes, pagePath); workspace {
+			value = workspaceAvailable
+		}
 		available = &value
 	}
 	OK(w, struct {
 		navigation.Snapshot
-		PageAvailable *bool `json:"page_available,omitempty"`
-	}{snapshot, available})
+		PageAvailable *bool                   `json:"page_available,omitempty"`
+		Presentation  navigation.Presentation `json:"presentation"`
+	}{snapshot, available, navigation.PresentationFor(surface, snapshot.Nodes)})
 }
 
 func (h *handlers) AdminMenusHandler(w http.ResponseWriter, r *http.Request) {

@@ -29,7 +29,7 @@ const query = ref('')
 const searchField = ref<HTMLElement | null>(null)
 function focusSearch() { searchField.value?.querySelector('input')?.focus() }
 const pages = computed(() => adminNavigation.value.flatMap(domain => domain.sections.flatMap(section =>
-  section.pages.map(page => ({ ...page, domain: domain.label, section: section.label })),
+  [...section.pages, ...(section.workspace?.kind === 'hub' && section.workspace.entry_path ? [{ to: section.workspace.entry_path, label: section.label }] : [])].map(page => ({ ...page, domain: domain.label, section: section.label })),
 )))
 const matches = computed(() => {
   const term = query.value.trim().toLocaleLowerCase()

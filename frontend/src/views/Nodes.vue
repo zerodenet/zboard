@@ -4,7 +4,7 @@
       <template #actions>
         <UiButton variant="ghost" type="button" @click="observationQueueOpen = true">观察队列</UiButton>
         <PageRefreshButton label="刷新节点资产" :loading="loading" @click="refresh" />
-        <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />登记 VPS</UiButton>
+        <UiButton  type="button" @click="openCreate"><UiIcon name="plus" />添加服务器</UiButton>
       </template>
     </PageHeader>
     <NodeSetupGuide />
@@ -17,8 +17,8 @@
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(filters.q || filters.lifecycle || filters.connector)" :active-count="[filters.q, filters.lifecycle, filters.connector].filter(Boolean).length" :loading="loading" @clear="resetFilters">
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="名称、区域或地址" @apply="applyFilters" />
-          <WorkbenchFilterSelect v-model="filters.lifecycle" label="生命周期" :options="lifecycleFilterOptions" @apply="applyFilters" />
-          <WorkbenchFilterSelect v-model="filters.connector" label="Connector" :options="connectorFilterOptions" @apply="applyFilters" />
+          <WorkbenchFilterSelect v-model="filters.lifecycle" label="服务器状态" :options="lifecycleFilterOptions" @apply="applyFilters" />
+          <WorkbenchFilterSelect v-model="filters.connector" label="连接状态" :options="connectorFilterOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
       <template #selection>
@@ -33,7 +33,7 @@
             <th class="selection-column"><UiCheckbox :model-value="allPageNodesSelected" :indeterminate="pageNodeSelectionIndeterminate" :disabled="selectionAllMatching || filters.lifecycle === 'archived'" aria-label="选择当前页全部节点" @update:model-value="toggleCurrentNodePage" /></th>
             <SortableHeader field="name" label="节点" :sort-field="sortField" :direction="sortDirection" pinned="start" @sort="setSort" />
             <SortableHeader field="region" label="区域" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" />
-            <th data-column-priority="2">资产状态</th><th>Connector</th><th data-column-priority="3">SSH</th><th data-column-priority="2">内核</th><th class="numeric-column" data-column-priority="3" title="启用的直连协议与前置入口总数">服务数</th>
+            <th data-column-priority="2">状态</th><th>连接</th><th data-column-priority="3">SSH</th><th data-column-priority="2">版本</th><th class="numeric-column" data-column-priority="3" title="启用的直连协议与前置入口总数">服务数</th>
             <SortableHeader field="last_seen_at" label="最近心跳" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" />
             <th class="table-action-column"><span class="sr-only">操作</span></th>
           </tr></thead>
@@ -45,7 +45,7 @@
               <td data-column-priority="2"><StatusBadge :tone="lifecycleTone(node)" :icon="node.lifecycle_status === 'maintenance' ? 'settings' : undefined">{{ !node.is_enabled && !['archived', 'deleting', 'maintenance'].includes(node.lifecycle_status) ? '已禁用' : lifecycleLabel(node.lifecycle_status) }}</StatusBadge></td>
               <td><StatusBadge :tone="node.connector_online ? 'success' : node.connector_last_seen_at ? 'warning' : 'neutral'" :icon="node.connector_online ? 'wifi' : node.connector_last_seen_at ? 'alert' : 'minus'">{{ node.connector_online ? '在线' : node.connector_last_seen_at ? '离线' : '未连接' }}</StatusBadge></td>
               <td data-column-priority="3"><StatusBadge :tone="node.ssh_verified_at ? 'success' : node.ssh_configured ? 'warning' : 'neutral'" icon="key">{{ node.ssh_verified_at ? '已验证' : node.ssh_configured ? '待验证' : '未配置' }}</StatusBadge></td>
-              <td data-column-priority="2"><div class="kernel-list-cell"><StatusBadge :tone="kernelListTone(node.kernel_state?.status)" icon="activity">{{ kernelListLabel(node.kernel_state?.status) }}</StatusBadge><span v-if="node.kernel_state?.installed_version" class="mono kernel-list-version" :title="node.kernel_state.installed_version">{{ compactZeroVersion(node.kernel_state.installed_version) }}</span></div></td>
+              <td data-column-priority="2"><div class="kernel-list-cell"><StatusBadge v-if="node.kernel_state?.status !== 'healthy'" :tone="kernelListTone(node.kernel_state?.status)">{{ kernelListLabel(node.kernel_state?.status) }}</StatusBadge><span v-if="node.kernel_state?.installed_version" class="mono kernel-list-version" :title="node.kernel_state.installed_version">{{ compactZeroVersion(node.kernel_state.installed_version) }}</span></div></td>
               <td class="numeric-column" data-column-priority="3"><UiButton variant="ghost" size="sm" type="button" :aria-label="`查看 ${node.name} 的协议服务`" :disabled="detailLoadingID === node.id" @click="selectNode(node, 'protocols')">{{ formatNumber(node.enabled_protocol_count) }}<UiIcon name="chevron" /></UiButton></td>
               <td data-column-priority="3"><TimeBadge :value="node.connector_last_seen_at" /></td>
               <td class="table-action-column"><UiButton variant="ghost" size="sm" type="button" :loading="detailLoadingID === node.id" :aria-label="`查看节点 ${node.name}`" @click="selectNode(node)">查看<UiIcon name="chevron" /></UiButton></td>
@@ -60,10 +60,10 @@
       <RemoteReadStatus label="节点详情" :phase="detailResource.phase.value" :error="detailResource.error.value" :last-success-at="detailResource.lastSuccessAt.value" @retry="detailResource.load()" />
       <main v-if="selectedNode" class="stack node-detail">
         <TransientFeedback :success="detailMessage" :error="detailError" success-title="节点操作已完成" error-title="节点操作失败" />
-        <article class="panel node-summary">
+        <div class="node-detail-toolbar">
           <div class="node-summary-main"><StatusBadge :tone="lifecycleTone(selectedNode)">{{ !selectedNode.is_enabled && !['archived', 'deleting', 'maintenance'].includes(selectedNode.lifecycle_status) ? '已禁用' : lifecycleLabel(selectedNode.lifecycle_status) }}</StatusBadge><span v-if="selectedNode.remark" class="node-remark">{{ selectedNode.remark }}</span></div>
           <div v-if="selectedNode.lifecycle_status !== 'archived'" class="node-actions">
-            <UiButton variant="secondary" size="sm" type="button" @click="openEdit(selectedNode)"><UiIcon name="edit" />编辑资产</UiButton>
+            <UiButton variant="ghost" size="sm" type="button" aria-label="编辑服务器信息" @click="openEdit(selectedNode)">编辑</UiButton>
             <RowActionMenu label="服务器更多操作" :trigger-key="`node-detail-${selectedNode.id}`">
             <UiButton variant="secondary" size="sm" type="button" @click="openSSH(selectedNode)"><UiIcon name="key" />SSH 连接</UiButton>
             <UiButton variant="ghost" size="sm" type="button" :loading="testingNode === selectedNode.id" @click="testSSH(selectedNode.id)"><UiIcon name="activity" />验证 SSH</UiButton>
@@ -73,7 +73,7 @@
             <UiButton variant="danger" size="sm" type="button" @click="removeNode(selectedNode)"><UiIcon name="trash" />删除节点</UiButton>
             </RowActionMenu>
           </div>
-        </article>
+        </div>
 
         <PageAlert v-if="selectedNode.lifecycle_status === 'archived'" tone="info" title="节点已删除">
           <p>节点配置和管理关联已删除，历史计费数据保留。需要再次接入时，请登记新节点。</p>
@@ -84,13 +84,10 @@
         <UiTabs v-model="detailSection" :items="nodeDetailTabs" label="节点详情分区" />
 
         <section v-if="detailSection === 'overview'" class="node-health-strip" aria-label="节点状态概览">
-          <StatusOverviewItem icon="activity" label="Connector" :description="selectedNode.connector_last_seen_at ? '最近事件' : '尚未连接'" :tone="selectedNode.connector_online ? 'success' : selectedNode.connector_last_seen_at ? 'warning' : 'neutral'" :status="selectedNode.connector_online ? '在线' : selectedNode.connector_last_seen_at ? '离线' : '未连接'">
-            <template #description><template v-if="selectedNode.connector_last_seen_at">最近事件 <TimeBadge :value="selectedNode.connector_last_seen_at" mode="relative" /></template><template v-else>尚未收到 Connector 事件</template></template>
+          <StatusOverviewItem icon="activity" label="节点连接" :description="selectedNode.connector_last_seen_at ? '最近事件' : '尚未连接'" :tone="selectedNode.connector_online ? 'success' : selectedNode.connector_last_seen_at ? 'warning' : 'neutral'" :status="selectedNode.connector_online ? '在线' : selectedNode.connector_last_seen_at ? '离线' : '未连接'">
+            <template #description><template v-if="selectedNode.connector_last_seen_at">最近事件 <TimeBadge :value="selectedNode.connector_last_seen_at" mode="relative" /></template><template v-else>尚未收到节点上报</template></template>
           </StatusOverviewItem>
           <NodeCounterObservation :observation="selectedNode.observation" />
-          <StatusOverviewItem icon="key" label="SSH 通道" :description="sshDescription(selectedNode)" :tone="selectedNode.ssh_verified_at ? 'success' : 'warning'" :status="selectedNode.ssh_verified_at ? '已验证' : '待验证'" />
-          <StatusOverviewItem icon="shield" label="可信计量" :description="selectedNode.traffic_secret_prefix ? `凭证 ${selectedNode.traffic_secret_prefix}…` : undefined" :tone="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? 'success' : 'warning'" :status="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? '已配置' : '未配置'" />
-          <StatusOverviewItem icon="nodes" label="资产状态" :tone="selectedNode.is_enabled ? 'success' : 'neutral'" :status="selectedNode.is_enabled ? '启用' : '停用'" />
           <StatusOverviewItem icon="activity" label="Zero 内核" :description="kernelDescription" :tone="kernelTone" :status="kernelStatusLabel" />
           <article class="node-load-summary">
             <header><div><strong>主机资源</strong></div><UiButton variant="secondary" size="sm" type="button" title="页面不会自动采样" :loading="nodeLoadLoading" :disabled="!selectedNode.ssh_host || !selectedNode.ssh_user" @click="loadNodeLoad(selectedNode.id)"><UiIcon name="refresh" />刷新资源</UiButton></header>
@@ -102,81 +99,88 @@
               <div><span>主机运行时间</span><strong>{{ formatUptime(nodeLoad.uptime_seconds) }}</strong><small>采样 <TimeBadge :value="nodeLoad.sampled_at" mode="relative" /> · SSH {{ nodeLoad.latency_ms }} ms</small></div>
             </div>
           </article>
+          <details class="node-technical-details node-connection-details"><summary>连接与验证</summary>
+          <StatusOverviewItem icon="key" label="SSH 通道" :description="sshDescription(selectedNode)" :tone="selectedNode.ssh_verified_at ? 'success' : 'warning'" :status="selectedNode.ssh_verified_at ? '已验证' : '待验证'" />
+          <StatusOverviewItem icon="shield" label="可信计量" :description="selectedNode.traffic_secret_prefix ? `凭证 ${selectedNode.traffic_secret_prefix}…` : undefined" :tone="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? 'success' : 'warning'" :status="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at ? '已配置' : '未配置'" />
+          <StatusOverviewItem icon="nodes" label="资产状态" :tone="selectedNode.is_enabled ? 'success' : 'neutral'" :status="selectedNode.is_enabled ? '启用' : '停用'" />
+            <UiButton variant="ghost" size="sm" @click="detailSection = 'credentials'">管理连接凭证</UiButton>
+          </details>
         </section>
 
-        <article v-else-if="detailSection === 'kernel'" class="panel kernel-panel">
-          <header class="panel-header">
-            <div><h2>Zero 内核自动化</h2><p>通过已验证的 SSH 安装、升级或对齐配置；结果不明时保留当前配置，核对后继续。</p></div>
-            <StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge>
-          </header>
-          <div class="panel-body kernel-body">
-            <PageAlert v-if="kernelState?.status === 'reconciling'" tone="warning" title="配置结果待核对">
-              <p>{{ kernelState.last_error || '正在核对节点实际运行状态和发布回执。' }}</p>
-              <p>后台会自动复查；核对完成后按最新设置同步配置。期间保留当前运行配置和连接凭据。</p>
-              <UiButton as-child variant="secondary" size="sm"><RouterLink :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看配置发布任务</RouterLink></UiButton>
-            </PageAlert>
-            <PageAlert tone="info" title="失联停服能力当前未提供">
-              当前面板尚未接入可核验的授权租约、续期和到期执行能力，因此没有全局或节点失联停服设置。Connector 投递确认和普通心跳不会被当作授权续期。节点失联期间，面板无法确认远端已执行新的停用；恢复通信后才能继续交付和核验。
-            </PageAlert>
-            <RemoteReadStatus label="内核状态" :phase="kernelResource.phase.value" :error="kernelResource.error.value" :last-success-at="kernelResource.lastSuccessAt.value" @retry="loadKernel(selectedNodeID)" />
-            <RemoteReadStatus label="任务进度" :phase="operationResource.phase.value" :error="operationResource.error.value" :last-success-at="operationResource.lastSuccessAt.value" @retry="startKernelPolling(kernelPollScope.nodeID, kernelPollScope.taskID)" />
-            <div class="kernel-facts">
-              <div><span>已安装版本</span><strong>{{ kernelState?.installed_version || '未检测' }}</strong></div>
-              <div v-if="kernelSource === 'online'"><span>最新发布版</span><strong>{{ latestPublishedRelease?.tag || (releaseLoading ? '查询中…' : '未查询') }}</strong></div>
-              <div><span>本次目标版本</span><strong>{{ kernelSource === 'offline' ? '本地文件' : selectedRelease?.tag || '尚未选择' }}</strong></div>
-              <div><span>平台</span><strong>{{ [kernelState?.platform_os, kernelState?.architecture].filter(Boolean).join(' · ') || '未检测' }}</strong></div>
-              <div><span>运行库</span><strong>{{ kernelState?.libc || '未检测' }}</strong></div>
-              <div><span>systemd / 进程</span><StatusBadge :tone="serviceTone(kernelState?.service_status)" :icon="kernelState?.service_status === 'active' ? 'check' : 'alert'">{{ serviceLabel(kernelState?.service_status) }}</StatusBadge></div>
-              <div><span>控制通道</span><StatusBadge :tone="controlTone(kernelState?.control_status)" :icon="kernelState?.control_status === 'healthy' ? 'check' : 'alert'">{{ controlLabel(kernelState?.control_status) }}</StatusBadge></div>
-              <div><span>最后检测</span><strong><TimeBadge v-if="kernelState?.last_detected_at" :value="kernelState.last_detected_at" /><template v-else>从未</template></strong></div>
-              <div><span>建议动作</span><strong>{{ kernelActionLabel(kernelState?.recommended_action) }}</strong></div>
+        <div v-else-if="detailSection === 'kernel'" class="node-maintenance">
+          <UiSection title="Zero 内核" variant="outlined">
+            <template #meta><StatusBadge :tone="kernelTone">{{ kernelStatusLabel }}</StatusBadge></template>
+            <div class="kernel-body">
+              <PageAlert v-if="kernelState?.status === 'reconciling'" tone="warning" title="配置结果待核对">
+                <p>{{ kernelState.last_error || '正在核对节点实际运行状态和发布回执。' }}</p>
+                <p>后台会自动复查；核对完成后按最新设置同步配置。期间保留当前运行配置和连接凭据。</p>
+                <UiButton as-child variant="secondary" size="sm"><RouterLink :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看配置发布任务</RouterLink></UiButton>
+              </PageAlert>
+              <RemoteReadStatus label="内核状态" :phase="kernelResource.phase.value" :error="kernelResource.error.value" :last-success-at="kernelResource.lastSuccessAt.value" @retry="loadKernel(selectedNodeID)" />
+              <RemoteReadStatus label="任务进度" :phase="operationResource.phase.value" :error="operationResource.error.value" :last-success-at="operationResource.lastSuccessAt.value" @retry="startKernelPolling(kernelPollScope.nodeID, kernelPollScope.taskID)" />
+              <dl class="node-properties kernel-facts">
+                <div><dt>已安装版本</dt><dd>{{ kernelState?.installed_version || '未检测' }}</dd></div>
+                <div><dt>运行状态</dt><dd :class="{ 'node-exception': kernelState?.service_status && kernelState.service_status !== 'active' }">{{ serviceLabel(kernelState?.service_status) }}</dd></div>
+                <div><dt>控制通道</dt><dd :class="{ 'node-exception': kernelState?.control_status && kernelState.control_status !== 'healthy' }">{{ controlLabel(kernelState?.control_status) }}</dd></div>
+                <div><dt>最后检测</dt><dd><TimeBadge :value="kernelState?.last_detected_at" /></dd></div>
+              </dl>
+              <OutputBlock v-if="kernelState?.last_error && kernelState.status !== 'reconciling'" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="1200" />
+              <UiTabs :model-value="kernelSource" :items="[{ value: 'online', label: '在线版本' }, { value: 'offline', label: '本地上传' }]" label="内核来源" @update:model-value="changeKernelSource" />
+              <RemoteReadStatus v-if="kernelSource === 'online'" label="可用版本" :phase="releasesResource.phase.value" :error="releaseError" :last-success-at="releasesResource.lastSuccessAt.value" @retry="loadLatestRelease(true)" />
+              <NodeKernelUpload v-if="kernelSource === 'offline'" :key="selectedNode.id" :node-id="selectedNode.id" :installed-version="kernelState?.installed_version" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @busy="offlineUploadBusy" @accepted="offlineUploadAccepted" />
+              <div v-else class="kernel-release-picker">
+                <label for="node-kernel-release">安装版本</label>
+                <UiSelect id="node-kernel-release" v-model="selectedReleaseVersion" :options="releaseOptions" :disabled="releaseLoading || Boolean(kernelBusy)" />
+                <small v-if="selectedRelease && (selectedIsDowngrade || !selectedReleaseCompatible)">
+                  <template v-if="selectedIsDowngrade">将降级到所选版本</template>
+                  <template v-if="!selectedReleaseCompatible">所选版本不兼容当前服务器</template>
+                </small>
+                <small v-else-if="!selectedRelease">{{ releaseLoading ? '正在查询可安装版本…' : '没有与当前节点平台兼容的已发布版本。' }}</small>
+              </div>
+              <div class="kernel-actions">
+                <UiButton variant="secondary" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @click="detectKernel"><UiIcon name="search" />{{ kernelBusy === 'detect' ? '检测中…' : '检测内核' }}</UiButton>
+                <UiButton v-if="kernelSource === 'online'" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at || releaseLoading || !selectedReleaseVersion || !selectedReleaseCompatible || kernelState?.status === 'unsupported'" @click="reconcileKernel"><UiIcon name="play" />{{ kernelBusy === 'reconcile' ? kernelPhaseLabel(kernelState?.phase) : reconcileButtonLabel }}</UiButton>
+                <UiButton as-child variant="ghost" size="sm" v-if="kernelState?.last_error"><RouterLink :to="adminContextLink('/admin/operation-logs', { source: 'node_kernel', node_id: String(selectedNode.id) })"><UiIcon name="terminal" />查看操作与核对记录</RouterLink></UiButton>
+                <small v-if="!selectedNode.ssh_verified_at">请先验证 SSH。</small>
+                <small v-else-if="!selectedNode.node_credential_prefix">首次安装会自动生成连接凭证。</small>
+              </div>
             </div>
-            <PageAlert tone="info" :title="selectedNode.node_credential_prefix ? 'Zero 连接凭证已就绪' : '首次安装会自动准备连接凭证'">
-              <template v-if="selectedNode.node_credential_prefix">本次自动化将复用现有连接凭证 <code>{{ selectedNode.node_credential_prefix }}…</code>，不会自动轮换。</template>
-              <template v-else>ZBoard 会在 Zero 启动前自动生成并激活连接凭证；如果安装或验收失败，该凭证会随本次 generation 一起回滚，无需先到“连接凭证”手工生成。</template>
-            </PageAlert>
-            <OutputBlock v-if="kernelState?.last_error && kernelState.status !== 'reconciling'" :value="kernelState.last_error" label="内核错误" tone="danger" :max-length="1200" />
-            <UiTabs :model-value="kernelSource" :items="[{ value: 'online', label: '在线版本' }, { value: 'offline', label: '本地上传' }]" label="内核来源" @update:model-value="changeKernelSource" />
-            <RemoteReadStatus v-if="kernelSource === 'online'" label="可用版本" :phase="releasesResource.phase.value" :error="releaseError" :last-success-at="releasesResource.lastSuccessAt.value" @retry="loadLatestRelease(true)" />
-            <NodeKernelUpload v-if="kernelSource === 'offline'" :key="selectedNode.id" :node-id="selectedNode.id" :installed-version="kernelState?.installed_version" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @busy="offlineUploadBusy" @accepted="offlineUploadAccepted" />
-            <div v-else class="kernel-release-picker">
-              <label for="node-kernel-release">安装版本</label>
-              <UiSelect id="node-kernel-release" v-model="selectedReleaseVersion" :options="releaseOptions" :disabled="releaseLoading || Boolean(kernelBusy)" />
-              <small v-if="selectedRelease">
-                {{ selectedRelease.gnu_available ? 'GNU/glibc' : '' }}{{ selectedRelease.gnu_available && selectedRelease.musl_available ? '、' : '' }}{{ selectedRelease.musl_available ? 'musl' : '' }} 制品可用
-                <template v-if="selectedIsDowngrade"> · 将执行显式降级</template>
-                <template v-if="!selectedReleaseCompatible"> · 与当前节点 libc 不兼容</template>
-              </small>
-              <small v-else>{{ releaseLoading ? '正在查询可安装版本…' : '没有与当前节点平台兼容的已发布版本。' }}</small>
-            </div>
-            <div class="kernel-actions">
-              <UiButton variant="secondary" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at" @click="detectKernel"><UiIcon name="search" />{{ kernelBusy === 'detect' ? '检测中…' : '检测内核' }}</UiButton>
-              <UiButton v-if="kernelSource === 'online'" size="sm" type="button" :disabled="Boolean(kernelBusy) || !selectedNode.ssh_verified_at || releaseLoading || !selectedReleaseVersion || !selectedReleaseCompatible || kernelState?.status === 'unsupported'" @click="reconcileKernel"><UiIcon name="play" />{{ kernelBusy === 'reconcile' ? kernelPhaseLabel(kernelState?.phase) : reconcileButtonLabel }}</UiButton>
-              <UiButton as-child variant="secondary" size="sm" v-if="kernelState?.last_error"><RouterLink :to="adminContextLink('/admin/operation-logs', { source: 'node_kernel', node_id: String(selectedNode.id) })"><UiIcon name="terminal" />查看操作与核对记录</RouterLink></UiButton>
-              <small v-if="!selectedNode.ssh_verified_at">请先完成 SSH 验证，自动化不会绕过运维通道校验。</small>
-              <small v-else-if="kernelSource === 'online'">现代 glibc 节点使用官方 GNU 制品，旧版 Linux 使用面板托管并校验 SHA-256 的 musl 制品；不会升级系统 libc，也不会自动降级内核。</small>
-            </div>
-            <div class="action-card">
-              <div class="title-line"><strong>VPS 网络优化 · BBR</strong><StatusBadge :tone="bbrTone">{{ bbrStatusLabel }}</StatusBadge></div>
+          </UiSection>
+          <UiSection title="网络优化 · BBR" variant="outlined">
+            <template #meta><StatusBadge :tone="bbrTone">{{ bbrStatusLabel }}</StatusBadge></template>
+            <div class="kernel-body">
               <RemoteReadStatus label="BBR 状态" :phase="bbrResource.phase.value" :error="bbrResource.error.value" :last-success-at="bbrResource.lastSuccessAt.value" @retry="loadBBR(selectedNodeID)" />
-              <p v-if="bbrState">当前拥塞控制 <code>{{ bbrState.congestion_control || '未知' }}</code> · qdisc <code>{{ bbrState.default_qdisc || '未知' }}</code> · Linux {{ bbrState.kernel_release || '未知' }}<template v-if="bbrState.persistent"> · 已持久化</template></p>
+              <p v-if="bbrState">拥塞控制 <code>{{ bbrState.congestion_control || '未知' }}</code> · 队列 <code>{{ bbrState.default_qdisc || '未知' }}</code></p>
               <p v-else-if="bbrLoading">正在通过已验证 SSH 读取 BBR 状态…</p>
               <p v-else-if="!selectedNode.ssh_verified_at">完成 SSH 验证后可检测和启用 BBR。</p>
               <p v-else>尚未读取 BBR 状态。</p>
               <div class="kernel-actions">
                 <UiButton variant="secondary" size="sm" type="button" :loading="bbrLoading" :disabled="bbrBusy || !selectedNode.ssh_verified_at" @click="loadBBR(selectedNode.id)"><UiIcon name="refresh" />检测 BBR</UiButton>
-                <UiButton size="sm" type="button" :loading="bbrBusy" :disabled="bbrLoading || !selectedNode.ssh_verified_at" @click="applyBBR"><UiIcon name="play" />{{ bbrState?.active && bbrState?.persistent ? '重新应用 BBR' : '启用 BBR' }}</UiButton>
-                <small>进入“内核与运维”时会读取一次当前状态；也可以随时手动重新检测。只维护 <code>/etc/sysctl.d/99-zboard-bbr.conf</code>，不会执行全局 <code>sysctl --system</code>。</small>
+                <UiButton variant="secondary" size="sm" type="button" :loading="bbrBusy" :disabled="bbrLoading || !selectedNode.ssh_verified_at" @click="applyBBR"><UiIcon name="play" />{{ bbrState?.active && bbrState?.persistent ? '重新应用 BBR' : '启用 BBR' }}</UiButton>
               </div>
             </div>
-            <section class="kernel-history" aria-label="离线节点清理">
-              <h3>离线节点清理</h3>
-              <p>删除节点会清理面板管理的供应商 DNS 和系统关联；SSH 不可用时，远端程序和文件的未清理结果会明确显示。网站不可用时，也可在主机上通过 SSH 执行离线卸载脚本。</p>
-              <UiButton variant="secondary" size="sm" type="button" @click="downloadCleanupScript">下载清理脚本</UiButton>
-              <p>停机并关闭自动启动：<code>sudo sh cleanup-zero-node.sh stop --yes</code></p>
-              <p>彻底卸载内核、配置和事件队列：<code>sudo sh cleanup-zero-node.sh uninstall --yes</code></p>
-              <p>新安装或更新内核后，也可直接执行 <code>sudo /usr/local/sbin/zboard-zero-cleanup stop --yes</code>。</p>
-            </section>
+          </UiSection>
+          <details class="node-technical-details">
+            <summary>运行环境</summary>
+            <dl class="node-properties">
+              <div><dt>平台</dt><dd>{{ [kernelState?.platform_os, kernelState?.architecture].filter(Boolean).join(' · ') || '-' }}</dd></div>
+              <div><dt>运行库</dt><dd>{{ kernelState?.libc || '-' }}</dd></div>
+              <div><dt>Linux 版本</dt><dd>{{ bbrState?.kernel_release || '-' }}</dd></div>
+              <div><dt>最新发布</dt><dd>{{ latestPublishedRelease?.tag || '-' }}</dd></div>
+              <div><dt>建议操作</dt><dd>{{ kernelActionLabel(kernelState?.recommended_action) }}</dd></div>
+            </dl>
+            <p>当前不支持失联后自动停服；恢复连接后才能下发并核验停用操作。</p>
+          </details>
+          <details class="node-technical-details">
+            <summary>手动卸载</summary>
+            <p>SSH 不可用时，面板无法卸载远端程序。恢复 SSH 后可下载并执行清理脚本。</p>
+            <UiButton variant="secondary" size="sm" type="button" @click="downloadCleanupScript">下载清理脚本</UiButton>
+            <dl class="node-properties">
+              <div><dt>停止运行</dt><dd><code>sudo sh cleanup-zero-node.sh stop --yes</code></dd></div>
+              <div><dt>完全卸载</dt><dd><code>sudo sh cleanup-zero-node.sh uninstall --yes</code></dd></div>
+            </dl>
+            <p>完全卸载会删除内核、配置和本地事件队列。</p>
+          </details>
             <div v-if="kernelOperations.length" class="kernel-history">
               <div v-for="operation in kernelOperations.slice(0, 5)" :key="operation.id">
                 <StatusBadge :tone="operationStatusTone(operation.status)" :icon="operation.status === 'succeeded' ? 'check' : operation.status === 'running' ? 'refresh' : operation.status === 'deferred' ? 'clock' : 'alert'">{{ operationStatusLabel(operation.status) }}</StatusBadge>
@@ -184,12 +188,11 @@
                 <TimeBadge :value="operation.created_at" />
               </div>
             </div>
-          </div>
-        </article>
+        </div>
 
         <NodeProxyPools v-else-if="detailSection === 'pools'" :key="selectedNode.id" :node-id="selectedNode.id" />
         <section v-else-if="detailSection === 'protocols'" class="panel node-protocols">
-          <header class="panel-header"><div><h2>协议服务与倍率</h2><p>倍率属于这台 VPS 承载的协议端点。修改只影响后续流量计费与订阅展示，不会重启 Zero。</p></div><span class="count-label">{{ formatNumber(nodeProtocolTotal) }}</span></header>
+          <header class="panel-header"><div><h2>协议服务</h2></div><span class="count-label">{{ formatNumber(nodeProtocolTotal) }}</span></header>
           <RemoteReadStatus label="协议服务" :phase="protocolsResource.phase.value" :error="protocolsResource.error.value" :last-success-at="protocolsResource.lastSuccessAt.value" @retry="loadNodeProtocols(selectedNodeID)" />
           <DataTable v-if="nodeEndpoints.length" caption="当前节点协议服务与计费倍率" :row-count="nodeProtocolTotal" :min-width="820">
             <thead>
@@ -197,8 +200,7 @@
                 <th class="table-primary-column">协议服务</th>
                 <th>业务启用 / 交付</th>
                 <th data-column-priority="2">对外入口</th>
-                <th>计费倍率</th>
-                <th class="table-action-column"><span class="sr-only">操作</span></th>
+                <th class="numeric-column">计费倍率</th>
               </tr>
             </thead>
             <tbody>
@@ -208,10 +210,7 @@
                 </td>
                 <td><NodeProtocolState :is-active="endpoint.is_active" :publication="endpoint.publication" :latest-deployment="endpoint.latest_deployment" /></td>
                 <td data-column-priority="2"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /></td>
-                <td><MultiplierInput v-model="multiplierDrafts[endpoint.id]" :aria-label="`${endpoint.name} 的计费倍率`" /></td>
-                <td class="table-action-column">
-                  <UiButton variant="secondary" size="sm" type="button" :loading="savingMultiplierID === endpoint.id" @click="saveMultiplier(endpoint)">保存倍率</UiButton>
-                </td>
+                <td class="numeric-column"><span v-if="endpoint.service_kind === 'entry' || endpoint.parent_protocol_id">{{ (endpoint.multiplier_milli ?? 1000) / 1000 }}</span><ProtocolMultiplierCell v-else :endpoint-id="endpoint.id" :name="endpoint.name" :multiplier-milli="endpoint.multiplier_milli ?? 1000" @saved="endpoint.multiplier_milli = $event.multiplier_milli" /></td>
               </tr>
             </tbody>
           </DataTable>
@@ -220,29 +219,36 @@
           <TablePager v-if="nodeProtocolTotal" :total="nodeProtocolTotal" :offset="nodeProtocolOffset" :limit="nodeProtocolLimit" :loading="nodeProtocolsLoading" @change="changeNodeProtocolPage" />
         </section>
 
-        <section v-else class="panel credential-workspace">
-          <header class="panel-header"><div><h2>连接凭证</h2><p>凭证只在需要配置或轮换时操作，不与日常状态混排。</p></div></header>
-          <div class="credential-row"><span class="credential-icon"><UiIcon name="activity" /></span><div><strong>Zero 主动连接</strong><p v-if="selectedNode.node_credential_prefix">当前前缀 <code>{{ selectedNode.node_credential_prefix }}…</code></p><p v-else>用于心跳和命令领取，当前尚未生成；首次 Zero 安装会自动生成并激活，无需提前手工创建。安装失败时会随本次 generation 一起回滚。</p></div><div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" @click="rotateConnector(selectedNode)">{{ selectedNode.node_credential_prefix ? '轮换' : '手动生成' }}</UiButton><UiButton v-if="selectedNode.node_credential_prefix && !selectedNode.node_credential_revoked_at" variant="danger" size="sm" type="button" @click="revokeConnector(selectedNode)">吊销</UiButton></div></div>
-          <div class="credential-row"><span class="credential-icon"><UiIcon name="shield" /></span><div><strong>流量上报</strong><p v-if="selectedNode.traffic_secret_prefix">当前前缀 <code>{{ selectedNode.traffic_secret_prefix }}…</code></p><p v-else>与 SSH、Zero 连接凭证独立，当前尚未生成。</p></div><div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" @click="rotateReport(selectedNode)">{{ selectedNode.traffic_secret_prefix ? '轮换' : '生成' }}</UiButton><UiButton v-if="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at" variant="danger" size="sm" type="button" @click="revokeReport(selectedNode)">吊销</UiButton></div></div>
+        <section v-else class="credential-workspace" aria-label="连接凭证">
+          <div class="credential-row">
+            <div class="credential-identity"><h2>Zero 连接</h2><code v-if="selectedNode.node_credential_prefix">{{ selectedNode.node_credential_prefix }}…</code><span v-else>未生成 · 首次安装时自动创建</span></div>
+            <StatusBadge v-if="selectedNode.node_credential_revoked_at" tone="warning">已吊销</StatusBadge>
+            <div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" :aria-label="`${selectedNode.node_credential_prefix ? '轮换' : '生成'} Zero 连接凭证`" @click="rotateConnector(selectedNode)">{{ selectedNode.node_credential_prefix ? '轮换' : '生成' }}</UiButton><RowActionMenu v-if="selectedNode.node_credential_prefix && !selectedNode.node_credential_revoked_at" label="Zero 连接凭证更多操作" :trigger-key="`node-connector-${selectedNode.id}`"><UiButton variant="danger" size="sm" type="button" @click="revokeConnector(selectedNode)">吊销凭证</UiButton></RowActionMenu></div>
+          </div>
+          <div class="credential-row">
+            <div class="credential-identity"><h2>流量上报</h2><code v-if="selectedNode.traffic_secret_prefix">{{ selectedNode.traffic_secret_prefix }}…</code><span v-else>未生成</span></div>
+            <StatusBadge v-if="selectedNode.traffic_secret_revoked_at" tone="warning">已吊销</StatusBadge>
+            <div class="credential-actions"><UiButton variant="secondary" size="sm" type="button" :aria-label="`${selectedNode.traffic_secret_prefix ? '轮换' : '生成'}流量上报凭证`" @click="rotateReport(selectedNode)">{{ selectedNode.traffic_secret_prefix ? '轮换' : '生成' }}</UiButton><RowActionMenu v-if="selectedNode.traffic_secret_prefix && !selectedNode.traffic_secret_revoked_at" label="流量上报凭证更多操作" :trigger-key="`node-report-${selectedNode.id}`"><UiButton variant="danger" size="sm" type="button" @click="revokeReport(selectedNode)">吊销凭证</UiButton></RowActionMenu></div>
+          </div>
         </section>
         </template>
       </main>
     </DetailDrawer>
 
-    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="登记 VPS" description="建立主机资产；可选择在 SSH 验证后执行受控的系统初始化。" :busy="saving" @close="createOpen = false">
+    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="添加服务器" description="建立主机资产；可选择在 SSH 验证后执行受控的系统初始化。" :busy="saving" @close="createOpen = false">
       <form id="node-create-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="create">
-        <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法登记 VPS">{{ createErrors.formError.value }}</PageAlert>
+        <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法添加服务器">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="主机名称" name="create-node-name" :error="createErrors.fields.name" required><UiInput v-model.trim="createForm.name" v-bind="controlAttrs" placeholder="香港 VPS 01" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="区域" name="create-node-region" :error="createErrors.fields.region"><UiInput v-model.trim="createForm.region" v-bind="controlAttrs" placeholder="Hong Kong" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="默认业务地址" name="create-node-address" hint="可选；新建协议时用作对外地址的初始值。" :error="createErrors.fields.address" full><UiInput v-model.trim="createForm.address" v-bind="controlAttrs" placeholder="edge.example.com" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="备注" hint="记录供应商、机房、用途或到期时间；不填写也保持与其他字段对齐。" full><UiTextarea v-model.trim="createForm.remark" v-bind="controlAttrs" rows="3" placeholder="供应商、机房、用途、到期时间等"></UiTextarea></FormField>
+        <FormField v-slot="{ controlAttrs }" label="备注" full><UiTextarea v-model.trim="createForm.remark" v-bind="controlAttrs" rows="3" placeholder="供应商、机房、用途、到期时间等"></UiTextarea></FormField>
         <label class="check-field field-full"><UiCheckbox v-model="createForm.enable_bbr" /><span>节点接入后尝试启用 BBR（可选）</span></label>
-        <p class="field-hint field-full">保存 VPS 后会继续引导 SSH 验证与 Zero 初始化。BBR 仅在勾选时尝试启用，失败不会阻塞 Zero 安装，可稍后在“内核与运维”中重试。</p>
+        <p class="field-hint field-full">保存后验证 SSH 并安装 Zero；BBR 可稍后启用。</p>
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="node-create-form" type="submit" :loading="saving">保存 VPS</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑 VPS" description="维护资产元数据和生命周期；维护或禁用会停止对外交付，恢复启用后可继续使用。" :busy="saving" @close="editOpen = false">
+    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑服务器" description="维护资产元数据和生命周期；维护或禁用会停止对外交付，恢复启用后可继续使用。" :busy="saving" @close="editOpen = false">
       <PageAlert v-if="assetDraftConflict" tone="warning" title="资产已在其他会话更新">已保留旧草稿，不能直接覆盖服务器的新内容。<template #actions><UiButton variant="secondary" type="button" @click="reloadAssetEditor">重新加载最新资产</UiButton></template></PageAlert>
       <form id="node-edit-form" ref="editFormElement" class="form-grid" novalidate @submit.prevent="saveNode">
         <PageAlert v-if="editErrors.formError.value" class="field-full" tone="danger" title="无法保存 VPS">{{ editErrors.formError.value }}</PageAlert>
@@ -309,14 +315,14 @@ import NodeProxyPools from '../components/NodeProxyPools.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createNode, createNodeBatchOperation, fetchNodeCleanupScript, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, updateProtocolEndpointMultiplier, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
+import { createNode, createNodeBatchOperation, fetchNodeCleanupScript, detectNodeKernel, fetchAdminTask, fetchNode, fetchNodeKernel, fetchNodeLoad, fetchNodesPage, fetchProtocolEndpointsPage, fetchZeroReleases, reconcileNodeKernel, resetNodeSSHHostKey, revokeNodeConnectorCredential, revokeNodeReportCredential, rotateNodeConnectorCredential, rotateNodeReportCredential, testNodeSSH, updateNode, updateNodeSSH, type AdminNodeDetail, type AdminNodeListItem, type NodeKernelOperation, type NodeKernelState, type NodeLoadSnapshot, type ZeroReleaseOption } from '../api/client'
 import { enableNodeBBR, fetchNodeSystemActions, type NodeBBRState } from '../api/nodeSystemActions'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EndpointAddress from '../components/EndpointAddress.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import DetailDrawer from '../components/DetailDrawer.vue'
-import MultiplierInput from '../components/MultiplierInput.vue'
+import ProtocolMultiplierCell from '../components/ProtocolMultiplierCell.vue'
 import NodeRuntimeDiagnosticsModal from '../components/NodeRuntimeDiagnosticsModal.vue'
 import OutputBlock from '../components/OutputBlock.vue'
 import PageAlert from '../components/PageAlert.vue'
@@ -339,6 +345,7 @@ import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import UiTabs from '../components/UiTabs.vue'
+import UiSection from '../components/UiSection.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import RemoteReadStatus from '../components/RemoteReadStatus.vue'
 import { useRemoteResource } from '../composables/useRemoteResource'
@@ -396,11 +403,11 @@ const observationQueueOpen = ref(false)
 const diagnosticsOpen = ref(false)
 const detailSection = ref<'overview' | 'kernel' | 'pools' | 'protocols' | 'credentials'>('overview')
 const nodeDetailTabs = [
-  { value: 'overview', label: '状态概览', icon: 'dashboard' },
-  { value: 'kernel', label: '内核与运维', icon: 'activity' },
-  { value: 'pools', label: '共享代理池', icon: 'nodes' },
-  { value: 'protocols', label: '协议与倍率', icon: 'plans' },
-  { value: 'credentials', label: '连接凭证', icon: 'key' },
+  { value: 'overview', label: '概览' },
+  { value: 'kernel', label: '内核' },
+  { value: 'pools', label: '代理池' },
+  { value: 'protocols', label: '协议' },
+  { value: 'credentials', label: '凭证' },
 ]
 const saving = ref(false), testingNode = ref(0)
 const bulkBusy = ref<'' | 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'disable'>('')
@@ -438,12 +445,12 @@ const nodeRequiresMusl = computed(() => {
 const releaseCompatible = (release: ZeroReleaseOption) => nodeRequiresMusl.value ? release.musl_available : release.gnu_available
 const selectedReleaseCompatible = computed(() => Boolean(selectedRelease.value && releaseCompatible(selectedRelease.value)))
 const releaseOptions = computed(() => zeroReleases.value.map(item => ({
-  label: `${item.tag}${item.prerelease ? '（预发布）' : ''} · ${[item.gnu_available ? 'GNU' : '', item.musl_available ? 'musl' : ''].filter(Boolean).join(' / ')}`,
+  label: `${item.tag}${item.prerelease ? '（预发布）' : ''}${!releaseCompatible(item) ? '（不兼容）' : ''}`,
   value: item.version,
   disabled: !releaseCompatible(item),
 })))
 const batchReleaseOptions = computed(() => zeroReleases.value.map(item => ({
-  label: `${item.tag}${item.prerelease ? '（预发布）' : ''} · ${[item.gnu_available ? 'GNU' : '', item.musl_available ? 'musl' : ''].filter(Boolean).join(' / ')}`,
+  label: `${item.tag}${item.prerelease ? '（预发布）' : ''}${!releaseCompatible(item) ? '（不兼容）' : ''}`,
   value: item.version,
   disabled: !item.gnu_available && !item.musl_available,
 })))
@@ -463,14 +470,11 @@ const bbrStatusLabel = computed(() => {
 })
 const kernelSource = ref('online')
 const kernelBusy = ref<'' | 'detect' | 'reconcile' | 'upload'>('')
-const savingMultiplierID = ref(0)
 const nodeProtocolLimit = ref(allowedPageSizes.includes(Number(route.query.protocol_limit)) ? Number(route.query.protocol_limit) : 25)
 const nodeProtocolOffset = ref((Math.max(1, Number(route.query.protocol_page) || 1) - 1) * nodeProtocolLimit.value)
-const multiplierDrafts = reactive<Record<number, number>>({})
 const protocolsResource = useRemoteTable<any>({ offset: nodeProtocolOffset, limit: nodeProtocolLimit,
   fetchPage: ({ signal }) => fetchProtocolEndpointsPage({ nodeId: selectedNodeID.value, offset: nodeProtocolOffset.value, limit: nodeProtocolLimit.value }, { signal }),
   errorMessage: '节点协议服务加载失败。', onOffsetCorrected: () => syncURL(true),
-  onPageLoaded: page => { for (const endpoint of page.items) multiplierDrafts[endpoint.id] = Number(endpoint.multiplier_milli || 1000) },
 })
 const { items: nodeEndpoints, total: nodeProtocolTotal, loading: nodeProtocolsLoading } = protocolsResource
 let kernelPollTimer: number | undefined
@@ -599,7 +603,7 @@ const kernelStatusLabel = computed(() => ({
   reconciling: '配置结果待核对',
 } as Record<string, string>)[kernelState.value?.status || 'unknown'] || formatUnknownValue('状态', kernelState.value?.status))
 const kernelDescription = computed(() => kernelState.value?.installed_version ? `Zero ${kernelState.value.installed_version} · ${serviceLabel(kernelState.value.service_status)}` : kernelStatusLabel.value)
-const reconcileButtonLabel = computed(() => kernelState.value?.status === 'unsupported' ? '当前制品不兼容' : kernelState.value?.status === 'not_installed' ? '自动安装' : kernelState.value?.recommended_action === 'configure' ? '应用配置' : '安装 / 升级 / 修复')
+const reconcileButtonLabel = computed(() => kernelState.value?.status === 'unsupported' ? '当前制品不兼容' : kernelState.value?.status === 'not_installed' ? '自动安装' : kernelState.value?.recommended_action === 'configure' ? '应用配置' : '应用所选版本')
 function lifecycleLabel(value?: string) { return ({ active: '正常', maintenance: '维护', retired: '已禁用', deleting: '删除中', archived: '已删除' } as Record<string, string>)[value || ''] || formatUnknownValue('状态', value) }
 function lifecycleTone(node: any): 'success' | 'warning' | 'neutral' { return node.lifecycle_status === 'maintenance' ? 'warning' : node.lifecycle_status === 'retired' ? 'neutral' : node.is_enabled ? 'success' : 'neutral' }
 function kernelListLabel(value?: string) { return ({ unknown: '未检测', not_installed: '未安装', healthy: '健康', degraded: '异常', failed: '失败', unsupported: '不兼容', publishing: '发布中', apply_failed: '应用失败', reconciling: '待核对' } as Record<string, string>)[value || 'unknown'] || formatUnknownValue('状态', value) }
@@ -704,7 +708,6 @@ async function loadNodeLoad(nodeID?: number) {
 }
 function formatLoadRatio(snapshot: NodeLoadSnapshot) { return snapshot.cpu_core_count > 0 ? `${(snapshot.load_average_1 / snapshot.cpu_core_count * 100).toFixed(0)}%` : '—' }
 function formatUptime(seconds: number) { const days = Math.floor(seconds / 86400); const hours = Math.floor(seconds % 86400 / 3600); const minutes = Math.floor(seconds % 3600 / 60); return days ? `${days} 天 ${hours} 小时` : hours ? `${hours} 小时 ${minutes} 分钟` : `${minutes} 分钟` }
-async function saveMultiplier(endpoint: any) { const milli = Math.round(Number(multiplierDrafts[endpoint.id])); if (!Number.isFinite(milli) || milli < 1 || milli > 100000) { detailError.value = '计费倍率必须在 0.001× 到 100× 之间。'; return }; savingMultiplierID.value = endpoint.id; detailError.value = ''; detailMessage.value = ''; try { const updated = await updateProtocolEndpointMultiplier(endpoint.id, milli); endpoint.multiplier_milli = updated.multiplier_milli; multiplierDrafts[endpoint.id] = updated.multiplier_milli; detailMessage.value = `${endpoint.name} 的计费倍率已更新为 ${updated.multiplier_milli / 1000}×。` } catch (e: any) { detailError.value = e?.response?.data?.message || '计费倍率保存失败。' } finally { savingMultiplierID.value = 0 } }
 async function detectKernel() { if (!selectedNode.value) return; kernelBusy.value = 'detect'; detailError.value = ''; detailMessage.value = ''; try { const result = await detectNodeKernel(selectedNode.value.id); kernelState.value = result.state; detailMessage.value = 'Zero 内核检测完成，页面显示的是服务器真实状态。'; await loadKernel(selectedNode.value.id) } catch (e: any) { detailError.value = e?.response?.data?.message || 'Zero 内核检测失败。'; await loadKernel(selectedNode.value.id) } finally { kernelBusy.value = '' } }
 function stopKernelPolling() {
   if (kernelPollTimer !== undefined) { window.clearInterval(kernelPollTimer); kernelPollTimer = undefined }
@@ -836,7 +839,7 @@ async function create() {
   createForm.name = createForm.name.trim()
   const valid = await createErrors.applyValidation(collectFieldErrors({
     name: isBlank(createForm.name) && '请输入主机名称。',
-  }), createFormElement, '请更正标记字段后再登记 VPS。')
+  }), createFormElement, '请更正标记字段后再添加服务器。')
   if (!valid) return
   saving.value = true
   try {
@@ -1043,11 +1046,64 @@ onBeforeUnmount(stopKernelPolling)
 </script>
 
 <style scoped>
-:deep(.workbench-table tbody tr.selected){background:var(--surface-selected)}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}.kernel-list-cell{display:flex;align-items:center;gap:7px;min-width:0}.kernel-list-version{display:inline-block;max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;line-height:1.2}.node-detail{min-width:0}.node-remark{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.detail-drawer-body .node-summary{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:0 0 16px;border:0;border-bottom:1px solid var(--line);border-radius:0}.detail-drawer-body .node-summary-main{min-width:0;align-items:flex-start}.detail-drawer-body .title-line{flex-wrap:wrap}.detail-drawer-body .node-actions{margin-left:auto}.detail-drawer-body .node-health-strip{border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}.detail-drawer-body .panel{border-radius:var(--radius-md)}
-.page-alert{margin-bottom:14px}.count-label{color:var(--muted);font-size:11px}.node-layout{display:grid;grid-template-columns:300px minmax(0,1fr);align-items:start;gap:16px}.node-list-panel{position:sticky;top:82px;overflow:hidden}.node-list{display:grid}.node-list>button{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:15px 16px;text-align:left;border:0;border-bottom:1px solid var(--line);background:var(--surface)}.node-list>button:hover,.node-list>button.active{background:var(--surface-selected)}.node-list>button.active{box-shadow:inset 3px 0 var(--primary)}.node-list strong{font-size:12px}.node-list p,.node-list small{margin:3px 0 0;color:var(--muted);font-size:12px}.node-list small{color:var(--primary)}.node-state{width:9px;height:9px;border-radius:50%;background:var(--warning-bright);box-shadow:0 0 0 4px var(--warning-soft)}.node-state.online{background:var(--success-bright);box-shadow:0 0 0 4px var(--success-soft)}.node-state.disabled{background:var(--subtle);box-shadow:0 0 0 4px var(--surface-neutral)}.node-detail{min-width:0}.node-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px}.node-summary-main{display:flex;align-items:center;gap:14px}.node-avatar{width:46px;height:46px;display:grid;place-items:center;border-radius:12px;color:var(--primary);background:var(--primary-soft);font-size:21px}.title-line{display:flex;align-items:center;gap:10px}.title-line h2{margin:0;font-size:19px}.node-summary-main p{margin:5px 0 2px;color:var(--muted);font-size:11px}.node-summary-main small{color:var(--subtle);font-size:12px}.node-actions{display:flex;flex-wrap:wrap;gap:7px}.readiness-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.readiness-grid article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;padding:15px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}.readiness-grid article>span{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;color:var(--primary);background:var(--primary-soft)}.readiness-grid strong{font-size:11px}.readiness-grid p{margin:3px 0 0;color:var(--muted);font-size:12px}.action-card{display:grid;gap:14px}.action-card p{margin:0;color:var(--muted);font-size:11px}.action-card>div{display:flex;gap:7px}.node-empty{min-height:420px;display:grid;place-items:center}.secret-card{display:grid;gap:14px}.secret-card textarea{font-family:Consolas,monospace;font-size:11px}.secret-card .button{justify-self:start}@media(max-width:1100px){.node-layout{grid-template-columns:1fr}.node-list-panel{position:static}.node-list{grid-template-columns:repeat(2,1fr)}}@media(max-width:720px){.node-list,.readiness-grid{grid-template-columns:1fr}.node-summary{align-items:flex-start;flex-direction:column}.node-actions{display:flex;flex-wrap:wrap}}
-.kernel-panel{overflow:hidden}.kernel-body{display:grid;gap:16px}.kernel-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}.kernel-facts>div{display:grid;gap:5px;padding:13px;background:var(--surface)}.kernel-facts span{color:var(--muted);font-size:12px}.kernel-facts strong{font-size:11px;overflow-wrap:anywhere}.kernel-error{display:flex;align-items:flex-start;gap:8px;margin:0;padding:11px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:12px;overflow-wrap:anywhere}.kernel-release-picker{display:grid;grid-template-columns:minmax(110px,160px) minmax(220px,360px);align-items:center;gap:7px 12px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-neutral)}.kernel-release-picker label{font-size:12px;font-weight:600}.kernel-release-picker small{grid-column:2;color:var(--muted);font-size:12px}.kernel-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.kernel-actions small{color:var(--muted);font-size:12px}.kernel-history{display:grid;border-top:1px solid var(--line)}.kernel-history>div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 2px}.kernel-history>div+div{border-top:1px solid var(--line)}.kernel-history strong{font-size:12px}.kernel-history p{margin:3px 0 0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}.kernel-history time{color:var(--subtle);font-size:12px}.operation-dot{width:8px;height:8px;border-radius:50%;background:var(--warning)}.operation-dot.succeeded{background:var(--success)}.operation-dot.failed{background:var(--danger)}@media(max-width:720px){.kernel-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.kernel-release-picker{grid-template-columns:1fr}.kernel-release-picker small{grid-column:1}.kernel-history>div{grid-template-columns:auto minmax(0,1fr)}.kernel-history time{grid-column:2}}
-.detail-tabs{display:flex;gap:18px;overflow-x:auto;border-bottom:1px solid var(--line)}.detail-tabs button{min-height:42px;display:inline-flex;align-items:center;gap:7px;padding:0 2px;border:0;border-bottom:2px solid transparent;color:var(--muted);background:transparent;font-size:12px;font-weight:600;white-space:nowrap}.detail-tabs button:hover{color:var(--text)}.detail-tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}.node-health-strip{display:grid;border-block:1px solid var(--line);background:var(--surface)}.node-health-strip>*+*{border-top:1px solid var(--line)}.credential-workspace{overflow:hidden}.credential-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:13px;padding:17px 20px}.credential-row+.credential-row{border-top:1px solid var(--line)}.credential-icon{width:34px;height:34px;display:grid;place-items:center;color:var(--primary);background:var(--primary-soft);border-radius:9px}.credential-row strong{font-size:12px}.credential-row p{margin:3px 0 0;color:var(--muted);font-size:12px}.credential-actions{display:flex;gap:7px}@media(max-width:720px){.credential-row{grid-template-columns:auto minmax(0,1fr)}.credential-actions{grid-column:2;flex-wrap:wrap}}
-.node-load-summary{display:grid;gap:14px;padding:17px 20px}.node-load-summary>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.node-load-summary header p{margin:3px 0 0;color:var(--muted);font-size:12px}.node-load-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}.node-load-grid>div{display:grid;gap:5px;padding:13px;background:var(--surface)}.node-load-grid span,.node-load-grid small{color:var(--muted);font-size:12px}.node-load-grid strong{font-size:12px}@media(max-width:720px){.node-load-summary>header{align-items:flex-start;flex-direction:column}.node-load-grid{grid-template-columns:1fr}}
-.node-list>button{color:var(--text)}.node-list>button:hover,.node-list>button.active{background:var(--primary-soft)}
-.node-protocols{overflow:hidden}.node-protocols :deep(.data-table-shell){border:0;border-radius:0}.node-protocols :deep(.ui-number-field){min-width:110px;max-width:160px}
+:deep(.workbench-table tbody tr.selected) { background: var(--surface-selected); }
+.numeric-column { text-align: right; font-variant-numeric: tabular-nums; }
+.kernel-list-cell { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.kernel-list-version { display: inline-block; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.node-detail { min-width: 0; gap: 20px; container-type: inline-size; }
+.node-detail-toolbar,.node-summary-main,.node-actions,.credential-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.node-detail-toolbar { justify-content: space-between; }
+.node-summary-main { flex-wrap: wrap; gap: 12px; }
+.node-remark { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.node-actions { flex: none; }
+.node-health-strip { display: grid; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); overflow: hidden; }
+.node-health-strip > * + * { border-top: 1px solid var(--border); }
+.node-maintenance { display: grid; gap: 20px; min-width: 0; }
+.kernel-body { display: grid; gap: 16px; min-width: 0; }
+.node-properties { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px 24px; margin: 0; }
+.node-properties > div { display: grid; align-content: start; gap: 5px; min-width: 0; }
+.node-properties dt { color: var(--muted); font-size: 12px; }
+.node-properties .node-exception { color: var(--warning); }
+.node-properties dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.kernel-release-picker { display: grid; grid-template-columns: minmax(80px,120px) minmax(0,1fr); align-items: center; gap: 8px 12px; }
+.kernel-release-picker label { font-size: 13px; font-weight: 500; }
+.kernel-release-picker small { grid-column: 2; color: var(--muted); font-size: 12px; }
+.kernel-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.kernel-actions small,.kernel-body > p { margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.node-technical-details { font-size: 13px; min-width: 0; }
+.node-technical-details summary { cursor: pointer; color: var(--muted); }
+.node-technical-details .node-properties { margin-top: 16px; }
+.node-technical-details p { margin: 12px 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.kernel-history { display: grid; }
+.kernel-history > div { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 10px; padding: 12px 0; }
+.kernel-history > div + div { border-top: 1px solid var(--border); }
+.kernel-history strong { font-size: 13px; font-weight: 500; }
+.kernel-history p { margin: 4px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.credential-workspace { display: grid; gap: 0; padding: 0 20px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); }
+.credential-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 18px 0; min-width: 0; }
+.credential-row + .credential-row { border-top: 1px solid var(--border); }
+.credential-identity { display: grid; gap: 5px; flex: 1 1 160px; min-width: 0; }
+.credential-identity h2 { margin: 0; font-size: 14px; font-weight: 500; }
+.credential-identity code,.credential-identity > span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.node-connection-details { padding: 16px 20px; }
+.node-load-summary { display: grid; gap: 14px; padding: 18px 20px; }
+.node-load-summary > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.node-load-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.node-load-grid > div { display: grid; gap: 5px; min-width: 0; }
+.node-load-grid span,.node-load-grid small { color: var(--muted); font-size: 12px; }
+.node-load-grid strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.node-protocols { overflow: hidden; }
+.node-protocols :deep(.data-table-shell) { border: 0; border-radius: 0; }
+.node-protocols :deep(.ui-number-field) { min-width: 110px; max-width: 160px; }
+.count-label { color: var(--muted); font-size: 12px; }
+.secret-card { display: grid; gap: 14px; }
+@container (max-width: 480px) {
+  .node-load-grid,.node-technical-details .node-properties { grid-template-columns: 1fr; }
+  .kernel-release-picker { grid-template-columns: 1fr; }
+  .kernel-release-picker small { grid-column: 1; }
+  .kernel-history > div { grid-template-columns: auto minmax(0,1fr); }
+  .kernel-history > div > :last-child { grid-column: 2; }
+  .node-load-summary > header { align-items: flex-start; flex-wrap: wrap; }
+  .credential-workspace { padding-inline: 16px; }
+}
 </style>

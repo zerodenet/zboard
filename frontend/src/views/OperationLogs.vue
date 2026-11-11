@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="运行日志">
+    <PageHeader title="操作记录">
       <template #actions><PageRefreshButton label="刷新运行日志" :loading="loading" @click="load" /></template>
     </PageHeader>
 

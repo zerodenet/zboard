@@ -80,6 +80,7 @@ function restoreFocus() {
 </script>
 
 <style scoped>
+.ui-sheet-content { height: 100dvh; overflow: clip; }
 .task-tray-host { display: contents; }
 .drawer-window-actions { display: flex; flex-direction: row-reverse; align-items: center; gap: 4px; }
 .ui-sheet-expanded { width: min(1200px, calc(100vw - 32px)); }

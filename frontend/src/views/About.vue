@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page about-page">
-    <PageHeader title="关于 ZBoard" :show-section-navigation="false">
+    <PageHeader title="关于项目" :show-section-navigation="false">
       <template #actions>
         <PageRefreshButton label="刷新运行信息" :loading="loading" @click="loadInfo" />
       </template>
@@ -8,7 +8,7 @@
 
     <PageAlert v-if="error" tone="danger" title="运行信息加载失败">{{ error }}</PageAlert>
 
-    <SettingsPageLayout>
+    <div class="about-content">
       <div v-if="info" class="section-grid about-summary">
         <UiSection class="span-7 project-card" title="ZBoard" description="面向代理服务运营场景的一体化控制面。">
           <template #meta><StatusBadge tone="success">Open Source</StatusBadge></template>
@@ -68,7 +68,7 @@
           <UiButton as-child variant="secondary" size="sm"><a :href="issuesURL" target="_blank" rel="noopener noreferrer">提交问题</a></UiButton>
         </div>
       </UiSection>
-    </SettingsPageLayout>
+    </div>
   </section>
 </template>
 
@@ -77,7 +77,6 @@ import { computed, onMounted, ref } from 'vue'
 import { fetchAdminSystemInfo, type AdminSystemInfo } from '../api/system'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
-import SettingsPageLayout from '../components/SettingsPageLayout.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import UiIcon from '../components/UiIcon.vue'
@@ -137,5 +136,6 @@ onMounted(loadInfo)
 </script>
 
 <style scoped>
+.about-content { display: grid; gap: 20px; min-width: 0; }
 .about-page { display: grid; gap: 16px; }.about-summary,.about-runtime { margin: 0; }.project-copy,.runtime-version,.license-copy,.contribute-copy { display: grid; gap: 14px; }.project-copy p,.license-copy p,.contribute-copy p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }.project-actions { display: flex; flex-wrap: wrap; gap: 8px; }.runtime-version > strong { min-width: 0; overflow-wrap: anywhere; font-size: 28px; line-height: 1.15; letter-spacing: -.03em; }.runtime-version > p { margin: -4px 0 0; color: var(--muted); font-size: 11px; }.build-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 8px; }.build-meta > div { min-width: 0; display: grid; gap: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }.build-meta span { color: var(--muted); font-size:12px; font-weight:600; letter-spacing: .04em; text-transform: uppercase; }.build-meta code,.build-meta b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size:12px; font-weight:600; }.update-link,.license-copy > a { width: fit-content; display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-size: 11px; font-weight:600; text-decoration: none; }.fact-list { display: grid; }.fact-list > div { display: flex; justify-content: space-between; gap: 18px; padding: 11px 0; }.fact-list > div + div { border-top: 1px solid var(--line); }.fact-list span { color: var(--muted); font-size: 11px; }.fact-list strong { text-align: right; font-size: 11px; }.license-mark { display: flex; align-items: center; gap: 12px; }.license-mark > .ui-icon { width: 38px; height: 38px; padding: 9px; border-radius: 10px; color: var(--success); background: var(--success-soft); }.license-mark div { display: grid; gap: 2px; }.license-mark strong { font-size: 16px; }.license-mark span { color: var(--muted); font-size:12px; }.resource-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 20px; }.resource-card { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--surface); font-size: 12px; font-weight:600; text-decoration: none; transition: border-color .15s ease, background .15s ease; }.resource-card:hover { border-color: var(--primary); background: var(--primary-soft); }.resource-card .ui-icon { color: var(--muted); }.contribute-card { margin-top: 0; }@media (max-width: 900px) { .resource-grid { grid-template-columns: 1fr 1fr; } }@media (max-width: 620px) { .resource-grid { grid-template-columns: 1fr; }.build-meta { grid-template-columns: 1fr; }.fact-list > div { display: grid; gap: 4px; }.fact-list strong { text-align: left; } }
 </style>

@@ -4,7 +4,7 @@
           <slot name="notice" /><div class="service-quota"><div><span>剩余流量</span><strong>{{ formatBytes(remaining(sub)) }}</strong><small>/ {{ formatBytes(sub.flow_total) }}</small></div><span v-if="remaining(sub) === 0 && (!sub.status || sub.status === 'active')" class="quota-exhausted">本周期流量已用完</span></div>
           <progress class="service-progress" :value="remainingPercent(sub)" max="100" :aria-label="`${sub.plan_name || `订阅 #${sub.id}`}剩余流量`" :aria-valuetext="`${formatBytes(remaining(sub))} / ${formatBytes(sub.flow_total)}`" />
           <div v-if="sub.next_reset_at || sub.renewal_until" class="service-schedule"><span v-if="sub.next_reset_at">下次重置 <TimeBadge :value="sub.next_reset_at" mode="relative" /></span><span v-if="sub.renewal_until">可续费至 <TimeBadge :value="sub.renewal_until" /></span></div><footer class="service-actions"><slot name="actions">
-            <UiButton as-child :variant="primary && remaining(sub) > 0 ? 'primary' : 'secondary'" size="sm"><RouterLink :to="subscriptionLocation(sub)"><UiIcon name="key" />{{ remaining(sub) > 0 ? '获取订阅' : '管理订阅' }}</RouterLink></UiButton>
+            <UiButton as-child :variant="primary && remaining(sub) > 0 ? 'primary' : 'secondary'" size="sm"><RouterLink :to="subscriptionLocation(sub)"><UiIcon name="key" />{{ remaining(sub) > 0 ? '连接设备' : '管理订阅' }}</RouterLink></UiButton>
             <UiButton v-if="sub.can_renew" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">续费</RouterLink></UiButton>
             <UiButton v-if="remaining(sub) === 0 && sub.can_reset" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
           </slot></footer>

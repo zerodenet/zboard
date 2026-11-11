@@ -1,7 +1,9 @@
 <template>
   <div class="admin-build-info" aria-label="系统版本信息">
-    <span class="build-version" v-overflow-title="version">版本 {{ version }}</span>
-    <span>构建时间 {{ buildTime }}</span>
+    <component :is="about ? RouterLink : 'div'" :to="about?.to" class="version-about-link" :aria-label="about ? `${about.label}，版本 ${version}` : undefined" @click="about && $emit('navigate')">
+      <span class="build-version" v-overflow-title="version">版本 {{ version }}</span>
+      <span>构建时间 {{ buildTime }}</span>
+    </component>
     <div class="version-actions">
       <button type="button" :disabled="checking || !canCompare" @click="checkForUpdates(true)">
         {{ checking ? '检查中…' : update ? '发现新版本' : status === 'current' ? '已是最新' : status === 'error' ? '重试检查' : '检查更新' }}
@@ -22,10 +24,12 @@
 <script setup lang="ts">
 import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import type { AdminSystemInfo } from '../api/system'
 import { compareZBoardVersions, fetchZBoardReleases, latestEligibleRelease, releaseChannelForVersion, ZBOARD_DEPLOYMENT_GUIDE_URL, ZBOARD_RELEASES_URL, type ZBoardRelease } from '../api/releaseUpdates'
 
-const props = defineProps<{ info: AdminSystemInfo | null }>()
+const props = defineProps<{ info: AdminSystemInfo | null; about?: { to: string; label: string } }>()
+defineEmits<{ navigate: [] }>()
 const version = computed(() => props.info?.release_version || props.info?.version || '—')
 const canCompare = computed(() => compareZBoardVersions(version.value, version.value) !== null)
 const buildTime = computed(() => {
@@ -66,6 +70,9 @@ watch(version, () => { update.value = null; status.value = 'idle'; void checkFor
 
 <style scoped>
 .admin-build-info { display: grid; gap: 4px; padding: 12px 20px 14px; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.version-about-link { display: grid; gap: 4px; color: inherit; }
+a.version-about-link:hover { text-decoration: none; }
+a.version-about-link:hover .build-version { text-decoration: underline; text-underline-offset: 3px; }
 .build-version { overflow: hidden; color: var(--text-secondary); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .version-actions, .version-update-links { display: flex; align-items: center; gap: 12px; }
 .version-actions { margin-top: 3px; }

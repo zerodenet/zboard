@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader :title="pageTitle" :show-section-navigation="false">
+    <PageHeader title="系统设置" workspace :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新系统设置" :loading="loading" @click="reloadSettings" /></template>
     </PageHeader>
 
@@ -9,7 +9,7 @@
     <PageAlert v-if="settingsDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ settingsDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="settingsDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <PageAlert v-if="siteRecoveryConflict" tone="warning" title="站点身份已变化">原草稿仍可查看，保存已暂停。请刷新页面当前值后重新编辑。</PageAlert>
     <PageAlert v-for="key in missingRecoveryKeys" :key="key" tone="warning" title="公开配置已不可编辑">{{ key }} 的原草稿已保留，不能提交。<pre>{{ drafts[key] }}</pre></PageAlert>
-    <SettingsPageLayout>
+    <SettingsPageLayout :title="pageTitle">
         <UiSection class="settings-shell">
         <div v-if="activeSection === 'site'" class="settings-panel stack-lg">
           <UiSection title="站点身份" >
@@ -17,7 +17,7 @@
             <form ref="siteFormElement" class="panel-body stack" novalidate @submit.prevent="saveSiteSettings">
               <div class="form-grid">
                 <FormField v-slot="{ controlAttrs }" label="站点名称" name="settings-site-name" :error="siteErrors.fields.site_name" required><UiInput v-model.trim="form.site_name" v-bind="controlAttrs" maxlength="80" /></FormField>
-                <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接、canonical 地址和外部页面跳转。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
+                <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接和外部访问。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
               </div>
               <PageAlert v-if="siteErrors.formError.value" tone="danger" title="站点设置未保存">{{ siteErrors.formError.value }}</PageAlert>
               <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="siteRecoveryConflict || !siteState.dirty.value">保存站点身份</UiButton></div>
@@ -28,12 +28,13 @@
             <ConfigRow v-if="currencyConfig" :config="currencyConfig" :draft="drafts[currencyConfig.config_key]" :dirty="configDirty(currencyConfig)" :saving="savingKey === currencyConfig.config_key" :error="configErrors[currencyConfig.config_key]" :conflict="Boolean(configConflicts[currencyConfig.config_key])" @update:draft="updateDraft(currencyConfig.config_key, $event)" @reload="reloadConfig(currencyConfig.config_key)" @save="saveConfig(currencyConfig)" />
           </UiSection>
 
-          <UiSection title="订阅入口" description="管理员必须手动配置站内路径。留空不提供订阅入口；旧默认地址暂时301到配置路径，保留token及查询参数。修改已有自定义路径后，请重新交付地址。">
+          <UiSection title="订阅入口">
             <PageAlert v-if="!subscriptionEntryConfig?.value" tone="warning" title="订阅入口尚未配置">用户暂时无法获取订阅地址，请设置独立的站内路径前缀。</PageAlert>
             <ConfigRow v-if="subscriptionEntryConfig" :config="subscriptionEntryConfig" :draft="drafts[subscriptionEntryConfig.config_key]" :dirty="configDirty(subscriptionEntryConfig)" :saving="savingKey === subscriptionEntryConfig.config_key" :error="configErrors[subscriptionEntryConfig.config_key]" :conflict="Boolean(configConflicts[subscriptionEntryConfig.config_key])" @update:draft="updateDraft(subscriptionEntryConfig.config_key, $event)" @reload="reloadConfig(subscriptionEntryConfig.config_key)" @save="saveConfig(subscriptionEntryConfig)" />
           </UiSection>
 
-          <UiSection title="视觉品牌" description="配置公开站点使用的 Logo 和浏览器图标。支持完整 HTTP/HTTPS URL 或 / 开头的站内资源路径。">
+          <SettingsDisclosure title="视觉品牌" :dirty="groupDirty(siteVisualKeys)" :busy="savingGroup === 'visual'" :error="groupHasConflict(siteVisualKeys) || siteVisualKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="配置公开站点使用的 Logo 和浏览器图标。支持完整 HTTP/HTTPS URL 或 / 开头的站内资源路径。">
             <template #meta><StatusBadge v-if="groupDirty(siteVisualKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="site-config-layout">
               <div class="public-fields form-grid">
@@ -58,8 +59,10 @@
               <UiButton type="button" :loading="savingGroup === 'visual'" :disabled="groupHasConflict(siteVisualKeys) || !groupDirty(siteVisualKeys)" @click="saveConfigGroup('visual', '视觉品牌', siteVisualKeys)">保存视觉品牌</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
 
-          <UiSection title="公开文案" description="只开放真正属于站点内容的文字；套餐、登录注册等固定业务动作仍由产品行为决定。">
+          <SettingsDisclosure title="公开文案" :dirty="groupDirty(siteContentKeys)" :busy="savingGroup === 'content'" :error="groupHasConflict(siteContentKeys) || siteContentKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="只开放真正属于站点内容的文字；套餐、登录注册等固定业务动作仍由产品行为决定。">
             <template #meta><StatusBadge v-if="groupDirty(siteContentKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="public-fields form-grid">
               <SettingsPublicField v-for="config in contentConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_desc' || config.config_key === 'site_home_title'" @update:draft="updateDraft(config.config_key, $event)" />
@@ -74,8 +77,10 @@
               <UiButton type="button" :loading="savingGroup === 'content'" :disabled="groupHasConflict(siteContentKeys) || !groupDirty(siteContentKeys)" @click="saveConfigGroup('content', '公开文案', siteContentKeys)">保存公开文案</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
 
-          <UiSection title="页脚与联系方式" description="配置公开 Footer 的版权、客服与社区入口。版权留空时自动使用当前年份和站点名称。">
+          <SettingsDisclosure title="页脚与联系方式" :dirty="groupDirty(siteContactKeys)" :busy="savingGroup === 'contact'" :error="groupHasConflict(siteContactKeys) || siteContactKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="配置公开 Footer 的版权、客服与社区入口。版权留空时自动使用当前年份和站点名称。">
             <template #meta><StatusBadge v-if="groupDirty(siteContactKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="public-fields form-grid">
               <SettingsPublicField v-for="config in contactConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_footer_copyright'" @update:draft="updateDraft(config.config_key, $event)" />
@@ -86,8 +91,10 @@
               <UiButton type="button" :loading="savingGroup === 'contact'" :disabled="groupHasConflict(siteContactKeys) || !groupDirty(siteContactKeys)" @click="saveConfigGroup('contact', '页脚与联系方式', siteContactKeys)">保存页脚与联系方式</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
 
-          <UiSection title="搜索与分享" description="控制浏览器标题、搜索摘要和 OpenGraph 的基础文案；留空时自动回退到站点名称和站点描述。">
+          <SettingsDisclosure title="搜索与分享" :dirty="groupDirty(siteSeoKeys)" :busy="savingGroup === 'seo'" :error="groupHasConflict(siteSeoKeys) || siteSeoKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="控制浏览器标题、搜索摘要和 OpenGraph 的基础文案；留空时自动回退到站点名称和站点描述。">
             <template #meta><StatusBadge v-if="groupDirty(siteSeoKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="site-config-layout site-config-layout-seo">
               <div class="public-fields form-grid">
@@ -105,6 +112,7 @@
               <UiButton type="button" :loading="savingGroup === 'seo'" :disabled="groupHasConflict(siteSeoKeys) || !groupDirty(siteSeoKeys)" @click="saveConfigGroup('seo', '搜索与分享', siteSeoKeys)">保存搜索与分享</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
         </div>
 
         <div v-else-if="activeSection === 'legal'" class="settings-panel stack-lg">
@@ -141,34 +149,37 @@
         </div>
 
         <div v-else-if="activeSection === 'email'" class="settings-panel stack-lg">
-          <UiSection title="SMTP 投递通道" description="保存配置后，可先验证连接与 TLS/认证，再向指定邮箱投递一封完整测试邮件。">
-            <template #meta><span class="config-count">{{ emailConfigs.length }} 项</span></template>
+          <UiSection title="邮件服务器" description="保存配置后可测试连接或发送测试邮件。">
+
             <div v-if="emailConfigs.length" class="config-list"><ConfigRow v-for="config in emailConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
             <EmptyState v-else icon="audit" title="没有邮件配置" description="系统当前未返回可编辑的邮件或通知参数。" />
             <PageAlert v-if="emailConfigDirty" tone="warning" title="先保存 SMTP 修改">连通性测试始终使用服务端已保存的配置，当前草稿不会被发送到测试接口。</PageAlert>
-            <div class="smtp-test-recipient"><FormField v-slot="{ controlAttrs }" label="测试邮件收件地址" name="smtp-test-recipient" hint="仅用于本次完整投递测试，不会保存为系统配置。" :error="smtpTestRecipientError"><UiInput v-model.trim="smtpTestRecipient" v-bind="controlAttrs" type="email" placeholder="recipient@example.com" /></FormField></div>
+            <div class="smtp-test-recipient"><FormField v-slot="{ controlAttrs }" label="测试邮件收件地址" name="smtp-test-recipient" hint="仅用于本次测试。" :error="smtpTestRecipientError"><UiInput v-model.trim="smtpTestRecipient" v-bind="controlAttrs" type="email" placeholder="recipient@example.com" /></FormField></div>
             <div class="section-actions smtp-test-actions">
-              <span>连接测试不发送邮件；完整投递测试发送到上方地址。</span>
+
               <UiButton variant="secondary" type="button" :loading="smtpTesting === 'connection'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('connection')"><UiIcon name="refresh" />测试连接</UiButton>
               <UiButton type="button" :loading="smtpTesting === 'delivery'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('delivery')"><UiIcon name="audit" />发送测试邮件</UiButton>
             </div>
           </UiSection>
 
-          <UiSection title="订阅告警" description="发送给订阅用户，各类默认关闭。需先启用运营邮件并配置 SMTP。">
+          <SettingsDisclosure title="订阅提醒" :dirty="alertConfigs.some(configDirty)" :busy="alertConfigs.some(config => savingKey === config.config_key)" :error="alertConfigs.some(config => Boolean(configErrors[config.config_key] || configConflicts[config.config_key]))">
+          <UiSection description="发送给订阅用户，各类默认关闭。">
             <div class="config-list"><ConfigRow v-for="config in alertConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
             <p class="muted">每个周期或到期阶段只提醒一次，同一用户共用频率限制。续费、恢复余量或关闭开关后，旧提醒会取消。投递结果可在运营任务中查看。</p>
           </UiSection>
 
-          <UiSection title="运营邮件模板" description="模板只负责可复用内容；真正的收件人、发送时机和执行进度在运营任务中确定。">
+          </SettingsDisclosure>
+          <SettingsDisclosure title="邮件模板" :dirty="emailTemplateDirty">
             <EmailTemplateManager mode="operational" @dirty="emailTemplateDirty = $event" />
-          </UiSection>
+          </SettingsDisclosure>
         </div>
 
         <div v-else class="settings-panel stack-lg">
           <UiSection id="account-cleanup" title="账号自动清理" description="默认0关闭。开启后，已有账号也适用；连续无有效订阅达到配置天数后永久删除，无法恢复。管理员、有余额或未结业务的账号受保护，历史结算与流量账本保留。">
             <ConfigRow v-if="accountCleanupConfig" :config="accountCleanupConfig" :draft="drafts[accountCleanupConfig.config_key]" :dirty="configDirty(accountCleanupConfig)" :saving="savingKey === accountCleanupConfig.config_key" :error="configErrors[accountCleanupConfig.config_key]" :conflict="Boolean(configConflicts[accountCleanupConfig.config_key])" @update:draft="updateDraft(accountCleanupConfig.config_key, $event)" @reload="reloadConfig(accountCleanupConfig.config_key)" @save="saveConfig(accountCleanupConfig)" />
           </UiSection>
-          <UiSection title="安全边界" description="敏感凭证不属于浏览器设置，不会在这里读取或回显。">
+          <SettingsDisclosure title="部署安全信息">
+          <UiSection description="敏感凭证由部署环境管理。">
             <template #meta><UiIcon class="security-header" name="shield" /></template>
             <div class="panel-body security-list">
               <div><span><UiIcon name="database" /></span><div><strong>数据库凭证</strong><p>由部署环境变量管理</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
@@ -177,6 +188,7 @@
             </div>
           </UiSection>
 
+          </SettingsDisclosure>
           <UiSection v-if="recoveryConfigs.length" title="订阅续费恢复" description="到期后按既有停服流程处理，节点执行结果以交付状态为准；此窗口仅保留续费资格。缩短窗口会结束超过新期限的订阅并清理凭据；已结束或主动退订的订阅不会因延长窗口恢复。此设置不自动扣款。">
             <div class="config-list"><ConfigRow v-for="config in recoveryConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
           </UiSection>
@@ -193,6 +205,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingsDisclosure from '../components/SettingsDisclosure.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchSystemConfigs, testSMTP, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
@@ -221,7 +234,7 @@ import { collectFieldErrors, isEmail, isHttpUrl, isUtf8LengthInRange } from '../
 const app = useAppStore()
 const route = useRoute()
 const activeSection = computed(() => String(route.meta.settingsSection || 'site'))
-const pageTitle = computed(() => ({ site: '站点与品牌', legal: '法务与政策', email: '邮件与运营模板', runtime: '系统运行' } as Record<string, string>)[activeSection.value] || '系统设置')
+const pageTitle = computed(() => ({ site: '站点设置', legal: '服务条款', email: '邮件通知', runtime: '运行参数' } as Record<string, string>)[activeSection.value] || '系统设置')
 const pageDescription = computed(() => ({
   site: '管理公开站点身份、视觉品牌、首页文案、联系方式与搜索展示。',
   legal: '维护公开政策文档、发布位置以及地区所需的法律与注册信息。',
@@ -309,8 +322,13 @@ const operationalConfigs = computed(() => configs.value
   .sort((a, b) => a.id - b.id))
 const policyDocumentsConfig = computed(() => operationalConfigs.value.find(item => policyDocumentsKeys.has(item.config_key)))
 const legalMetadataConfig = computed(() => operationalConfigs.value.find(item => legalMetadataKeys.has(item.config_key)))
-const alertConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')))
-const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
+const smtpFieldOrder = ['task_email_enabled', 'smtp_host', 'smtp_port', 'smtp_tls_mode', 'smtp_username', 'smtp_password', 'smtp_from']
+const alertFieldOrder = ['subscription_alert_low_enabled', 'subscription_alert_remaining_percent', 'subscription_alert_exhausted_enabled', 'subscription_alert_expiring_enabled', 'subscription_alert_expiring_days', 'subscription_alert_expired_enabled', 'subscription_alert_interval_hours']
+function orderSettings(items: SystemConfig[], order: string[]) {
+  return [...items].sort((a,b) => (order.indexOf(a.config_key) < 0 ? order.length : order.indexOf(a.config_key)) - (order.indexOf(b.config_key) < 0 ? order.length : order.indexOf(b.config_key)))
+}
+const alertConfigs = computed(() => orderSettings(operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')), alertFieldOrder))
+const emailConfigs = computed(() => orderSettings(operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)), smtpFieldOrder))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
 const currencyConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'default_currency'))
 const subscriptionEntryConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'subscription_url_prefix'))

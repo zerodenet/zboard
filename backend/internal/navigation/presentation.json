@@ -1,0 +1,54 @@
+{
+  "admin": {
+    "workspaces": [
+      {
+        "group_id": "settings.site",
+        "entry_path": "/admin/settings/site",
+        "kind": "page"
+      },
+      {
+        "group_id": "settings.extensions",
+        "entry_path": "/admin/plugins",
+        "kind": "page"
+      },
+      {
+        "group_id": "settings.jobs",
+        "entry_path": "/admin/runtime-jobs",
+        "kind": "page"
+      },
+      {
+        "group_id": "operations.logs",
+        "entry_path": "/admin/operation-logs",
+        "kind": "page"
+      }
+    ],
+    "footer": [
+      {
+        "node_id": "admin:/admin/about",
+        "parent_id": "settings.system",
+        "position": 20
+      }
+    ]
+  },
+  "account": {
+    "workspaces": [
+      {
+        "group_id": "account.services",
+        "entry_path": "/account",
+        "kind": "primary"
+      },
+      {
+        "group_id": "account.billing",
+        "kind": "menu"
+      },
+      {
+        "group_id": "account.help",
+        "kind": "menu"
+      },
+      {
+        "group_id": "account.profile",
+        "kind": "menu"
+      }
+    ]
+  }
+}

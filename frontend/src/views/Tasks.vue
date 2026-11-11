@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="运营任务">
+    <PageHeader title="任务记录">
       <template #actions><PageRefreshButton label="刷新运营任务" :loading="loading || summaryLoading" @click="refreshAll" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建任务</UiButton></template>
     </PageHeader>
 

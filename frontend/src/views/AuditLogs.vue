@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page">
     <PageHeader
-      title="审计日志"
+      title="管理员操作"
     >
       <template #actions>
         <PageRefreshButton label="刷新审计日志" :loading="loading" @click="load" />

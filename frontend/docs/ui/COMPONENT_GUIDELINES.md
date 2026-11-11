@@ -36,6 +36,12 @@ fixtures no longer install PrimeVue, and it is absent from the package manifest.
   A detail drawer already owns the entity title and metadata. Do not repeat
   them in a second heading inside the body. Keep frequent actions visible;
   place low-frequency actions in `RowActionMenu`, preserving confirmations.
+  Detail context and actions form one compact toolbar, without another panel
+  or separator. Keep tab names short and name the managed object. Routine
+  instructions and implementation details belong in a closed disclosure;
+  actionable failures and destructive consequences remain beside their action.
+  The drawer body owns scrolling. Focusing a field or opening a menu must not
+  scroll the outer sheet and move its title or close action out of view.
 - Use `StatusBadge` only for textual state. Choose a semantic tone and avoid
   several badges in one cell.
 - Use `BalanceValue` for read-only balances and `BalanceSummary` for grouped
@@ -69,6 +75,10 @@ fixtures no longer install PrimeVue, and it is absent from the package manifest.
   header and show amounts in its cells. Mixed currencies retain per-amount
   identifiers. Preserve currency in accessible links and wallet navigation;
   do not infer or convert a record's currency from a display preference.
+  Payment receipts use aligned amount, disposition, time and contextual action
+  fields. Keep receipt/provider identifiers in transaction details, with a single
+  wallet entry point for an already-paid top-up. Do not assemble records from
+  nested generic stacks or repeat the same navigation in the payment summary.
   Entity names/IDs open details directly: use a real `RouterLink` for navigation
   or `EntityDetailButton` for an existing detail action. Keep the same URL state,
   permission checks and focus return as the existing action.

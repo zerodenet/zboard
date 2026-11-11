@@ -35,7 +35,7 @@ describe('cash receipt ownership', () => {
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(resolvePaymentReceipt).toHaveBeenCalledTimes(1)
     expect(resolvePaymentReceipt).toHaveBeenCalledWith(27, { receipt_id: 4, ticket_id: 12, decision: 'credit_wallet', reason: '渠道及原人工记录已核对，该笔未入账。' })
-    await wrapper.findAll('button').find(button => button.text() === '刷新收据')!.trigger('click'); await flushPromises()
+    await wrapper.get('button[aria-label="刷新收据"]').trigger('click'); await flushPromises()
     expect(resolvePaymentReceipt).toHaveBeenCalledTimes(1)
     state.app.user.id = 2; await flushPromises()
     expect(wrapper.find('form').exists()).toBe(false)

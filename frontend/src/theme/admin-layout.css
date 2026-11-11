@@ -33,10 +33,10 @@
 .admin-shell .data-workbench .workbench-toolbar { min-height: 48px; padding: 8px 0 10px; border: 0; background: transparent; }
 .admin-shell .data-workbench .workbench-footer { border: 0; }
 
-/* Settings use sections and dividers; the preview entities keep their own borders. */
-.admin-shell .settings-page-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 32px; align-items: start; padding-top: 8px; }
+/* Settings keep category navigation beside the editor on desktop. */
+.admin-shell .settings-page-layout { display: grid; grid-template-columns: clamp(156px, 14vw, 200px) minmax(0, 1fr); gap: 28px; align-items: start; padding-top: 8px; }
 .admin-shell .settings-page-layout > .admin-page-navigation { position: sticky; top: 82px; }
-.admin-shell .settings-page-content { min-width: 0; display: grid; gap: 28px; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); }
+.admin-shell .settings-page-content { container-type: inline-size; min-width: 0; display: grid; gap: 28px; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); }
 .admin-shell .settings-shell { border: 0; border-radius: 0; background: transparent; }
 .admin-shell .settings-shell .settings-panel { padding: 0; gap: 0; }
 .admin-shell .settings-panel > .ui-section { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
@@ -63,7 +63,7 @@
   .admin-shell .business-metrics > .metric-card:last-child { grid-column: auto; }
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 820px) {
   .admin-shell .settings-page-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .admin-shell .settings-page-layout > .admin-page-navigation { position: static; display: flex; gap: 18px; overflow-x: auto; border-bottom: 1px solid var(--border); }
   .admin-shell .settings-page-layout > .admin-page-navigation .admin-page-navigation-link { flex: none; position: relative; border-radius: 0; background: transparent; white-space: nowrap; }
@@ -108,3 +108,21 @@
     flex-wrap: wrap;
   }
 }
+
+.admin-shell .settings-category-title { margin: 0; color: var(--foreground); font-size: 18px; line-height: 1.4; font-weight: 600; }
+@container (max-width: 680px) {
+  .admin-shell .settings-page-content .config-row { grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 10px; row-gap: 8px; }
+  .admin-shell .settings-page-content .config-copy { grid-column: 1 / -1; }
+  .admin-shell .settings-page-content .config-control { grid-column: 1; grid-row: 2; }
+  .admin-shell .settings-page-content .config-actions { grid-column: 2; grid-row: 2; align-self: start; }
+  .admin-shell .settings-page-content .config-row-switch { grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
+  .admin-shell .settings-page-content .config-row-switch .config-copy { grid-column: 1; grid-row: 1; }
+  .admin-shell .settings-page-content .config-row-switch .config-control { grid-column: 2; grid-row: 1; }
+  .admin-shell .settings-page-content .config-row-switch .config-actions { grid-column: 3; grid-row: 1; align-self: center; }
+  .admin-shell .settings-page-content .section-actions { flex-wrap: wrap; }
+}
+@container (max-width: 480px) {
+  .admin-shell .settings-page-content .form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.admin-shell .settings-page-layout-single { grid-template-columns: minmax(0, 1fr); }

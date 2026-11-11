@@ -146,7 +146,7 @@ describe('dashboard independent sections', () => {
     expect(cards[0].get('a[href="/account/subscription?subscription=61"]').text()).toBe('Monthly')
     expect(cards[0].get('a[href="/account/plans?operation=renew&subscription=61"]').text()).toBe('续费')
     expect(cards[1].find('a[href*="operation=renew"]').exists()).toBe(false)
-    expect(cards[1].text()).not.toContain('获取订阅')
+    expect(cards[1].text()).not.toContain('连接设备')
   })
   it('opens a pending top-up by its business name and shows its actual payable amount', async () => {
     vi.mocked(fetchAccountOrdersPage).mockResolvedValue(page([{ id: 8, order_type: 'topup', amount_cents: 1000, payable_amount: 0, currency: 'CNY', status: 'pending' }]))

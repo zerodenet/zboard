@@ -10,33 +10,30 @@
     <PageAlert v-if="error" tone="danger">{{ error }}</PageAlert>
     <TableSkeleton v-if="loading && !order" label="正在加载订单" :columns="2" :rows="3" />
     <div v-if="order" class="order-detail-layout">
-      <UiSection title="订单信息" class="order-detail-info" variant="outlined">
-        <dl class="order-detail-fields">
-
+      <div class="order-detail-main">
+        <PaymentReceipts :order-id="order.id" :show-wallet-link="order.order_type !== 'topup' || order.status !== 'paid'" @changed="load" />
+        <details class="order-detail-more"><summary>订单信息</summary><dl class="order-detail-fields">
           <div v-if="order.sku_name && order.order_type !== 'topup'"><dt>规格</dt><dd>{{ order.sku_name }}</dd></div>
-
-
           <div><dt>创建时间</dt><dd><TimeBadge :value="order.created_at" /></dd></div>
-
-        </dl>
-        <details class="order-detail-more"><summary>更多订单信息</summary><dl class="order-detail-fields"><div><dt>交易编号</dt><dd>{{ order.trade_no || '—' }}</dd></div><div><dt>更新时间</dt><dd><TimeBadge :value="order.updated_at" /></dd></div></dl></details>
-        <PageAlert v-if="order.subscription_ended_at" tone="info">
-          原订阅{{ order.subscription_end_reason === 'exhausted' ? '已用完' : '已到期' }} · <TimeBadge :value="order.subscription_ended_at" />
-          <br>最终用量 {{ formatBytes(order.subscription_final_flow_used || 0) }} / {{ formatBytes(order.subscription_final_flow_total || 0) }}
-        </PageAlert>
-      </UiSection>
+          <div><dt>交易编号</dt><dd>{{ order.trade_no || '—' }}</dd></div>
+          <div><dt>更新时间</dt><dd><TimeBadge :value="order.updated_at" /></dd></div>
+        </dl></details>
+          <PageAlert v-if="order.subscription_ended_at" tone="info">
+            原订阅{{ order.subscription_end_reason === 'exhausted' ? '已用完' : '已到期' }} · <TimeBadge :value="order.subscription_ended_at" />
+            <br>最终用量 {{ formatBytes(order.subscription_final_flow_used || 0) }} / {{ formatBytes(order.subscription_final_flow_total || 0) }}
+          </PageAlert>
+      </div>
       <UiSection title="付款状态" class="order-detail-payment-section" variant="outlined">
         <div class="order-detail-payment">
           <p class="order-detail-amount">{{ formatCurrency(order.payable_amount ?? order.amount_cents, order.currency) }}</p>
           <StatusBadge :tone="order.status === 'paid' ? 'success' : order.status === 'pending' ? 'warning' : order.status === 'failed' ? 'danger' : 'neutral'">{{ statusLabel }}</StatusBadge>
-          <RouterLink v-if="order.status === 'paid' && order.order_type === 'topup'" :to="{ path: '/account/wallet', query: { currency: order.currency } }">查看余额与流水</RouterLink>
+          <UiButton v-if="order.status === 'paid' && order.order_type === 'topup'" as-child variant="secondary" size="sm"><RouterLink :to="{ path: '/account/wallet', query: { currency: order.currency } }">余额流水</RouterLink></UiButton>
           <OrderFundingPayment v-if="payable && !error && order.order_type !== 'topup'" :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" @changed="load" />
           <CheckoutPayment v-if="payable && !error && order.order_type === 'topup'" :key="order.id" name="account.orders.payment" embedded :order-id="order.id" :currency="order.currency" :preferred-plugin="returnPlugin" :reconcile-on-load="Boolean(returnPlugin)" :open-on-load="Boolean(returnPlugin)" @paid="load" />
           <p v-if="payable" class="order-detail-hint">付款结果以本站核对后的订单状态为准。</p>
         </div>
       </UiSection>
     </div>
-    <PaymentReceipts v-if="order" :order-id="order.id" @changed="load" />
   </section>
 </template>
 
@@ -82,6 +79,7 @@ watch(orderId, () => { reset(); void load() }, { immediate: true })
 
 <style scoped>
 .order-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem); gap: 20px; align-items: start; }
+.order-detail-main { display: grid; gap: 20px; min-width: 0; }
 .order-detail-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 0; padding: 0; }
 .order-detail-fields div, .order-detail-payment { display: grid; gap: 8px; min-width: 0; }
 .order-detail-fields dt, .order-detail-hint { color: var(--muted); font-size: 12px; }
@@ -90,7 +88,7 @@ watch(orderId, () => { reset(); void load() }, { immediate: true })
 .order-detail-payment > .checkout-payment { width: 100%; }
 .order-detail-payment p { margin: 0; }
 .order-detail-amount { font-size: 30px; font-weight: 600; }
-.order-detail-more { margin: 16px 0 0; font-size: 12px; }
+.order-detail-more { margin: 0; font-size: 13px; }
 .order-detail-more summary { cursor: pointer; color: var(--muted-foreground); }
 .order-detail-more .order-detail-fields { padding: 16px 0 0; }
 @media (max-width: 760px) { .order-detail-layout, .order-detail-fields { grid-template-columns: 1fr; } .order-detail-payment-section { grid-row: 1; } }

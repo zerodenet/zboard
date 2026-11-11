@@ -1,6 +1,6 @@
 <template>
  <section class="stack" aria-label="节点共享代理池">
-  <header class="pool-heading"><div><h3>共享代理池</h3><p>供本节点的前置端口转发引用。每条入口可独立选择直连落地，或使用这里的代理池；客户端握手和认证始终在落地完成。</p></div><UiButton @click="edit()">创建代理池</UiButton></header>
+  <header class="pool-heading"><div><h3>代理池</h3></div><UiButton @click="edit()">创建代理池</UiButton></header>
   <PageAlert v-if="error" tone="danger" title="代理池操作失败">{{error}}</PageAlert>
   <p v-if="loading">正在加载代理池…</p>
   <p v-else-if="!pools.length">尚未配置代理池。前置入口默认直连落地，不需要创建池。</p>

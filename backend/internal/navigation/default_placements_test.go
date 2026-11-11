@@ -22,7 +22,7 @@ func TestDefaultAdminModulesConvergeWithoutRemovingCorePages(t *testing.T) {
 			paths[node.Path] = true
 		}
 	}
-	for id, label := range map[string]string{"customers": "用户系统", "commerce": "订阅系统", "infrastructure": "节点系统", "settings": "服务系统"} {
+	for id, label := range map[string]string{"customers": "用户", "commerce": "交易", "infrastructure": "节点", "settings": "系统"} {
 		if roots[id] != label {
 			t.Fatalf("module %s = %q", id, roots[id])
 		}
@@ -66,7 +66,7 @@ func TestDefaultPlacementUpgradePreservesOperatorAndPluginMenus(t *testing.T) {
 	for _, node := range snapshot.Nodes {
 		byID[node.ID] = node
 	}
-	if byID["customers"].Label != "用户系统" || byID["admin:/admin/subscriptions"].ParentID != "commerce.subscriptions" {
+	if byID["customers"].Label != "用户" || byID["admin:/admin/subscriptions"].ParentID != "commerce.subscriptions" {
 		t.Fatal("default placements did not converge")
 	}
 	if byID["admin:/admin/protocols"].Label != "我的协议" || !byID["admin:/admin/protocols"].Hidden || byID["settings"].Position != 99 || byID["settings"].Label != "设置" {
@@ -80,6 +80,54 @@ func TestDefaultPlacementUpgradePreservesOperatorAndPluginMenus(t *testing.T) {
 	}
 	if read(t, db, "admin").Revision != snapshot.Revision {
 		t.Fatal("restart repeated upgrade")
+	}
+}
+
+func TestCommerceDefaultRenameOnlyEvolvesUntouchedMenus(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		edits map[string]any
+		want  string
+	}{
+		{"untouched", nil, "交易"},
+		{"custom label", map[string]any{"label": "我的交易"}, "我的交易"},
+		{"hidden", map[string]any{"hidden": true}, "订阅与订单"},
+		{"moved", map[string]any{"position": 99}, "订阅与订单"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := fixture(t)
+			fields := map[string]any{"label": "订阅与订单"}
+			for key, value := range tc.edits {
+				fields[key] = value
+			}
+			if err := db.Model(&model.MenuNode{}).Where("id = ?", "commerce").Updates(fields).Error; err != nil {
+				t.Fatal(err)
+			}
+			before := read(t, db, "admin").Revision
+			if err := menustore.Seed(db); err != nil {
+				t.Fatal(err)
+			}
+			var node model.MenuNode
+			if err := db.First(&node, "id = ?", "commerce").Error; err != nil {
+				t.Fatal(err)
+			}
+			if node.Label != tc.want || node.ParentID != "" || (tc.name == "hidden" && !node.Hidden) || (tc.name == "moved" && node.Position != 99) {
+				t.Fatalf("unexpected menu: %+v", node)
+			}
+			wantRevision := before
+			if tc.edits == nil {
+				wantRevision++
+			}
+			if read(t, db, "admin").Revision != wantRevision {
+				t.Fatal("unexpected revision after rename")
+			}
+			if err := menustore.Seed(db); err != nil {
+				t.Fatal(err)
+			}
+			if read(t, db, "admin").Revision != wantRevision {
+				t.Fatal("rename repeated on restart")
+			}
+		})
 	}
 }
 

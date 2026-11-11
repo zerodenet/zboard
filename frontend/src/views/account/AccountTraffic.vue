@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="流量明细">
+    <PageHeader title="流量记录">
       <template #actions>
         <PageRefreshButton label="刷新流量" :loading="loading" @click="loadAll" />
       </template>

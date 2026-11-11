@@ -21,7 +21,7 @@ function relativeSource(path: string) {
 // workflow state, rather than disposable useFormErrors state.
 const workflowFeedback: Record<string, string[]> = {
   'components/AdminConsumptionRefund.vue': ['requestValid(', 'writeError', 'valid', '<PageAlert'],
-  'components/AdminWalletPanel.vue': ['creditErrors', 'commerceErrorMessage', 'writeError', '<PageAlert'],
+  'components/AdminWalletPanel.vue': ['changeErrors', 'commerceErrorMessage', 'writeError', '<PageAlert'],
   'components/PaymentReceipts.vue': ['Number.isSafeInteger(ticketID)', 'saveError', 'commerceErrorMessage', '<PageAlert'],
   'components/ProtocolMultiplierCell.vue': ['parsedMilli()', 'error', 'role="alert"', 'aria-label'],
 }
@@ -92,6 +92,7 @@ describe('form feedback policy', () => {
       'views/Setup.vue',
       'views/SubscriptionRuleSets.vue',
       'views/SubscriptionTemplates.vue',
+      'views/Subscriptions.vue',
       'views/Tasks.vue',
       'views/Users.vue',
     ]

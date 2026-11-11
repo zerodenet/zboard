@@ -1,9 +1,9 @@
 <template>
-  <article class="config-row" :aria-labelledby="labelID">
+  <article class="config-row" :class="{ 'config-row-switch': input.control === 'switch' }" :aria-labelledby="labelID">
     <div class="config-copy">
-      <div><strong :id="labelID">{{ config.name }}</strong><StatusBadge v-if="dirty" tone="warning" icon="edit">已修改</StatusBadge></div>
-      <p v-if="config.description" :id="descriptionID">{{ config.description }}</p>
-      <details class="config-meta"><summary :aria-label="`${config.name}的技术信息`">技术信息</summary><div><code>{{ config.config_key }}</code><span>{{ controlLabel }}</span><span>版本 {{ config.revision }}</span><TimeBadge :value="config.updated_at" mode="relative" /></div></details>
+      <div class="config-heading"><strong :id="labelID">{{ config.name }}</strong><StatusBadge v-if="dirty" tone="warning" icon="edit">已修改</StatusBadge>
+        <details class="config-meta"><summary :aria-label="`${config.name}的设置说明`"><UiIcon name="info" /><span class="sr-only">设置说明</span></summary><div><p v-if="config.description" :id="descriptionID" class="config-description">{{ config.description }}</p><code>{{ config.config_key }}</code><span>{{ controlLabel }}</span><span>版本 {{ config.revision }}</span><TimeBadge :value="config.updated_at" mode="relative" /></div></details>
+      </div>
     </div>
     <div class="config-control">
       <label v-if="input.control === 'switch'" class="config-switch">
@@ -71,9 +71,14 @@ watch(() => props.config.value, value => {
 .config-copy > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .config-copy strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
 .config-copy p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.config-meta { margin-top: 4px; color: var(--muted-foreground); font-size: 12px; }
-.config-meta summary { width: fit-content; cursor: pointer; }
+.config-meta { margin-left: auto; color: var(--muted-foreground); font-size: 12px; }
+.config-meta summary { width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; list-style: none; border-radius: 4px; }
+.config-meta summary::-webkit-details-marker { display: none; }
+.config-meta summary:hover { color: var(--foreground); background: var(--muted-surface); }
+.config-meta summary > .ui-icon { width: 14px; height: 14px; }
+.config-meta[open] { flex-basis: 100%; margin-left: 0; }
 .config-meta summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.config-meta .config-description { flex: 0 0 100%; margin: 0; }
 .config-meta > div { display: flex; flex-wrap: wrap; gap: 6px 10px; padding-top: 6px; }
 .config-meta code { overflow-wrap: anywhere; }
 .config-control { min-width: 0; display: grid; gap: 5px; }

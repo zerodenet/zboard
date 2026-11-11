@@ -1,6 +1,6 @@
 <template>
   <div class="standard-page plugins-page plugins-list-page">
-    <PageHeader title="插件市场" :show-section-navigation="false"><template #actions><PageRefreshButton label="刷新插件市场" :loading="loading" @click="load" /><UiButton as-child variant="secondary"><RouterLink to="/admin/plugins">管理插件</RouterLink></UiButton></template></PageHeader>
+    <PageHeader title="添加插件" :show-section-navigation="false"><template #actions><PageRefreshButton label="刷新插件市场" :loading="loading" @click="load" /><UiButton as-child variant="secondary"><RouterLink to="/admin/plugins">管理插件</RouterLink></UiButton></template></PageHeader>
     <AdminPageNavigation />
     <p v-if="error" role="alert" class="plugins-error">
       {{ error }}

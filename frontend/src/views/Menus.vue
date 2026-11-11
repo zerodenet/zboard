@@ -1,12 +1,12 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="菜单管理" :show-section-navigation="false">
+    <PageHeader title="系统设置" workspace :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新菜单" :loading="loading" :disabled="saving" @click="reload" /></template>
     </PageHeader>
     <TransientFeedback :success="notice" />
     <PageAlert v-if="menuDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ menuDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="menuDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <PageAlert v-if="menuRecoveryConflict" tone="warning" title="菜单版本已变化">原菜单草稿仍可查看，不能直接保存。请另存需要的内容，再撤销修改以使用当前菜单。</PageAlert>
-    <SettingsPageLayout>
+    <SettingsPageLayout title="菜单管理">
       <div class="menu-toolbar">
         <div class="menu-surface"><UiSelect v-model="surface" :options="surfaces" :disabled="dirty || saving || menuRecoveryConflict" aria-label="菜单范围" /></div>
         <div class="menu-toolbar-actions">

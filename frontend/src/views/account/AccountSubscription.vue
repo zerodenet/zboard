@@ -1,6 +1,6 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="订阅配置">
+    <PageHeader title="连接设备">
       <template #actions>
         <PageRefreshButton label="刷新订阅" :loading="loading" :disabled="working" @click="loadAll" />
       </template>
@@ -84,7 +84,7 @@
           <template #notice><div v-if="automaticNeedsAttention(sub.automatic_renewal_state)" class="subscription-renewal-result"><UiButton variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }"><UiIcon name="alert" />{{ sub.automatic_renewal_state === 'insufficient_balance' ? '自动续费余额不足' : '自动续费待核验' }}</UiButton></div></template>
           <template #actions>
             <RowActions :label="`${sub.plan_name || `订阅 #${sub.id}`}的更多操作`"><template #primary>
-              <UiButton variant="secondary" size="sm" :disabled="sub.status !== 'active' || working" @click="selectSubscription(sub.id)">{{ sub.flow_used >= sub.flow_total ? '管理订阅' : sub.id === selectedSubscriptionID ? '查看链接' : '获取订阅' }}</UiButton>
+              <UiButton variant="secondary" size="sm" :disabled="sub.status !== 'active' || working" @click="selectSubscription(sub.id)">{{ sub.flow_used >= sub.flow_total ? '管理订阅' : sub.id === selectedSubscriptionID ? '查看链接' : '连接设备' }}</UiButton>
               <UiButton v-if="sub.can_renew" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink></UiButton>
             </template>
               <UiButton v-if="canReset(sub)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>

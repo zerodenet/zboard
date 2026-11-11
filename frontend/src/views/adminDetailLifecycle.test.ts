@@ -298,7 +298,7 @@ it('keeps the successful credential patch visible when refreshing the node list 
  await router.push({ query: { node: '1', tab: 'credentials' } }); await flushPromises()
  mocks.list.mockReturnValue(new Promise(() => {}))
  mocks.rotate.mockResolvedValue({ node_id: 1, api_key: 'one-time-test', api_key_prefix: 'new-prefix' })
- const create = wrapper.findAllComponents({ name: 'UiButton' }).find(button => button.text() === '手动生成')!
+ const create = wrapper.findAllComponents({ name: 'UiButton' }).find(button => button.attributes('aria-label') === '生成 Zero 连接凭证')!
  await create.trigger('click'); await flushPromises()
  expect(wrapper.text()).toContain('new-prefix')
  expect(mocks.rotate).toHaveBeenCalledWith(1)
@@ -324,7 +324,7 @@ it('keeps archived node history readable while hiding management actions and exp
   mocks.detail.mockResolvedValue({ ...detail(1), lifecycle_status: 'archived', is_enabled: false, archived_at: '2026-10-30T00:00:00Z' })
   const { router, wrapper: view } = await render(cases.find(item => item.name === 'nodes')!)
   expect(view.text()).toContain('需要再次接入时，请登记新节点')
-  expect(view.text()).not.toContain('编辑资产')
+  expect(view.find('[aria-label="编辑服务器信息"]').exists()).toBe(false)
   expect(view.text()).not.toContain('确认删除节点')
   await router.replace({ path: '/', query: { node: '1', lifecycle: 'archived' } })
   await flushPromises()

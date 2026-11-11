@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page" :class="{ 'detail-active': Boolean(selectedTicketID), 'ticket-customer': !admin }">
     <PageHeader
-      :title="admin ? '工单中心' : '我的工单'"
+      :title="admin ? '工单中心' : '联系客服'"
       :description="admin ? '集中处理用户问题，所有回复与状态变化都会保留在时间线中。' : ''"
       :eyebrow="admin ? 'Support' : ''"
     >

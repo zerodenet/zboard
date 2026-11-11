@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page registration-settings-page">
-    <PageHeader title="注册与验证" :show-section-navigation="false">
+    <PageHeader title="系统设置" workspace :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新注册设置" :loading="loading" @click="reload" /></template>
     </PageHeader>
 
@@ -8,7 +8,7 @@
 
     <PageAlert v-if="registrationDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ registrationDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="registrationDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <PageAlert v-if="registrationRecoveryConflict || verificationRecoveryConflict" tone="warning" title="注册设置已变化">原开关草稿已保留；存在冲突的开关不能保存，请刷新当前值后重新编辑。</PageAlert>
-    <SettingsPageLayout>
+    <SettingsPageLayout title="注册设置">
       <div class="registration-grid">
         <UiSection title="注册入口">
           <div class="setting-control">
@@ -23,7 +23,7 @@
             <div><strong>注册时验证邮箱</strong><p>验证码十分钟有效。</p></div>
             <UiSwitch v-model="verificationEnabled" aria-label="注册时验证邮箱" />
           </div>
-          <PageAlert v-if="verificationEnabled && !smtpReady" tone="warning" title="SMTP 通道尚未就绪">请先在“邮件与运营模板”完成 SMTP 主机、发件人、TLS 和凭证配置，再启用邮箱验证。</PageAlert>
+          <PageAlert v-if="verificationEnabled && !smtpReady" tone="warning" title="SMTP 通道尚未就绪">请先在“邮件通知”完成 SMTP 主机、发件人、TLS 和凭证配置，再启用邮箱验证。</PageAlert>
           <div class="section-actions"><RouterLink class="settings-link" to="/admin/settings/email">配置邮件通道</RouterLink><UiButton type="button" :loading="savingVerification" :disabled="verificationRecoveryConflict || !verificationDirty || (verificationEnabled && !smtpReady)" @click="saveVerification">保存邮箱验证</UiButton></div>
         </UiSection>
 

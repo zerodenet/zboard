@@ -1,7 +1,7 @@
 <template>
   <div class="admin-navigation">
     <nav class="domain-list" aria-label="管理端业务分区">
-      <section v-for="domain in adminNavigation" :key="domain.id" class="domain-group" :class="{ selected: domain.id === currentDomain?.id, expanded: domain.id === expandedDomainId }">
+      <section v-for="domain in sidebarNavigation" :key="domain.id" class="domain-group" :class="{ selected: domain.id === currentDomain?.id, expanded: domain.id === expandedDomainId }">
         <RouterLink v-if="domain.to" :to="domain.to" class="domain-link" :aria-label="domain.label" :aria-current="domain.id === currentDomain?.id ? 'page' : undefined" @click="$emit('selectPage')"><UiIcon :name="domain.icon" /><span>{{ domain.label }}</span></RouterLink>
         <button v-else type="button" class="domain-link"
           :aria-label="domain.label" :aria-expanded="domain.id === expandedDomainId"
@@ -13,10 +13,11 @@
         <div v-if="!domain.to && domain.id === expandedDomainId" :id="`domain-pages-${domain.id}`" class="domain-panel">
           <nav class="domain-pages" :aria-label="`${domain.label}页面`">
             <section v-for="section in domain.sections" :key="section.id" class="page-section">
-              <RouterLink v-for="page in section.pages" :key="page.to" :to="page.to"
+              <RouterLink v-if="section.workspace?.entry_path" :to="section.workspace.entry_path" class="page-link" :class="{ selected: current?.section.id === section.id }" :aria-current="currentPage?.to === section.workspace.entry_path ? 'page' : undefined" @click="$emit('selectPage')"><UiIcon :name="section.icon" />{{ section.label }}</RouterLink>
+              <template v-else><RouterLink v-for="page in section.pages.filter(page => !page.footer)" :key="page.to" :to="page.to"
                 class="page-link" :class="{ selected: currentPage?.to === page.to }"
                 :aria-current="currentPage?.to === page.to ? 'page' : undefined"
-                @click="$emit('selectPage')"><UiIcon :name="section.icon" />{{ page.label }}</RouterLink>
+                @click="$emit('selectPage')"><UiIcon :name="section.icon" />{{ page.label }}</RouterLink></template>
             </section>
           </nav>
         </div>
@@ -35,6 +36,7 @@ import { adminNavigation } from '../stores/navigation'
 
 defineEmits<{ selectPage: [] }>()
 const route = useRoute()
+const sidebarNavigation = computed(() => adminNavigation.value.map(domain => ({ ...domain, sections: domain.sections.filter(section => section.pages.some(page => !page.footer)) })).filter(domain => domain.sections.length))
 const current = computed(() => resolveAdminNavigation(route.path, adminNavigation.value))
 const currentDomain = computed(() => current.value?.domain)
 const currentPage = computed(() => current.value?.page)

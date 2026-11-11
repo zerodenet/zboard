@@ -1,6 +1,6 @@
 <template>
   <div class="standard-page plugins-page plugins-list-page">
-    <PageHeader title="插件管理" :show-section-navigation="false"><template #actions><PageRefreshButton label="刷新插件" :loading="loading" :disabled="busy" @click="load" /><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">浏览插件市场</RouterLink></UiButton><UiButton :loading="busy" @click="importOpen = true">离线导入</UiButton></template></PageHeader>
+    <PageHeader title="插件市场" :show-section-navigation="false"><template #actions><PageRefreshButton label="刷新插件" :loading="loading" :disabled="busy" @click="load" /><UiButton as-child variant="secondary"><RouterLink to="/admin/plugin-market">添加插件</RouterLink></UiButton><UiButton :loading="busy" @click="importOpen = true">离线导入</UiButton></template></PageHeader>
     <AdminPageNavigation />
     <TransientFeedback :success="message" />
     <p v-if="error || actionError" role="alert" class="plugins-error">

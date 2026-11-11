@@ -11,7 +11,7 @@ import { AUTH_SESSION_RESTORED_EVENT, isAuthSessionExpired } from '../utils/auth
 export type NavigationFailure = '' | 'session-expired' | 'forbidden' | 'network'
 function state() { return { snapshot: shallowRef<NavigationSnapshot>({ revision: 0, nodes: [] }), error: ref(''), failure: ref<NavigationFailure>(''), loading: ref(false), checkedPath: ref('') } }
 export const navigationState = { public: state(), account: state(), admin: state() }
-export const adminNavigation = computed(() => toAdminNavigation(navigationState.admin.snapshot.value.nodes))
+export const adminNavigation = computed(() => toAdminNavigation(navigationState.admin.snapshot.value.nodes, navigationState.admin.snapshot.value.presentation))
 export { NAVIGATION_CHANGED } from '../utils/navigationEvents'
 let approvedTransitionPath = ''
 export function markApprovedNavigationTransition(path: string, event: MouseEvent) {

@@ -17,14 +17,17 @@ import { adminNavigation } from '../stores/navigation'
 import { resolveAdminNavigation } from '../utils/adminNavigation'
 import AdminPageNavigation from './AdminPageNavigation.vue'
 
-const props = withDefaults(defineProps<{ title: string; description?: string; eyebrow?: string; showSectionNavigation?: boolean }>(), { showSectionNavigation: true })
+const props = withDefaults(defineProps<{ title: string; description?: string; eyebrow?: string; workspace?: boolean; showSectionNavigation?: boolean }>(), { showSectionNavigation: true })
 const adminPageNavigation = inject('admin-page-navigation', false)
 const route = inject(routeLocationKey, undefined)
 // Only the registered page heading follows menu presentation edits. Detail and
 // task-specific headings retain the title supplied by their own page.
 const displayTitle = computed(() => {
-  if (!adminPageNavigation || !route || props.title !== route.meta.title) return props.title
-  const page = resolveAdminNavigation(route.path, adminNavigation.value)?.page
+  if (!adminPageNavigation || !route) return props.title
+  const current = resolveAdminNavigation(route.path, adminNavigation.value)
+  if (props.workspace) return current?.section.label || props.title
+  if (props.title !== route.meta.title) return props.title
+  const page = current?.page
   return page?.to === route.path ? page.label : props.title
 })
 </script>

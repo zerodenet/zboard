@@ -46,7 +46,7 @@ function saveDraft(path: string) {
 function noWrites() { for (const mock of [mocks.create, mocks.update, mocks.createGroup, mocks.updateGroup, mocks.ssh, mocks.install, mocks.bbr]) expect(mock).not.toHaveBeenCalled() }
 it('restores ordinary node creation, drops BBR execution choices and never invokes a write', async () => {
   const path = '/admin/nodes'
-  await open(path, Nodes); await click('登记 VPS')
+  await open(path, Nodes); await click('添加服务器')
   await view!.get('#create-node-name').setValue('Unsaved asset')
   await view!.get('#create-node-region').setValue('JP')
   await view!.get('#node-create-form input[type="checkbox"]').setValue(true)
@@ -59,7 +59,7 @@ it('restores ordinary node creation, drops BBR execution choices and never invok
 })
 it('keeps an edited asset visible but blocks programmatic submit if fresh ordinary fields changed', async () => {
   const path = '/admin/nodes?node=1'
-  await open(path, Nodes); await click('编辑资产'); await view!.get('#edit-node-name').setValue('Old unsaved name')
+  await open(path, Nodes); await click('编辑'); await view!.get('#edit-node-name').setValue('Old unsaved name')
   saveDraft(path); mocks.node.mockResolvedValue({ ...node, name: 'Changed elsewhere' }); confirmReauthenticationDraftIdentity(1, true); await open(path, Nodes)
   expect((view!.get('#edit-node-name').element as HTMLInputElement).value).toBe('Old unsaved name')
   expect(view!.text()).toContain('不能直接覆盖服务器的新内容')
@@ -136,7 +136,7 @@ it('requires fresh target authorization, clearing an old draft on resource permi
 
 it('restores an unchanged asset baseline and waits for explicit submission', async () => {
   const path = '/admin/nodes?node=1'
-  await open(path, Nodes); await click('编辑资产'); await view!.get('#edit-node-name').setValue('Operator draft')
+  await open(path, Nodes); await click('编辑'); await view!.get('#edit-node-name').setValue('Operator draft')
   saveDraft(path); confirmReauthenticationDraftIdentity(1, true); await open(path, Nodes); noWrites()
   await view!.get('#node-edit-form').trigger('submit'); await flushPromises()
   expect(mocks.update).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'Operator draft', region: 'HK', address: 'edge.example.test', lifecycle_status: 'active', is_enabled: true }))

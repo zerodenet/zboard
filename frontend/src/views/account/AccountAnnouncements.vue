@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page account-announcements">
-    <PageHeader title="公告中心">
+    <PageHeader title="公告">
       <template #actions><span v-if="loaded" class="announcement-count">{{ unreadCount ? `${unreadCount} 条未读 · ` : '' }}{{ total }} 条</span><PageRefreshButton :loading="loading" label="刷新公告" @click="load" /></template>
     </PageHeader>
     <TransientFeedback :error="error" />
