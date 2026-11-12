@@ -26,12 +26,16 @@ const sourceRecorded = computed(() => props.observation?.known === true
   && props.observation.stats_source_known === true
   && props.observation.source === 'buffered_stats')
 const sourceLabel = computed(() => ({
+  stats_position_conflict: '统计数据冲突，已保留原值',
+  asset_inactive: '节点停用，等待新上报',
+  invalid_mailbox: '统计状态待恢复',
+  invalid_reference_material: '统计来源待核对',
   buffered_stats: '统计事件',
   historical_stats: '历史统计',
   heartbeat: '心跳上报',
   legacy_connector: '兼容上报',
   deleted: '已删除资产',
-} as Record<string, string>)[props.observation?.source || ''] || '来源未确认')
+} as Record<string, string>)[props.observation?.projection_issue || props.observation?.source || ''] || '来源未确认')
 const receivedAt = computed(() => {
   const value = props.observation?.counter_received_at
   if (typeof value !== 'string' || !value || value.startsWith('0001-01-01') || !Number.isFinite(Date.parse(value))) return undefined

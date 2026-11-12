@@ -351,8 +351,8 @@
         "resources"
       ],
       "atomicity": "single_database_transaction",
-      "compensation": "Roll back original financial facts and immutable observation header/parts together when durable handoff fails; leave original spool checkpoint replayable. Later auxiliary node projection failures never roll back settled accounting.",
-      "outbox": "NodeObservationIntent and optional parts or an explicit capacity/size gap receipt carry immutable receiver-side source identity. EnqueueBatch prepares all headers before shared retained-byte budget; no node or observation-state lock is acquired by the authority producer."
+      "compensation": "Roll back original financial facts and bounded observation mailbox together when database handoff fails; leave original spool checkpoint replayable. Later auxiliary node projection failures never roll back settled accounting.",
+      "outbox": "EnqueueLatest coalesces independent Latest and Stats into one node-owned mailbox with a fixed byte bound. Existing accounting locks precede node SHARE then mailbox UPDATE. It neither stores raw bodies nor creates per-event auxiliary identities; financial report dedup and cumulative cursors remain separate."
     },
     {
       "id": "resources.observation_material_retirement",
@@ -365,7 +365,7 @@
       ],
       "atomicity": "single_database_transaction_per_source",
       "compensation": "Node then exact asset state then immutable header/retirement then budget locks. Keep active claims, every current/floor/stat pin, legacy floor and corrupt material. Applied unreferenced bodies retire in one transaction; expired unapplied sources verify full SHA256 in bounded resumable steps, fence to explicit retired/gap, then recheck per-part hashes before bounded part+checksum deletion/budget decrement. Each failed transaction rolls back its deletion/checkpoint/accounting. Review time never replaces CreatedAt TTL. No billing, authorization, spool checkpoint or financial source identity is removed.",
-      "outbox": "No external side effect or financial write. Durable original header plus0067 retirement/checkpoint/gap receipt recognizes exact late duplicates without recreating optional material; full expired observation replay is explicitly unavailable. Core and scheduled retention use the same repository."
+      "outbox": "No external side effect or financial write. Legacy bodies retain0067 verification until retirement. Completed unreferenced headers and receipts age out after24hours through a durable bounded PK scan; pinned, active or damaged sources remain. New production ingress uses bounded mailboxes instead of these legacy identities. Financial replay is independent. Core and scheduled retention use the same repository."
     },
     {
       "id": "resources.node_observation_projection",
@@ -378,7 +378,7 @@
       ],
       "atomicity": "single_database_transaction",
       "compensation": "A short claim releases queue lock before node application. Apply locks node then exact asset state then owned token/lease ACK; lost ownership rolls back counters and refs while retaining complete source for recovery.",
-      "outbox": "Pending/claimed/held/applied intent and material remain durable; no financial ledger, credential or generic job-ledger locks are acquired by this auxiliary projection."
+      "outbox": "Current mailboxes lock node then mailbox then exact asset state and ACK in one transaction. Legacy intents retain claim ownership semantics. No financial ledger, credential or generic job-ledger locks are acquired by auxiliary projection."
     }
   ]
 }

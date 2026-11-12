@@ -121,7 +121,7 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 	}
 	capture("before_observation_projection")
 	worker := observationstore.Worker{DB: h.db}
-	drainProofObservations(t, worker, windows*samples+2)
+	drainProofObservations(t, worker, 1)
 	capture("after_observation_projection_before_retention")
 	var state model.NodeObservationState
 	if err := h.db.First(&state, "node_id = ? AND asset_tag = ?", node.ID, node.AssetTag).Error; err != nil {
@@ -136,12 +136,12 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 	}
 	retention := observationstore.MaterialRetention{DB: h.db, Now: func() time.Time { return now }}
 	retired := drainProofMaterialRetention(t, retention)
-	if retired != windows*samples {
+	if retired != 0 {
 		t.Fatal("unreferenced applied parts and expired unknown auxiliary source may retire", retired)
 	}
 	capture("after_seven_day_retention")
 	last := checkpoints[len(checkpoints)-1]
-	if last.Rows["node_observation_intents"] != windows*samples+2 || last.Rows["node_observation_parts"] != 2 || last.ObservationStatuses["held"] != 0 || last.ObservationStatuses["retired"] != 1 || last.RetiredHeaders != windows*samples {
+	if last.Rows["node_observation_intents"] != 0 || last.Rows["node_observation_parts"] != 0 || last.ObservationStatuses["held"] != 0 || last.ObservationStatuses["retired"] != 0 || last.RetiredHeaders != 0 {
 		t.Fatal("necessary pins/held/header growth", last)
 	}
 	assertProofRetainedPins(t, h.db, state)
@@ -176,8 +176,8 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 	if err := h.projectZeroNodeEvents(t.Context(), []zeroevent.Envelope{late}); err != nil {
 		t.Fatal("unseen old sequence", err)
 	}
-	drainProofObservations(t, worker, 1)
-	if retired := drainProofMaterialRetention(t, retention); retired != 1 {
+	drainProofObservations(t, worker, 0)
+	if retired := drainProofMaterialRetention(t, retention); retired != 0 {
 		t.Fatal("unreferenced new late material did not retire independently", retired)
 	}
 	capture("after_unseen_late_apply_and_retire")
@@ -204,7 +204,7 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 		}
 	}
 	final := checkpoints[len(checkpoints)-1]
-	if final.Rows["traffic_records"] != windows || final.Rows["metering_report_receipts"] != windows || final.Rows["traffic_record_meta_archives"] != 0 || final.Rows["metering_usage_projection_pending"] != 0 || final.Rows["node_observation_intents"] != windows*samples+3 || final.Rows["node_observation_parts"] != 2 {
+	if final.Rows["traffic_records"] != windows || final.Rows["metering_report_receipts"] != windows || final.Rows["traffic_record_meta_archives"] != 0 || final.Rows["metering_usage_projection_pending"] != 0 || final.Rows["node_observation_intents"] != 0 || final.Rows["node_observation_parts"] != 0 {
 		t.Fatal("final independent authority growth", final)
 	}
 	encoded, err := json.Marshal(struct {
@@ -287,23 +287,12 @@ func captureProofRetentionGrowth(t *testing.T, db *gorm.DB, phase string, window
 
 func assertProofRetainedPins(t *testing.T, db *gorm.DB, state model.NodeObservationState) {
 	t.Helper()
-	for _, id := range []string{state.LatestReference, state.StatsReference} {
-		var header model.NodeObservationIntent
-		if err := db.First(&header, "id = ?", id).Error; err != nil {
-			t.Fatal(err)
-		}
-		var parts int64
-		if err := db.Model(&model.NodeObservationPart{}).Where("intent_id = ?", id).Count(&parts).Error; err != nil || parts != int64(header.PartCount) || header.MaterialRetiredAt != nil || header.Status != "applied" {
-			t.Fatal("current source pin lost material", header, parts, err)
-		}
+	if state.LatestInline == "" || state.StatsInline == "" {
+		t.Fatal("bounded inline positions missing")
 	}
-	var held []model.NodeObservationIntent
-	if err := db.Where("status = ? AND reason = ?", "retired", "unknown_source").Find(&held).Error; err != nil || len(held) != 1 {
-		t.Fatal("unknown source lost compact retired gap", len(held), err)
-	}
-	var parts int64
-	if err := db.Model(&model.NodeObservationPart{}).Where("intent_id = ?", held[0].ID).Count(&parts).Error; err != nil || parts != 0 || held[0].MaterialRetiredAt == nil || held[0].Reason != "unknown_source" {
-		t.Fatal("expired unknown source lost identity or rebuilt body", parts, err)
+	var count int64
+	if e := db.Model(&model.NodeObservationMailbox{}).Count(&count).Error; e != nil || count != 1 {
+		t.Fatal("per-node projection count", count, e)
 	}
 }
 

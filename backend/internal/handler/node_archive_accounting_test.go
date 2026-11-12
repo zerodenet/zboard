@@ -1,14 +1,13 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"testing"
 )
 
-func TestArchivedBufferedFlowRetainsSourceWithoutChargingOrBlockingHealthyNode(t *testing.T) {
+func TestArchivedBufferedFlowDoesNotGrowObservationHistoryOrBlockHealthyNode(t *testing.T) {
 	h, credential := accountingBenchmarkFixture(t)
 	var original model.Node
 	if err := h.db.First(&original, credential.NodeID).Error; err != nil {
@@ -65,22 +64,19 @@ func TestArchivedBufferedFlowRetainsSourceWithoutChargingOrBlockingHealthyNode(t
 	if err := h.db.Model(&model.TrafficRecord{}).Where("node_id = ?", healthy.ID).Count(&total).Error; err != nil || total != 1 {
 		t.Fatal("healthy financial settlement absent", total, err)
 	}
-	var parts []model.NodeObservationPart
-	if err := h.db.Joins("JOIN node_observation_intents h ON h.id = node_observation_parts.intent_id").Where("h.node_id = ?", original.ID).Find(&parts).Error; err != nil {
-		t.Fatal(err)
-	}
-	retained := false
-	for _, part := range parts {
-		retained = retained || bytes.Contains(part.Data, []byte(late[0].ID))
-	}
-	if !retained {
-		t.Fatal("original late source was discarded")
+	// Closed sources cannot create fresh observation history. Financial fences
+	// still reject their late unknown reports without blocking live-node billing.
+	for _, table := range []string{"node_observation_intents", "node_observation_parts", "node_observation_retirements"} {
+		if err := h.db.Table(table).Count(&total).Error; err != nil || total != 0 {
+			t.Fatal("new closed-source auxiliary history", table, total, err)
+		}
 	}
 	if _, err := h.services.NodeObservations.Drain(t.Context(), 32, 8*1024*1024); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.db.Model(&model.NodeObservationIntent{}).Where("node_id = ? AND status = ? AND reason = ?", original.ID, "held", "node_archived").Count(&total).Error; err != nil || total == 0 {
-		t.Fatal("late source lacks archive hold reason", total, err)
+	var mailbox model.NodeObservationMailbox
+	if err := h.db.Where("node_id = ?", original.ID).First(&mailbox).Error; err != nil || mailbox.Pending || mailbox.Reason != "asset_inactive" {
+		t.Fatal("closed mailbox remained runnable", mailbox, err)
 	}
 
 	if err := h.db.Model(&model.FlowUsage{}).Where("node_id = ?", original.ID).Count(&total).Error; err != nil || total != 0 {

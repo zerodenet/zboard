@@ -12,6 +12,11 @@ const known = {
 }
 
 describe('node counter observation status', () => {
+ it('surfaces a projection conflict without changing proven values', () => {
+ const wrapper = mount(NodeCounterObservation, { props: { observation: { ...known, projection_issue: 'stats_position_conflict' } } })
+ expect(wrapper.text()).toContain('统计数据冲突，已保留原值')
+ expect(wrapper.find('time').attributes('datetime')).toBe('2026-10-01T10:20:30.000Z')
+ })
   it('keeps absent or legacy source unknown without manufacturing a date', () => {
     const wrapper = mount(NodeCounterObservation)
     expect(wrapper.text()).toContain('来源待核对')

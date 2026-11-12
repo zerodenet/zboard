@@ -166,6 +166,7 @@ func (s ObservationProjections) Drain(ctx context.Context, count int, bytes int6
 // CounterEvidence describes current values, not a credential/runtime attestation.
 // Empty reference/unknown is retained for legacy and heartbeat counter writers.
 type CounterEvidence struct {
+	ProjectionIssue   string     `json:"projection_issue,omitempty"`
 	Known             bool       `json:"known"`
 	LatestSourceKnown bool       `json:"latest_source_known"`
 	StatsSourceKnown  bool       `json:"stats_source_known"`

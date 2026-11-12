@@ -58,7 +58,7 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 		err = s.nativeAuthorityTransaction(ctx, input, func(tx *gorm.DB) error {
 			// Filter closed sources without locking nodes ahead of subscriptions.
 			// Settlement rechecks current parents under SHARE NOWAIT; source
-			// append retains terminal bodies under the existing tombstone.
+			// projection coalesces only live assets, never appending terminal bodies.
 			flows, closed, err := managedFlowInputs(tx, input.Flows)
 			if err != nil {
 				return err
@@ -73,7 +73,7 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 			for _, observation := range input.Nodes {
 				sources = append(sources, network.ObservationSource{Observation: observation, Kind: "legacy_projection"})
 			}
-			if _, err := observationstore.EnqueueBatch(tx, sources); err != nil {
+			if err := observationstore.EnqueueLatest(tx, sources); err != nil {
 				return err
 			}
 			return nil

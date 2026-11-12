@@ -353,6 +353,7 @@ export async function fetchNodes() {
 }
 
 export interface NodeCounterEvidence {
+ projection_issue?: string
 	known: boolean
 	source: string
 	latest_source_known: boolean

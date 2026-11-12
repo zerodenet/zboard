@@ -208,6 +208,7 @@ type Node struct {
 	UptimeSeconds           uint64     `json:"uptime_seconds"`
 	// Read-only joined evidence. Never persisted/updated through Node ORM or
 	// confused with defaults on a newly created/legacy observation source.
+	ObservationProjectionReason  string           `json:"-" gorm:"->;-:migration"`
 	ObservationKnown             bool             `json:"-" gorm:"->;-:migration"`
 	ObservationLatestSourceKnown bool             `json:"-" gorm:"->;-:migration"`
 	ObservationStatsSourceKnown  bool             `json:"-" gorm:"->;-:migration"`

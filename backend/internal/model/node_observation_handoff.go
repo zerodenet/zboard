@@ -54,6 +54,9 @@ type NodeObservationState struct {
 	CounterWrittenStamp string `gorm:"size:64;not null;default:''"`
 	CounterWrittenAt    *time.Time
 	UpdatedAt           time.Time `gorm:"not null"`
+	// Fixed-size projected values remove the need to pin per-event source bodies.
+	LatestInline string `gorm:"type:text;not null;default:''"`
+	StatsInline  string `gorm:"type:text;not null;default:''"`
 }
 
 func (NodeObservationState) TableName() string { return "node_observation_states" }

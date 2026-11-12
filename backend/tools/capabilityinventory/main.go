@@ -116,6 +116,7 @@ var explicitModelOwners = map[string]string{
 	"NodeObservationMaterialBudget":      "resources",
 	"NodeObservationRetirementPart":      "resources",
 	"NodeObservationRetirement":          "resources",
+	"NodeObservationMailbox":             "resources",
 	"NodeObservationIntent":              "resources",
 	"NodeObservationPart":                "resources",
 	"NodeObservationState":               "resources",

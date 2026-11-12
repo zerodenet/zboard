@@ -37,7 +37,7 @@ func assertRetiredMaterialBillingReplay(t *testing.T, h *handlers, credential mo
 		t.Fatal(err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 15, subStatusActive)
-	if n, err := (observationstore.Worker{DB: h.db}).Drain(t.Context(), 32, observationstore.MaxDrainBytes); err != nil || n != 3 {
+	if n, err := (observationstore.Worker{DB: h.db}).Drain(t.Context(), 32, observationstore.MaxDrainBytes); err != nil || n != 1 {
 		t.Fatal("actual auxiliary apply", n, err)
 	}
 	var before model.NodeObservationState
@@ -45,7 +45,7 @@ func assertRetiredMaterialBillingReplay(t *testing.T, h *handlers, credential mo
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Add(8 * 24 * time.Hour)
-	if out, err := (observationstore.MaterialRetention{DB: h.db, Now: func() time.Time { return now }}).Retire(t.Context(), 32, observationstore.MaxDrainBytes); err != nil || out.Retired != 2 {
+	if out, err := (observationstore.MaterialRetention{DB: h.db, Now: func() time.Time { return now }}).Retire(t.Context(), 32, observationstore.MaxDrainBytes); err != nil || out.Retired != 0 {
 		t.Fatal("actual financial-source material retirement", out, err)
 	}
 	spool := &checkpointTestSpool{events: events, commitErr: errors.New("retired replay checkpoint unavailable")}
@@ -66,24 +66,15 @@ func assertRetiredMaterialBillingReplay(t *testing.T, h *handlers, credential mo
 	if err := h.db.First(&after, "node_id = ? AND asset_tag = ?", node.ID, node.AssetTag).Error; err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatal("checkpoint replay changed observation source", after, before, err)
 	}
-	var headers []model.NodeObservationIntent
-	if err := h.db.Find(&headers).Error; err != nil || len(headers) != 3 {
-		t.Fatal("replay duplicated source identities", len(headers), err)
-	}
-	retired := 0
-	for _, head := range headers {
-		var n int64
-		if err := h.db.Model(&model.NodeObservationPart{}).Where("intent_id = ?", head.ID).Count(&n).Error; err != nil {
-			t.Fatal(err)
-		}
-		if head.MaterialRetiredAt != nil {
-			retired++
-			if n != 0 || head.Status != "applied" {
-				t.Fatal("replay recreated retired parts", head, n)
-			}
+	for _, table := range []string{"node_observation_intents", "node_observation_parts", "node_observation_retirements"} {
+		var count int64
+		if e := h.db.Table(table).Count(&count).Error; e != nil || count != 0 {
+			t.Fatal("per-event source growth after checkpoint replay", table, count, e)
 		}
 	}
-	if retired != 2 {
-		t.Fatal("replay changed compact receipts", retired)
+	var count int64
+	h.db.Model(&model.NodeObservationMailbox{}).Count(&count)
+	if count != 1 {
+		t.Fatal("mailbox count", count)
 	}
 }

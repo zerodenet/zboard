@@ -38,11 +38,18 @@ func (s MaterialRetention) HasPending(ctx context.Context) (bool, error) {
 	if q.Error != nil || q.RowsAffected > 0 {
 		return q.RowsAffected > 0, q.Error
 	}
-	return s.hasAppliedPending(ctx)
+	pending, e := s.hasAppliedPending(ctx)
+	if pending || e != nil {
+		return pending, e
+	}
+	return s.hasCompletedScan(ctx)
 }
 func (s MaterialRetention) Retire(ctx context.Context, limit int, budget int64) (out MaterialRetentionResult, err error) {
 	if s.DB == nil || limit < 1 || limit > MaterialRetentionLimit || budget < MaxApplyBytes || budget > MaxDrainBytes {
 		return out, errors.New("invalid observation retention budget")
+	}
+	if e := s.pruneCompleted(ctx); e != nil {
+		return out, e
 	}
 	now := s.retentionNow()
 	for out.Inspected < limit && budget > 0 {

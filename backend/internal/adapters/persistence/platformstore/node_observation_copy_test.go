@@ -96,7 +96,7 @@ func observationCopyMatrix(t *testing.T, sourceMySQL, targetMySQL bool) {
 				}
 			}
 			if mode == "legacy_unattributed_floor" {
-				if err := f.source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0060_node_observation_handoff.up.sql", "0061_node_observation_material_retention.up.sql", "0067_node_observation_retirement_budget.up.sql"}).Error; err != nil {
+				if err := f.source.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0060_node_observation_handoff.up.sql", "0061_node_observation_material_retention.up.sql", "0067_node_observation_retirement_budget.up.sql", "0085_observation_mailboxes.up.sql"}).Error; err != nil {
 					t.Fatal(err)
 				}
 				for _, table := range []string{"node_observation_retirement_parts", "node_observation_retirements", "node_observation_material_budget", "node_observation_states", "node_observation_parts", "node_observation_intents"} {

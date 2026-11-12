@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	mysql "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -471,5 +472,77 @@ func TestMySQLObservationClaimLossRollsBackNodeAndState(t *testing.T) {
 				t.Fatal("new owner failed to recover exact source", state)
 			}
 		})
+	}
+}
+
+func TestMySQLObservationMailboxCompetingWorkersAndBusyNode(t *testing.T) {
+	if os.Getenv("ZBOARD_TEST_MYSQL_DSN") == "" {
+		t.Skip("actual MySQL DSN required")
+	}
+	a, b := administrationFixture(t)
+	first := model.Node{Name: "busy-mailbox", Config: "{}", IsEnabled: true}
+	second := model.Node{Name: "ready-mailbox", Config: "{}", IsEnabled: true}
+	for _, n := range []*model.Node{&first, &second} {
+		if err := a.Create(n).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.Transaction(func(tx *gorm.DB) error {
+		return observationstore.EnqueueLatest(tx, []network.ObservationSource{observationSource(first, "first", "core", 1, true), observationSource(second, "second", "core", 1, true)})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A busy first node must not block another candidate in the same bounded round.
+	blocker := a.Begin()
+	if blocker.Error != nil {
+		t.Fatal(blocker.Error)
+	}
+	defer blocker.Rollback()
+	if err := blocker.Exec("SELECT id FROM nodes WHERE id = ? FOR UPDATE", first.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	// A producer holding accounting locks must not wait behind administration
+	// locks in inverse order. Fail immediately and leave its original spool retryable.
+	err := b.Transaction(func(tx *gorm.DB) error {
+		return observationstore.EnqueueLatest(tx, []network.ObservationSource{observationSource(first, "blocked", "core", 2, true)})
+	})
+	var locked *mysql.MySQLError
+	if !errors.As(err, &locked) || locked.Number != 3572 {
+		t.Fatal("producer did not fail fast on busy node", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if n, err := (observationstore.Worker{DB: b}).Drain(ctx, 8, observationstore.MaxDrainBytes); err != nil || n != 1 {
+		t.Fatal(n, err)
+	}
+	var got model.Node
+	if err := b.First(&got, second.ID).Error; err != nil || got.ActiveFlows != 3 {
+		t.Fatal(got, err)
+	}
+	if err := blocker.Rollback().Error; err != nil {
+		t.Fatal(err)
+	}
+	// Two real connections contend on one remaining mailbox, at most one applies.
+	type result struct {
+		n   int
+		err error
+	}
+	results := make(chan result, 2)
+	for _, db := range []*gorm.DB{a, b} {
+		go func(db *gorm.DB) {
+			n, err := (observationstore.Worker{DB: db}).Drain(t.Context(), 8, observationstore.MaxDrainBytes)
+			results <- result{n, err}
+		}(db)
+	}
+	total := 0
+	for range 2 {
+		r := <-results
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		total += r.n
+	}
+	if total != 1 {
+		t.Fatal("duplicate mailbox acknowledgement", total)
 	}
 }

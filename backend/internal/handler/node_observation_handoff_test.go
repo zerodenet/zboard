@@ -41,8 +41,8 @@ func assertObservationSettlementHandoff(t *testing.T, h *handlers, credential mo
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 30, subStatusActive)
 	var sourceCount int64
-	if err := h.db.Model(&model.NodeObservationIntent{}).Count(&sourceCount).Error; err != nil || sourceCount != 2 {
-		t.Fatal("settlement lacks complete durable sources", sourceCount, err)
+	if err := h.db.Model(&model.NodeObservationMailbox{}).Count(&sourceCount).Error; err != nil || sourceCount != 1 {
+		t.Fatal("settlement lacks a bounded durable observation", sourceCount, err)
 	}
 	if _, err := h.services.NodeObservations.Drain(ctx, 32, 8*1024*1024); !errors.Is(err, injected) {
 		t.Fatal("projection failure disappeared instead of durable retry", err)
@@ -52,9 +52,7 @@ func assertObservationSettlementHandoff(t *testing.T, h *handlers, credential mo
 		t.Fatal("failed projection committed partial counters", err)
 	}
 	_ = h.db.Callback().Update().Remove(hook)
-	if err := h.db.Model(&model.NodeObservationIntent{}).Where("status = ?", "pending").Update("available_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
-		t.Fatal(err)
-	}
+
 	if _, err := h.services.NodeObservations.Drain(ctx, 32, 8*1024*1024); err != nil {
 		t.Fatal(err)
 	}
@@ -66,18 +64,23 @@ func assertObservationSettlementHandoff(t *testing.T, h *handlers, credential mo
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 30, subStatusActive)
 	var after int64
-	if err := h.db.Model(&model.NodeObservationIntent{}).Count(&after).Error; err != nil || after != sourceCount {
+	if err := h.db.Model(&model.NodeObservationMailbox{}).Count(&after).Error; err != nil || after != sourceCount {
 		t.Fatal("spool replay changed source identity", err)
 	}
 }
 func TestObservationAppendFailureRollsBackSettlementAndSpoolAck(t *testing.T) {
 	h, credential := accountingBenchmarkFixture(t)
 	events := accountingBenchmarkEvents(credential, 0, 1)
+	var node model.Node
+	if err := h.db.First(&node, credential.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	events[0].AssetTag = node.AssetTag
 	spool := &checkpointTestSpool{events: events}
-	injected := errors.New("durable source parts unavailable")
-	const hook = "test:observation_parts"
+	injected := errors.New("durable observation mailbox unavailable")
+	const hook = "test:observation_mailbox"
 	if err := h.db.Callback().Create().Before("gorm:create").Register(hook, func(tx *gorm.DB) {
-		if tx.Statement.Table == "node_observation_parts" {
+		if tx.Statement.Table == "node_observation_mailboxes" {
 			tx.AddError(injected)
 		}
 	}); err != nil {
@@ -93,7 +96,7 @@ func TestObservationAppendFailureRollsBackSettlementAndSpoolAck(t *testing.T) {
 		t.Fatal("failed handoff ACKed original financial source")
 	}
 	var count int64
-	if err := h.db.Model(&model.NodeObservationIntent{}).Count(&count).Error; err != nil || count != 0 {
+	if err := h.db.Model(&model.NodeObservationMailbox{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatal("failed authority transaction left intent", err)
 	}
 	if _, err := h.consumeZeroEventBatch(context.Background(), spool, 2000); err != nil {

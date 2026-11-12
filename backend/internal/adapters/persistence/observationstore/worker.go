@@ -30,6 +30,9 @@ func clockNow() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
 type Worker struct{ DB *gorm.DB }
 
 func (w Worker) HasPending(ctx context.Context) (bool, error) {
+	if pending, err := w.hasMailboxes(ctx); pending || err != nil {
+		return pending, err
+	}
 	var h struct{ ID string }
 	now := clockNow()
 	result := ready(w.DB.WithContext(ctx), now).Select("id").Limit(1).Scan(&h)
@@ -95,7 +98,13 @@ func (w Worker) Drain(ctx context.Context, limit int, budget int64) (done int, e
 	if limit < 1 || limit > 200 || budget < 4*MaxApplyBytes || budget > MaxDrainBytes {
 		return 0, errors.New("invalid observation drain budget")
 	}
-	for i := 0; i < limit && budget > 0; i++ {
+	current, e := w.drainMailboxes(ctx, limit, &budget)
+	err = errors.Join(err, e)
+	if ctx.Err() != nil {
+		return current, err
+	}
+	done += current
+	for i := current; i < limit && budget > 0; i++ {
 		h, found, e := w.claim(ctx)
 		if e != nil {
 			return done, errors.Join(err, e)
@@ -207,177 +216,200 @@ func (w Worker) apply(ctx context.Context, h model.NodeObservationIntent, budget
 			}
 			return err
 		}
-		if source.Kind == "stats.sampled" && source.Observation.StatsEvent == nil {
-			return ownedAck(tx, h, "held", "invalid_stats_payload")
-		}
-		if source.LegacyFloor {
-			return ownedAck(tx, h, "held", "unattributed_legacy_floor")
-		}
-		p := source.Observation.Latest
-		if h.NodeID == 0 || p.AssetTag == "" || p.AssetTag != h.AssetTag || !usable(p) {
-			return ownedAck(tx, h, "held", "unknown_source")
-		}
-		var node model.Node
-		e := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).First(&node, h.NodeID).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			var n int64
-			if err := tx.Model(&model.Node{}).Where("id = ?", h.NodeID).Count(&n).Error; err != nil {
-				return err
-			}
-			if n != 0 {
-				return errBusy
-			}
-			if err := Tombstone(tx, h.NodeID, h.AssetTag); err != nil {
-				return err
-			}
-			return ownedAck(tx, h, "held", "node_deleted")
-		}
-		if e != nil {
-			return e
-		}
-		if node.AssetTag == "" || node.AssetTag != h.AssetTag {
-			return ownedAck(tx, h, "held", "asset_mismatch")
-		}
-		if node.LifecycleStatus == "archived" {
-			return ownedAck(tx, h, "held", "node_archived")
-		}
-		state, err := lockState(tx, h.NodeID, h.AssetTag)
-		if err != nil {
-			return err
-		}
-		if state.Deleted {
-			return ownedAck(tx, h, "held", "asset_deleted")
-		}
-		if !node.IsEnabled || node.NodeCredentialRevokedAt != nil {
-			return ownedAck(tx, h, "held", "node_inactive")
-		}
-		badReference := func(e error) error {
-			if !errors.Is(e, ErrMaterial) {
-				return e
-			}
-			state.CurrentKnown = false
-			state.LatestKnown = false
-			state.StatsKnown = false
-			state.CurrentSource = "invalid_reference"
-			state.UpdatedAt = clockNow()
-			if err := saveState(tx, state); err != nil {
-				return err
-			}
-			return ownedAck(tx, h, "held", "invalid_reference_material")
-		}
-		previousLatestKnown, previousStatsKnown := state.LatestKnown, state.StatsKnown
-		// The unattributed old floor is immutable. No live flow can advance it and
-		// no legacy position is relabeled as having actually applied Stats.
-		var floor model.NodeObservationState
-		e = tx.Where("node_id = ? AND asset_tag = ?", h.NodeID, "").First(&floor).Error
-		if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
-			return e
-		}
-		if e == nil && !floor.Deleted && floor.FloorReference != "" {
-			old, err := reference(floor.FloorReference)
-			if err != nil {
-				return badReference(err)
-			}
-			if !old.LegacyFloor || old.Observation.NodeID != h.NodeID || old.Observation.Latest.AssetTag != "" {
-				return badReference(invalid("invalid floor reference"))
-			}
-			if !network.EventNewerThanPosition(p, old.Observation.Latest) {
-				return ownedAck(tx, h, "held", "unattributed_floor")
-			}
-		}
-		var latest, stats *network.EventPosition
-		var oldStats network.NodeStats
-		if state.LatestReference != "" {
-			old, err := reference(state.LatestReference)
-			if err != nil {
-				return badReference(err)
-			}
-			if old.LegacyFloor || old.Observation.NodeID != h.NodeID || old.Observation.Latest.AssetTag != node.AssetTag {
-				return badReference(invalid("invalid latest reference"))
-			}
-			v := old.Observation.Latest
-			state.LatestKnown = true
-			latest = &v
-		}
-		if state.StatsReference != "" {
-			old, err := reference(state.StatsReference)
-			if err != nil {
-				return badReference(err)
-			}
-			state.StatsKnown = true
-			oldStats = old.Observation.Stats
-			stats = old.Observation.StatsEvent
-			if old.LegacyFloor || old.Observation.NodeID != h.NodeID || stats == nil || stats.AssetTag != node.AssetTag {
-				return badReference(invalid("invalid stats reference"))
-			}
-		}
-		latestAdvanced := latest == nil || network.EventNewerThanPosition(p, *latest)
-		if latestAdvanced {
-			state.LatestReference = h.ID
-			state.LatestKnown = true
-			occurred, received := p.OccurredAt.UTC().Truncate(time.Millisecond), p.ReceivedAt.UTC().Truncate(time.Millisecond)
-			state.LatestOccurredAt = &occurred
-			state.LatestReceivedAt = &received
-			v := p
-			latest = &v
-		}
-		statsAdvanced := false
-		if sp := source.Observation.StatsEvent; sp != nil {
-			if sp.AssetTag != node.AssetTag || !usable(*sp) {
-				return ownedAck(tx, h, "held", "unknown_stats_source")
-			}
-			if stats != nil && !network.EventNewerThanPosition(*sp, *stats) && !network.EventNewerThanPosition(*stats, *sp) && source.Observation.Stats != oldStats {
-				return ownedAck(tx, h, "held", "stats_position_conflict")
-			}
-			if stats == nil || network.EventNewerThanPosition(*sp, *stats) {
-				state.StatsReference = h.ID
-				state.StatsKnown = true
-				occurred, received := sp.OccurredAt.UTC().Truncate(time.Millisecond), sp.ReceivedAt.UTC().Truncate(time.Millisecond)
-				state.StatsOccurredAt = &occurred
-				state.StatsReceivedAt = &received
-				stats = sp
-				statsAdvanced = true
-			}
-		}
-		// Runtime/source mismatch stays explicitly unknown; retaining the historical
-		// Stats reference is not a claim that it belongs to the current Latest.
-		consistent := latest != nil && stats != nil && latest.AssetTag == stats.AssetTag && latest.CoreInstanceID == stats.CoreInstanceID
-		var override time.Time
-		if state.CounterWrittenStamp != "" {
-			override, err = time.Parse(time.RFC3339Nano, state.CounterWrittenStamp)
-			if err != nil {
-				return badReference(invalid("invalid counter receiver time"))
-			}
-		}
-		if statsAdvanced && consistent && (override.IsZero() || !stats.ReceivedAt.Before(override)) {
-			r := tx.Model(&model.Node{}).Where("id = ? AND asset_tag = ?", node.ID, node.AssetTag).Updates(map[string]any{"active_flows": source.Observation.Stats.ActiveSessions, "bytes_up": source.Observation.Stats.BytesUp, "bytes_down": source.Observation.Stats.BytesDown})
-			if r.Error != nil {
-				return r.Error
-			}
-			if r.RowsAffected > 1 {
-				return errors.New("non-unique node observation update")
-			}
-			state.CurrentKnown = true
-			state.CurrentSource = "buffered_stats"
-			observed := stats.ReceivedAt
-			cached := observed.UTC().Truncate(time.Millisecond)
-			state.CounterWrittenAt = &cached
-			state.CounterWrittenStamp = observed.UTC().Format(time.RFC3339Nano)
-		} else if !consistent {
-			state.CurrentKnown = false
-			if state.CurrentSource == "buffered_stats" {
-				state.CurrentSource = "historical_stats"
-			}
-		}
-		if latestAdvanced || statsAdvanced || state.LatestKnown != previousLatestKnown || state.StatsKnown != previousStatsKnown {
-			state.UpdatedAt = clockNow()
-			if err := saveState(tx, state); err != nil {
-				return err
-			}
-		}
-		return ownedAck(tx, h, "applied", "")
+		return applyProjection(tx, h, source, reference, false, func(status, reason string) error { return ownedAck(tx, h, status, reason) })
 	})
 }
+
+// Shared ordering, asset fences and counter overrides apply to both legacy
+// material and the bounded mailbox. Financial settlement is never performed here.
+func applyProjection(tx *gorm.DB, h model.NodeObservationIntent, source network.ObservationSource, reference func(string) (network.ObservationSource, error), compact bool, ack func(string, string) error) error {
+	if source.Kind == "stats.sampled" && source.Observation.StatsEvent == nil {
+		return ack("held", "invalid_stats_payload")
+	}
+	if source.LegacyFloor {
+		return ack("held", "unattributed_legacy_floor")
+	}
+	p := compactPosition(source.Observation.Latest)
+	if h.NodeID == 0 || p.AssetTag == "" || p.AssetTag != h.AssetTag || !usable(p) {
+		return ack("held", "unknown_source")
+	}
+	var node model.Node
+	e := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).First(&node, h.NodeID).Error
+	if errors.Is(e, gorm.ErrRecordNotFound) {
+		var n int64
+		if err := tx.Model(&model.Node{}).Where("id = ?", h.NodeID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n != 0 {
+			return errBusy
+		}
+		if err := Tombstone(tx, h.NodeID, h.AssetTag); err != nil {
+			return err
+		}
+		return ack("held", "node_deleted")
+	}
+	if e != nil {
+		return e
+	}
+	if node.AssetTag == "" || node.AssetTag != h.AssetTag {
+		return ack("held", "asset_mismatch")
+	}
+	if node.LifecycleStatus == "archived" {
+		return ack("held", "node_archived")
+	}
+	state, err := lockState(tx, h.NodeID, h.AssetTag)
+	if err != nil {
+		return err
+	}
+	if state.Deleted {
+		return ack("held", "asset_deleted")
+	}
+	if !node.IsEnabled || node.NodeCredentialRevokedAt != nil {
+		return ack("held", "node_inactive")
+	}
+	badReference := func(e error) error {
+		if !errors.Is(e, ErrMaterial) {
+			return e
+		}
+		state.CurrentKnown = false
+		state.LatestKnown = false
+		state.StatsKnown = false
+		state.CurrentSource = "invalid_reference"
+		state.UpdatedAt = clockNow()
+		if err := saveState(tx, state); err != nil {
+			return err
+		}
+		return ack("held", "invalid_reference_material")
+	}
+	previousLatestKnown, previousStatsKnown := state.LatestKnown, state.StatsKnown
+	// The unattributed old floor is immutable. No live flow can advance it and
+	// no legacy position is relabeled as having actually applied Stats.
+	var floor model.NodeObservationState
+	e = tx.Where("node_id = ? AND asset_tag = ?", h.NodeID, "").First(&floor).Error
+	if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
+		return e
+	}
+	if e == nil && !floor.Deleted && floor.FloorReference != "" {
+		old, err := reference(floor.FloorReference)
+		if err != nil {
+			return badReference(err)
+		}
+		if !old.LegacyFloor || old.Observation.NodeID != h.NodeID || old.Observation.Latest.AssetTag != "" {
+			return badReference(invalid("invalid floor reference"))
+		}
+		if !network.EventNewerThanPosition(p, compactPosition(old.Observation.Latest)) {
+			return ack("held", "unattributed_floor")
+		}
+	}
+	var latest, stats *network.EventPosition
+	var oldStats network.NodeStats
+	if state.LatestReference != "" {
+		old, err := inlineOrReference(state.LatestInline, state.LatestReference, reference)
+		if err != nil {
+			return badReference(err)
+		}
+		if old.LegacyFloor || old.Observation.NodeID != h.NodeID || old.Observation.Latest.AssetTag != node.AssetTag {
+			return badReference(invalid("invalid latest reference"))
+		}
+		v := old.Observation.Latest
+		state.LatestKnown = true
+		latest = &v
+	}
+	if state.StatsReference != "" {
+		old, err := inlineOrReference(state.StatsInline, state.StatsReference, reference)
+		if err != nil {
+			return badReference(err)
+		}
+		state.StatsKnown = true
+		oldStats = old.Observation.Stats
+		stats = old.Observation.StatsEvent
+		if old.LegacyFloor || old.Observation.NodeID != h.NodeID || stats == nil || stats.AssetTag != node.AssetTag {
+			return badReference(invalid("invalid stats reference"))
+		}
+	}
+	latestAdvanced := latest == nil || network.EventNewerThanPosition(p, *latest)
+	if latestAdvanced {
+		state.LatestReference = h.ID
+		if compact || state.LatestInline != "" {
+			state.LatestReference = projectionReference("latest", network.NodeObservation{NodeID: source.Observation.NodeID, Latest: source.Observation.Latest})
+			state.LatestInline, err = encodeProjection(source.Observation)
+			if err != nil {
+				return err
+			}
+		}
+		state.LatestKnown = true
+		occurred, received := p.OccurredAt.UTC().Truncate(time.Millisecond), p.ReceivedAt.UTC().Truncate(time.Millisecond)
+		state.LatestOccurredAt = &occurred
+		state.LatestReceivedAt = &received
+		v := p
+		latest = &v
+	}
+	statsAdvanced := false
+	if sp := source.Observation.StatsEvent; sp != nil {
+		normalized := compactPosition(*sp)
+		sp = &normalized
+		if sp.AssetTag != node.AssetTag || !usable(*sp) {
+			return ack("held", "unknown_stats_source")
+		}
+		if stats != nil && !network.EventNewerThanPosition(*sp, *stats) && !network.EventNewerThanPosition(*stats, *sp) && source.Observation.Stats != oldStats {
+			return ack("held", "stats_position_conflict")
+		}
+		if stats == nil || network.EventNewerThanPosition(*sp, *stats) {
+			state.StatsReference = h.ID
+			if compact || state.StatsInline != "" {
+				state.StatsReference = projectionReference("stats", network.NodeObservation{NodeID: source.Observation.NodeID, Latest: *source.Observation.StatsEvent, StatsEvent: source.Observation.StatsEvent, Stats: source.Observation.Stats})
+				state.StatsInline, err = encodeProjection(source.Observation)
+				if err != nil {
+					return err
+				}
+			}
+			state.StatsKnown = true
+			occurred, received := sp.OccurredAt.UTC().Truncate(time.Millisecond), sp.ReceivedAt.UTC().Truncate(time.Millisecond)
+			state.StatsOccurredAt = &occurred
+			state.StatsReceivedAt = &received
+			stats = sp
+			statsAdvanced = true
+		}
+	}
+	// Runtime/source mismatch stays explicitly unknown; retaining the historical
+	// Stats reference is not a claim that it belongs to the current Latest.
+	consistent := latest != nil && stats != nil && latest.AssetTag == stats.AssetTag && latest.CoreInstanceID == stats.CoreInstanceID
+	var override time.Time
+	if state.CounterWrittenStamp != "" {
+		override, err = time.Parse(time.RFC3339Nano, state.CounterWrittenStamp)
+		if err != nil {
+			return badReference(invalid("invalid counter receiver time"))
+		}
+	}
+	if statsAdvanced && consistent && (override.IsZero() || !stats.ReceivedAt.Before(override)) {
+		r := tx.Model(&model.Node{}).Where("id = ? AND asset_tag = ?", node.ID, node.AssetTag).Updates(map[string]any{"active_flows": source.Observation.Stats.ActiveSessions, "bytes_up": source.Observation.Stats.BytesUp, "bytes_down": source.Observation.Stats.BytesDown})
+		if r.Error != nil {
+			return r.Error
+		}
+		if r.RowsAffected > 1 {
+			return errors.New("non-unique node observation update")
+		}
+		state.CurrentKnown = true
+		state.CurrentSource = "buffered_stats"
+		observed := stats.ReceivedAt
+		cached := observed.UTC().Truncate(time.Millisecond)
+		state.CounterWrittenAt = &cached
+		state.CounterWrittenStamp = observed.UTC().Format(time.RFC3339Nano)
+	} else if !consistent {
+		state.CurrentKnown = false
+		if state.CurrentSource == "buffered_stats" {
+			state.CurrentSource = "historical_stats"
+		}
+	}
+	if latestAdvanced || statsAdvanced || state.LatestKnown != previousLatestKnown || state.StatsKnown != previousStatsKnown {
+		state.UpdatedAt = clockNow()
+		if err := saveState(tx, state); err != nil {
+			return err
+		}
+	}
+	return ack("applied", "")
+}
+
 func usable(p network.EventPosition) bool {
 	return strings.TrimSpace(p.CoreInstanceID) != "" && p.Sequence > 0 && !p.OccurredAt.IsZero() && !p.ReceivedAt.IsZero()
 }
@@ -386,7 +418,7 @@ func lockState(tx *gorm.DB, node uint, tag string) (state model.NodeObservationS
 	if err = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&state).Error; err != nil {
 		return
 	}
-	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND asset_tag = ?", node, tag).First(&state).Error
+	err = tx.Select("node_id,asset_tag,latest_known,stats_known,latest_reference,stats_reference,floor_reference,deleted,current_known,current_source,latest_occurred_at,latest_received_at,stats_occurred_at,stats_received_at,counter_written_stamp,counter_written_at,updated_at,substr(latest_inline,1,4097) AS latest_inline,substr(stats_inline,1,4097) AS stats_inline").Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND asset_tag = ?", node, tag).First(&state).Error
 	return
 }
 

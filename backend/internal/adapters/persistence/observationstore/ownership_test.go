@@ -37,7 +37,7 @@ func ownershipFixture(t *testing.T) (*gorm.DB, *gorm.DB, model.Node) {
 	if err := a.Exec("CREATE TABLE nodes (id INTEGER PRIMARY KEY, asset_tag TEXT NOT NULL, is_enabled INTEGER NOT NULL, node_credential_revoked_at DATETIME NULL, active_flows INTEGER NOT NULL DEFAULT 0, bytes_up INTEGER NOT NULL DEFAULT 0, bytes_down INTEGER NOT NULL DEFAULT 0, updated_at DATETIME NULL)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := a.AutoMigrate(&model.NodeObservationIntent{}, &model.NodeObservationPart{}, &model.NodeObservationState{}); err != nil {
+	if err := a.AutoMigrate(&model.NodeObservationIntent{}, &model.NodeObservationPart{}, &model.NodeObservationState{}, &model.NodeObservationMailbox{}, &completedCursor{}); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := migrations.Files.ReadFile("sqlite/0061_node_observation_material_retention.sql")

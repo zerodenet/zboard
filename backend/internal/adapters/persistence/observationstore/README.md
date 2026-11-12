@@ -1,3 +1,5 @@
+> **当前生产写入契约由0085替代**：新上报只覆盖每节点一个有界状态，不再追加事件材料、头或回收凭据。财务去重与历史补报继续独立。迁移、旧记录回收和回滚限制见[节点观察状态重构](../../../../architecture/node-observation-mailbox.md)。以下为旧数据兼容契约。
+
 > 下面保留0060阶段契约；当前0061无引用材料回收、兼容重放和回退边界见[新阶段说明](../../../../architecture/core-convergence-observation-material-retention.md)。原身份与当前引用不因回收删除。
 
 # Node observation handoff (0060)

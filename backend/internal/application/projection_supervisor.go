@@ -131,6 +131,16 @@ func (s *Services) projectionCapacityObservation(ctx context.Context, now time.T
 		return o
 	}
 	observationFound := query.RowsAffected != 0
+	var mailbox struct{ PendingSince time.Time }
+	query = s.Identity.db.WithContext(ctx).Model(&model.NodeObservationMailbox{}).Select("pending_since").Where("pending = ?", true).Order("pending_since,node_id").Limit(1).Find(&mailbox)
+	if query.Error != nil {
+		o.DatabaseFailed = true
+		return o
+	}
+	if query.RowsAffected != 0 && (!observationFound || mailbox.PendingSince.Before(observation.CreatedAt)) {
+		observationFound = true
+		observation.CreatedAt = mailbox.PendingSince
+	}
 	// Inspect only indexed pending/checkpoint candidates. Retention is included
 	// in durable in-flight pressure above, but is not an independent scale-up
 	// trigger: its single checkpoint does not prove multi-process benefit.

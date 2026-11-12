@@ -10,9 +10,9 @@ func observationPosition(c ObservationCursor) network.EventPosition {
 	return network.EventPosition{CoreInstanceID: c.CoreInstanceID, Sequence: c.Sequence, ConfigRevision: c.ConfigRevision, OccurredAt: c.OccurredAt}
 }
 
-// ProjectObservation now hands off immutable material. Missing legacy source
-// attribution stays held; projection is exclusively the independent worker.
+// ProjectObservation hands off bounded current-state data. Unattributed legacy
+// sources are ignored; projection is exclusively the independent worker.
 func ProjectObservation(tx *gorm.DB, p network.NodeObservation) error {
-	_, err := observationstore.Enqueue(tx, network.ObservationSource{Observation: p, Kind: "legacy_projection"})
+	err := observationstore.EnqueueLatest(tx, []network.ObservationSource{{Observation: p, Kind: "legacy_projection"}})
 	return err
 }
