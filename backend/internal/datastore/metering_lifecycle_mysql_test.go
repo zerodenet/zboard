@@ -1,6 +1,7 @@
 package datastore_test
 
 import (
+	"context"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
@@ -102,5 +103,32 @@ func TestMySQLMeteringRetentionColdCollationAndLateContribution(t *testing.T) {
 	var root model.MeteringColdRoot
 	if e := db.Where("node_id=? AND kind=1", source.NodeID).First(&root).Error; e != nil || root.EntryCount != 1 {
 		t.Fatal(root, e)
+	}
+}
+
+// A maintenance checkpoint is not an online admission mutex. Hold it with a
+// separate connection while admitting and verifying a new financial source.
+func TestMySQLMeteringAdmissionDoesNotWaitForBackfillProgress(t *testing.T) {
+	db := diagnosticSchemaDB(t, true)
+	source := diagnosticSchemaSource(t, db, false)
+	owner := db.Begin()
+	if owner.Error != nil {
+		t.Fatal(owner.Error)
+	}
+	defer owner.Rollback()
+	var progress model.MeteringSettlementProgress
+	if err := owner.Raw("SELECT * FROM metering_settlement_progress WHERE id=1 FOR UPDATE").Scan(&progress).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return meteringstore.RecordUsageProjections(tx, []model.TrafficRecord{source})
+	}); err != nil {
+		t.Fatal("online admission waited for maintenance checkpoint", err)
+	}
+	var result model.MeteringSettlementResult
+	if err := db.First(&result).Error; err != nil || result.RawBytes != source.RawBytes || result.UsedBytes != source.UsedBytes {
+		t.Fatal("financial result lost", result, err)
 	}
 }

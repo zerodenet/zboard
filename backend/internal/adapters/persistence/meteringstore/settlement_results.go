@@ -19,7 +19,9 @@ import (
 // ACK. The prefix progress and its totals always commit together.
 func addSettlementResults(tx *gorm.DB, records []model.TrafficRecord, backfill bool) error {
 	var progress model.MeteringSettlementProgress
-	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&progress, 1).Error; err != nil {
+	// UpperID is immutable; source coverage is re-read under the source lock.
+	// Never queue live admission behind the maintenance progress owner.
+	if err := tx.First(&progress, 1).Error; err != nil {
 		return err
 	}
 

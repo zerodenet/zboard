@@ -285,7 +285,9 @@ func (s LedgerRetention) retireOne(tx *gorm.DB, candidate model.TrafficRecord, n
 	}
 	var result model.MeteringSettlementResult
 	key := settlementResultKey(r)
-	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("result_key=?", key).First(&result).Error; err != nil {
+	// Results only increase. A conservative snapshot can defer retirement; it
+	// must not hold a result lock while inserting a destination ledger bucket.
+	if err := tx.Where("result_key=?", key).First(&result).Error; err != nil {
 		return false, err
 	}
 	if result.UsedBytes < r.UsedBytes || result.RawBytes < r.RawBytes || result.UploadBytes < r.UploadBytes || result.DownloadBytes < r.DownloadBytes || result.RecordCount < r.RecordCount {
