@@ -74,8 +74,8 @@ func TestCleanedSingleUseSubscriptionKeepsAccountOrderHistoryAndCannotBeRecreate
 	}
 	var count int64
 	f.h.db.Model(&model.Subscription{}).Count(&count)
-	if count != 1 {
-		t.Fatal("late payment changed historical instance count")
+	if count != 0 {
+		t.Fatal("late payment recreated a deleted subscription")
 	}
 }
 
@@ -138,13 +138,10 @@ func checkLegacyFixedRetirement(t *testing.T, f orderFixture) {
 	}
 	var count int64
 	f.h.db.Model(&model.Subscription{}).Where("id = ?", fixed.SubscriptionID).Count(&count)
-	if count != 1 {
-		t.Fatal("historical identity not retained")
+	if count != 0 {
+		t.Fatal("terminal live subscription retained")
 	}
-	var retired model.Subscription
-	if err := f.h.db.First(&retired, fixed.SubscriptionID).Error; err != nil || retired.Status != "ended" {
-		t.Fatal("instance not finalized", retired, err)
-	}
+	requireSubscriptionDeleted(t, f.h.db, fixed.SubscriptionID)
 	var order model.Order
 	if err := f.h.db.First(&order, fixed.ID).Error; err != nil || order.SubscriptionEndReason != "exhausted" || order.SubscriptionEndedAt == nil || order.SubscriptionFinalFlowUsed != 1024 || order.Status != "paid" {
 		t.Fatal("history lost", order, err)

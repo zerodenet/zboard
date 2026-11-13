@@ -28,10 +28,7 @@ func assertCredentialReconciliationCurrentSubscription(t *testing.T, f orderFixt
 	if _, err := f.h.services.CredentialExpiry(f.h.credentialCipher).ExpireDue(context.Background(), stale.EndAt.Add(8*24*time.Hour), 10); err != nil {
 		t.Fatal(err)
 	}
-	var current model.Subscription
-	if err := f.h.db.First(&current, stale.ID).Error; err != nil || current.Status != "ended" {
-		t.Fatal(current.Status, err)
-	}
+	requireSubscriptionDeleted(t, f.h.db, stale.ID)
 	var before model.ProtocolCredential
 	if err := f.h.db.Where("subscription_id = ? AND protocol_endpoint_id = ?", stale.ID, endpoint.ID).First(&before).Error; err != nil {
 		t.Fatal(err)

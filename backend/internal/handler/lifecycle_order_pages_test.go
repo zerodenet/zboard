@@ -200,8 +200,9 @@ func assertLifecyclePaidClosurePages(t *testing.T, base orderFixture) {
 	if !reflect.DeepEqual(money, lifecyclePageMoney(t, f.h.db)) {
 		t.Fatal("lifecycle paging changed money or immutable purchase evidence")
 	}
-	if err := f.h.db.First(&rollback, f.sub.ID).Error; err != nil || rollback.Status != "ended" || rollback.EndedAt == nil || !rollback.EndedAt.Equal(f.sub.EndAt) || rollback.FlowUsed != f.sub.FlowUsed {
-		t.Fatal("retirement did not preserve original period/use", rollback, err)
+	closed := requireSubscriptionDeleted(t, f.h.db, f.sub.ID)
+	if !closed.EndAt.Equal(f.sub.EndAt) || closed.ClosingFlowUsed != f.sub.FlowUsed {
+		t.Fatal("cleanup did not preserve the final accounting budget", closed)
 	}
 	if err := f.h.db.Model(&model.Order{}).Where("subscription_id = ? AND subscription_ended_at = ? AND subscription_end_reason = ?", f.sub.ID, f.sub.EndAt, "expired").Count(&ended).Error; err != nil || ended != lifecyclePaidPagePopulation {
 		t.Fatal("paid closure metadata incomplete", ended, err)

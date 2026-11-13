@@ -6,11 +6,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
 
-func TestAccountSubscriptionSearchFiltersBeforeCountAndSupportsHistoricalSelection(t *testing.T) {
+func TestAccountSubscriptionSearchFiltersBeforeCountAndSupportsRecoverableSelection(t *testing.T) {
 	f := newCatalogFixture(t)
 	plan := f.plan(t, 1)
 	if err := f.h.db.Model(&plan).Update("name", "Historical report plan").Error; err != nil {
@@ -21,7 +22,7 @@ func TestAccountSubscriptionSearchFiltersBeforeCountAndSupportsHistoricalSelecti
 		if id == 106 {
 			owner = 2
 		}
-		sub := model.Subscription{ID: id, UserID: owner, PlanID: plan.ID, NodeGroupID: f.group.ID, Status: "expired"}
+		sub := model.Subscription{ID: id, UserID: owner, PlanID: plan.ID, NodeGroupID: f.group.ID, Status: "expired", EndAt: time.Now().UTC().Add(-24 * time.Hour)}
 		if err := f.h.db.Create(&sub).Error; err != nil {
 			t.Fatal(err)
 		}

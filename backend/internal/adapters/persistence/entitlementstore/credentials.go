@@ -23,8 +23,14 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 	// Reconciliation jobs may carry a snapshot taken before retirement, renewal
 	// or plan change. Only the locked current business state can grant access.
 	var current model.Subscription
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, subscription.ID).Error; err != nil {
-		return nil, err
+	result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", subscription.ID).Limit(1).Find(&current)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	// A stale reconciliation snapshot may outlive physical lifecycle cleanup.
+	// Absence is a converged, non-granting state, not a retryable read failure.
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 	if current.Status != "active" || current.FlowUsed >= current.FlowTotal {
 		return nil, nil
