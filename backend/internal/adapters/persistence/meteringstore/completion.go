@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
@@ -223,6 +224,19 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 		// Coverage can change after preparation when a concurrent grant retires
 		// credentials. Roll back first, recover within the same remaining row
 		// budget, and recheck ownership. Genuine ambiguity is never retried here.
+		var conflict *mysqlDriver.MySQLError
+		if errors.As(err, &conflict) && (conflict.Number == 1213 || conflict.Number == 1205) && attempt < 2 {
+			// GORM has rolled back the complete attempt, including quota, floor,
+			// identity and results. Retry only known transactional lock failures.
+			timer := time.NewTimer(time.Duration(attempt+1) * 10 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return metering.TrafficRecord{}, false, ctx.Err()
+			case <-timer.C:
+			}
+			continue
+		}
 		if !errors.Is(err, credentialstore.ErrPrincipalIndexIncomplete) && !errors.Is(err, ErrNativeReportClaimed) {
 			break
 		}
