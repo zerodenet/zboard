@@ -36,6 +36,7 @@ type proofRetentionCheckpoint struct {
 func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.ProtocolCredential) {
 	t.Helper()
 	const windows, samples = 16, 64
+	h.db.Config.NowFunc = func() time.Time { return time.Date(2026, 10, 16, 6, 0, 0, 0, time.UTC) }
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", c.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 	}
 	var all [][]zeroevent.Envelope
 	var originals []model.TrafficRecord
-	now := time.Now().UTC().Truncate(time.Millisecond).Add(8 * 24 * time.Hour)
+	now := h.db.NowFunc().UTC().Truncate(time.Millisecond).Add(8 * 24 * time.Hour)
 	archive := meteringstore.ProofArchives{DB: h.db, Now: func() time.Time { return now }}
 	var archiveCursor uint
 	var checkpoints []proofRetentionCheckpoint
@@ -127,7 +128,7 @@ func assertNativeProofRetentionGrowth(t *testing.T, h *handlers, c model.Protoco
 	if err := h.db.First(&state, "node_id = ? AND asset_tag = ?", node.ID, node.AssetTag).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !state.LatestKnown || !state.StatsKnown || !state.CurrentKnown || state.CurrentSource != "buffered_stats" || state.LatestReference == "" || state.StatsReference == "" || state.LatestReference == state.StatsReference {
+	if !state.LatestKnown || !state.StatsKnown || !state.CurrentKnown || state.CurrentSource != "buffered_stats" || state.LatestInline == "" || state.StatsInline == "" || state.LatestReference == "" || state.StatsReference == "" || state.LatestReference == state.StatsReference {
 		t.Fatal("actual latest/stats pins not established", state)
 	}
 	var headersBefore []model.NodeObservationIntent

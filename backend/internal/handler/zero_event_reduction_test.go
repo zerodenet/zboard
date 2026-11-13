@@ -233,7 +233,7 @@ func TestZeroWindowKeepsExistingReportIdentityBeforeCollapsing(t *testing.T) {
 	}
 }
 
-func TestBufferedWarningStormRetainsUnknownSourcesWithoutBilling(t *testing.T) {
+func TestBufferedWarningStormDoesNotPersistPerEventSourcesOrBill(t *testing.T) {
 	h, _ := accountingBenchmarkFixture(t)
 	node, runtime := receiptFixture(t, h)
 	for i := 0; i < 100; i++ {
@@ -260,8 +260,8 @@ func TestBufferedWarningStormRetainsUnknownSourcesWithoutBilling(t *testing.T) {
 		}
 	}
 	var held int64
-	if err := h.db.Table("node_observation_intents").Where("node_id = ? AND status = ? AND reason = ?", node.ID, "held", "unknown_source").Count(&held).Error; err != nil || held != 100 {
-		t.Fatalf("unknown sources lost: held=%d err=%v", held, err)
+	if err := h.db.Table("node_observation_intents").Where("node_id = ? AND status = ? AND reason = ?", node.ID, "held", "unknown_source").Count(&held).Error; err != nil || held != 0 {
+		t.Fatalf("warning storm retained per-event diagnostic rows: held=%d err=%v", held, err)
 	}
 	var count int64
 	if err := h.db.Model(&model.TrafficRecord{}).Count(&count).Error; err != nil || count != 0 {

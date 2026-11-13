@@ -50,6 +50,7 @@ type proofGrowthSnapshot struct {
 func assertNativeProofFiniteGrowth(t *testing.T, h *handlers, c model.ProtocolCredential) {
 	t.Helper()
 	const windows, samples, archiveBatch = 16, 64, 3
+	h.db.Config.NowFunc = func() time.Time { return time.Date(2026, 10, 16, 6, 0, 0, 0, time.UTC) }
 	if err := h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", c.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func assertNativeProofFiniteGrowth(t *testing.T, h *handlers, c model.ProtocolCr
 	if err := h.db.Model(&model.ProtocolCredential{}).Where("id = ?", c.ID).Update("credential_id", c.CredentialID).Error; err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC().Truncate(time.Millisecond).Add(8 * 24 * time.Hour)
+	now := h.db.NowFunc().UTC().Truncate(time.Millisecond).Add(8 * 24 * time.Hour)
 	archive := meteringstore.ProofArchives{DB: h.db, Now: func() time.Time { return now }}
 	var snapshots []proofGrowthSnapshot
 	snapshot := func(phase string, n int) { snapshots = append(snapshots, captureProofGrowth(t, h.db, phase, n)) }

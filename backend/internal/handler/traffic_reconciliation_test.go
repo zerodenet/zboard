@@ -50,6 +50,8 @@ type trafficReadFixture struct {
 func newTrafficReadFixture(t *testing.T) trafficReadFixture {
 	t.Helper()
 	h, token := newAnnouncementTestHandlers(t)
+	// Keep precision tests inside the finite minute-history window.
+	h.db.Config.NowFunc = func() time.Time { return time.Date(2026, 9, 1, 23, 59, 59, 0, time.UTC) }
 	if err := datastore.ReconcileTrafficReadSchema(h.db); err != nil {
 		t.Fatal(err)
 	}
