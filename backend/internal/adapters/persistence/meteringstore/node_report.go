@@ -45,10 +45,27 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			return metering.ErrProtocolEndpointUnavailable
 		}
 
-		err := tx.Where("node_id = ? AND report_id = ?", lockedNode.ID, in.ReportID).First(&record).Error
-		if err == nil {
+		receipts, err := readReportReceipts(tx, lockedNode.ID, []string{in.ReportID})
+		if err != nil {
+			return err
+		}
+		if len(receipts) > 0 {
+			record, err = recordForReceipt(tx, receipts[0], in.ReportID)
+			if err != nil {
+				return err
+			}
 			duplicate = true
 			return nil
+		}
+		if _, found, err := lookupColdIdentity(tx, lockedNode.ID, coldNonce, in.Nonce, false); err != nil {
+			return err
+		} else if found {
+			return metering.ErrNodeReportNonceReplayed
+		}
+		var retiredNonce model.MeteringNonceReceipt
+		err = tx.Where("node_id=? AND nonce=?", lockedNode.ID, in.Nonce).First(&retiredNonce).Error
+		if err == nil {
+			return metering.ErrNodeReportNonceReplayed
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err

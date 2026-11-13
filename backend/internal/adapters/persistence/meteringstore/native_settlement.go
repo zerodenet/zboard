@@ -19,6 +19,7 @@ const nativeSettlementPrefix = "bucket:v1:"
 const nativeSettlementType = "settlement.minute"
 
 type minuteSettlementAudit struct {
+	HistoryResolution string `json:"history_resolution,omitempty"`
 	Kind              string `json:"kind"`
 	Version           int    `json:"version"`
 	AccountingSamples uint64 `json:"accounting_samples"`
@@ -57,7 +58,7 @@ func trafficRecordCount(r model.TrafficRecord) int64 {
 // Created-minute partitions also split at the subscription anchor's sub-minute
 // offset, so anniversary reset cutoffs can never straddle a stored contribution.
 func prepareNativeSettlement(r model.TrafficRecord, anchor time.Time) (model.TrafficRecord, error) {
-	if r.NodeID == 0 || r.SubscriptionID == 0 || r.ProtocolEndpointID == 0 || r.ReportID == "" || strings.HasPrefix(r.ReportID, nativeSettlementPrefix) {
+	if r.NodeID == 0 || r.SubscriptionID == 0 || r.ProtocolEndpointID == 0 || r.ReportID == "" || (strings.HasPrefix(r.ReportID, nativeSettlementPrefix) || strings.HasPrefix(r.ReportID, retainedSettlementPrefix)) {
 		return model.TrafficRecord{}, errors.New("invalid native settlement identity")
 	}
 	if r.RawBytes < 0 || r.UploadBytes < 0 || r.DownloadBytes < 0 || r.UsedBytes < 0 {
@@ -71,14 +72,33 @@ func prepareNativeSettlement(r model.TrafficRecord, anchor time.Time) (model.Tra
 	if at.IsZero() {
 		at = now
 	}
-	offset := time.Duration(anchor.Second())*time.Second + time.Duration(anchor.Nanosecond())
-	key, _ := json.Marshal([]any{r.UserID, r.SubscriptionID, r.EntitlementEpoch, r.NodeID, r.ProtocolEndpointID, r.TrafficCalcMode, r.ProtocolMultiplierMilli, at.Truncate(time.Minute).Format(time.RFC3339Nano), now.Truncate(time.Minute).Format(time.RFC3339Nano), int64(offset), now.Sub(now.Truncate(time.Minute)) >= offset})
+	// Financial quota reads use receive-time calendar/anniversary cuts. Two
+	// receive partitions per UTC day, split at the anchor's full time-of-day,
+	// preserve every supported future reset boundary without a receive-minute
+	// dimension. Old event history enters only its still-available grain.
+	offset := time.Duration(anchor.Hour())*time.Hour + time.Duration(anchor.Minute())*time.Minute + time.Duration(anchor.Second())*time.Second + time.Duration(anchor.Nanosecond())
+	resolution := "minute"
+	at = at.Truncate(time.Minute)
+	if at.Before(now.Add(-LedgerMinuteHorizon)) {
+		resolution = "hour"
+		at = at.Truncate(time.Hour)
+	}
+	if at.Before(now.Add(-LedgerHourHorizon).Truncate(24 * time.Hour)) {
+		resolution = "day"
+		at = at.Truncate(24 * time.Hour)
+	}
+	if at.Before(now.Add(-LedgerDayHorizon).Truncate(24 * time.Hour)) {
+		resolution = "expired"
+		at = time.Unix(0, 0).UTC()
+	}
+	key, _ := json.Marshal([]any{"receive-day-v2", r.UserID, r.SubscriptionID, r.EntitlementEpoch, r.NodeID, r.ProtocolEndpointID, r.TrafficCalcMode, r.ProtocolMultiplierMilli, at.Format(time.RFC3339Nano), now.Truncate(24 * time.Hour).Format(time.RFC3339Nano), int64(offset), now.Sub(now.Truncate(24*time.Hour)) >= offset, resolution})
 	digest := sha256.Sum256(key)
 	report := nativeSettlementPrefix + hex.EncodeToString(digest[:])
 	audit, err := nativeSettlementAudit(r)
 	if err != nil {
 		return model.TrafficRecord{}, err
 	}
+	audit.HistoryResolution = resolution
 	meta, _ := json.Marshal(audit)
 	return model.TrafficRecord{UserID: r.UserID, SubscriptionID: r.SubscriptionID, EntitlementEpoch: r.EntitlementEpoch, NodeID: r.NodeID, ProtocolEndpointID: r.ProtocolEndpointID, ReportID: report, Nonce: completionNonce(report), EventType: nativeSettlementType, RawBytes: r.RawBytes, UploadBytes: r.UploadBytes, DownloadBytes: r.DownloadBytes, UsedBytes: r.UsedBytes, TrafficCalcMode: r.TrafficCalcMode, ProtocolMultiplierMilli: r.ProtocolMultiplierMilli, At: at.Truncate(time.Minute), CreatedAt: now, UpdatedAt: now, Meta: string(meta), IsAggregate: true, RecordCount: trafficRecordCount(r)}, nil
 }
@@ -93,7 +113,10 @@ func persistNativeSettlement(tx *gorm.DB, row *model.TrafficRecord) error {
 	if err := json.Unmarshal([]byte(row.Meta), &audit); err != nil {
 		return err
 	}
-	updates := map[string]any{"updated_at": row.UpdatedAt}
+	updates := map[string]any{
+		"updated_at": gorm.Expr("CASE WHEN updated_at < ? THEN ? ELSE updated_at END", row.UpdatedAt, row.UpdatedAt),
+		"created_at": gorm.Expr("CASE WHEN created_at > ? THEN ? ELSE created_at END", row.CreatedAt, row.CreatedAt),
+	}
 	// Both databases keep the same fixed-size arithmetic proof. No per-event
 	// runtime, credential, flow body or timestamp list survives in this JSON.
 	auditNumber := func(field string) string {
@@ -105,7 +128,7 @@ func persistNativeSettlement(tx *gorm.DB, row *model.TrafficRecord) error {
 	}
 	// MySQL JSON arithmetic otherwise promotes integers to DOUBLE (2.0),
 	// which both breaks integer proof readers and can lose high-bit precision.
-	updates["meta"] = gorm.Expr("JSON_OBJECT('kind','minute_settlement','version',1,'accounting_samples',"+auditNumber("accounting_samples")+"+?,'rounding_numerator',"+auditNumber("rounding_numerator")+"+?)", audit.AccountingSamples, audit.RoundingNumerator)
+	updates["meta"] = gorm.Expr("JSON_OBJECT('kind','minute_settlement','version',1,'history_resolution',?,'accounting_samples',"+auditNumber("accounting_samples")+"+?,'rounding_numerator',"+auditNumber("rounding_numerator")+"+?)", audit.HistoryResolution, audit.AccountingSamples, audit.RoundingNumerator)
 	for _, column := range []string{"raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "record_count"} {
 		updates[column] = gorm.Expr(column + " + " + incoming(column))
 	}
@@ -151,6 +174,7 @@ func storeNativeSettlement(tx *gorm.DB, r *model.TrafficRecord, anchor time.Time
 		return err
 	}
 	r.ID = row.ID
+	r.At = row.At
 	r.IsAggregate = true
 	r.RecordCount = trafficRecordCount(*r)
 	r.CreatedAt = row.CreatedAt
@@ -200,6 +224,12 @@ func storeNativeSettlementBatch(tx *gorm.DB, records []model.TrafficRecord, anch
 		oldAudit.RoundingNumerator += newAudit.RoundingNumerator
 		encoded, _ := json.Marshal(oldAudit)
 		g.row.Meta = string(encoded)
+		if row.CreatedAt.Before(g.row.CreatedAt) {
+			g.row.CreatedAt = row.CreatedAt
+		}
+		if row.UpdatedAt.After(g.row.UpdatedAt) {
+			g.row.UpdatedAt = row.UpdatedAt
+		}
 		g.indices = append(g.indices, i)
 	}
 	keys := make([]string, 0, len(groups))
@@ -214,6 +244,7 @@ func storeNativeSettlementBatch(tx *gorm.DB, records []model.TrafficRecord, anch
 		}
 		for _, i := range g.indices {
 			records[i].ID = g.row.ID
+			records[i].At = g.row.At
 			records[i].IsAggregate = true
 			records[i].RecordCount = trafficRecordCount(records[i])
 			records[i].CreatedAt = g.row.CreatedAt

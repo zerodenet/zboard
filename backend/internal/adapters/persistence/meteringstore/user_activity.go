@@ -20,6 +20,14 @@ func (s TrafficTrends) ReadUsers(ctx context.Context, actor uint, users []uint, 
 	if db == nil {
 		db = s.DB
 	}
+	var coverage *metering.HistoryCoverage
+	q, coverage = normalizeTrafficTrendHistory(q, db.NowFunc().UTC())
+	out.History = coverage
+	out.Timezone = q.Timezone
+	if q.Days == 0 {
+		return out, nil
+	}
+	out.From, out.To = q.Buckets[0].Key, q.Buckets[len(q.Buckets)-1].Key
 	err := db.WithContext(ctx).Transaction(func(read *gorm.DB) error {
 		windows := make([][2]time.Time, 0, len(q.Buckets))
 		for _, b := range q.Buckets {

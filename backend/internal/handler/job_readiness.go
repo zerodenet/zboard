@@ -9,6 +9,15 @@ import (
 )
 
 func (h *handlers) jobReadiness(id string) func(context.Context) (bool, error) {
+	if id == application.ColdIdentityJobID {
+		return h.services.ColdIdentityJob().Ready
+	}
+	if id == application.LedgerRetentionJobID {
+		return h.services.LedgerRetentionJob().Ready
+	}
+	if id == application.SettlementResultJobID {
+		return h.services.SettlementResultJob().Ready
+	}
 	if id == application.FlowDetailRetentionJobID {
 		return h.services.FlowDetailRetentionJob().Ready
 	}

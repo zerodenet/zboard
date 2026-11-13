@@ -30,6 +30,7 @@ type BreakdownRow struct {
 }
 
 type BreakdownSnapshot struct {
+	History   *HistoryCoverage  `json:"history,omitempty"`
 	Dimension string            `json:"dimension"`
 	From      time.Time         `json:"from"`
 	To        time.Time         `json:"to"`

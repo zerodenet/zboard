@@ -19,6 +19,9 @@ const UsageProjectionBatchLimit = 200
 // settlement failure, never a successful in-memory acknowledgement. Call only
 // for newly inserted ledger records, after the database assigns their IDs.
 func EnqueueUsageProjections(tx *gorm.DB, records []model.TrafficRecord) error {
+	if err := addSettlementResults(tx, records, false); err != nil {
+		return err
+	}
 	legacy := make([]model.MeteringUsageProjectionPending, 0, len(records))
 	canonical := map[uint]*model.MeteringUsageProjectionPending{}
 	now := time.Now().UTC()
@@ -80,7 +83,10 @@ func EnqueueUsageProjections(tx *gorm.DB, records []model.TrafficRecord) error {
 	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "traffic_record_id"}}, DoUpdates: clause.Assignments(updates)}).CreateInBatches(&pending, 100).Error
 }
 
-type UsageProjectionWorker struct{ DB *gorm.DB }
+type UsageProjectionWorker struct {
+	DB  *gorm.DB
+	Now func() time.Time
+}
 
 func (s UsageProjectionWorker) HasPending(ctx context.Context) (bool, error) {
 	var row model.MeteringUsageProjectionPending
@@ -148,10 +154,26 @@ func (s UsageProjectionWorker) Drain(ctx context.Context, limit int) (int, error
 				hourly = append(hourly, record)
 			}
 		}
-		if err := addTrafficHourly(tx, hourly); err != nil {
+		now := tx.NowFunc().UTC()
+		if s.Now != nil {
+			now = s.Now().UTC()
+		}
+		keptHourly := hourly[:0]
+		for _, r := range hourly {
+			if !r.At.Before(now.Add(-LedgerHourHorizon).Truncate(24 * time.Hour)) {
+				keptHourly = append(keptHourly, r)
+			}
+		}
+		keptDaily := make([]model.TrafficRecord, 0, len(records))
+		for _, r := range records {
+			if !r.At.Before(now.Add(-LedgerDayHorizon).Truncate(24 * time.Hour)) {
+				keptDaily = append(keptDaily, r)
+			}
+		}
+		if err := addTrafficHourly(tx, keptHourly); err != nil {
 			return err
 		}
-		if err := AddProtocolEndpointUsage(tx, records); err != nil {
+		if err := AddProtocolEndpointUsage(tx, keptDaily); err != nil {
 			return err
 		}
 		deleted := tx.Where("traffic_record_id IN ?", ids).Delete(&model.MeteringUsageProjectionPending{})

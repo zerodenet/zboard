@@ -4,6 +4,7 @@ package mysqlseeds
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -12,6 +13,12 @@ import (
 // Validate the values actually captured, never an earlier unlocked pre-query.
 func SingletonColumns(table string) []string {
 	switch table {
+	case "metering_ledger_retention_progress":
+		return []string{"id", "after_id", "upper_id", "high_water_id", "held_count", "last_held_id", "last_hold_reason", "next_pass_at"}
+	case "metering_settlement_progress":
+		return []string{"id", "after_id", "upper_id"}
+	case "metering_identity_profiles":
+		return []string{"kind", "collation", "pad_space"}
 	case "node_observation_material_budget":
 		return []string{"id", "retained_bytes", "revision"}
 	case "principal_statistics_state", "flow_start_statistics_state":
@@ -49,6 +56,32 @@ func Validate(table string, columns []string, data [][]any) error {
 	reject := func() error {
 		return fmt.Errorf("business template contains changed or non-initialization singleton in %s", table)
 	}
+	if table == "metering_identity_profiles" {
+		if len(data) != 3 {
+			return reject()
+		}
+		seen := map[uint64]bool{}
+		for _, values := range data {
+			if len(values) != 3 {
+				return reject()
+			}
+			row := map[string]any{}
+			for i, c := range columns {
+				row[c] = values[i]
+			}
+			k, ok := seedUint(row["kind"])
+			pad, ok2 := seedUint(row["pad_space"])
+			c := fmt.Sprint(row["collation"])
+			if b, ok := row["collation"].([]byte); ok {
+				c = string(b)
+			}
+			if !ok || !ok2 || k < 1 || k > 3 || seen[k] || pad > 1 || !regexp.MustCompile(`^[A-Za-z0-9_]+$`).MatchString(c) {
+				return reject()
+			}
+			seen[k] = true
+		}
+		return nil
+	}
 	if len(data) != 1 || len(data[0]) != len(columns) {
 		return reject()
 	}
@@ -57,7 +90,7 @@ func Validate(table string, columns []string, data [][]any) error {
 		row[name] = data[0][i]
 	}
 	for _, name := range SingletonColumns(table) {
-		if name == "created_at" || name == "updated_at" {
+		if name == "created_at" || name == "updated_at" || name == "last_hold_reason" || name == "next_pass_at" {
 			continue
 		}
 		expected := uint64(0)
@@ -66,6 +99,16 @@ func Validate(table string, columns []string, data [][]any) error {
 		}
 		actual, ok := seedUint(row[name])
 		if !ok || actual != expected {
+			return reject()
+		}
+	}
+	if table == "metering_ledger_retention_progress" {
+		text := fmt.Sprint(row["last_hold_reason"])
+		if b, ok := row["last_hold_reason"].([]byte); ok {
+			text = string(b)
+		}
+		at, ok := row["next_pass_at"].(time.Time)
+		if text != "" || !ok || !at.Equal(time.Unix(0, 0).UTC()) {
 			return reject()
 		}
 	}

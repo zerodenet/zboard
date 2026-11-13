@@ -1,4 +1,5 @@
 import { authenticatedAPI as readModelApi } from './client'
+import type { TrafficHistoryCoverage } from './trafficUsage'
 import { appendQueryID, type QueryID } from './queryID'
 
 export type EntityKind = 'user' | 'subscription' | 'node' | 'protocol_endpoint' | 'plan' | 'plan_sku' | 'order' | string
@@ -44,6 +45,7 @@ export interface TrafficTrendScope {
 }
 
 export interface TrafficTrendSnapshot {
+  history?: TrafficHistoryCoverage
   // Missing only when reading an older server without the pending protocol.
   projection_pending?: false
   scope?: TrafficTrendScope

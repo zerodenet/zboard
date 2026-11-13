@@ -34,6 +34,8 @@ func (s Breakdown) Read(ctx context.Context, actor uint, q metering.BreakdownQue
 	if read == nil {
 		read = s.DB
 	}
+	coverage := historyCoverage(q.From, q.To, "minute", read.NowFunc())
+	q.From, q.To = coverage.From, coverage.To
 	scope := TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}
 	// A cached historical snapshot must not disguise pending current facts.
 	pending := false
@@ -45,7 +47,7 @@ func (s Breakdown) Read(ctx context.Context, actor uint, q metering.BreakdownQue
 		}
 	}
 	load := func() (metering.BreakdownSnapshot, error) {
-		out := metering.BreakdownSnapshot{Dimension: q.Dimension, From: q.From, To: q.To, AsOf: time.Now().UTC(), Items: []metering.BreakdownRow{}, Offset: q.Offset, Limit: q.Limit}
+		out := metering.BreakdownSnapshot{History: &coverage, Dimension: q.Dimension, From: q.From, To: q.To, AsOf: time.Now().UTC(), Items: []metering.BreakdownRow{}, Offset: q.Offset, Limit: q.Limit}
 		err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := EnsureHourlyUsageReadable(tx, scope, q.From, q.To); err != nil {
 				return err

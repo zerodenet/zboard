@@ -113,9 +113,32 @@ func readReportReceipts(tx *gorm.DB, nodeID uint, ids []string) ([]model.Meterin
 	if len(ids) > 200 {
 		return nil, errors.New("report identity lookup exceeds bounded batch")
 	}
+	if err := lockIdentityReader(tx, nodeID); err != nil {
+		return nil, err
+	}
 	var rows []model.MeteringReportReceipt
 	if err := tx.Where("node_id = ? AND report_id IN ?", nodeID, ids).Find(&rows).Error; err != nil {
 		return nil, err
+	}
+	if len(ids) == 1 && len(rows) == 1 {
+		return rows, nil
+	}
+	hotKeys := map[string]bool{}
+	for _, row := range rows {
+		hotKeys[row.ReportID] = true
+	}
+	for _, id := range ids {
+		if hotKeys[id] {
+			continue
+		}
+		row, ok, err := coldReceipt(tx, nodeID, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			rows = append(rows, row)
+			hotKeys[row.ReportID] = true
+		}
 	}
 	if len(ids) == 1 && len(rows) == 1 {
 		return rows, nil
@@ -139,7 +162,7 @@ func readReportReceipts(tx *gorm.DB, nodeID uint, ids []string) ([]model.Meterin
 	var legacy []model.TrafficRecord
 	// The existing unique node/report index resolves old collation semantics.
 	// No Meta, amount, per-connection detail or timestamps are loaded here.
-	if err := tx.Select("id,node_id,report_id,protocol_endpoint_id").Where("node_id = ? AND report_id IN ?", nodeID, wanted).Where("(event_type IS NULL OR event_type <> ?)", nativeSettlementType).Find(&legacy).Error; err != nil {
+	if err := tx.Select("id,node_id,report_id,protocol_endpoint_id").Where("node_id = ? AND report_id IN ?", nodeID, wanted).Where("retention_level = 0 AND (event_type IS NULL OR event_type <> ?)", nativeSettlementType).Find(&legacy).Error; err != nil {
 		return nil, err
 	}
 	byLedger := make(map[uint]bool, len(rows))

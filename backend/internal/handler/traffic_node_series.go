@@ -19,14 +19,15 @@ type trafficNodeSeriesPoint struct {
 }
 
 type trafficNodeSeriesResponse struct {
-	Bucket    string                   `json:"bucket"`
-	From      time.Time                `json:"from"`
-	To        time.Time                `json:"to"`
-	Points    []trafficNodeSeriesPoint `json:"points"`
-	Nodes     []entityReference        `json:"nodes"`
-	Truncated bool                     `json:"truncated"`
-	NodeLimit int                      `json:"node_limit"`
-	AsOf      time.Time                `json:"as_of"`
+	History   *metering.HistoryCoverage `json:"history,omitempty"`
+	Bucket    string                    `json:"bucket"`
+	From      time.Time                 `json:"from"`
+	To        time.Time                 `json:"to"`
+	Points    []trafficNodeSeriesPoint  `json:"points"`
+	Nodes     []entityReference         `json:"nodes"`
+	Truncated bool                      `json:"truncated"`
+	NodeLimit int                       `json:"node_limit"`
+	AsOf      time.Time                 `json:"as_of"`
 }
 
 func validateTrafficNodeSeriesWindow(bucket trafficUsageBucketSpec, window historyWindow, nodeFiltered bool) error {
@@ -104,5 +105,8 @@ func (h *handlers) trafficNodeSeriesHandler(w http.ResponseWriter, r *http.Reque
 		}
 		nodes = append(nodes, entityReference{ID: n.ID, Kind: "node", DisplayName: name, Secondary: n.Region, Status: n.Status})
 	}
-	OK(w, trafficNodeSeriesResponse{Bucket: bucket.Name, From: window.From, To: window.To, Points: points, Nodes: nodes, Truncated: result.Truncated, NodeLimit: metering.NodeSeriesNodeLimit, AsOf: result.AsOf})
+	if result.History != nil {
+		bucket.Name, window.From, window.To = result.History.Bucket, result.History.From, result.History.To
+	}
+	OK(w, trafficNodeSeriesResponse{History: result.History, Bucket: bucket.Name, From: window.From, To: window.To, Points: points, Nodes: nodes, Truncated: result.Truncated, NodeLimit: metering.NodeSeriesNodeLimit, AsOf: result.AsOf})
 }

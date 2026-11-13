@@ -77,7 +77,7 @@ func (h *handlers) trafficTrends(w http.ResponseWriter, r *http.Request, systemC
 		refs = append(refs, entityReference{ID: v.ID, Kind: "subscription", DisplayName: v.DisplayName, Secondary: v.Secondary, Status: v.Status})
 	}
 	w.Header().Set("X-Zboard-Statistics-State", "complete")
-	OK(w, trafficTrendResponse{Scope: q.Scope(claims.UserID), From: from.Format("2006-01-02"), To: to.Format("2006-01-02"), Points: result.Snapshot.Points, RecordCount: result.Snapshot.RecordCount, Subscriptions: refs, AsOf: result.Snapshot.AsOf})
+	OK(w, trafficTrendResponse{History: result.History, Scope: q.Scope(claims.UserID), From: from.Format("2006-01-02"), To: to.Format("2006-01-02"), Points: result.Snapshot.Points, RecordCount: result.Snapshot.RecordCount, Subscriptions: refs, AsOf: result.Snapshot.AsOf})
 }
 
 func (a trafficTrendCacheAdapter) Invalidate(key [32]byte) { a.cache.invalidate(key) }

@@ -38,6 +38,7 @@
     </UiMetricStrip>
 
     <PageAlert v-if="observabilityError" tone="danger" title="流量趋势加载失败">{{ observabilityError }} <UiButton variant="secondary" @click="observabilityResource.load()">重试趋势</UiButton></PageAlert>
+    <TrafficHistoryCoverageHint :history="observability.history || recordTable.history.value" />
     <TrafficObservabilityChart v-if="!observabilityError || observabilitySnapshotAvailable"
       :points="observability.points"
       :loading="observabilityLoading || !observabilityLoaded"
@@ -77,7 +78,7 @@
       <DataTable v-else-if="records.length" :caption="`我的流量使用明细（按${bucketLabel}聚合）`" :row-count="total" :min-width="920">
         <thead>
           <tr>
-            <th class="table-primary-column">时间</th>
+            <th class="table-primary-column">{{ recordTable.bucket.value === 'day' ? '日期（UTC）' : '时间' }}</th>
             <th>节点</th>
             <th>订阅</th>
             <th data-column-priority="2">上行</th>
@@ -88,7 +89,7 @@
         </thead>
         <tbody>
           <tr v-for="record in records" :key="record.id">
-            <td class="table-primary-column"><TimeBadge :value="record.record_at" /></td>
+            <td class="table-primary-column"><span v-if="recordTable.bucket.value === 'day'">{{ record.record_at.slice(0, 10) }}</span><TimeBadge v-else :value="record.record_at" mode="exact" /></td>
             <td>
               <EntityReference
                 :reference="nodeReference(record.node_id)"
@@ -139,6 +140,7 @@
 </template>
 
 <script setup lang="ts">
+import TrafficHistoryCoverageHint from './TrafficHistoryCoverageHint.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTrafficSummary } from '../../api/client'
@@ -222,7 +224,7 @@ const bucketOptions = [
   { label: '按小时', value: 'hour' },
   { label: '按分钟', value: 'minute' },
 ]
-const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : bucket.value === 'day' ? '天' : '小时')
+const bucketLabel = computed(() => recordTable.bucket.value === 'minute' ? '分钟' : recordTable.bucket.value === 'day' ? '天' : '小时')
 
 const recordTable = useTrafficUsageTable(() => ({
   bucket: bucket.value, subscriptionId: subscriptionFilter.value || undefined,

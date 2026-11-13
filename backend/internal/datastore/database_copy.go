@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
+	"slices"
 	"strings"
 )
 
@@ -12,6 +13,15 @@ import (
 // and foreign-key ordering. Missing legacy source tables may be absent; an
 // existing source table must never be silently dropped from the destination.
 func CopyApplicationData(source, target *gorm.DB) error {
+	if err := preflightMeteringColdSchema(source); err != nil {
+		return err
+	}
+	if err := preflightLedgerRetentionSchema(source); err != nil {
+		return err
+	}
+	if err := preflightSettlementResultSchema(source); err != nil {
+		return err
+	}
 	if err := preflightObservationMailboxSchema(source); err != nil {
 		return err
 	}
@@ -55,6 +65,31 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	sourceTables, err := migrationTableSet(source)
 	if err != nil {
 		return fmt.Errorf("inspect source tables: %w", err)
+	}
+	// Empty codec profiles are preparation metadata, not business data. Once
+	// sealed identities exist, require identical collation rules before copying
+	// any rows; binary payloads cannot be relabeled as a different key space.
+	sourceHasColdData := false
+	if sourceTables["metering_cold_blocks"] {
+		var head struct{ ID uint }
+		q := source.Table("metering_cold_blocks").Select("id").Limit(1).Find(&head)
+		if q.Error != nil {
+			return q.Error
+		}
+		sourceHasColdData = q.RowsAffected > 0
+		if sourceHasColdData {
+			var profiles []model.MeteringIdentityProfile
+			if e := source.Order("kind").Find(&profiles).Error; e != nil {
+				return e
+			}
+			expected, e := currentIdentityProfiles(target)
+			if e != nil {
+				return e
+			}
+			if !slices.Equal(profiles, expected) {
+				return fmt.Errorf("sealed replay identity copy requires equivalent source/destination collations; explicit verified re-keying is required")
+			}
+		}
 	}
 	// Reject recorded identity loss even when the source nodes table itself
 	// is absent and the legacy table loop would otherwise skip it.
@@ -132,6 +167,9 @@ func CopyApplicationData(source, target *gorm.DB) error {
 		return err
 	}
 	for _, table := range tables {
+		if table == "metering_identity_profiles" && !sourceHasColdData {
+			continue
+		}
 		if !sourceTables[table] {
 			continue
 		}
@@ -157,6 +195,26 @@ func CopyApplicationData(source, target *gorm.DB) error {
 	if !observationReceipt {
 		if err := importObservationFloors(target); err != nil {
 			return err
+		}
+	}
+	if targetTables["metering_settlement_results"] {
+		if err := initializeCopiedSettlementResults(target, sourceTables["metering_settlement_results"], sourceTables["metering_settlement_progress"]); err != nil {
+			return err
+		}
+	}
+	if targetTables["metering_identity_profiles"] {
+		if err := initializeColdProfiles(target); err != nil {
+			return err
+		}
+	}
+	if targetTables["metering_ledger_retention_progress"] {
+		if !sourceTables["metering_ledger_retention_progress"] {
+			if e := initializeLedgerRetentionProgress(target); e != nil {
+				return e
+			}
+		}
+		if e := preserveCopiedLedgerAllocator(target); e != nil {
+			return e
 		}
 	}
 	return RebuildMySQLTrafficHourly(target)

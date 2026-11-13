@@ -94,8 +94,8 @@ func nativeMinuteCharges(t *testing.T, h *handlers, c model.ProtocolCredential) 
 		}
 	}
 	var projected struct{ Used, Reports int64 }
-	if err := h.db.Table("traffic_usage_hourly").Select("SUM(used_bytes) AS used,SUM(record_count) AS reports").Scan(&projected).Error; err != nil || projected.Used != 200 || projected.Reports != 100 {
-		t.Fatal(projected, err)
+	if err := h.db.Table("traffic_usage_hourly").Select("SUM(used_bytes) AS used,SUM(record_count) AS reports").Scan(&projected).Error; err != nil || projected.Used != 0 || projected.Reports != 0 {
+		t.Fatal("expired graph history recreated by a legitimate old report", projected, err)
 	}
 	t.Logf("100 original reports -> %d ledger rows; 100 rounding-preserving charges = 200 bytes; replay unchanged", totals.PhysicalRows)
 }
@@ -399,4 +399,52 @@ func TestSQLiteNativeMinuteDiagnosticEncodingCannotBlockAccounting(t *testing.T)
 		t.Fatal("unused diagnostic material blocked accounting", err)
 	}
 	assertAccountingTotal(t, h, c.SubscriptionID, 7, subStatusActive)
+}
+
+func TestMySQLColdIdentityReplayAndHigherHistoricalCompletion(t *testing.T) {
+	h, c := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
+	if e := h.db.Model(&model.ProtocolEndpoint{}).Where("id=?", c.ProtocolEndpointID).Update("multiplier_milli", 1500).Error; e != nil {
+		t.Fatal(e)
+	}
+	base := time.Now().UTC().Truncate(time.Millisecond)
+	old := base.Add(-48 * time.Hour)
+	h.db.Config.NowFunc = func() time.Time { return old }
+	in := metering.CompletedFlow{NodeID: c.NodeID, PrincipalKey: c.PrincipalKey, CoreInstanceID: "cold-mysql-core", FlowID: "same-flow", EventID: "cold-mysql-original", EventType: "flow.completed", Sequence: 1, Revision: 1, BytesUp: 3, OccurredAt: old}
+	if _, _, e := h.services.CompletionAccounting(h.credentialCipher).Complete(t.Context(), in); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := (meteringstore.UsageProjectionWorker{DB: h.db}).Drain(t.Context(), 100); e != nil {
+		t.Fatal(e)
+	}
+	now := base.Add(3 * 24 * time.Hour)
+	if _, e := (meteringstore.FlowCursorCompaction{DB: h.db, Now: func() time.Time { return now }}).Drain(t.Context(), 100); e != nil {
+		t.Fatal(e)
+	}
+	if n, e := (meteringstore.LedgerRetention{DB: h.db, Now: func() time.Time { return now }}).Drain(t.Context(), 100); e != nil || n != 1 {
+		t.Fatal(n, e)
+	}
+	if _, e := (meteringstore.ColdIdentities{DB: h.db, Now: func() time.Time { return now }}).Drain(t.Context(), 32); e != nil {
+		t.Fatal(e)
+	}
+	if _, _, e := h.services.CompletionAccounting(h.credentialCipher).Complete(t.Context(), in); e != nil {
+		t.Fatal("cold replay", e)
+	}
+	h.db.Config.NowFunc = func() time.Time { return now }
+	in.EventID = "cold-mysql-new-report"
+	in.Sequence = 2
+	in.Revision = 2
+	in.BytesUp = 6
+	for i := 0; i < 2; i++ {
+		if _, _, e := h.services.CompletionAccounting(h.credentialCipher).Complete(t.Context(), in); e != nil {
+			t.Fatal("late higher cumulative report", e)
+		}
+	}
+	var sub model.Subscription
+	if e := h.db.First(&sub, c.SubscriptionID).Error; e != nil || sub.FlowUsed != 10 {
+		t.Fatal(sub.FlowUsed, e)
+	}
+	var used int64
+	if e := h.db.Model(&model.MeteringSettlementResult{}).Select("COALESCE(SUM(used_bytes),0)").Where("subscription_id=?", c.SubscriptionID).Scan(&used).Error; e != nil || used != 10 {
+		t.Fatal(used, e)
+	}
 }

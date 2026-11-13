@@ -556,6 +556,8 @@ type FlowUsage struct {
 }
 
 type TrafficRecord struct {
+	RetentionLevel          int16     `json:"retention_level,omitempty" gorm:"not null;default:0;-:migration"`
+	ResultRecorded          bool      `json:"-" gorm:"not null;default:false;-:migration"`
 	EntitlementEpoch        uint64    `json:"-" gorm:"not null;default:0;-:migration"`
 	ID                      uint      `json:"id" gorm:"primaryKey"`
 	UserID                  uint      `json:"user_id"`

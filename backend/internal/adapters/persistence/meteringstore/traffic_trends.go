@@ -28,6 +28,13 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 	if database == nil {
 		database = s.DB
 	}
+	var coverage *metering.HistoryCoverage
+	q, coverage = normalizeTrafficTrendHistory(q, database.NowFunc().UTC())
+	out.History = coverage
+	if q.Days == 0 {
+		out.Snapshot = metering.TrafficTrendSnapshot{Points: []metering.TrafficTrendPoint{}, AsOf: database.NowFunc().UTC()}
+		return out, nil
+	}
 	err := database.WithContext(ctx).Transaction(func(read *gorm.DB) error {
 		var err error
 		windows := make([][2]time.Time, 0, len(q.Buckets))

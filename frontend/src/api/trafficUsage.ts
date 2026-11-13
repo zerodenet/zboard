@@ -4,6 +4,7 @@ import { appendQueryID, type QueryID } from './queryID'
 import { requirePageResponse } from './pageResponse'
 
 export type TrafficUsageBucket = 'minute' | 'hour' | 'day'
+export interface TrafficHistoryCoverage { from: string; to: string; retained_from: string; bucket: TrafficUsageBucket; truncated: boolean; expired: boolean; timezone?: string }
 
 export interface TrafficUsageRecord {
   id: number
@@ -35,6 +36,7 @@ export interface TrafficUsageReferences extends Record<string, unknown> {
 
 type UsagePageEnvelope = PageResult<TrafficUsageRecord, TrafficUsageAggregates, TrafficUsageReferences>
 export interface TrafficUsagePage extends Omit<UsagePageEnvelope, 'total' | 'page' | 'aggregates'> {
+  history?: TrafficHistoryCoverage
   total: number | null
   page: Omit<UsagePageEnvelope['page'], 'total'> & { total: number | null }
   aggregates: TrafficUsageAggregates | null
@@ -42,6 +44,7 @@ export interface TrafficUsagePage extends Omit<UsagePageEnvelope, 'total' | 'pag
 }
 
 export interface TrafficUsageStatistics {
+  history?: TrafficHistoryCoverage
   total: number
   aggregates: TrafficUsageAggregates
   bucket: TrafficUsageBucket
@@ -68,6 +71,7 @@ export interface TrafficNodeSeriesPoint {
 }
 
 export interface TrafficNodeSeries {
+  history?: TrafficHistoryCoverage
   bucket: TrafficUsageBucket
   from: string
   to: string
@@ -139,6 +143,7 @@ export async function fetchTrafficUsagePage(
     ...normalized, total, page: { ...normalized.page, total },
     aggregates: data?.aggregates === null ? null : normalized.aggregates,
     bucket: normalizeTrafficUsageBucket(data?.bucket),
+    history: data?.history,
   }
 }
 
@@ -182,6 +187,7 @@ export interface TrafficBreakdownRow extends TrafficBreakdownCounters {
   id: number; name: string; secondary?: string; missing: boolean
 }
 export interface TrafficBreakdown {
+  history?: TrafficHistoryCoverage
   dimension: TrafficDimension; from: string; to: string; as_of: string
   items: TrafficBreakdownRow[]; total: number; totals: TrafficBreakdownCounters; offset: number; limit: number
 }

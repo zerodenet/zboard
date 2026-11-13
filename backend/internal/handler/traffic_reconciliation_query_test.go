@@ -55,7 +55,7 @@ func TestTrafficReconciliationMySQLScopesDriveIndexedJoin(t *testing.T) {
 			if strings.Contains(statement, "traffic_records.user_id") {
 				t.Fatalf("incorrectly hid wrong-owner audit records: %s", statement)
 			}
-			if tc.scoped && (len(result.Statement.Vars) != 1 || result.Statement.Vars[0] != 123) {
+			if tc.scoped && (len(result.Statement.Vars) != 2 || result.Statement.Vars[0] != 123 || result.Statement.Vars[1] != 123) {
 				t.Fatalf("scope argument lost: %v", result.Statement.Vars)
 			}
 		})

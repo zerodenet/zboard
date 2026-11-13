@@ -30,6 +30,7 @@ type SeriesNode struct {
 	Missing              bool
 }
 type NodeSeriesSnapshot struct {
+	History   *HistoryCoverage `json:"history,omitempty"`
 	Points    []NodeSeriesPoint
 	Nodes     []SeriesNode
 	Truncated bool

@@ -24,14 +24,15 @@
     <p v-if="statisticsReady && statisticsData" class="muted">区间统计时间：<TimeBadge :value="statisticsData.as_of" />（翻页不刷新统计）<UiButton variant="ghost" size="sm" :disabled="statisticsLoading" @click="recordStatistics.load()">刷新区间统计</UiButton></p>
 
     <UiMetricStrip class="traffic-summary">
-      <MetricCard label="聚合明细" :value="statisticsReady ? formatNumber(recordTotal || 0) : '—'" icon="activity" tone="info" :meta="`当前时间范围内的${bucketLabel}聚合结果`" />
-      <MetricCard label="原始流量" :value="statisticsReady ? formatBytes(recordAggregates.raw_bytes || 0) : '—'" icon="database" tone="info" meta="不受当前游标页影响" />
-      <MetricCard label="计费流量" :value="statisticsReady ? formatBytes(recordAggregates.used_bytes || 0) : '—'" icon="billing" tone="info" icon-tone="warning" meta="已应用实际计费倍率" />
-      <MetricCard label="关联订阅" :value="statisticsReady ? formatNumber(recordAggregates.subscription_count || 0) : '—'" icon="plans" tone="info" icon-tone="success" :meta="statisticsReady ? `${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点` : '区间统计尚未就绪'" />
+      <MetricCard label="聚合明细" :value="statisticsReady && !statisticsData?.history?.expired ? formatNumber(recordTotal || 0) : '—'" icon="activity" tone="info" :meta="`当前时间范围内的${bucketLabel}聚合结果`" />
+      <MetricCard label="原始流量" :value="statisticsReady && !statisticsData?.history?.expired ? formatBytes(recordAggregates.raw_bytes || 0) : '—'" icon="database" tone="info" meta="不受当前游标页影响" />
+      <MetricCard label="计费流量" :value="statisticsReady && !statisticsData?.history?.expired ? formatBytes(recordAggregates.used_bytes || 0) : '—'" icon="billing" tone="info" icon-tone="warning" meta="已应用实际计费倍率" />
+      <MetricCard label="关联订阅" :value="statisticsReady && !statisticsData?.history?.expired ? formatNumber(recordAggregates.subscription_count || 0) : '—'" icon="plans" tone="info" icon-tone="success" :meta="statisticsReady ? `${formatNumber(recordAggregates.user_count || 0)} 个用户 · ${formatNumber(recordAggregates.node_count || 0)} 个节点` : '区间统计尚未就绪'" />
     </UiMetricStrip>
     </template>
 
     <PageAlert v-if="trendError" tone="danger" title="流量趋势加载失败">{{ trendError }} <UiButton variant="secondary" @click="trendResource.load()">重试趋势</UiButton></PageAlert>
+    <TrafficHistoryCoverageHint :history="trafficTrend.history || recordTable.history.value" />
     <TrafficObservabilityChart v-if="!trendError || trendSnapshotAvailable"
       :points="trafficTrend.points"
       :loading="trendLoading || !trendLoaded"
@@ -57,7 +58,7 @@
       <DataTable v-else-if="records.length" :caption="`流量使用明细（按${bucketLabel}聚合）`" :row-count="recordTotal" :min-width="1020" table-class="traffic-table">
         <thead>
           <tr>
-            <th class="table-primary-column">时间</th>
+            <th class="table-primary-column">{{ recordTable.bucket.value === 'day' ? '日期（UTC）' : '时间' }}</th>
             <th data-column-priority="3">用户</th>
             <th>订阅</th>
             <th data-column-priority="2">节点</th>
@@ -68,7 +69,7 @@
         </thead>
         <tbody>
           <tr v-for="record in records" :key="record.id">
-            <td class="table-primary-column"><TimeBadge :value="record.record_at" mode="exact" /></td>
+            <td class="table-primary-column"><span v-if="recordTable.bucket.value === 'day'">{{ record.record_at.slice(0, 10) }}</span><TimeBadge v-else :value="record.record_at" mode="exact" /></td>
             <td data-column-priority="3"><EntityReference :reference="userReference(record.user_id)" :fallback-id="record.user_id" fallback-kind="user" compact /></td>
             <td>
               <EntityReference
@@ -140,6 +141,7 @@
 </template>
 
 <script setup lang="ts">
+import TrafficHistoryCoverageHint from './account/TrafficHistoryCoverageHint.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTrafficReconciliationPage, type TrafficReconciliationAggregates, type TrafficReconciliationItem } from '../api/client'
@@ -195,7 +197,7 @@ const breakdownScope = computed(() => ({
 }))
 const bucket = ref<TrafficUsageBucket>(normalizeBucket(route.query.bucket))
 const bucketOptions = [{ label: '按天', value: 'day' }, { label: '按小时', value: 'hour' }, { label: '按分钟', value: 'minute' }]
-const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : bucket.value === 'day' ? '天' : '小时')
+const bucketLabel = computed(() => recordTable.bucket.value === 'minute' ? '分钟' : recordTable.bucket.value === 'day' ? '天' : '小时')
 const allowedPageSizes = [25, 50, 100]
 const initialRecordLimit = Number(route.query.limit)
 const recordLimit = ref(allowedPageSizes.includes(initialRecordLimit) ? initialRecordLimit : 50)

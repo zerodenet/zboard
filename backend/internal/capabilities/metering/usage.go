@@ -31,6 +31,7 @@ type UsageQuery struct {
 	IncludeTotals, SummaryOnly bool
 }
 type UsageSnapshot struct {
+	History    *HistoryCoverage `json:"history,omitempty"`
 	Rows       []UsageRow
 	Statistics *UsageStatistics
 	HasMore    bool

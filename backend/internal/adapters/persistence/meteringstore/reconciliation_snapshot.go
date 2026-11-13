@@ -81,7 +81,7 @@ func loadTrafficReconciliation(db *gorm.DB, userID, subscriptionID uint, now tim
 			SubscriptionID uint  `gorm:"column:subscription_id"`
 			RecordedBytes  int64 `gorm:"column:recorded_bytes"`
 		}
-		if err := db.Model(&model.TrafficRecord{}).
+		if err := settlementResultSource(db).
 			Select("subscription_id, COALESCE(SUM(used_bytes), 0) AS recorded_bytes").
 			Where("subscription_id IN ?", ids).
 			Group("subscription_id").Scan(&aggregates).Error; err != nil {

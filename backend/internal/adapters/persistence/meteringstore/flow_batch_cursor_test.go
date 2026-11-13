@@ -19,6 +19,8 @@ type cohortSQL struct {
 	usageReads, writes int
 	receiptWrites      int
 	receiptRows        int64
+	resultWrites       int
+	resultRows         int64
 	affected           int64
 }
 
@@ -31,6 +33,10 @@ func (c *cohortSQL) Trace(_ context.Context, _ time.Time, sql func() (string, in
 	if strings.HasPrefix(upper, "INSERT") || strings.HasPrefix(upper, "UPDATE") || strings.HasPrefix(upper, "DELETE") {
 		c.writes++
 		c.affected += rows
+		if strings.Contains(text, "metering_settlement_results") || (strings.HasPrefix(upper, "UPDATE") && strings.Contains(text, "result_recorded")) {
+			c.resultWrites++
+			c.resultRows += rows
+		}
 		if strings.HasPrefix(upper, "INSERT") && strings.Contains(text, "metering_report_receipts") {
 			c.receiptWrites++
 			c.receiptRows += rows
@@ -123,7 +129,7 @@ func TestSQLiteCursorCohort32ReadsOnceWithoutAdditionalWrites(t *testing.T) {
 		}
 		// One cursor cohort read remains; minute ledger and pending rows now
 		// coalesce instead of creating 32 financial/projection source rows.
-		if count.usageReads != 1 || count.writes-count.receiptWrites != 37 || count.affected-count.receiptRows != 37 || count.receiptWrites != 1 || count.receiptRows != 32 {
+		if count.usageReads != 1 || count.writes-count.receiptWrites-count.resultWrites != 37 || count.affected-count.receiptRows-count.resultRows != 37 || count.receiptWrites != 1 || count.receiptRows != 32 {
 			t.Fatalf("batch%d reads=%d original-writes=%d original-rows=%d receipt-writes=%d receipt-rows=%d want1/37/37/1/32", batch, count.usageReads, count.writes-count.receiptWrites, count.affected-count.receiptRows, count.receiptWrites, count.receiptRows)
 		}
 		cohortTotal(t, db, int64(batch+1)*960)

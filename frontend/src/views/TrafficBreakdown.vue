@@ -9,7 +9,8 @@
       <PageAlert v-if="error && !data" tone="danger" title="维度统计加载失败">{{ error }} <UiButton variant="secondary" @click="load">重试统计</UiButton></PageAlert>
       <p v-if="loading && !resource.loaded.value" role="status">正在加载维度统计…</p>
       <template v-if="data">
-        <UiMetricStrip>
+        <TrafficHistoryCoverageHint :history="data.history" />
+        <UiMetricStrip v-if="!data.history?.expired">
           <MetricCard label="上传流量" :value="formatBytes(data.totals.upload_bytes)" icon="upload" meta="整个筛选区间" />
           <MetricCard label="下载流量" :value="formatBytes(data.totals.download_bytes)" icon="download" meta="整个筛选区间" />
           <MetricCard label="原始计量" :value="formatBytes(data.totals.raw_bytes)" icon="activity" meta="按订阅计量方式计算" />
@@ -26,13 +27,14 @@
             <td class="table-action-column"><RowActions label="流量分组操作"><template #primary><UiButton variant="ghost" size="sm" :disabled="!item.id" @click="emit('drilldown', dimension, item.id, false)">筛选统计</UiButton><UiButton variant="ghost" size="sm" :disabled="!item.id" @click="emit('drilldown', dimension, item.id, true)">用量明细</UiButton></template></RowActions></td>
           </tr></tbody>
         </DataTable>
-        <EmptyState v-else icon="activity" title="没有维度统计" description="当前筛选区间尚无已入账的用量。" />
+        <EmptyState v-else-if="!data.history?.expired" icon="activity" title="没有维度统计" description="当前筛选区间尚无已入账的用量。" />
         <TablePager :total="data.total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" />
       </template>
     </div>
   </UiSection>
 </template>
 <script setup lang="ts">
+import TrafficHistoryCoverageHint from './account/TrafficHistoryCoverageHint.vue'
 import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { fetchTrafficBreakdown, type TrafficBreakdown, type TrafficDimension } from '../api/trafficUsage'
 import { useRemoteResource } from '../composables/useRemoteResource'

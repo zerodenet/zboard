@@ -79,6 +79,9 @@ func TestCompletedFloorCollationAliasCannotCreateSecondHotIdentity(t *testing.T)
 	}
 	pool, _ := db.DB()
 	t.Cleanup(func() { pool.Close() })
+	if err := db.AutoMigrate(&model.Node{}, &model.MeteringColdRoot{}, &model.MeteringColdBlock{}, &model.MeteringIdentityProfile{}); err != nil {
+		t.Fatal(err)
+	}
 	// Match a case-insensitive source identity, without relying on Go equality.
 	for _, ddl := range []string{
 		"CREATE TABLE flow_usages (id INTEGER PRIMARY KEY, node_id INTEGER NOT NULL,flow_id TEXT COLLATE NOCASE NOT NULL,UNIQUE(node_id,flow_id))",

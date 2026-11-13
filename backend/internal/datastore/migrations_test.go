@@ -155,7 +155,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0082_runtime_metric_history.up.sql",
 		"0083_flow_cursor_checkpoints.up.sql",
 		"0084_flow_detail_retention.up.sql",
-		"0085_observation_mailboxes.up.sql",
+		"0085_observation_mailboxes.up.sql", "0086_metering_settlement_results.up.sql", "0087_metering_ledger_retention.up.sql", "0088_metering_cold_identities.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -245,7 +245,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0082_runtime_metric_history.down.sql",
 		"0083_flow_cursor_checkpoints.down.sql",
 		"0084_flow_detail_retention.down.sql",
-		"0085_observation_mailboxes.down.sql",
+		"0085_observation_mailboxes.down.sql", "0086_metering_settlement_results.down.sql", "0087_metering_ledger_retention.down.sql", "0088_metering_cold_identities.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

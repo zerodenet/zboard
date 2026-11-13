@@ -1,9 +1,11 @@
 package datastore
 
 import (
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/migrations"
 	"gorm.io/gorm"
 	"strings"
+	"time"
 )
 
 // Legacy hourly-pending facts contribute zero. A minute row may contain both
@@ -52,6 +54,11 @@ func rebuildMinuteAwareHourly(tx *gorm.DB) error {
 	target = append(target, columns...)
 	if err := tx.Exec("DELETE FROM traffic_usage_hourly").Error; err != nil {
 		return err
+	}
+	if tx.Migrator().HasColumn("traffic_records", "retention_level") {
+		source += " WHERE r.record_at >= ?"
+		cut := tx.NowFunc().UTC().Add(-metering.HourlyHistoryHorizon).Truncate(24 * time.Hour)
+		return tx.Exec("INSERT INTO traffic_usage_hourly("+strings.Join(target, ",")+") SELECT "+strings.Join(values, ",")+" FROM ("+source+") AS projected_source WHERE record_count>0 GROUP BY "+hour+","+strings.Join(dims, ","), cut).Error
 	}
 	return tx.Exec("INSERT INTO traffic_usage_hourly(" + strings.Join(target, ",") + ") SELECT " + strings.Join(values, ",") + " FROM (" + source + ") AS projected_source WHERE record_count>0 GROUP BY " + hour + "," + strings.Join(dims, ",")).Error
 }

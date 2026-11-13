@@ -26,7 +26,7 @@ func TestSQLiteUsageProjectionSchemaPreservesInterruptedQueueAndRefusesLostSourc
 		t.Fatal(err)
 	}
 	record := model.TrafficRecord{ID: 1, NodeID: 1, ProtocolEndpointID: 7, ReportID: "kept", Nonce: "kept", At: time.Now().UTC(), UsedBytes: 13}
-	if err := db.Omit("is_aggregate", "record_count").Create(&record).Error; err != nil {
+	if err := db.Omit("retention_level", "result_recorded", "is_aggregate", "record_count").Create(&record).Error; err != nil {
 		t.Fatal(err)
 	}
 	pending := model.MeteringUsageProjectionPending{TrafficRecordID: 1, ProtocolEndpointID: 7, CreatedAt: time.Now().UTC()}

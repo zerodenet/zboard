@@ -23,6 +23,8 @@ export function useTrafficUsageTable(query: () => TrafficUsageQuery, admin = fal
   const statisticsReady = computed(() => Boolean(statistics.data.value && !statistics.error.value))
   return {
     load: page.load, reset: page.reset,
+    bucket: computed(() => page.data.value?.bucket || statistics.data.value?.bucket || query().bucket || 'hour'),
+    history: computed(() => page.data.value?.history || statistics.data.value?.history),
     items: computed(() => page.data.value?.items || []),
     facets: computed(() => page.data.value?.facets || {} as TrafficUsageReferences),
     hasLoaded: page.loaded, loading: page.loading, error: page.error,

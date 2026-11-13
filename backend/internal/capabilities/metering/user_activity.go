@@ -18,6 +18,7 @@ type UserActivityItem struct {
 	Days      []UserActivityDay `json:"days"`
 }
 type UserActivityData struct {
+	History           *HistoryCoverage   `json:"history,omitempty"`
 	From              string             `json:"from"`
 	To                string             `json:"to"`
 	Timezone          string             `json:"timezone"`

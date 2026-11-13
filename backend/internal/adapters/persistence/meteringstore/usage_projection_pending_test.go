@@ -35,7 +35,7 @@ func usageProjectionDB(t testing.TB, path string) *gorm.DB {
 		}
 	}
 	for _, spec := range []struct{ table, name, kind, initial string }{
-		{"traffic_records", "is_aggregate", "numeric", "false"}, {"traffic_records", "record_count", "integer", "1"},
+		{"traffic_records", "retention_level", "integer", "0"}, {"traffic_records", "result_recorded", "numeric", "false"}, {"traffic_records", "is_aggregate", "numeric", "false"}, {"traffic_records", "record_count", "integer", "1"},
 		{"metering_usage_projection_pending", "delta_raw_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_upload_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_download_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_used_bytes", "integer", "0"}, {"metering_usage_projection_pending", "delta_record_count", "integer", "0"},
 	} {
 		if !db.Migrator().HasColumn(spec.table, spec.name) {
@@ -46,6 +46,20 @@ func usageProjectionDB(t testing.TB, path string) *gorm.DB {
 	}
 	if !db.Migrator().HasTable("traffic_usage_hourly") {
 		if err := datastore.RebuildTrafficHourly(db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.AutoMigrate(&model.MeteringColdRoot{}, &model.MeteringColdBlock{}, &model.MeteringIdentityProfile{}, &model.MeteringColdProgress{}, &model.MeteringSettlementResult{}, &model.MeteringSettlementProgress{}, &model.MeteringNonceReceipt{}, &model.MeteringLedgerTarget{}, &model.MeteringLedgerRetentionProgress{}, &model.MeteringReportReceipt{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO metering_settlement_progress(id,after_id,upper_id) VALUES(1,0,0) ON CONFLICT DO NOTHING").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO metering_ledger_retention_progress(id,after_id,upper_id,high_water_id,held_count,last_held_id,last_hold_reason,next_pass_at) VALUES(1,0,0,0,0,0,'','1970-01-01 00:00:00') ON CONFLICT DO NOTHING").Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []uint8{1, 2, 3} {
+		if err := db.Exec("INSERT INTO metering_identity_profiles(kind,collation,pad_space) VALUES(?,?,0) ON CONFLICT DO NOTHING", kind, "BINARY").Error; err != nil {
 			t.Fatal(err)
 		}
 	}

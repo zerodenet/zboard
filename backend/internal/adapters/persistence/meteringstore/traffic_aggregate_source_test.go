@@ -23,6 +23,7 @@ func trafficAggregateDB(t testing.TB) *gorm.DB {
 	if err := datastore.RunMigrations(db); err != nil {
 		t.Fatal(err)
 	}
+	db.Config.NowFunc = func() time.Time { return time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC) }
 	return db
 }
 func TestTrafficAggregateExactEdgesAndEveryScope(t *testing.T) {
@@ -105,6 +106,7 @@ func TestTrafficDailyTrendPreservesQuarterHourTimezoneBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	db.Config.NowFunc = func() time.Time { return time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC) }
 	from := time.Date(2026, 9, 27, 0, 0, 0, 0, location)
 	boundary := from.AddDate(0, 0, 1)
 	for i, at := range []time.Time{boundary.Add(-10 * time.Minute), boundary.Add(10 * time.Minute)} {

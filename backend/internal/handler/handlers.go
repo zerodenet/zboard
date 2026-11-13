@@ -2683,6 +2683,7 @@ func (h *handlers) trafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 	if cursor == nil && q.Offset > 0 {
 		data := pagedData(records, result.Total, q.Offset, q.Limit)
 		data["aggregates"] = result.Aggregates
+		data["history"] = result.History
 		OK(w, data)
 		return
 	}
@@ -2696,6 +2697,7 @@ func (h *handlers) trafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 	}
 	data := cursorPagedData(records, result.Total, q.Limit, nextCursor, previousCursor)
 	data["aggregates"] = result.Aggregates
+	data["history"] = result.History
 	OK(w, data)
 }
 

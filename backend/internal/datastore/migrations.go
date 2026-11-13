@@ -121,6 +121,15 @@ var preReleaseBaselineIndexes = []struct {
 // Its applied rows are preserved so the immediately previous development
 // binary remains rollback-compatible.
 func RunMigrations(db *gorm.DB) error {
+	if err := preflightMeteringColdSchema(db); err != nil {
+		return err
+	}
+	if err := preflightLedgerRetentionSchema(db); err != nil {
+		return err
+	}
+	if err := preflightSettlementResultSchema(db); err != nil {
+		return err
+	}
 	if err := preflightObservationMailboxSchema(db); err != nil {
 		return err
 	}
@@ -429,6 +438,15 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileObservationMailboxSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileSettlementResultSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileLedgerRetentionSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileMeteringColdSchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -481,6 +499,24 @@ func runMigrations(db *gorm.DB) error {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied > 0 {
+			continue
+		}
+		if version == meteringColdVersion {
+			if err := reconcileMeteringColdSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == ledgerRetentionVersion {
+			if err := reconcileLedgerRetentionSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == settlementResultVersion {
+			if err := reconcileSettlementResultSchema(db); err != nil {
+				return err
+			}
 			continue
 		}
 		if version == observationMailboxVersion {

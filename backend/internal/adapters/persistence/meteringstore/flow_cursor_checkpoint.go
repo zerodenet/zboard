@@ -29,6 +29,9 @@ func checkpointFlowUsage(row model.FlowCursorCheckpoint) model.FlowUsage {
 // Both tables use the original database identity collation. Lookup and transfer
 // happen under the caller's accounting transaction, after attribution/quota locks.
 func loadFlowUsageCandidates(tx *gorm.DB, node uint, keys []string) ([]model.FlowUsage, error) {
+	if err := lockIdentityReader(tx, node); err != nil {
+		return nil, err
+	}
 	var hot []model.FlowUsage
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", node, keys).Order("flow_id").Find(&hot).Error; err != nil {
 		return nil, err
@@ -37,6 +40,22 @@ func loadFlowUsageCandidates(tx *gorm.DB, node uint, keys []string) ([]model.Flo
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", node, keys).Order("flow_id").Find(&cold).Error; err != nil {
 		return nil, err
 	}
+	sealed, err := coldFloorCandidates(tx, node, keys)
+	if err != nil {
+		return nil, err
+	}
+	if len(sealed) > 0 && len(cold) > 0 {
+		for _, r := range sealed {
+			var n int64
+			if err := tx.Model(&model.FlowCursorCheckpoint{}).Where("node_id=? AND flow_id=?", node, r.FlowID).Count(&n).Error; err != nil {
+				return nil, err
+			}
+			if n > 0 {
+				return nil, errors.New("duplicate compact/sealed floor authority")
+			}
+		}
+	}
+	cold = append(cold, sealed...)
 	if len(hot) > 0 && len(cold) > 0 {
 		// Compare through the database column, including case/accent/padding
 		// equivalence. Go string equality cannot certify identity disjointness.
@@ -68,7 +87,13 @@ func saveFlowUsage(tx *gorm.DB, row *model.FlowUsage, found bool, previousKey st
 			return removed.Error
 		}
 		if removed.RowsAffected != 1 {
-			return errors.New("flow checkpoint accounting floor disappeared during update")
+			found, err := takeColdFloor(tx, row.NodeID, previousKey)
+			if err != nil {
+				return err
+			}
+			if !found {
+				return errors.New("flow checkpoint accounting floor disappeared during update")
+			}
 		}
 	}
 	if found && row.ID != 0 && previousKey == row.FlowID {
@@ -85,6 +110,11 @@ func saveFlowUsage(tx *gorm.DB, row *model.FlowUsage, found bool, previousKey st
 	}
 	if r.RowsAffected > 0 {
 		return errors.New("flow identity already has a compact accounting floor")
+	}
+	if _, ok, err := lookupColdIdentity(tx, row.NodeID, coldFloor, row.FlowID, true); err != nil {
+		return err
+	} else if ok {
+		return errors.New("flow identity already has sealed accounting authority")
 	}
 	if found && row.ID != 0 {
 		return tx.Save(row).Error

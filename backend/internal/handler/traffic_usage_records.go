@@ -156,7 +156,11 @@ func (h *handlers) TrafficUsageRecordsHandler(w http.ResponseWriter, r *http.Req
 	data := trafficUsagePageData(rows, total, pageOffset, limit, next, previous)
 	data["aggregates"] = aggregates
 	data["statistics_as_of"] = asOf
+	data["history"] = result.History
 	data["bucket"] = bucket.Name
+	if result.History != nil {
+		data["bucket"] = result.History.Bucket
+	}
 	if !adminScope {
 		refs := trafficPageReferences{Subscriptions: map[string]entityReference{}, Nodes: map[string]entityReference{}}
 		for _, v := range result.References {

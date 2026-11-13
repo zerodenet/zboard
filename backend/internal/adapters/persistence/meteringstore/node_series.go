@@ -32,6 +32,9 @@ func (s NodeSeries) Read(ctx context.Context, actor uint, q metering.NodeSeriesQ
 	if read == nil {
 		read = s.DB
 	}
+	coverage := historyCoverage(q.From, q.To, q.Bucket, read.NowFunc())
+	result.History = &coverage
+	q.From, q.To, q.Bucket = coverage.From, coverage.To, coverage.Bucket
 	err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if q.Bucket != "minute" {
 			if err := EnsureHourlyUsageReadable(tx, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, q.From, q.To); err != nil {

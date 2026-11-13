@@ -65,6 +65,7 @@ type TrafficTrendReference struct {
 	DisplayName, Secondary, Status string
 }
 type TrafficTrendData struct {
+	History       *HistoryCoverage
 	Snapshot      TrafficTrendSnapshot
 	Subscriptions []TrafficTrendReference
 }

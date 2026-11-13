@@ -28,6 +28,7 @@ type RecordsQuery struct {
 	Cursor                                             *RecordCursor
 }
 type RecordsSnapshot struct {
+	History    *HistoryCoverage `json:"history,omitempty"`
 	Records    []TrafficRecord
 	Total      int64
 	Aggregates RecordAggregates
@@ -37,6 +38,7 @@ type RecordsSnapshot struct {
 // TrafficRecordSummary is the explicit public raw-page projection. Full reads
 // keep TrafficRecord, including its accounting evidence and provenance fields.
 type TrafficRecordSummary struct {
+	RetentionLevel          int16     `json:"retention_level,omitempty"`
 	IsAggregate             bool      `json:"is_aggregate,omitempty"`
 	RecordCount             int64     `json:"record_count,omitempty"`
 	ID                      uint      `json:"id"`
@@ -53,6 +55,7 @@ type TrafficRecordSummary struct {
 }
 
 type RecordsSummaryPage struct {
+	History    *HistoryCoverage `json:"history,omitempty"`
 	Records    []TrafficRecordSummary
 	Total      int64
 	Aggregates RecordAggregates

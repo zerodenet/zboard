@@ -32,7 +32,7 @@ func TestSQLiteHourlyProjectionCutoverPreservesHistoricalAndPendingBoundaries(t 
 	}
 	at := time.Date(2026, 10, 20, 1, 0, 0, 0, time.UTC)
 	old := model.TrafficRecord{ID: 1, NodeID: 3, UserID: 7, ProtocolEndpointID: 9, ReportID: "old", Nonce: "old", At: at, RawBytes: 7, UsedBytes: 11}
-	if err := db.Omit("is_aggregate", "record_count").Create(&old).Error; err != nil {
+	if err := db.Omit("retention_level", "result_recorded", "is_aggregate", "record_count").Create(&old).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Table(usageProjectionTable).Create(map[string]any{"traffic_record_id": old.ID, "protocol_endpoint_id": old.ProtocolEndpointID, "created_at": at}).Error; err != nil {
@@ -67,7 +67,7 @@ func TestSQLiteHourlyProjectionCutoverPreservesHistoricalAndPendingBoundaries(t 
 	current.ReportID = "new"
 	current.Nonce = "new"
 	current.UsedBytes = 13
-	if err := db.Create(&current).Error; err != nil {
+	if err := db.Omit("retention_level", "result_recorded").Create(&current).Error; err != nil {
 		t.Fatal(err)
 	}
 	pending := model.MeteringUsageProjectionPending{TrafficRecordID: current.ID, ProtocolEndpointID: current.ProtocolEndpointID, CreatedAt: at, HourlyPending: true, UserID: current.UserID, NodeID: current.NodeID, RecordAt: &at}
@@ -159,7 +159,7 @@ func TestSQLiteHourlyProjectionPendingStorageSample(t *testing.T) {
 				key := fmt.Sprint(i)
 				records[i] = model.TrafficRecord{UserID: uint(i%64 + 1), SubscriptionID: uint(i%128 + 1), NodeID: uint(i%16 + 1), ProtocolEndpointID: uint(i%8 + 1), ReportID: key, Nonce: key, At: at.Add(time.Duration(i) * time.Second), UsedBytes: 11}
 			}
-			if err := db.Omit("is_aggregate", "record_count").CreateInBatches(&records, 100).Error; err != nil {
+			if err := db.Omit("retention_level", "result_recorded", "is_aggregate", "record_count").CreateInBatches(&records, 100).Error; err != nil {
 				t.Fatal(err)
 			}
 			if current {

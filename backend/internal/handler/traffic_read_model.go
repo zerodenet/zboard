@@ -35,6 +35,7 @@ type trafficTrendAggregateRow = metering.TrafficTrendAggregate
 type trafficTrendPoint = metering.TrafficTrendPoint
 
 type trafficTrendResponse struct {
+	History               *metering.HistoryCoverage  `json:"history,omitempty"`
 	ProjectionPending     bool                       `json:"projection_pending"`
 	Scope                 metering.TrafficTrendScope `json:"scope"`
 	From                  string                     `json:"from"`

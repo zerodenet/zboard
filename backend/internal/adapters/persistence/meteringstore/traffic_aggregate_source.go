@@ -19,6 +19,10 @@ func TrafficAggregateSource(db *gorm.DB, from, to time.Time, scope TrafficScope)
 
 // Batch user predicates are pushed into every projection, pending and edge source.
 func trafficAggregateSourceForUsers(db *gorm.DB, from, to time.Time, scope TrafficScope, users []uint) *gorm.DB {
+	return trafficAggregateSourceAt(db, from, to, scope, users, true)
+}
+
+func trafficAggregateSourceAt(db *gorm.DB, from, to time.Time, scope TrafficScope, users []uint, split bool) *gorm.DB {
 	start := from.UTC().Truncate(time.Hour)
 	if start.Before(from) {
 		start = start.Add(time.Hour)
@@ -43,6 +47,21 @@ func trafficAggregateSourceForUsers(db *gorm.DB, from, to time.Time, scope Traff
 	}
 	columns := "record_at, user_id, subscription_id, node_id, protocol_endpoint_id, protocol_multiplier_milli, raw_bytes, upload_bytes, download_bytes, used_bytes"
 	ledger := apply(db.Table("traffic_records").Select(columns+", record_count").Where("record_at >= ? AND record_at < ?", from, to))
+	// The independently maintained hourly index has a finite 30-day lifetime.
+	// Older display ranges read the disjoint retained day ledger, not a second
+	// permanent copy. Pending deltas still belong to their original sources.
+	cut := db.NowFunc().UTC().Add(-LedgerHourHorizon).Truncate(24 * time.Hour)
+	if split && (from.IsZero() || from.Before(cut)) {
+		if !to.IsZero() && !to.After(cut) {
+			return db.Table("(?) AS traffic_aggregate", ledger)
+		}
+		old := apply(db.Table("traffic_records").Select(columns+", record_count").Where("record_at < ?", cut))
+		if !from.IsZero() {
+			old = old.Where("record_at >= ?", from)
+		}
+		recent := trafficAggregateSourceAt(db, cut, to, scope, users, false).Select(columns + ", record_count")
+		return db.Table("(? UNION ALL ?) AS traffic_aggregate", old, recent)
+	}
 	if !start.IsZero() && !end.IsZero() && !start.Before(end) {
 		return db.Table("(?) AS traffic_aggregate", ledger)
 	}

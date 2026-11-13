@@ -35,6 +35,7 @@ func TestTrafficCalendarProjectionPreservesEveryLocalDayAndScope(t *testing.T) {
 	for _, timezone := range []string{"UTC", "Asia/Shanghai", "Asia/Kathmandu", "Australia/Adelaide", "Australia/Lord_Howe", "America/New_York"} {
 		t.Run(timezone, func(t *testing.T) {
 			db := trafficAggregateDB(t)
+			db.Config.NowFunc = func() time.Time { return time.Date(2026,10,6,0,0,0,0,time.UTC) }
 			q := calendarQuery(t, timezone, "2026-10-03", 3)
 			// Include midnight edges, sub-second precision, daylight-saving
 			// transitions, and foreign owners/endpoints in the same hours.
