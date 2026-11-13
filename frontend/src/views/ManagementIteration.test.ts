@@ -37,7 +37,7 @@ it('restores false role and verification filters, resets paging, clears filters 
 })
 it('shows order purpose and customer email, and restores optional filters',async()=>{
  vi.mocked(fetchOrdersPage).mockResolvedValue({items:[{id:4,user_id:2,user_email:'buyer@example.test',order_type:'traffic_reset',status:'paid',amount_cents:500,trade_no:'T-4',created_at:'2026-09-28'}],total:1} as any)
- const {view,router}=await open(Orders,'/admin/orders');expect(view.text()).toContain('#4 · 重置流量')
+ const {view,router}=await open(Orders,'/admin/orders');expect(view.text()).toContain('DD20260928080000000004 · 重置流量')
  expect(view.text()).toContain('buyer@example.test')
  expect(view.get('button[aria-controls]').attributes('aria-expanded')).toBe('false')
  await router.push('/admin/orders?order_type=traffic_reset&user_id=2');await flushPromises();expect(view.get('button[aria-controls]').attributes('aria-expanded')).toBe('true')

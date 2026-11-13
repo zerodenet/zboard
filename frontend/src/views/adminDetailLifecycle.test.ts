@@ -3,6 +3,7 @@ import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Orders from './Orders.vue'
+import BusinessReference from '../components/BusinessReference.vue'
 import Nodes from './Nodes.vue'
 import NodeCounterObservation from '../components/NodeCounterObservation.vue'
 import NodeObservationQueue from '../components/NodeObservationQueue.vue'
@@ -50,7 +51,7 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
 
 const cases = [
-  { name: 'orders', component: Orders, queryKey: 'order', title: (id: number) => `订单 #${id}` },
+  { name: 'orders', component: Orders, queryKey: 'order', title: (_id: number) => '订单详情' },
   { name: 'users', component: Users, queryKey: 'user', title: (id: number) => `user-${id}@example.com` },
   { name: 'subscriptions', component: Subscriptions, queryKey: 'subscription', title: (id: number) => `订阅 #${id}` },
   { name: 'nodes', component: Nodes, queryKey: 'node', title: (id: number) => `node-${id}` },
@@ -112,14 +113,21 @@ it('passes only the selected node counter evidence to its detail view', async ()
   expect(mocks.detail.mock.calls.map(call => call[0])).toEqual([1, 2])
 })
 
+function expectSelectedEntity(view: VueWrapper, testCase: typeof cases[number], id: number) {
+  expect(view.get('[data-detail] h2').text()).toBe(testCase.title(id))
+  if (testCase.name === 'orders') {
+    expect(view.getComponent(BusinessReference).props('value')).toBe(`DD${String(id).padStart(10, '0')}`)
+  }
+}
+
 describe.each(cases)('$name detail lifecycle', testCase => {
   it('opens linked details while the filtered list is still pending', async () => {
     mocks.list.mockReturnValue(new Promise(() => {}))
     const { router, wrapper } = await render(testCase)
-    expect(wrapper.get('[data-detail] h2').text()).toBe(testCase.title(1))
+    expectSelectedEntity(wrapper, testCase, 1)
     await router.push({ query: { [testCase.queryKey]: '2', q: 'another filter' } })
     await flushPromises()
-    expect(wrapper.get('[data-detail] h2').text()).toBe(testCase.title(2))
+    expectSelectedEntity(wrapper, testCase, 2)
   })
 
   it('keeps the selected entity when an older transport response arrives late', async () => {
@@ -128,10 +136,10 @@ describe.each(cases)('$name detail lifecycle', testCase => {
     const { router, wrapper } = await render(testCase)
     await router.push({ query: { [testCase.queryKey]: '2' } })
     await flushPromises()
-    expect(wrapper.get('[data-detail] h2').text()).toBe(testCase.title(2))
+    expectSelectedEntity(wrapper, testCase, 2)
     old.resolve(detail(1))
     await flushPromises()
-    expect(wrapper.get('[data-detail] h2').text()).toBe(testCase.title(2))
+    expectSelectedEntity(wrapper, testCase, 2)
   })
 
   it('does not show an old entity failure on the currently selected entity', async () => {
