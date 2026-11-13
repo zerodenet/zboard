@@ -8,6 +8,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"time"
 )
 
@@ -44,9 +45,14 @@ func readSubscriptionValue(tx *gorm.DB, sub model.Subscription, at time.Time) (c
 	if sub.NextResetAt != nil && !sub.NextResetAt.After(at) && sub.EndAt.After(at) {
 		return commerce.ValueProjection{}, "", commerce.ErrSubscriptionValueCyclePending
 	}
-	records, sources, currency, err := subscriptionValueRecords(subscriptionValueOrderQuery(tx, sub), sub)
+	records, sources, currency, err := subscriptionValueRecords(subscriptionValueOrderQuery(tx, sub), sub, at)
 	if err != nil {
 		return commerce.ValueProjection{}, "", err
+	}
+	if len(records) > 0 && records[0].PaymentBasis == legacyZeroValueBasis {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, sub.ID).Error; err != nil {
+			return commerce.ValueProjection{}, currency, err
+		}
 	}
 	var projection commerce.ValueProjection
 	if entitlements.IsPerpetualEnd(sub.EndAt) {

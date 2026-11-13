@@ -148,3 +148,29 @@ func TestPerpetualFIFOPreservesEstablishedSingleLotQuotaSyncAndRejectsUnknownMix
 		t.Fatal("unattributed mixed-lot adjustment became paid value")
 	}
 }
+
+func TestPerpetualLegacyZeroBaselinePreservesLaterPaidQuota(t *testing.T) {
+	root := perpetualValuePurchase()
+	root.Kind, root.PaymentBasis, root.ActualPaidMinor = "legacy_migration", "legacy_zero_payment_migration", 0
+	root.After.FlowUsed = 40
+	root.CapturedAt = root.TermStartAt.AddDate(5, 0, 0)
+	root.QuotaEventAt = root.CapturedAt
+	paid := perpetualAddition(root, 2, 40, 100, 10000)
+	current := paid.After
+	current.FlowUsed = 110 // 60 remaining free bytes, then 10 paid bytes.
+	at := paid.CapturedAt.Add(time.Hour)
+	out, err := ProjectEntitlementValue([]EntitlementValueSnapshot{root, paid}, current, "CNY", at)
+	if err != nil || out.TotalMinor != 9000 || out.Sources[root.OrderID] != 0 || out.Sources[paid.OrderID] != 9000 {
+		t.Fatal("pre-migration usage consumed later paid quota", out, err)
+	}
+	// A subsequent free plan resize must use the same consumed-lot baseline.
+	detail, err := PreparePerpetualBaseQuotaSyncContext(t.Context(), []EntitlementValueSnapshot{root, paid}, nil, current, "CNY", at, 0, 100, 1)
+	if err != nil || detail.BaseConsumedBytes != 100 {
+		t.Fatal(detail, err)
+	}
+	event := PerpetualBaseQuotaSyncEvent{QuotaEventID: 3, QuotaEventAt: at, Detail: detail}
+	out, err = ProjectEntitlementValueWithBaseSyncContext(t.Context(), []EntitlementValueSnapshot{root, paid}, []PerpetualBaseQuotaSyncEvent{event}, detail.After, "CNY", at.Add(time.Hour), 0)
+	if err != nil || out.TotalMinor != 9000 || out.Sources[paid.OrderID] != 9000 {
+		t.Fatal(out, err)
+	}
+}

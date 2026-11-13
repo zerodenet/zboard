@@ -46,3 +46,9 @@ type EntitlementValueState struct {
 	ResetPolicy     int16      `json:"reset_policy"`
 	NextResetAt     *time.Time `json:"next_reset_at,omitempty"`
 }
+
+// A synthetic zero lot is backed by separately stored migration evidence, never
+// by an order repriced from today's catalog. It can contain already-used quota.
+func legacyZeroMigration(s EntitlementValueSnapshot) bool {
+	return s.Kind == "legacy_migration" && s.PaymentBasis == "legacy_zero_payment_migration" && s.ActualPaidMinor == 0 && s.Mode == "new_term" && s.PaymentVerified
+}

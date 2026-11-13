@@ -126,11 +126,14 @@ func replayPerpetualBaseSync(ctx context.Context, records []EntitlementValueSnap
 	if _, err := projectSinglePerpetualQuotaValue(ctx, records[:1], root.After, currency, at); err != nil {
 		return nil, err
 	}
-	rootKindValid := root.Mode == "new_term" && root.Kind == "new" || root.Mode == "recovery_term" && root.Kind == "renewal" || root.Mode == "replacement_term" && root.Kind == "upgrade"
+	rootKindValid := legacyZeroMigration(root) || root.Mode == "new_term" && root.Kind == "new" || root.Mode == "recovery_term" && root.Kind == "renewal" || root.Mode == "replacement_term" && root.Kind == "upgrade"
 	if !rootKindValid || root.After.PlanID == 0 || root.After.PlanSKUID == 0 || perpetualSyncTimeBefore(at, root.QuotaEventAt) || root.After.EndedAt != nil || root.After.Status != "active" || root.After.FlowUsed < 0 || root.After.CycleStartUsed < 0 {
 		return nil, ErrValueEvidence
 	}
 	replay := &perpetualSyncReplay{ctx: ctx, root: root, state: root.After, epoch: epoch, totalPaid: root.ActualPaidMinor, lastID: root.QuotaEventID, lastAt: root.QuotaEventAt, lots: []perpetualSyncLot{{OrderID: root.OrderID, Quota: root.After.FlowTotal - root.After.CycleStartUsed, PaidMinor: root.ActualPaidMinor}}}
+	if legacyZeroMigration(root) {
+		replay.lots[0].Consumed = root.After.FlowUsed - root.After.CycleStartUsed
+	}
 	if err := replay.bindSource("paid_grant", root); err != nil {
 		return nil, err
 	}

@@ -118,7 +118,7 @@ func prepareTimedPlanQuotaSync(tx *gorm.DB, sub model.Subscription, plan commerc
 		next, err := commerce.SynchronizedPlanQuota(sub.CycleStartUsed, sub.FlowUsed, sub.FlowTotal, plan.TrafficBytes)
 		return nil, next, 0, err
 	}
-	records, _, currency, err := subscriptionValueRecords(query, sub)
+	records, _, currency, err := subscriptionValueRecords(query, sub, at)
 	if err != nil {
 		return nil, 0, 0, planBaseQuotaReadError(err)
 	}

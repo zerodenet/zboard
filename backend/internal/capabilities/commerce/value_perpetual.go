@@ -37,7 +37,7 @@ func projectSinglePerpetualQuotaValue(ctx context.Context, records []Entitlement
 		return empty, ErrValueEvidence
 	}
 	quota, err := quotaForValue(current)
-	if err != nil || s.After.FlowUsed != s.After.CycleStartUsed || s.After.FlowTotal <= s.After.CycleStartUsed {
+	if err != nil || (s.After.FlowUsed != s.After.CycleStartUsed && !legacyZeroMigration(s)) || s.After.FlowTotal <= s.After.CycleStartUsed {
 		return empty, ErrValueEvidence
 	}
 	remaining := int64(0)
@@ -68,6 +68,9 @@ func projectPerpetualQuotaValue(ctx context.Context, records []EntitlementValueS
 		quota, remaining, paid int64
 	}
 	lots := []lot{{root.OrderID, root.After.FlowTotal - root.After.CycleStartUsed, root.After.FlowTotal - root.After.CycleStartUsed, root.ActualPaidMinor}}
+	if legacyZeroMigration(root) {
+		lots[0].remaining = max(int64(0), root.After.FlowTotal-root.After.FlowUsed)
+	}
 	firstUnspent := 0
 	consume := func(used int64) error {
 		// Exhausted lots never regain quota. Keep their original paid facts for

@@ -338,3 +338,27 @@ subscription.
 频率限制也检查实际发送尝试，防止积压任务集中投递；失败或结果不确定的尝试也会保守占用间隔。同一个未接收任务可遵循原有流程重试，接收结果不确定必须先人工核验。取消提醒记为 `delivery_state=suppressed`，渠道尝试记录为 `not_accepted`，不伪造邮件已接收。最终 SMTP 提交在数据库事务之外，提交开始后的状态变化无法撤回邮件。
 
 MySQL 使用追加迁移 `0029_subscription_alerts`；SQLite 在模型清单中建立对应表并登记同一版本。启动时补齐七个私有设置且保留管理员原值，迁移不会自动开启提醒。任务入队、SMTP 接收与实际到达收件箱是不同状态，真实投递和线上数据库升级须另行验收。
+
+## Historical zero-payment subscription value
+
+Missing old purchase/value snapshots do not make free subscriptions permanently
+unswitchable. On a commerce preview/read, the owning transaction can capture one
+`legacy_value_baseline` quota event per entitlement epoch. It records current
+instance rights, current plan name and a hash of original order evidence, with
+zero monetary value and zero quota delta. Original order/payment snapshots,
+quota, consumed traffic, expiry and reset policy remain unchanged. Startup does
+not scan or rewrite historical subscriptions.
+
+A later zero-price order never erases still-effective paid value. Mixed old
+purchase/extension history is eligible only if its dated grants and original
+quota-event balances prove every positive paid period already expired. Transfers,
+refunds, contradictory captured payments and unproven adjustments still require
+reconciliation. Later verified purchases keep their own source budgets; event
+order identifies fulfillment even when a pending order has an older creation ID.
+Plan changes reuse the normal full-replacement settlement at the target price,
+with zero credit for the migrated free rights. Today's catalog price is never
+used as historical cash.
+
+The focused integration cases are `TestLegacyZero*` and `TestMySQLLegacyZero*`
+in `internal/handler/legacy_zero_value_test.go`; MySQL uses the existing isolated
+`ZBOARD_TEST_MYSQL_DSN` fixture and never tests against a production schema.

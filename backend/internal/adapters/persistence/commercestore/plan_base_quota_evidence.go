@@ -33,7 +33,7 @@ func planBaseQuotaReadError(err error) error {
 	return err
 }
 
-func subscriptionValueRecords(query *gorm.DB, sub model.Subscription) ([]commerce.EntitlementValueSnapshot, map[uint]model.Order, string, error) {
+func subscriptionValueRecords(query *gorm.DB, sub model.Subscription, at time.Time) ([]commerce.EntitlementValueSnapshot, map[uint]model.Order, string, error) {
 	orders, err := readOrderEvidence(query, "id", "paid_amount", "refund_amount", "currency", "entitlement_value_snapshot", "subscription_ended_at")
 	if err != nil {
 		return nil, nil, "", err
@@ -50,7 +50,7 @@ func subscriptionValueRecords(query *gorm.DB, sub model.Subscription) ([]commerc
 		}
 		var fact commerce.EntitlementValueSnapshot
 		if json.Unmarshal([]byte(order.EntitlementValueSnapshot), &fact) != nil || fact.OrderID != order.ID || fact.SubscriptionID != sub.ID || fact.ActualPaidMinor != order.PaidAmount || fact.Currency != order.Currency || order.RefundAmount != 0 {
-			return nil, nil, "", commerce.ErrSubscriptionValueUnavailable
+			return legacyZeroValueRecords(query, sub, at)
 		}
 		if currency == "" {
 			currency = order.Currency
@@ -181,7 +181,7 @@ func prepareMixedPlanBaseQuotaSync(tx *gorm.DB, sub model.Subscription, plan com
 		return empty, 0, commerce.ErrSubscriptionValueUnavailable
 	}
 	query := planBaseQuotaCurrentRead(subscriptionValueOrderQuery(tx, sub))
-	records, _, currency, err := subscriptionValueRecords(query, sub)
+	records, _, currency, err := subscriptionValueRecords(query, sub, at)
 	if err != nil {
 		return empty, 0, planBaseQuotaReadError(err)
 	}
