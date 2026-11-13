@@ -40,6 +40,7 @@ type zeroFlowCredentialRef struct {
 // Locked subscription pointers include every preceding charge in that batch.
 // No authentication or entitlement snapshot survives a commit or rollback.
 type flowBatch struct {
+	expectedQuota *QuotaIdentity
 	// SQLite owns the writer slot for this transaction. Cohorts are loaded only
 	// after ordinary ownership/credential locks; rows remain live in sample order.
 	usageCohorts       map[zeroFlowPrincipal][]metering.FlowSample
@@ -49,9 +50,9 @@ type flowBatch struct {
 	dirtyClosed        map[entitlementQuotaKey]time.Time
 	batchReports       bool
 	credentials        map[zeroFlowPrincipal]zeroFlowCredentialRef
+	discoveryErrors    map[zeroFlowPrincipal]error
 	subscriptions      map[uint]*model.Subscription
 	endpoints          map[uint]model.ProtocolEndpoint
-	touched            map[uint]time.Time
 	dirtySubscriptions map[uint]time.Time
 	records            []model.TrafficRecord
 	usageRecords       []model.TrafficRecord
@@ -69,7 +70,6 @@ func newFlowBatch(tx *gorm.DB) *flowBatch {
 		credentials:        make(map[zeroFlowPrincipal]zeroFlowCredentialRef),
 		subscriptions:      make(map[uint]*model.Subscription),
 		endpoints:          make(map[uint]model.ProtocolEndpoint),
-		touched:            make(map[uint]time.Time),
 		dirtySubscriptions: make(map[uint]time.Time),
 		recorded:           make(map[zeroFlowReportKey]uint),
 	}
@@ -149,6 +149,9 @@ func (s *flowBatch) credential(cipher metering.CredentialDecryptor, tx *gorm.DB,
 	if ref, ok := s.credentials[key]; ok {
 		return ref, nil
 	}
+	if err := s.discoveryErrors[key]; err != nil {
+		return zeroFlowCredentialRef{}, err
+	}
 	credential, err := ResolveCompletionCredential(tx, cipher, nodeID, principal)
 	if err != nil {
 		return zeroFlowCredentialRef{}, err
@@ -163,8 +166,16 @@ func (s *flowBatch) subscription(tx *gorm.DB, id uint) (*model.Subscription, err
 		return sub, nil
 	}
 	var sub model.Subscription
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, id).Error; err != nil {
-		return nil, err
+	read := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Limit(1).Find(&sub)
+	if read.Error != nil {
+		return nil, read.Error
+	}
+	if read.RowsAffected == 0 {
+		archived, e := deletedSubscriptionAttribution(tx, id)
+		if e != nil {
+			return nil, e
+		}
+		sub = archived
 	}
 	s.subscriptions[id] = &sub
 	return &sub, nil
@@ -235,17 +246,7 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 			return err
 		}
 	}
-	ids := make([]uint, 0, len(s.touched))
-	for id := range s.touched {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	for _, id := range ids {
-		if err := tx.Model(&model.ProtocolCredential{}).Where("id = ?", id).
-			Updates(map[string]interface{}{"last_used_at": s.touched[id], "updated_at": s.touched[id]}).Error; err != nil {
-			return err
-		}
-	}
+
 	return nil
 }
 

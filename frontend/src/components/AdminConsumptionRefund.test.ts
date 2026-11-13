@@ -21,7 +21,7 @@ function render(value = order) {
 async function fill(wrapper: ReturnType<typeof render>, amount = '9.00') {
   const form = wrapper.get('form[data-test="consumption-refund"]')
   const inputs = form.findAll('input')
-  await inputs[0]!.setValue(amount); await inputs[1]!.setValue('12'); await inputs[2]!.setValue('工单核准退款')
+  await inputs[0]!.setValue(amount); await inputs[1]!.setValue('TK20261113174530000012'); await inputs[2]!.setValue('工单核准退款')
   return form
 }
 async function confirm(wrapper: ReturnType<typeof render>) {
@@ -53,7 +53,7 @@ describe('administrative consumption refunds', () => {
     expect(JSON.parse(localStorage.getItem(key)!).request).toEqual(request)
     expect(JSON.parse(localStorage.getItem(key)!).refund_id).toBe(4)
     expect(wrapper.get('[aria-label="已确认退款事实"]').text()).toContain('CNY 9.00 已退入站内余额')
-    expect(wrapper.text()).toContain('来源订单 #10'); expect(wrapper.text()).toContain('余额流水 #88')
+    expect(wrapper.text()).toContain('来源订单 DD0000000010'); expect(wrapper.text()).toContain('余额流水 #88')
     expect(wrapper.text()).toContain('审批人 #1'); expect(wrapper.text()).toContain('可用 CNY 18.00')
     expect(wrapper.findAll('a').some(link => link.attributes('data-to')?.includes('order.consumption_refund'))).toBe(true)
     expect(wrapper.emitted('changed')).toEqual([[fact]])

@@ -10,7 +10,7 @@ vi.mock('../api/walletAdjustments', () => ({ directlyDebitWallet: vi.fn(), credi
 const row = { id: 9, user_id: 27, currency: 'CNY', amount_minor: '900', reason: '工单特殊出款', ticket_id: 12, actor_id: 1, entry_id: 6, external_status: 'pending', created_at: '2026-10-19T00:00:00Z' }
 function open() { return mount(AdminWalletPanel, { props: { userId: 27 }, global: { stubs: { ModalDialog: { props: ['open'], template: '<section v-if="open"><slot/><slot name="footer" :request-close="() => {}"/></section>' } } } }) }
 async function expandPayout(wrapper: ReturnType<typeof open>) { if (wrapper.get('[data-test="payout-toggle"]').attributes('aria-expanded') !== 'true') { await wrapper.get('[data-test="payout-toggle"]').trigger('click'); await flushPromises() } }
-async function fillDebit(wrapper: ReturnType<typeof open>) { await expandPayout(wrapper); const form = wrapper.get('form[data-test="debit"]'); await form.findAll('input')[0]!.setValue('9.00'); await form.findAll('input')[1]!.setValue('12'); await form.findAll('input')[2]!.setValue('工单特殊出款'); return form }
+async function fillDebit(wrapper: ReturnType<typeof open>) { await expandPayout(wrapper); const form = wrapper.get('form[data-test="debit"]'); await form.findAll('input')[0]!.setValue('9.00'); await form.findAll('input')[1]!.setValue('TK20261113174530000012'); await form.findAll('input')[2]!.setValue('工单特殊出款'); return form }
 beforeEach(() => {
  vi.clearAllMocks(); localStorage.clear(); state.app = reactive({ user: { id: 1 } })
  vi.mocked(fetchAdministrativeWallet).mockResolvedValue({ currency: 'CNY', balance_minor: '1000', reserved_minor: '100', available_minor: '900', entries: [], has_more: false })

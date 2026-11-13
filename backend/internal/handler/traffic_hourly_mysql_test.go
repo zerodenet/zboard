@@ -20,7 +20,7 @@ func TestMySQLHourlyRetirementAndAuditFailureRemainAtomic(t *testing.T) {
 	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Updates(map[string]any{"lifecycle": "fixed", "ends_on_quota_exhaustion": true, "flow_total": 30}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := h.db.Exec("ALTER TABLE audit_logs ADD CONSTRAINT reject_hourly_cleanup CHECK (action <> 'subscription.cleanup')").Error; err != nil {
+	if err := h.db.Exec("ALTER TABLE audit_logs ADD CONSTRAINT reject_hourly_cleanup CHECK (action <> 'subscription.delete')").Error; err != nil {
 		t.Fatal(err)
 	}
 	expire := func() error {
@@ -51,8 +51,8 @@ func TestMySQLHourlyRetirementAndAuditFailureRemainAtomic(t *testing.T) {
 	}
 	assert(30) // Finalization retains immutable billing and historical read models.
 	var count int64
-	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("historical subscription lost: %d %v", count, err)
+	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("runtime subscription was not deleted: %d %v", count, err)
 	}
 	var order model.Order
 	if err := h.db.Where("subscription_ended_at IS NOT NULL AND status = 'paid'").First(&order).Error; err != nil || order.SubscriptionFinalFlowUsed != 30 {

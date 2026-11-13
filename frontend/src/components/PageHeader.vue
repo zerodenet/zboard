@@ -3,7 +3,7 @@
     <div>
       <p v-if="eyebrow" class="page-eyebrow">{{ eyebrow }}</p>
       <h1>{{ displayTitle }}</h1>
-      <p v-if="description" class="page-description">{{ description }}</p>
+      <p v-if="description || $slots.description" class="page-description"><slot name="description">{{ description }}</slot></p>
     </div>
     <div v-if="$slots.actions" class="page-actions"><slot name="actions" /></div>
     <AdminPageNavigation v-if="adminPageNavigation && showSectionNavigation" class="page-header-navigation" />

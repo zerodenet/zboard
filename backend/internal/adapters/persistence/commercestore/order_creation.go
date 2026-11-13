@@ -6,7 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -68,7 +67,7 @@ func createOrderWithDiscountInTransaction(tx *gorm.DB, buyer uint, request comme
 			return model.Order{}, err
 		}
 	}
-	if err := tx.Create(&order).Error; err != nil {
+	if err := createNumberedOrder(tx, &order); err != nil {
 		return model.Order{}, err
 	}
 	if err := CreateOrderDiscountRedemptionIntent(tx, order, commerceNow(clock)); err != nil {
@@ -143,7 +142,7 @@ func prepareOrderWithDiscount(tx *gorm.DB, buyer uint, request commerce.OrderCre
 	}
 	order := model.Order{
 		UserID: buyer, PlanID: plan.ID, PlanSKUID: sku.ID,
-		TradeNo: uuid.NewString(), OrderType: terms.OrderType, TargetSubscriptionID: terms.TargetSubscriptionID,
+		OrderType: terms.OrderType, TargetSubscriptionID: terms.TargetSubscriptionID,
 		AmountCents: terms.AmountCents, PayableAmount: terms.PayableAmount, Currency: terms.Currency,
 		Channel: terms.Channel, Status: "pending",
 		PlanName: terms.PlanName, SKUName: terms.SKUName, BillingUnit: terms.BillingUnit,

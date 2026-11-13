@@ -79,7 +79,7 @@ func (s LedgerRetention) Drain(ctx context.Context, limit int) (int, error) {
 			}
 		}
 		var candidates []model.TrafficRecord
-		if err := tx.Select("id,node_id").Where("id>? AND id<=?", p.AfterID, p.UpperID).Order("id").Limit(limit).Find(&candidates).Error; err != nil {
+		if err := tx.Select("id,node_id,subscription_id").Where("id>? AND id<=?", p.AfterID, p.UpperID).Order("id").Limit(limit).Find(&candidates).Error; err != nil {
 			return err
 		}
 		for _, candidate := range candidates {
@@ -129,12 +129,12 @@ type retainedDetail struct {
 // current exact boundary inside historical receive buckets; never round quota.
 func currentQuotaCut(tx *gorm.DB, r model.TrafficRecord, now time.Time) (time.Time, error) {
 	var sub model.Subscription
-	err := tx.Select("id,start_at,reset_policy,entitlement_epoch").Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).First(&sub, r.SubscriptionID).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return time.Time{}, nil
+	read := tx.Select("id,start_at,reset_policy,entitlement_epoch").Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).Where("id=?", r.SubscriptionID).Limit(1).Find(&sub)
+	if read.Error != nil {
+		return time.Time{}, read.Error
 	}
-	if err != nil {
-		return time.Time{}, err
+	if read.RowsAffected == 0 {
+		return time.Time{}, nil
 	}
 	if sub.EntitlementEpoch != r.EntitlementEpoch {
 		return time.Time{}, nil
@@ -183,8 +183,26 @@ func retentionLevel(r model.TrafficRecord, through, now time.Time) int16 {
 	return 0
 }
 func (s LedgerRetention) retireOne(tx *gorm.DB, candidate model.TrafficRecord, now time.Time) (bool, error) {
-	// Source writers own nodes before source records. Skip busy parents instead
-	// of holding a ledger lock while an administrator waits for that ledger.
+	// Accounting owns subscription -> node -> ledger. A busy live quota is
+	// skipped before touching either node or ledger; the next retention pass
+	// retries it. NOWAIT after owning a ledger used to abort whole batches.
+	if candidate.SubscriptionID != 0 {
+		var sub struct{ ID uint }
+		q := tx.Model(&model.Subscription{}).Select("id").Clauses(clause.Locking{Strength: "SHARE", Options: "SKIP LOCKED"}).Where("id=?", candidate.SubscriptionID).Find(&sub)
+		if q.Error != nil {
+			return false, q.Error
+		}
+		if q.RowsAffected == 0 {
+			var exists int64
+			if e := tx.Model(&model.Subscription{}).Where("id=?", candidate.SubscriptionID).Count(&exists).Error; e != nil {
+				return false, e
+			}
+			if exists > 0 {
+				return false, nil
+			}
+		}
+	}
+
 	var node struct{ ID uint }
 	q := tx.Model(&model.Node{}).Select("id").Clauses(clause.Locking{Strength: "SHARE", Options: "SKIP LOCKED"}).Where("id=?", candidate.NodeID).Find(&node)
 	if q.Error != nil {
@@ -207,6 +225,9 @@ func (s LedgerRetention) retireOne(tx *gorm.DB, candidate model.TrafficRecord, n
 	}
 	if q.RowsAffected == 0 {
 		return false, nil
+	}
+	if r.NodeID != candidate.NodeID || r.SubscriptionID != candidate.SubscriptionID {
+		return false, &ledgerRetentionHold{"流量来源范围已变更，原记录暂保留"}
 	}
 	if !r.ResultRecorded || r.CreatedAt.IsZero() || r.UpdatedAt.After(now.Add(-LedgerMinuteHorizon)) {
 		return false, nil

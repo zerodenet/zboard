@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -100,9 +99,9 @@ func (s Wallet) CreateTopUp(ctx context.Context, actor uint, in commerce.TopUpRe
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		order = model.Order{UserID: actor, CreationKey: &key, CreationFingerprint: fingerprint, TradeNo: uuid.NewString(), OrderType: "topup", AmountCents: in.AmountMinor, PayableAmount: in.AmountMinor, Currency: in.Currency, Channel: "manual", Status: "pending", PlanName: "余额充值", SKUName: "充值", BillingUnit: "once", BillingValue: 1, RenewalEffect: "none"}
+		order = model.Order{UserID: actor, CreationKey: &key, CreationFingerprint: fingerprint, OrderType: "topup", AmountCents: in.AmountMinor, PayableAmount: in.AmountMinor, Currency: in.Currency, Channel: "manual", Status: "pending", PlanName: "余额充值", SKUName: "充值", BillingUnit: "once", BillingValue: 1, RenewalEffect: "none"}
 		// Top-ups have no plan, SKU or entitlement. Never create dummy sale rows.
-		if err := tx.Omit("PlanID", "PlanSKUID", "SubscriptionID", "TargetSubscriptionID").Create(&order).Error; err != nil {
+		if err := createNumberedOrder(tx.Omit("PlanID", "PlanSKUID", "SubscriptionID", "TargetSubscriptionID"), &order); err != nil {
 			return err
 		}
 		return tx.Create(&model.AuditLog{UserID: &actor, Actor: user.Email, Action: "wallet.topup.create", Target: fmt.Sprintf("order:%d", order.ID), Detail: fmt.Sprintf("amount_minor=%d currency=%s", in.AmountMinor, in.Currency)}).Error

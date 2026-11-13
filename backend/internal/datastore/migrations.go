@@ -384,6 +384,11 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileTicketReferenceSchema(db); err != nil {
 		return err
 	}
+	if IsSQLite(db) {
+		if err := db.Exec("INSERT INTO schema_migrations(version, applied_at) VALUES(?,?) ON CONFLICT(version) DO NOTHING", "0091_ticket_business_number_width.up.sql", time.Now().UTC()).Error; err != nil {
+			return err
+		}
+	}
 	if err := reconcileConsumptionRefundSchema(db); err != nil {
 		return err
 	}
@@ -447,6 +452,15 @@ func RunMigrations(db *gorm.DB) error {
 	if err := reconcileMeteringColdSchema(db); err != nil {
 		return err
 	}
+	if err := reconcileObservationClaimSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileMeteringIdentityFenceSchema(db); err != nil {
+		return err
+	}
+	if err := reconcileSubscriptionCleanupSchema(db); err != nil {
+		return err
+	}
 	return menustore.Seed(db)
 }
 
@@ -499,6 +513,24 @@ func runMigrations(db *gorm.DB) error {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 		if applied > 0 {
+			continue
+		}
+		if version == subscriptionCleanupVersion {
+			if err := reconcileSubscriptionCleanupSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == observationClaimVersion {
+			if err := reconcileObservationClaimSchema(db); err != nil {
+				return err
+			}
+			continue
+		}
+		if version == meteringIdentityFenceVersion {
+			if err := reconcileMeteringIdentityFenceSchema(db); err != nil {
+				return err
+			}
 			continue
 		}
 		if version == meteringColdVersion {

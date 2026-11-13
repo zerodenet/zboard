@@ -11,7 +11,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 )
 
@@ -136,7 +135,7 @@ func (h *handlers) TicketCreateHandler(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	ticketID, err := h.services.Tickets.Create(r.Context(), claims.UserID, experience.NewTicket{
-		TicketNo: newTicketNumber(now), Subject: body.Subject, Category: body.Category, Priority: body.Priority, Body: body.Body, Attachments: body.Attachments,
+		Subject: body.Subject, Category: body.Category, Priority: body.Priority, Body: body.Body, Attachments: body.Attachments,
 		References: body.References,
 	}, now)
 	if errors.Is(err, experience.ErrPermission) {
@@ -412,11 +411,6 @@ func ticketAuthorRole(claims authClaims) string {
 		return "admin"
 	}
 	return "user"
-}
-
-func newTicketNumber(now time.Time) string {
-	random := strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))
-	return "T" + now.UTC().Format("20060102") + "-" + random[:8]
 }
 
 func handleTicketMutationError(w http.ResponseWriter, err error) bool {

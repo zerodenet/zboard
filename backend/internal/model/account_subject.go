@@ -3,13 +3,15 @@ package model
 import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"time"
 )
 
 // AccountSubject is an immutable numeric accounting identity, not an account.
 // It contains no login, password, contact information or account status. Its ID
 // survives physical account removal so accounting and late reports stay valid.
 type AccountSubject struct {
-	ID uint `gorm:"primaryKey;autoIncrement:true"`
+	ID                 uint       `gorm:"primaryKey;autoIncrement:true"`
+	LastEntitlementEnd *time.Time `gorm:"->;-:migration"`
 }
 
 // One bounded scan cursor for the opt-in cleanup job, independent of history.

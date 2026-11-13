@@ -129,8 +129,8 @@ func TestSQLiteCursorCohort32ReadsOnceWithoutAdditionalWrites(t *testing.T) {
 		}
 		// One cursor cohort read remains; minute ledger and pending rows now
 		// coalesce instead of creating 32 financial/projection source rows.
-		if count.usageReads != 1 || count.writes-count.receiptWrites-count.resultWrites != 37 || count.affected-count.receiptRows-count.resultRows != 37 || count.receiptWrites != 1 || count.receiptRows != 32 {
-			t.Fatalf("batch%d reads=%d original-writes=%d original-rows=%d receipt-writes=%d receipt-rows=%d want1/37/37/1/32", batch, count.usageReads, count.writes-count.receiptWrites, count.affected-count.receiptRows, count.receiptWrites, count.receiptRows)
+		if count.usageReads != 1 || count.writes-count.receiptWrites-count.resultWrites != 36 || count.affected-count.receiptRows-count.resultRows != 36 || count.receiptWrites != 1 || count.receiptRows != 32 {
+			t.Fatalf("batch%d reads=%d original-writes=%d original-rows=%d receipt-writes=%d receipt-rows=%d want1/36/36/1/32", batch, count.usageReads, count.writes-count.receiptWrites, count.affected-count.receiptRows, count.receiptWrites, count.receiptRows)
 		}
 		cohortTotal(t, db, int64(batch+1)*960)
 	}
@@ -254,7 +254,7 @@ func TestSQLiteCursorCohortExhaustionAndClosedEpochIsolation(t *testing.T) {
 func TestSQLiteCursorCohortLateFailureRollsBackAndReplays(t *testing.T) {
 	db, c := cohortDB(t)
 	samples := []metering.FlowSample{cohortSample(c, "f", "core", 1, 2), cohortSample(c, "f", "core", 2, 4)}
-	if err := db.Exec("CREATE TRIGGER reject_cohort_touch BEFORE UPDATE ON protocol_credentials WHEN NEW.last_used_at IS NOT NULL BEGIN SELECT RAISE(ABORT,'touch rejected'); END").Error; err != nil {
+	if err := db.Exec("CREATE TRIGGER reject_cohort_touch BEFORE UPDATE ON subscriptions WHEN NEW.flow_used > 0 BEGIN SELECT RAISE(ABORT,'quota rejected'); END").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := applyCohort(db, samples); err == nil {

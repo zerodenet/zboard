@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -362,6 +363,6 @@ func (s AutomaticRenewals) processAutomaticRenewalPrepared(ctx context.Context, 
 		}
 		agreement.LastOrderID = &created.ID
 		agreement.NextAttemptAt = renewed.EndAt
-		return finish("renewed", fmt.Sprintf("已通过站内余额完成续费，订单 #%d；节点配置交付在后台核验。", created.ID), false)
+		return finish("renewed", fmt.Sprintf("已通过站内余额完成续费，订单 %s；节点配置交付在后台核验。", businessref.Order(created.ID, created.CreatedAt)), false)
 	})
 }

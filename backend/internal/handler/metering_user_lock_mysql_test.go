@@ -24,39 +24,20 @@ func TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder(t *testing.
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- h.projectZeroNodeEvents(ctx, accountingBenchmarkEvents(credential, 0, 1)) }()
-	var schema string
-	if err := h.db.Raw("SELECT DATABASE()").Scan(&schema).Error; err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	waiting := false
-	for time.Now().Before(deadline) {
-		var count int64
-		if err := h.db.Raw(`SELECT COUNT(*) FROM performance_schema.data_lock_waits w JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID WHERE l.OBJECT_SCHEMA=? AND l.OBJECT_NAME='users'`, schema).Scan(&count).Error; err != nil {
+	// A mutable live user row is not the financial owner: immutable account
+	// subjects keep reporting valid during profile edits and after hard deletion.
+	select {
+	case err := <-done:
+		if err != nil {
 			t.Fatal(err)
 		}
-		if count > 0 {
-			waiting = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	case <-ctx.Done():
+		held.Rollback()
+		<-done
+		t.Fatal("metering waited on a live user profile", ctx.Err())
 	}
-	// Probe exactly the subsequent commerce lock, without creating a test-only
-	// timeout/deadlock cycle. Always release and join the accounting goroutine.
-	probe := h.db.Begin()
-	var sub model.Subscription
-	probeErr := probe.Clauses(clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}).First(&sub, credential.SubscriptionID).Error
-	probe.Rollback()
-	releaseErr := held.Commit().Error
-	accountingErr := <-done
-	if !waiting {
-		t.Fatal("accounting never reached the held user row")
-	}
-	if probeErr != nil {
-		t.Fatalf("accounting held subscription while waiting for user, inverting commerce order: %v", probeErr)
-	}
-	if releaseErr != nil || accountingErr != nil {
-		t.Fatal(releaseErr, accountingErr)
+	if err := held.Commit().Error; err != nil {
+		t.Fatal(err)
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 30, subStatusActive)
 }

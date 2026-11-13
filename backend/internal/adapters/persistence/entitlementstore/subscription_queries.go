@@ -122,7 +122,8 @@ func (s SubscriptionQueries) List(ctx context.Context, actor uint, admin bool, q
 		if !admin {
 			owner = actor
 			// Finalized instances remain historical evidence, outside current services.
-			query = query.Where("subscriptions.status <> ?", "ended")
+			query = query.Where("subscriptions.status NOT IN ?", []string{"ended", "canceled"})
+			query = query.Where("(subscriptions.ended_at IS NULL AND subscriptions.end_at > ?) OR subscriptions.ended_at > ?", now.Add(-grace), now.Add(-grace))
 			// Current services exclude ended fixed instances before the asynchronous
 			// retirement worker runs. Their final state remains in order history.
 			query = query.Where("NOT (subscriptions.lifecycle = 'fixed' AND (subscriptions.ended_at IS NOT NULL OR subscriptions.end_at <= ? OR (subscriptions.ends_on_quota_exhaustion = ? AND subscriptions.flow_used >= subscriptions.flow_total)))", now, true)

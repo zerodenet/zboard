@@ -155,7 +155,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0082_runtime_metric_history.up.sql",
 		"0083_flow_cursor_checkpoints.up.sql",
 		"0084_flow_detail_retention.up.sql",
-		"0085_observation_mailboxes.up.sql", "0086_metering_settlement_results.up.sql", "0087_metering_ledger_retention.up.sql", "0088_metering_cold_identities.up.sql",
+		"0085_observation_mailboxes.up.sql", "0086_metering_settlement_results.up.sql", "0087_metering_ledger_retention.up.sql", "0088_metering_cold_identities.up.sql", "0089_observation_claim_lease.up.sql", "0090_metering_identity_fences.up.sql", "0091_ticket_business_number_width.up.sql", "0092_subscription_hard_cleanup.up.sql",
 	}
 	if !slices.Equal(up, expectedUp) {
 		t.Fatalf("up migrations = %v, want baseline and plugin migration after %s", up, preReleaseBaselineVersion)
@@ -245,7 +245,7 @@ func TestMigrationInventoryRetainsBaselineAndAddsPlugins(t *testing.T) {
 		"0082_runtime_metric_history.down.sql",
 		"0083_flow_cursor_checkpoints.down.sql",
 		"0084_flow_detail_retention.down.sql",
-		"0085_observation_mailboxes.down.sql", "0086_metering_settlement_results.down.sql", "0087_metering_ledger_retention.down.sql", "0088_metering_cold_identities.down.sql",
+		"0085_observation_mailboxes.down.sql", "0086_metering_settlement_results.down.sql", "0087_metering_ledger_retention.down.sql", "0088_metering_cold_identities.down.sql", "0089_observation_claim_lease.down.sql", "0090_metering_identity_fences.down.sql", "0091_ticket_business_number_width.down.sql", "0092_subscription_hard_cleanup.down.sql",
 	}
 	if !slices.Equal(down, expectedDown) {
 		t.Fatalf("down migrations = %v, want matching baseline and plugin down migrations", down)

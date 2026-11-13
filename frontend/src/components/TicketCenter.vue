@@ -72,7 +72,7 @@
               <UiButton class="ticket-back-button" variant="ghost" size="sm" type="button" @click="closeDetail">
                 <UiIcon name="chevron" />返回列表
               </UiButton>
-              <div class="ticket-title-line"><code>{{ detail.ticket.ticket_no }}</code><StatusBadge :tone="statusTone(detail.ticket.status)">{{ statusLabel(detail.ticket.status) }}</StatusBadge><span v-if="detail.ticket.priority === 2" class="priority-badge">紧急</span><TimeBadge :value="detail.ticket.created_at" /></div><h2>{{ detail.ticket.subject }}</h2><p>{{ categoryLabel(detail.ticket.category) }}<template v-if="admin"> · {{ detail.ticket.user_email }}</template></p>
+              <div class="ticket-title-line"><BusinessReference :value="detail.ticket.ticket_no" label="工单号" /><StatusBadge :tone="statusTone(detail.ticket.status)">{{ statusLabel(detail.ticket.status) }}</StatusBadge><span v-if="detail.ticket.priority === 2" class="priority-badge">紧急</span><TimeBadge :value="detail.ticket.created_at" /></div><h2>{{ detail.ticket.subject }}</h2><p>{{ categoryLabel(detail.ticket.category) }}<template v-if="admin"> · {{ detail.ticket.user_email }}</template></p>
             </div>
             <div class="ticket-detail-actions">
               <label v-if="admin" class="status-select"><span>流转状态</span><UiSelect aria-label="流转状态" :model-value="selectedStatus" :options="statusOptions" :disabled="saving" @update:model-value="changeStatus($event as TicketStatus)" /></label>
@@ -81,7 +81,7 @@
           </header>
 
           <dl v-if="ticketReferenceRows.length" class="ticket-reference-records" aria-label="关联记录">
-            <div v-for="reference in ticketReferenceRows" :key="reference.key"><dt>{{ reference.label }}</dt><dd>#{{ reference.id }}</dd></div>
+            <div v-for="reference in ticketReferenceRows" :key="reference.key"><dt>{{ reference.label }}</dt><dd>{{ reference.key === 'order_id' ? orderReference(reference.id) : `#${reference.id}` }}</dd></div>
           </dl>
 
           <div ref="timelineElement" class="ticket-timeline">
@@ -123,7 +123,7 @@
         <FormField v-slot="{ controlAttrs }" label="问题主题" name="ticket-subject" :error="createErrors.fields.subject" required full><UiInput v-model.trim="draft.subject" v-bind="controlAttrs" maxlength="160" placeholder="例如：订阅导入后节点连接超时" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题分类" name="ticket-category" :error="createErrors.fields.category"><UiSelect v-model="draft.category" v-bind="controlAttrs" :options="categoryOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="优先级" name="ticket-priority" :error="createErrors.fields.priority"><UiSelect v-model.number="draft.priority" v-bind="controlAttrs" :options="priorityOptions" /></FormField>
-        <FormField v-for="reference in referenceFields" :key="reference.key" v-slot="{ controlAttrs }" :label="`${reference.label}编号（可选）`" :name="`ticket-${reference.key}`" :error="createErrors.fields[reference.key]" hint="仅可关联当前账户的记录；留空则不关联。"><UiInput v-model.trim="referenceDraft[reference.key]" v-bind="controlAttrs" inputmode="numeric" :disabled="saving" /></FormField>
+        <FormField v-for="reference in referenceFields" :key="reference.key" v-slot="{ controlAttrs }" :label="`${reference.label}编号（可选）`" :name="`ticket-${reference.key}`" :error="createErrors.fields[reference.key]" hint="仅可关联当前账户的记录；留空则不关联。"><UiInput v-model.trim="referenceDraft[reference.key]" v-bind="controlAttrs" :inputmode="reference.key === 'order_id' ? 'text' : 'numeric'" :disabled="saving" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题描述" name="ticket-body" :error="createErrors.fields.body" hint="请勿提交密码、订阅凭证等敏感信息。" required full><UiTextarea v-model.trim="draft.body" v-bind="controlAttrs" maxlength="5000" placeholder="操作步骤、错误提示、发生时间，以及你已经尝试过的方法。" /></FormField>
         <FormField label="附件（可选）" name="ticket-attachments" full><TicketAttachmentEditor v-model="draft.attachments" v-model:busy="createUploading" :disabled="saving" /></FormField>
       </form>
@@ -133,6 +133,7 @@
 </template>
 
 <script setup lang="ts">
+import { orderReference, parseBusinessReference } from '../utils/businessReference'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { closeTicket, createTicket, fetchTicket, fetchTickets, replyTicket, updateTicketStatus, type Ticket, type TicketCategory, type TicketDetail, type TicketReferences, type TicketStatus } from '../api/client'
@@ -153,6 +154,7 @@ import PageHeader from './PageHeader.vue'
 import StatusBadge from './StatusBadge.vue'
 import TablePager from './TablePager.vue'
 import TransientFeedback from './TransientFeedback.vue'
+import BusinessReference from './BusinessReference.vue'
 import UiIcon from './UiIcon.vue'
 import TicketAttachmentEditor from './TicketAttachmentEditor.vue'
 import TicketAttachments from './TicketAttachments.vue'
@@ -275,7 +277,7 @@ async function loadTickets() {
 }
 
 function validTicketID(value: unknown) {
-  const parsed = Number(value)
+  const parsed = parseBusinessReference(value, 'T') || 0
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0
 }
 
@@ -472,14 +474,14 @@ async function submitTicket() {
     category: !isOneOf(draft.category, ticketCategories) && '请选择有效的问题分类。',
     priority: !isOneOf(draft.priority, ticketPriorities) && '请选择有效的优先级。',
     body: !isCharacterLengthInRange(draft.body, 1, 5000, true) && '问题描述需包含 1 到 5000 个字符。',
-    ...Object.fromEntries(referenceFields.map(field => [field.key, Boolean(referenceDraft[field.key].trim()) && referenceID(referenceDraft[field.key]) === undefined && '请输入有效的正整数编号，或留空取消关联。'])),
+    ...Object.fromEntries(referenceFields.map(field => [field.key, Boolean(referenceDraft[field.key].trim()) && (field.key === 'order_id' ? parseBusinessReference(referenceDraft[field.key], 'O') : referenceID(referenceDraft[field.key])) === undefined && '请输入有效的关联编号，或留空取消关联。'])),
   }), createFormElement, '请更正标记字段后再提交工单。')
   if (!valid) return
   saving.value = true; message.value = ''
   try {
     const references: TicketReferences = {}
     for (const field of referenceFields) {
-      const id = referenceID(referenceDraft[field.key])
+      const id = field.key === 'order_id' ? parseBusinessReference(referenceDraft[field.key], 'O') : referenceID(referenceDraft[field.key])
       if (id !== undefined) references[field.key] = id
     }
     const created = await createTicket({ ...draft, ...(Object.keys(references).length ? { references } : {}) })

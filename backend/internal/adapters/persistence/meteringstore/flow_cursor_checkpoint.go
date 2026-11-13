@@ -80,7 +80,8 @@ func loadFlowUsageCandidates(tx *gorm.DB, node uint, keys []string) ([]model.Flo
 
 // A completion can legitimately increase an arbitrarily old cumulative floor.
 // Rehydrate only on a write; ordinary duplicate/stale reports cause no hot insert.
-func saveFlowUsage(tx *gorm.DB, row *model.FlowUsage, found bool, previousKey string) error {
+func saveFlowUsage(tx *gorm.DB, row *model.FlowUsage, found bool, previousKey string, compact ...bool) error {
+	keepCompact := len(compact) > 0 && compact[0]
 	if found && row.ID == 0 {
 		removed := tx.Where("node_id = ? AND flow_id = ?", row.NodeID, previousKey).Delete(&model.FlowCursorCheckpoint{})
 		if removed.Error != nil {
@@ -96,7 +97,7 @@ func saveFlowUsage(tx *gorm.DB, row *model.FlowUsage, found bool, previousKey st
 			}
 		}
 	}
-	if found && row.ID != 0 && previousKey == row.FlowID {
+	if !keepCompact && found && row.ID != 0 && previousKey == row.FlowID {
 		return tx.Save(row).Error
 	}
 	// An alias can compare equal in MySQL while PickFlowUsage intentionally
@@ -115,6 +116,22 @@ func saveFlowUsage(tx *gorm.DB, row *model.FlowUsage, found bool, previousKey st
 		return err
 	} else if ok {
 		return errors.New("flow identity already has sealed accounting authority")
+	}
+	if keepCompact {
+		// Closed epochs never need a live/activity-indexed row. Inserting that row
+		// would implicitly lock the current subscription through its foreign key.
+		// Keep the exact cumulative floor directly in the existing compact store.
+		if found && row.ID != 0 {
+			if e := tx.Where("id=? AND node_id=?", row.ID, row.NodeID).Delete(&model.FlowUsage{}).Error; e != nil {
+				return e
+			}
+		}
+		floor := compactFlowCursor(*row)
+		if e := tx.Create(&floor).Error; e != nil {
+			return e
+		}
+		row.ID = 0
+		return nil
 	}
 	if found && row.ID != 0 {
 		return tx.Save(row).Error

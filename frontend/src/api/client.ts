@@ -1420,6 +1420,7 @@ export async function fetchOrders(params: { status?: string; userId?: number } =
 }
 
 export interface AdminOrderListItem {
+  order_no?: string
   user_email?: string
   subscription_ended_at?: string | null
   subscription_end_reason?: 'expired' | 'exhausted'
@@ -1488,7 +1489,7 @@ export async function fetchOrdersPage(params: { q?: string; status?: string; ord
   return normalizePageResult<AdminOrderListItem>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchAccountOrdersPage(params: { id?: number; status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminOrderListItem>> {
+export async function fetchAccountOrdersPage(params: { id?: number | string; status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminOrderListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
   if (params.id !== undefined) query.set('id', String(params.id))

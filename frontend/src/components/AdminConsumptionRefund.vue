@@ -2,7 +2,7 @@
   <UiSection title="获批消费退款" description="消费退款统一进入站内余额；原资金来源保留，不发起渠道退款或提现。">
     <PageAlert v-if="!eligible" tone="warning" title="当前订单不能执行消费退款">仅支持已有明确结束记录且已履约的历史消费订单。有效订阅请在订阅管理页整份退订；默认按剩余价值退款，管理员可自定义金额（含0元），同时终止全部剩余权益。</PageAlert>
     <template v-else>
-      <p>来源订单 #{{ order.id }} · 用户 #{{ order.user_id }} · {{ order.currency }}。已退款、已换购或退订转换的价值不能再次退还；最终可退预算由服务器核对。</p>
+      <p>来源订单 {{ orderReference(order) }} · 用户 #{{ order.user_id }} · {{ order.currency }}。已退款、已换购或退订转换的价值不能再次退还；最终可退预算由服务器核对。</p>
       <p>原始渠道收款请核对本订单的“渠道收款归属”。本次退款不会终止、恢复或调整该用户当前的其他权益。</p>
       <PageAlert v-if="writeError" tone="danger" title="退款操作需要核对">{{ writeError }}</PageAlert>
       <form novalidate data-test="consumption-refund" class="stack" @submit.prevent="requestApproval">
@@ -10,7 +10,7 @@
           <UiInput v-model="amount" v-bind="controlAttrs" inputmode="decimal" :disabled="locked" />
         </FormField>
         <FormField v-slot="{ controlAttrs }" label="原订单用户的工单编号" :name="`consumption-refund-ticket-${order.id}`">
-          <UiInput v-model="ticket" v-bind="controlAttrs" inputmode="numeric" :disabled="locked" />
+          <UiInput v-model="ticket" v-bind="controlAttrs" inputmode="text" :disabled="locked" />
         </FormField>
         <FormField v-slot="{ controlAttrs }" label="获批原因（用户可见）" :name="`consumption-refund-reason-${order.id}`" hint="3–400 个 UTF-8 字节。">
           <UiInput v-model="reason" v-bind="controlAttrs" maxlength="400" :disabled="locked" />
@@ -27,8 +27,8 @@
       <PageAlert v-if="factError" tone="warning" title="退款记录暂时无法核对">{{ factError }}</PageAlert>
       <section v-if="fact" class="stack" aria-label="已确认退款事实">
         <p>退款 #{{ fact.id }} · {{ formatWalletMoney(fact.amount_minor, fact.currency) }} 已退入站内余额</p>
-        <p>来源订单 #{{ fact.order_id }} · 用户 #{{ fact.user_id }} · 余额流水 #{{ fact.entry_id }}</p>
-        <p>工单 #{{ fact.ticket_id }} · 审批人 #{{ fact.actor_id }} · <TimeBadge :value="fact.created_at" /></p>
+        <p>来源订单 {{ orderReference(fact.order_id) }} · 用户 #{{ fact.user_id }} · 余额流水 #{{ fact.entry_id }}</p>
+        <p>工单 {{ ticketReference(fact.ticket_id) }} · 审批人 #{{ fact.actor_id }} · <TimeBadge :value="fact.created_at" /></p>
         <p>{{ fact.reason }}</p>
       </section>
       <UiButton v-if="intent?.refund_id" type="button" variant="secondary" :disabled="factLoading || saving" @click="verifyKnownRefund">核对退款记录与余额</UiButton>
@@ -45,6 +45,7 @@
 </template>
 
 <script setup lang="ts">
+import { orderReference, ticketReference, parseBusinessReference } from '../utils/businessReference'
 import { computed, ref, watch } from 'vue'
 import type { AdminOrderDetail } from '../api/client'
 import { approveConsumptionRefund, fetchConsumptionRefund, type ConsumptionRefund, type ConsumptionRefundRequest } from '../api/consumptionRefunds'
@@ -78,11 +79,11 @@ const scope = computed(() => `zboard:consumption-refund:${actor.value}:${props.o
 const amount = ref(''), ticket = ref(''), reason = ref(''), writeError = ref('')
 const saving = ref(false), blocked = ref(true), confirmOpen = ref(false)
 const intent = ref<RefundIntent | null>(null), proposed = ref<RefundIntent | null>(null)
-const valid = computed(() => parseWalletAmount(amount.value) !== null && /^[1-9]\d*$/.test(ticket.value) && Number.isSafeInteger(Number(ticket.value)) && isUtf8LengthInRange(reason.value.trim(), 3, 400))
+const valid = computed(() => parseWalletAmount(amount.value) !== null && parseBusinessReference(ticket.value, 'T') !== undefined && isUtf8LengthInRange(reason.value.trim(), 3, 400))
 const locked = computed(() => saving.value || blocked.value || !administrator.value || confirmOpen.value || Boolean(intent.value))
 const confirmationMessage = computed(() => {
   const candidate = intent.value || proposed.value
-  return candidate ? `将 ${formatWalletMoney(String(candidate.request.amount_minor), candidate.currency)} 退入用户 #${candidate.user_id} 的站内余额，来源订单 #${candidate.order_id}，工单 #${candidate.request.ticket_id}。请确认退款已获批；不发起渠道退款，也不修改当前新权益。` : ''
+  return candidate ? `将 ${formatWalletMoney(String(candidate.request.amount_minor), candidate.currency)} 退入用户 #${candidate.user_id} 的站内余额，来源订单 ${orderReference(candidate.order_id)}，工单 ${ticketReference(candidate.request.ticket_id)}。请确认退款已获批；不发起渠道退款，也不修改当前新权益。` : ''
 })
 function requestValid(value: ConsumptionRefundRequest) {
   return value && Number.isSafeInteger(value.amount_minor) && value.amount_minor > 0 && Number.isSafeInteger(value.ticket_id) && value.ticket_id > 0 && typeof value.reason === 'string' && isUtf8LengthInRange(value.reason, 3, 400) && /^[a-f0-9]{32}$/.test(value.idempotency_key)
@@ -101,7 +102,7 @@ const walletResource = useRemoteResource<WalletPage | null>({ initial: () => nul
 const { data: wallet, error: walletError, loading: walletLoading } = walletResource
 function requestApproval() {
   if (saving.value || blocked.value || confirmOpen.value || !administrator.value || !eligible.value || intent.value?.refund_id || !intent.value && !valid.value) return
-  proposed.value = intent.value || { actor_id: actor.value, order_id: props.order.id, user_id: props.order.user_id, currency: props.order.currency, request: { amount_minor: parseWalletAmount(amount.value)!, ticket_id: Number(ticket.value), reason: reason.value.trim(), idempotency_key: newCheckoutIntent() } }
+  proposed.value = intent.value || { actor_id: actor.value, order_id: props.order.id, user_id: props.order.user_id, currency: props.order.currency, request: { amount_minor: parseWalletAmount(amount.value)!, ticket_id: parseBusinessReference(ticket.value, 'T')!, reason: reason.value.trim(), idempotency_key: newCheckoutIntent() } }
   confirmOpen.value = true
 }
 async function approve() {
@@ -161,7 +162,7 @@ watch(() => [scope.value, administrator.value], () => {
       const saved: RefundIntent = JSON.parse(raw)
       if (!saved || saved.actor_id !== actor.value || saved.order_id !== props.order.id || saved.user_id !== props.order.user_id || saved.currency !== props.order.currency || !requestValid(saved.request) || saved.refund_id !== undefined && (!Number.isSafeInteger(saved.refund_id) || saved.refund_id < 1) || saved.rejected_status !== undefined && saved.rejected_status !== 400) throw new Error('invalid saved refund')
       intent.value = saved
-      amount.value = walletMajor(saved.request.amount_minor); ticket.value = String(saved.request.ticket_id); reason.value = saved.request.reason
+      amount.value = walletMajor(saved.request.amount_minor); ticket.value = ticketReference(saved.request.ticket_id); reason.value = saved.request.reason
     }
     blocked.value = false
     if (intent.value?.refund_id) void verifyKnownRefund()

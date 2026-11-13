@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -135,7 +136,7 @@ func lockSubscriptionSettlementScope(tx *gorm.DB, identity *subscriptionSettleme
 var errSubscriptionSettlementScopeChanged = fmt.Errorf("subscription settlement source scope changed before financial work: %w", commerce.ErrSubscriptionQuoteChanged)
 
 func withSubscriptionSettlementScope(db *gorm.DB, id, expectedBuyer, actor uint, admin bool, apply func(*gorm.DB, *subscriptionSettlementIdentity) error) error {
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; attempt < 5; attempt++ {
 		identity, err := readSubscriptionSettlementIdentity(db, id, expectedBuyer)
 		if err != nil {
 			return err
@@ -146,7 +147,19 @@ func withSubscriptionSettlementScope(db *gorm.DB, id, expectedBuyer, actor uint,
 			}
 			return apply(tx, identity)
 		})
-		if !errors.Is(err, errSubscriptionSettlementScopeChanged) {
+		if errors.Is(err, network.ErrResourcesBusy) && attempt < 4 {
+			// Retry only after the complete payment attempt rolled back. Reuse
+			// the same order/funding identity; never reserve or debit twice.
+			timer := time.NewTimer(time.Duration(1<<attempt) * 20 * time.Millisecond)
+			select {
+			case <-db.Statement.Context.Done():
+				timer.Stop()
+				return db.Statement.Context.Err()
+			case <-timer.C:
+			}
+			continue
+		}
+		if !errors.Is(err, errSubscriptionSettlementScopeChanged) || attempt >= 1 {
 			return err
 		}
 		// The callback never ran: no event, receipt, wallet or entitlement write

@@ -29,6 +29,8 @@ func (s *Services) UsageProjectionJob() PeriodicJob {
 	}
 }
 
+// Maintenance completes one bounded batch per declared interval; Ready retains
+// pending backlog. It must not accelerate expensive scans into a 100 ms loop.
 // NodeObservationJob keeps observation material ownership and byte limits in
 // the existing projection capability. It shares no spool, plugin or observer.
 func (s *Services) NodeObservationJob() PeriodicJob {
@@ -38,8 +40,8 @@ func (s *Services) NodeObservationJob() PeriodicJob {
 		ReconcileAfterLoss: true, CompactHistory: true, RetryFailures: true,
 		Ready: func(ctx context.Context) (bool, error) { return s.NodeObservations.HasPending(ctx) },
 		Run: func(ctx context.Context) error {
-			n, err := s.observeProjectionStorage(func() (int, error) { return s.NodeObservations.Drain(ctx, 32, 8*1024*1024) })
-			return projectionBatchOutcome(n, 32, err)
+			_, err := s.observeProjectionStorage(func() (int, error) { return s.NodeObservations.Drain(ctx, 32, 8*1024*1024) })
+			return err
 		},
 	}
 }
@@ -64,8 +66,8 @@ func (s *Services) NodeObservationMaterialRetentionJob() PeriodicJob {
 	return PeriodicJob{ID: "node_observation_material_retention", Name: "节点观察材料保留", Interval: time.Second, Timeout: time.Minute, Immediate: true, ReconcileAfterLoss: true, CompactHistory: true, RetryFailures: true,
 		Ready: func(ctx context.Context) (bool, error) { return s.NodeObservationMaterialRetention.HasPending(ctx) },
 		Run: func(ctx context.Context) error {
-			result, err := s.NodeObservationMaterialRetention.Retire(ctx, 32, 8*1024*1024)
-			return projectionBatchOutcome(result.Inspected, 32, err)
+			_, err := s.NodeObservationMaterialRetention.Retire(ctx, 32, 8*1024*1024)
+			return err
 		}}
 }
 

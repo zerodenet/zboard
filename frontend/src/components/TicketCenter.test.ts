@@ -62,13 +62,13 @@ describe('ticket references and account context', () => {
   async function create() { await wrapper!.findAll('button').find(button => button.text().includes('新建工单'))!.trigger('click'); await flushPromises() }
 
   it('restores ordinary ticket body as text without submitting or reuploading attachments', async () => {
-    await open('/account/tickets?new=1&order_id=27'); await content()
+    await open('/account/tickets?new=1&order_id=DD0000000027'); await content()
     const body = '<img src=x onerror="alert(1)"> plain support draft'
     await wrapper!.get('#ticket-body').setValue(body)
     expect(captureReauthenticationDrafts(1, router.currentRoute.value.fullPath).ok).toBe(true)
     wrapper!.unmount(); wrapper = undefined
     confirmReauthenticationDraftIdentity(1, false)
-    await open('/account/tickets?new=1&order_id=27')
+    await open('/account/tickets?new=1&order_id=DD0000000027')
     expect((wrapper!.get('#ticket-subject').element as HTMLInputElement).value).toBe('需要核对账单')
     expect((wrapper!.get('#ticket-body').element as HTMLTextAreaElement).value).toBe(body)
     expect(wrapper!.find('img').exists()).toBe(false)
@@ -100,27 +100,27 @@ describe('ticket references and account context', () => {
   })
   it('prefills only context and requires explicit submission; sends one positive number per reference without impersonation', async () => {
     vi.mocked(createTicket).mockResolvedValue(detail({ order_id: 27, subscription_id: 4, wallet_entry_id: 8 }))
-    await open('/account/tickets?new=1&order_id=27&subscription_id=4&wallet_entry_id=8&user_id=999')
-    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('27')
+    await open('/account/tickets?new=1&order_id=DD0000000027&subscription_id=4&wallet_entry_id=8&user_id=999')
+    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('DD0000000027')
     expect((wrapper!.get('#ticket-subscription_id').element as HTMLInputElement).value).toBe('4')
     expect((wrapper!.get('#ticket-wallet_entry_id').element as HTMLInputElement).value).toBe('8')
     expect(createTicket).not.toHaveBeenCalled()
     await content(); await submit()
     expect(createTicket).toHaveBeenCalledWith({ subject: '需要核对账单', category: 'billing', priority: 1, body: '请核对这笔记录，附上发生时间和现象。', attachments: [], references: { order_id: 27, subscription_id: 4, wallet_entry_id: 8 } })
-    expect(wrapper!.get('[aria-label="关联记录"]').text()).toContain('关联订单#27')
+    expect(wrapper!.get('[aria-label="关联记录"]').text()).toContain('关联订单DD0000000027')
     expect(router.currentRoute.value.query).toEqual({ ticket: '71' })
   })
   it.each(['0', '-1', '1.5', '1e3', '9007199254740992', 'not-an-id'])('rejects invalid optional reference %s before creating', async invalid => {
     await open('/account/tickets?new=1')
     await content(); await wrapper!.get('#ticket-order_id').setValue(invalid); await submit()
-    expect(wrapper!.text()).toContain('请输入有效的正整数编号')
+    expect(wrapper!.text()).toContain('请输入有效的关联编号')
     expect(createTicket).not.toHaveBeenCalled()
   })
   it('does not guess a target when query parameters repeat', async () => {
-    await open('/account/tickets?new=1&order_id=27&order_id=28')
+    await open('/account/tickets?new=1&order_id=DD0000000027&order_id=28')
     await content(); await submit()
     expect(createTicket).not.toHaveBeenCalled()
-    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('27,28')
+    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('DD0000000027,28')
   })
   it('accepts the safe-integer boundary and sends decimal identifiers as numbers', async () => {
     await open('/account/tickets?new=1&order_id=00027&subscription_id=9007199254740991')
@@ -133,7 +133,7 @@ describe('ticket references and account context', () => {
     expect(vi.mocked(createTicket).mock.calls[0]![0]).not.toHaveProperty('references')
   })
   it('does not overwrite a dirty new-ticket draft when another context link changes the query', async () => {
-    await open('/account/tickets?new=1&order_id=27')
+    await open('/account/tickets?new=1&order_id=DD0000000027')
     await content(); await wrapper!.get('#ticket-order_id').setValue('29')
     await router.push('/account/tickets?new=1&order_id=88&wallet_entry_id=9'); await flushPromises()
     expect((wrapper!.get('#ticket-subject').element as HTMLInputElement).value).toBe('需要核对账单')
@@ -142,7 +142,7 @@ describe('ticket references and account context', () => {
     expect(wrapper!.text()).toContain('已保留当前新工单草稿')
     expect(createTicket).not.toHaveBeenCalled()
   })
-  it.each(['/account/tickets?new=1&order_id=27', '/account/tickets?new=1&order_id=27&ticket=99'])('keeps a dirty reply on its original conversation when context arrives at %s', async path => {
+  it.each(['/account/tickets?new=1&order_id=DD0000000027', '/account/tickets?new=1&order_id=DD0000000027&ticket=99'])('keeps a dirty reply on its original conversation when context arrives at %s', async path => {
     await open('/account/tickets?ticket=71')
     await wrapper!.get('#ticket-reply-body').setValue('旧工单尚未发送的回复')
     await router.push(path); await flushPromises()
@@ -162,14 +162,14 @@ describe('ticket references and account context', () => {
   it('opens pending context only after explicit new-ticket confirmation and never carries an old reply to the new ticket', async () => {
     await open('/account/tickets?ticket=71')
     await wrapper!.get('#ticket-reply-body').setValue('不得带入新工单的旧回复')
-    await router.push('/account/tickets?new=1&order_id=27'); await flushPromises()
+    await router.push('/account/tickets?new=1&order_id=DD0000000027'); await flushPromises()
     vi.mocked(confirmAction).mockResolvedValueOnce(false)
     await create()
     expect(wrapper!.find('#create-ticket-form').exists()).toBe(false)
     expect((wrapper!.get('#ticket-reply-body').element as HTMLTextAreaElement).value).toBe('不得带入新工单的旧回复')
     expect(createTicket).not.toHaveBeenCalled()
     await create()
-    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('27')
+    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('DD0000000027')
     expect((wrapper!.get('#ticket-reply-body').element as HTMLTextAreaElement).value).toBe('')
     const created = detail({ order_id: 27 }); created.ticket.id = 72; created.ticket.ticket_no = 'T-72'
     vi.mocked(createTicket).mockResolvedValue(created)
@@ -180,16 +180,16 @@ describe('ticket references and account context', () => {
     expect(createTicket).toHaveBeenCalledOnce()
   })
   it('allows the same context to open a later clean draft after a successful submission', async () => {
-    await open('/account/tickets?new=1&order_id=27')
+    await open('/account/tickets?new=1&order_id=DD0000000027')
     await content(); await submit()
     expect(wrapper!.find('#create-ticket-form').exists()).toBe(false)
-    await router.push('/account/tickets?new=1&order_id=27'); await flushPromises()
-    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('27')
+    await router.push('/account/tickets?new=1&order_id=DD0000000027'); await flushPromises()
+    expect((wrapper!.get('#ticket-order_id').element as HTMLInputElement).value).toBe('DD0000000027')
     expect(createTicket).toHaveBeenCalledOnce()
   })
   it('keeps a rejected ownership reference editable and preserves the unsent description', async () => {
     vi.mocked(createTicket).mockRejectedValue({ response: { data: { message: '仅可关联当前账户的记录。', error: { version: 1, code: 'validation_failed', fields: { 'references.order_id': '订单不属于当前账户。' } } } } })
-    await open('/account/tickets?new=1&order_id=27'); await content(); await submit()
+    await open('/account/tickets?new=1&order_id=DD0000000027'); await content(); await submit()
     expect(wrapper!.text()).toContain('订单不属于当前账户。')
     expect((wrapper!.get('#ticket-body').element as HTMLTextAreaElement).value).toContain('请核对这笔记录')
     expect(router.currentRoute.value.query.ticket).toBeUndefined()

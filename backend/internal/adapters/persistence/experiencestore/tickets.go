@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -15,7 +16,11 @@ type Tickets struct{ DB *gorm.DB }
 
 func (s Tickets) CreateTicket(ctx context.Context, actor uint, input experience.NewTicket, now time.Time) (id uint, err error) {
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row := model.Ticket{TicketNo: input.TicketNo, UserID: actor, Subject: input.Subject, Category: input.Category, Priority: input.Priority, Status: "open", LastMessageAt: now}
+		seed, e := businessref.Provisional('T')
+		if e != nil {
+			return e
+		}
+		row := model.Ticket{TicketNo: seed, UserID: actor, Subject: input.Subject, Category: input.Category, Priority: input.Priority, Status: "open", LastMessageAt: now}
 		// Financial settlement/termination takes source orders before the owner.
 		// Do not hold the user's SHARE lock while waiting for that source order.
 		if input.References != nil {
@@ -35,6 +40,11 @@ func (s Tickets) CreateTicket(ctx context.Context, actor uint, input experience.
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
+		number := businessref.Ticket(row.ID, row.CreatedAt)
+		if e := tx.Model(&row).UpdateColumn("ticket_no", number).Error; e != nil {
+			return e
+		}
+		row.TicketNo = number
 		message := model.TicketMessage{TicketID: row.ID, AuthorID: &user.ID, AuthorRole: "user", Type: "message", Body: input.Body, CreatedAt: now}
 		if err := tx.Create(&message).Error; err != nil {
 			return err
@@ -139,7 +149,7 @@ func createTicketStatusEvent(tx *gorm.DB, ticketID, authorID uint, role, from, t
 }
 
 func ticketView(row model.Ticket) experience.Ticket {
-	out := experience.Ticket{ID: row.ID, TicketNo: row.TicketNo, UserID: row.UserID, Subject: row.Subject, Category: row.Category, Priority: row.Priority, Status: row.Status, LastMessageAt: row.LastMessageAt, ResolvedAt: row.ResolvedAt, ClosedAt: row.ClosedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+	out := experience.Ticket{ID: row.ID, TicketNo: businessref.Ticket(row.ID, row.CreatedAt), UserID: row.UserID, Subject: row.Subject, Category: row.Category, Priority: row.Priority, Status: row.Status, LastMessageAt: row.LastMessageAt, ResolvedAt: row.ResolvedAt, ClosedAt: row.ClosedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 	if row.OrderID != nil || row.SubscriptionID != nil || row.WalletEntryID != nil {
 		out.References = &experience.TicketReferences{OrderID: row.OrderID, SubscriptionID: row.SubscriptionID, WalletEntryID: row.WalletEntryID}
 	}
@@ -212,7 +222,14 @@ func (s Tickets) ListTickets(ctx context.Context, input experience.TicketQuery) 
 	}
 	if input.Search != "" {
 		pattern := "%" + input.Search + "%"
-		query = query.Joins("JOIN users ticket_owner ON ticket_owner.id = tickets.user_id").Where("tickets.ticket_no LIKE ? OR tickets.subject LIKE ? OR ticket_owner.email LIKE ?", pattern, pattern, pattern)
+		query = query.Joins("JOIN users ticket_owner ON ticket_owner.id = tickets.user_id")
+		condition := "tickets.ticket_no LIKE ? OR tickets.subject LIKE ? OR ticket_owner.email LIKE ?"
+		args := []any{pattern, pattern, pattern}
+		if id, ok := businessref.Parse(input.Search, 'T'); ok {
+			condition += " OR tickets.id=?"
+			args = append(args, id)
+		}
+		query = query.Where(condition, args...)
 	}
 	page := experience.TicketPage{}
 	if err := query.Count(&page.Total).Error; err != nil {

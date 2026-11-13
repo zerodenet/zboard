@@ -3,7 +3,7 @@
     <li v-for="order in orders" :key="order.id">
       <div class="account-order-row">
         <RouterLink class="account-order-link" :to="`/account/orders/${order.id}`">
-          <span class="account-order-name"><strong>{{ accountOrderName(order) }}</strong><small><span>#{{ order.id }}</span><span v-if="order.sku_name && order.order_type !== 'topup'">{{ order.sku_name }}</span></small></span>
+          <span class="account-order-name"><strong>{{ accountOrderName(order) }}</strong><small><span>{{ orderReference(order) }}</span><span v-if="order.sku_name && order.order_type !== 'topup'">{{ order.sku_name }}</span></small></span>
           <StatusBadge :tone="tone(order.status)">{{ label(order.status) }}</StatusBadge>
           <strong class="account-order-amount">{{ formatCurrency(order.payable_amount ?? order.amount_cents, order.currency) }}</strong>
           <TimeBadge class="account-order-time" :value="order.created_at" mode="relative" />
@@ -19,6 +19,7 @@
   </ul>
 </template>
 <script setup lang="ts">
+import { orderReference } from '../../utils/businessReference'
 import type { AdminOrderListItem } from '../../api/client'
 import { accountOrderName } from '../../utils/accountOrders'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'

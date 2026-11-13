@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"net/http"
 	"strconv"
@@ -30,8 +31,8 @@ func (h *handlers) OrderListHandler(w http.ResponseWriter, r *http.Request) {
 			BadRequest(w, "invalid id")
 			return
 		}
-		id, parseErr := strconv.ParseUint(values[0], 10, strconv.IntSize)
-		if parseErr != nil || id == 0 {
+		id, valid := businessref.Parse(values[0], 'O')
+		if !valid {
 			BadRequest(w, "invalid id")
 			return
 		}

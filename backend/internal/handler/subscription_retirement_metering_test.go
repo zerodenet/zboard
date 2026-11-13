@@ -49,9 +49,9 @@ func assertRetirementMetering(t *testing.T, f orderFixture) {
 	if err := h.db.Model(&model.Subscription{}).Where("id = ?", credential.SubscriptionID).Updates(map[string]any{"lifecycle": "fixed", "ends_on_quota_exhaustion": true, "flow_total": 30}).Error; err != nil {
 		t.Fatal(err)
 	}
-	sql := `CREATE TRIGGER reject_retirement_audit BEFORE INSERT ON audit_logs WHEN NEW.action = 'subscription.cleanup' BEGIN SELECT RAISE(ABORT,'retirement audit unavailable'); END`
+	sql := `CREATE TRIGGER reject_retirement_audit BEFORE INSERT ON audit_logs WHEN NEW.action = 'subscription.delete' BEGIN SELECT RAISE(ABORT,'retirement audit unavailable'); END`
 	if !datastore.IsSQLite(h.db) {
-		sql = `CREATE TRIGGER reject_retirement_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action = 'subscription.cleanup' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'retirement audit unavailable'; END IF; END`
+		sql = `CREATE TRIGGER reject_retirement_audit BEFORE INSERT ON audit_logs FOR EACH ROW BEGIN IF NEW.action = 'subscription.delete' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'retirement audit unavailable'; END IF; END`
 	}
 	if err := h.db.Exec(sql).Error; err != nil {
 		t.Fatal(err)
@@ -92,9 +92,9 @@ func assertRetirementMetering(t *testing.T, f orderFixture) {
 			t.Fatal(err)
 		}
 	}
-	var final model.FlowUsage
-	if err := h.db.First(&final, cursor.ID).Error; err != nil || final.UsedBytes != 30 || final.RawBytes != 60 || final.ProtocolCredentialID != cursor.ProtocolCredentialID || final.PrincipalKey != credential.PrincipalKey {
-		t.Fatalf("retirement lost cursor or double charged %+v %v", final, err)
+	final, found, _, err := meteringstore.LoadFlowUsage(h.db, credential.NodeID, "benchmark-core", "flow-0", credential.ID, 0, metering.FlowCounters{Raw: 60, Upload: 20, Download: 40})
+	if err != nil || !found || final.UsedBytes != 30 || final.RawBytes != 60 || final.ProtocolCredentialID != cursor.ProtocolCredentialID {
+		t.Fatal("retirement lost cursor or double charged", final, err)
 	}
 	var used int64
 	if err := h.db.Model(&model.TrafficRecord{}).Where("subscription_id = ?", credential.SubscriptionID).Select("COALESCE(SUM(used_bytes),0)").Scan(&used).Error; err != nil || used != 30 {
@@ -104,16 +104,16 @@ func assertRetirementMetering(t *testing.T, f orderFixture) {
 	if err := h.db.Model(&model.TrafficRecord{}).Where("subscription_id = ?", credential.SubscriptionID).Select("COALESCE(SUM(raw_bytes),0)").Scan(&raw).Error; err != nil || raw != 60 {
 		t.Fatalf("late raw usage lost %d %v", raw, err)
 	}
-	var sub model.Subscription
-	if err := h.db.First(&sub, credential.SubscriptionID).Error; err != nil || sub.Status != "ended" || sub.FlowUsed != 30 || sub.NextResetAt != nil || entitlements.CanRenewAt(entitlements.Subscription(sub), time.Now().UTC()) {
-		t.Fatalf("late metering revived service %+v %v", sub, err)
+	closed := requireSubscriptionDeleted(t, h.db, credential.SubscriptionID)
+	if closed.FlowUsed != 30 {
+		t.Fatal("late billing changed closed budget", closed.FlowUsed)
 	}
 	var oldOrders []model.Order
-	if err := h.db.Where("subscription_id = ? AND status = 'paid'", sub.ID).Find(&oldOrders).Error; err != nil || len(oldOrders) != 1 || oldOrders[0].SubscriptionFinalFlowUsed != 30 {
+	if err := h.db.Where("subscription_id = ? AND status = 'paid'", credential.SubscriptionID).Find(&oldOrders).Error; err != nil || len(oldOrders) != 1 || oldOrders[0].SubscriptionFinalFlowUsed != 30 {
 		t.Fatalf("late metering rewrote terminal summary %+v %v", oldOrders, err)
 	}
 	var records []model.TrafficRecord
-	if err := h.db.Where("subscription_id = ?", sub.ID).Find(&records).Error; err != nil {
+	if err := h.db.Where("subscription_id = ?", credential.SubscriptionID).Find(&records).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, record := range records {

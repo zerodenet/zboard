@@ -165,7 +165,7 @@ func assertSubscriptionTermination(t *testing.T, f orderFixture) {
 		t.Fatalf("lifecycle/history %+v %v", sub, err)
 	}
 	page, err := f.h.services.SubscriptionQueries.Owned(t.Context(), 1, entitlements.SubscriptionQuery{ID: sub.ID, Limit: 25})
-	if err != nil || len(page.Items) != 1 || page.Items[0].CanRenew || page.Items[0].RenewalUntil != nil || page.Items[0].Status != "canceled" {
+	if err != nil || len(page.Items) != 0 {
 		t.Fatalf("cancellation advertised recovery window %+v %v", page, err)
 	}
 	page, err = f.h.services.SubscriptionQueries.Owned(t.Context(), 1, entitlements.SubscriptionQuery{ID: sub.ID, Status: "expired", Limit: 25})

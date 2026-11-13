@@ -159,4 +159,18 @@ func assertLegacyTrafficOwnership(t *testing.T, f orderFixture) {
 	}
 	assertAccountingTotal(t, h, first.SubscriptionID, 10, subStatusActive)
 	assertAccountingTotal(t, h, second.SubscriptionID, 0, subStatusActive)
+	ended := time.Now().UTC()
+	if e := h.db.Model(&model.Subscription{}).Where("id=?", first.SubscriptionID).Updates(map[string]any{"status": "ended", "ended_at": ended, "end_reason": "expired"}).Error; e != nil {
+		t.Fatal(e)
+	}
+	if _, e := h.services.CredentialExpiry(h.credentialCipher).ExpireDue(t.Context(), ended, 20); e != nil {
+		t.Fatal(e)
+	}
+	requireSubscriptionDeleted(t, h.db, first.SubscriptionID)
+	report.Nonce = "legacy-after-purge-nonce"
+	report.ReportID = "legacy-after-purge-report"
+	if _, e := h.services.NodeReports().Record(t.Context(), report); !errors.Is(e, metering.ErrNodeReportNeedsPrincipal) {
+		t.Fatal("purged history was charged to the newer subscription", e)
+	}
+	assertAccountingTotal(t, h, second.SubscriptionID, 0, subStatusActive)
 }

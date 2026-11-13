@@ -36,7 +36,7 @@
     </div>
     <ModalDialog :open="paymentDialogOpen" :title="reconcileOnly ? '核对原渠道付款' : paid ? '支付已完成' : canceled ? '订单已取消' : '确认支付结果'" size="sm" :description="reconcileOnly ? '仅核对已存在的原渠道付款，不会重新收款。迟到款可能进入余额，请同时核对本站订单和流水。' : paid ? '付款结果已核对。' : canceled ? '此订单不可继续支付，请重新下单。' : '请在支付窗口完成付款，返回后核对订单结果。'" :return-focus-selector="`#${paymentTriggerId}`" @close="paymentDialogOpen = false">
       <div class="checkout-payment__dialog">
-        <p v-if="currentOrder" class="checkout-payment__state" role="status">订单 #{{ currentOrder }} · {{ paid ? '已完成付款' : reconcileOnly ? '仅核对原付款；此操作不会恢复权益或重新收款。' : canceled ? '已取消，请重新下单。' : waiting ? '等待付款；完成后请核对结果。' : busy ? '正在准备支付或核对结果…' : '支付重试将使用此订单。' }}</p>
+        <p v-if="currentOrder" class="checkout-payment__state" role="status">订单 {{ orderReference(currentOrder) }} · {{ paid ? '已完成付款' : reconcileOnly ? '仅核对原付款；此操作不会恢复权益或重新收款。' : canceled ? '已取消，请重新下单。' : waiting ? '等待付款；完成后请核对结果。' : busy ? '正在准备支付或核对结果…' : '支付重试将使用此订单。' }}</p>
         <p v-else role="status">{{ busy ? '正在创建订单并打开支付窗口…' : '订单尚未创建，可重新确认并支付。' }}</p>
         <p v-if="confirmedOrder">订单应付 {{ formatCurrency(confirmedOrder.amount, confirmedOrder.currency) }}</p>
         <p v-if="channelAmountMinor !== undefined">本次渠道补差 {{ formatWalletMoney(channelAmountMinor, currency) }}</p>
@@ -55,6 +55,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { orderReference } from '../utils/businessReference'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowReactive, useId, watch } from 'vue'
 import { compositionSlots } from './composition'
 import { type CatalogSlot } from '../api/plugins'

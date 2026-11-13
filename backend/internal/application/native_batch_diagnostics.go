@@ -2,8 +2,10 @@ package application
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"math"
 	"time"
 
@@ -36,14 +38,30 @@ func (s *Services) nativeAuthorityTransaction(ctx context.Context, input Buffere
 	}
 	returned := false
 	defer func() { collection.Finish(err, returned) }()
-	// Retry only the owned report-identity race, after the entire failed
+	// Retry only an owned report-identity or discovery race, after the entire failed
 	// authority transaction rolled back. Each attempt gets a fresh snapshot.
 	for attempt := 0; attempt < 3; attempt++ {
 		if err = ctx.Err(); err != nil {
 			break
 		}
-		err = s.Identity.db.WithContext(observed).Transaction(apply)
-		if !errors.Is(err, meteringstore.ErrNativeReportClaimed) {
+		options := &sql.TxOptions{}
+		if s.Identity.db.Dialector.Name() == "mysql" {
+			options.Isolation = sql.LevelReadCommitted
+		}
+		err = s.Identity.db.WithContext(observed).Transaction(apply, options)
+		if errors.Is(err, network.ErrResourcesBusy) && attempt < 2 {
+			// NOWAIT distinguishes short resource ownership from an uncertain
+			// financial result. Rollback has completed before bounded backoff.
+			timer := time.NewTimer(time.Duration(attempt+1) * 10 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+			continue
+		}
+		if !errors.Is(err, meteringstore.ErrNativeReportClaimed) && !errors.Is(err, meteringstore.ErrNativeAuthorityChanged) {
 			break
 		}
 	}

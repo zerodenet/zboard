@@ -92,3 +92,10 @@ func validateFlowWindowReports(tx *gorm.DB, samples []metering.FlowSample) error
 	}
 	return nil
 }
+
+// ValidateFlowWindows checks the full source batch before its first partition
+// commits. Cross-partition collation aliases must fall back to original reports
+// before any merged window is charged. Call in a short identity-only transaction.
+func ValidateFlowWindows(tx *gorm.DB, samples []metering.FlowSample) error {
+	return validateFlowWindowReports(tx, samples)
+}

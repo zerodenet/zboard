@@ -13,7 +13,7 @@ type entitlementQuotaKey struct {
 }
 
 func loadClosedEntitlement(tx *gorm.DB, sub model.Subscription, epoch uint64) (model.ClosedEntitlement, error) {
-	if epoch >= sub.EntitlementEpoch {
+	if sub.Status != "deleted" && epoch >= sub.EntitlementEpoch {
 		return model.ClosedEntitlement{}, errors.New("invalid historical entitlement epoch")
 	}
 	var row model.ClosedEntitlement
@@ -27,11 +27,12 @@ func loadClosedEntitlement(tx *gorm.DB, sub model.Subscription, epoch uint64) (m
 }
 func closedQuotaSubscription(sub model.Subscription, row model.ClosedEntitlement) model.Subscription {
 	sub.EntitlementEpoch = row.Epoch
+	sub.StartAt, sub.EndAt = row.StartAt, row.EndAt
 	sub.FlowTotal, sub.FlowUsed, sub.TrafficCalcMode = row.FlowTotal, row.FlowUsed, row.TrafficCalcMode
 	return sub
 }
 func (s *flowBatch) quotaSubscription(tx *gorm.DB, credential zeroFlowCredentialRef, current *model.Subscription) (*model.Subscription, bool, error) {
-	if credential.EntitlementEpoch == current.EntitlementEpoch {
+	if current.Status != "deleted" && credential.EntitlementEpoch == current.EntitlementEpoch {
 		return current, true, nil
 	}
 	key := entitlementQuotaKey{current.ID, credential.EntitlementEpoch}
@@ -46,4 +47,14 @@ func (s *flowBatch) quotaSubscription(tx *gorm.DB, credential zeroFlowCredential
 	}
 	copy := closedQuotaSubscription(*current, *row)
 	return &copy, false, nil
+}
+
+// This in-memory attribution shell is never written to subscriptions or exposed
+// as a service. The existing closed quota is the sole late-accounting authority.
+func deletedSubscriptionAttribution(tx *gorm.DB, id uint) (model.Subscription, error) {
+	var row model.ClosedEntitlement
+	if e := tx.Where("subscription_id=?", id).Order("epoch DESC").Take(&row).Error; e != nil {
+		return model.Subscription{}, e
+	}
+	return model.Subscription{ID: id, UserID: row.UserID, EntitlementEpoch: row.Epoch, Status: "deleted", StartAt: row.StartAt, EndAt: row.EndAt, EndedAt: &row.ClosedAt}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,13 +34,52 @@ func (w Worker) HasPending(ctx context.Context) (bool, error) {
 	if pending, err := w.hasMailboxes(ctx); pending || err != nil {
 		return pending, err
 	}
-	var h struct{ ID string }
-	now := clockNow()
-	result := ready(w.DB.WithContext(ctx), now).Select("id").Limit(1).Scan(&h)
-	return result.RowsAffected > 0, result.Error
+	for _, scope := range claimScopes {
+		var h struct{ ID string }
+		q := claimReady(w.DB.WithContext(ctx), scope, clockNow()).Select("id").Limit(1).Find(&h)
+		if q.Error != nil {
+			return false, q.Error
+		}
+		if h.ID != "" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
-func ready(db *gorm.DB, now time.Time) *gorm.DB {
-	return db.Model(&model.NodeObservationIntent{}).Where("(status = ? AND available_at <= ?) OR (status = ? AND lease_until <= ?)", "pending", now, "claimed", now)
+
+type claimScope struct{ status, clock, index string }
+
+var claimScopes = []claimScope{{"pending", "available_at", "idx_node_observation_ready"}, {"claimed", "lease_until", "idx_observation_claim_lease"}}
+
+func claimReady(db *gorm.DB, s claimScope, now time.Time) *gorm.DB {
+	q := db.Model(&model.NodeObservationIntent{})
+	if db.Dialector.Name() == "mysql" {
+		q = q.Table("node_observation_intents FORCE INDEX (" + s.index + ")")
+	}
+	return q.Where("status = ? AND "+s.clock+" <= ?", s.status, now)
+}
+
+// Discovery never takes row/range locks. Both due queues have covered indexes;
+// only exact candidate primary keys enter the short ownership transaction.
+func claimCandidates(db *gorm.DB, now time.Time) ([]model.NodeObservationIntent, error) {
+	rows := []model.NodeObservationIntent{}
+	for _, scope := range claimScopes {
+		var part []model.NodeObservationIntent
+		if e := claimReady(db, scope, now).Select("id," + scope.clock + " AS available_at").Order(scope.clock + ",id").Limit(16).Find(&part).Error; e != nil {
+			return nil, e
+		}
+		rows = append(rows, part...)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].AvailableAt.Equal(rows[j].AvailableAt) {
+			return rows[i].ID < rows[j].ID
+		}
+		return rows[i].AvailableAt.Before(rows[j].AvailableAt)
+	})
+	return rows, nil
+}
+func claimDue(h model.NodeObservationIntent, now time.Time) bool {
+	return h.Status == "pending" && !h.AvailableAt.After(now) || h.Status == "claimed" && !h.LeaseUntil.After(now)
 }
 func transaction(db *gorm.DB, run func(*gorm.DB) error) error {
 	if db.Dialector.Name() == "sqlite" {
@@ -52,14 +92,31 @@ func (w Worker) claim(ctx context.Context) (h model.NodeObservationIntent, found
 	if _, err = rand.Read(b[:]); err != nil {
 		return
 	}
+	now := clockNow()
+	candidates, e := claimCandidates(w.DB.WithContext(ctx), now)
+	if e != nil {
+		return h, false, e
+	}
 	err = transaction(w.DB.WithContext(ctx), func(tx *gorm.DB) error {
-		now := clockNow()
-		q := ready(tx, now).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Order("available_at, id").First(&h)
-		if errors.Is(q.Error, gorm.ErrRecordNotFound) {
-			return nil
+		foundCandidate := false
+		for _, candidate := range candidates {
+			var current model.NodeObservationIntent
+			q := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).First(&current, "id = ?", candidate.ID)
+			if errors.Is(q.Error, gorm.ErrRecordNotFound) {
+				continue
+			}
+			if q.Error != nil {
+				return q.Error
+			}
+			if !claimDue(current, now) {
+				continue
+			}
+			h = current
+			foundCandidate = true
+			break
 		}
-		if q.Error != nil {
-			return q.Error
+		if !foundCandidate {
+			return nil
 		}
 		maxAttempts := uint64(math.MaxUint64)
 		if tx.Dialector.Name() == "sqlite" {

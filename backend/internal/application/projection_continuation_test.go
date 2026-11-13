@@ -62,9 +62,13 @@ func TestProjectionContinuationPreservesBudgetsAndFailures(t *testing.T) {
 				if kind == "retention" {
 					job = s.NodeObservationMaterialRetentionJob()
 				}
+				wantYield := test.yield && kind == "usage"
 				err := job.Run(t.Context())
-				if jobs.IsContinuation(err) != test.yield || test.failure != nil && !errors.Is(err, failure) || test.failure == nil && !test.yield && err != nil {
+				if jobs.IsContinuation(err) != wantYield || test.failure != nil && !errors.Is(err, failure) || test.failure == nil && !wantYield && err != nil {
 					t.Fatal("incorrect bounded continuation outcome", err)
+				}
+				if pending, e := job.Ready(t.Context()); e != nil || !pending {
+					t.Fatal("bounded maintenance lost remaining backlog", pending, e)
 				}
 				if repo.calls != 1 || repo.limit != limit || kind != "usage" && repo.budget != 8*1024*1024 {
 					t.Fatal("continuation changed execution budget or privately looped", repo)

@@ -78,7 +78,7 @@ func assertRetirementBudgetFairness(t *testing.T, f orderFixture) {
 			t.Fatal("rolled-back credential falsely reported expired", credential)
 		}
 	}
-	var held, closed model.Subscription
+	var held model.Subscription
 	if err := f.h.db.First(&held, bad.ID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -87,9 +87,7 @@ func assertRetirementBudgetFairness(t *testing.T, f orderFixture) {
 	if held.RetirementRetryAt == nil || !held.RetirementRetryAt.After(now) || !reflect.DeepEqual(held, expected) {
 		t.Fatal("budget hold changed business rights or was not durable", held, expected)
 	}
-	if err := f.h.db.First(&closed, healthy.ID).Error; err != nil || closed.Status != "ended" || closed.RetirementRetryAt != nil {
-		t.Fatal("higher subscription was starved", closed, err)
-	}
+	requireSubscriptionDeleted(t, f.h.db, healthy.ID)
 	var orders []model.Order
 	var funding []model.OrderFunding
 	if err := f.h.db.Where("subscription_id=? OR target_subscription_id=?", bad.ID, bad.ID).Order("id").Find(&orders).Error; err != nil || !reflect.DeepEqual(beforeOrders, orders) {
@@ -123,10 +121,7 @@ func assertRetirementBudgetFairness(t *testing.T, f orderFixture) {
 	if _, err := store.ExpireDueCredentials(t.Context(), retry, 200); err != nil {
 		t.Fatal("retry could not retire after pressure was resolved", err)
 	}
-	held = model.Subscription{}
-	if err := f.h.db.First(&held, bad.ID).Error; err != nil || held.Status != "ended" || held.RetirementRetryAt != nil {
-		t.Fatal("retry did not clear operational hold", held, err)
-	}
+	requireSubscriptionDeleted(t, f.h.db, bad.ID)
 	if !reflect.DeepEqual(settledMoney, lifecyclePageMoney(t, f.h.db)) {
 		t.Fatal("retirement double-released consumed/canceled funds")
 	}
@@ -214,10 +209,7 @@ func assertRetirementFreshPriority(t *testing.T, f orderFixture) {
 	if _, err := store.ExpireDueCredentials(t.Context(), now, 1); err != nil {
 		t.Fatal("fresh high ID starved behind200 due retry rows", err)
 	}
-	var closed model.Subscription
-	if err := f.h.db.First(&closed, healthy.ID).Error; err != nil || closed.Status != "ended" {
-		t.Fatal("fresh row was not closed", closed, err)
-	}
+	requireSubscriptionDeleted(t, f.h.db, healthy.ID)
 	assertRetryCohort()
 	// At the next turn a precise identity budget defers the oldest retry, then
 	// advances durably to the next one even across repository reconstruction.

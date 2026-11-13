@@ -12,6 +12,7 @@ import (
 )
 
 type BatchAccounting struct {
+	Quota               *QuotaIdentity
 	Cipher              metering.CredentialDecryptor
 	EnqueuePublications func(*gorm.DB, uint, uint) error
 }
@@ -19,10 +20,14 @@ type BatchAccounting struct {
 // Apply shares the event-consumer transaction, including node projections.
 // Batch caches never escape this call or survive a commit/rollback.
 func (s BatchAccounting) Apply(tx *gorm.DB, events []metering.FlowSample) ([]metering.FlowAccountingResult, error) {
+	batch := newFlowBatch(tx)
+	batch.expectedQuota = s.Quota
+	if err := batch.lockAuthorities(tx, s.Cipher, events); err != nil {
+		return nil, err
+	}
 	if err := validateFlowWindowReports(tx, events); err != nil {
 		return nil, err
 	}
-	batch := newFlowBatch(tx)
 	if err := batch.loadReports(tx, events); err != nil {
 		return nil, err
 	}
@@ -183,12 +188,11 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	usage.LastEventID = event.EventID
 	usage.LastSeenAt = recordAt
 	usage.CompletedAt = nil
-	if err := saveFlowUsage(tx, &usage, found, previousUsageKey); err != nil {
+	if err := saveFlowUsage(tx, &usage, found, previousUsageKey, !currentEpoch); err != nil {
 		return result, err
 	}
 
 	batch.rememberUsage(previousUsageKey, usage)
-	batch.touched[credential.ID] = now
 	if result.Exhausted {
 		if s.EnqueuePublications == nil {
 			return result, errors.New("subscription publication capability unavailable")

@@ -80,16 +80,16 @@ func (s AccountDirectory) overview(ctx context.Context, users []model.User, now 
 	if days == 0 {
 		return out, nil
 	}
-	selects := []string{"users.id", "(SELECT MAX(" + entitlementEnd("s") + ") FROM subscriptions s WHERE s.user_id=users.id) AS owned_end", "(SELECT MAX(" + sharedEntitlementEnd() + ") FROM subscription_members m JOIN subscriptions s ON s.id=m.subscription_id WHERE m.user_id=users.id) AS shared_end"}
+	selects := []string{"users.id", "(SELECT a.last_entitlement_end FROM account_subjects a WHERE a.id=users.id) AS deleted_end", "(SELECT MAX(" + entitlementEnd("s") + ") FROM subscriptions s WHERE s.user_id=users.id) AS owned_end", "(SELECT MAX(" + sharedEntitlementEnd() + ") FROM subscription_members m JOIN subscriptions s ON s.id=m.subscription_id WHERE m.user_id=users.id) AS shared_end"}
 	blocker := "CASE WHEN users.is_admin THEN '管理员账号受保护'"
 	for _, g := range accountFinancialGuards() {
 		blocker += " WHEN " + g.exists("users.id") + " THEN '" + g.reason + "'"
 	}
 	selects = append(selects, blocker+" ELSE '' END AS blocker")
 	var rows []struct {
-		ID                  uint
-		OwnedEnd, SharedEnd *string
-		Blocker             string
+		ID                              uint
+		OwnedEnd, SharedEnd, DeletedEnd *string
+		Blocker                         string
 	}
 	if err := db.Model(&model.User{}).Select(strings.Join(selects, ", ")).Where("users.id IN ?", ids).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -109,7 +109,7 @@ func (s AccountDirectory) overview(ctx context.Context, users []model.User, now 
 			continue
 		}
 		lastEnd := byID[row.ID].CreatedAt.UTC()
-		for _, raw := range []*string{row.OwnedEnd, row.SharedEnd} {
+		for _, raw := range []*string{row.OwnedEnd, row.SharedEnd, row.DeletedEnd} {
 			at, err := parseEntitlementEnd(raw)
 			if err != nil {
 				return nil, err

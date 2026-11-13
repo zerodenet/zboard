@@ -224,7 +224,7 @@ func TestMySQLNativeMinuteConcurrentSettlementAndProjection(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 12; i++ {
 				id := fmt.Sprintf("concurrent-%d-%d", writer, i)
-				input := metering.CompletedFlow{NodeID: c.NodeID, PrincipalKey: c.PrincipalKey, CoreInstanceID: "concurrent-minute", FlowID: id, EventID: id, EventType: "flow.completed", Sequence: uint64(i + 1), BytesUp: 1, OccurredAt: at.AddDate(-2, 0, 0)}
+				input := metering.CompletedFlow{NodeID: c.NodeID, PrincipalKey: c.PrincipalKey, CoreInstanceID: "concurrent-minute", FlowID: id, EventID: id, EventType: "flow.completed", Sequence: uint64(i + 1), BytesUp: 1, OccurredAt: at.Add(-2 * time.Hour)}
 				for replay := 0; replay < 2; replay++ {
 					if _, _, err := h.services.CompletionAccounting(h.credentialCipher).Complete(ctx, input); err != nil {
 						errs <- err
@@ -319,7 +319,11 @@ func assertNativeMinuteConcurrentSameReport(t *testing.T, batch bool) {
 	var reads atomic.Int32
 	const callback = "test:minute_simultaneous_report_admission"
 	if err := h.db.Callback().Query().After("gorm:query").Register(callback, func(tx *gorm.DB) {
-		if tx.Statement.Table == "metering_report_receipts" && reads.Add(1) <= 2 {
+		// Both authority paths serialize before reading report receipts.
+		// Establish the simultaneous discovery race before those locks.
+		table := "protocol_credentials"
+		_, locking := tx.Statement.Clauses["FOR"]
+		if tx.Statement.Table == table && !locking && reads.Add(1) <= 2 {
 			ready <- struct{}{}
 			select {
 			case <-release:

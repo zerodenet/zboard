@@ -30,7 +30,7 @@ func validateInitialMigrationSeeds(db *gorm.DB) error {
 			return reject()
 		}
 		config := configs[0]
-		if config.ConfigKey != entitlements.RecoveryGraceDaysKey || config.Name != "订阅续费恢复窗口（天）" || config.Value != "7" || config.ValueType != "int" || config.Revision != 1 || config.IsPublic || config.IsSecret || config.Description != "到期后停服，可在此天数内续费恢复；默认7天，范围0–3650，0表示不保留恢复窗口。缩短窗口会使超过新期限的旧订阅结束并清理凭据，历史订单和账务保留。主动退订不进入恢复窗口。" {
+		if config.ConfigKey != entitlements.RecoveryGraceDaysKey || config.Name != "订阅续费恢复窗口（天）" || config.Value != "7" || config.ValueType != "int" || config.Revision != 1 || config.IsPublic || config.IsSecret || (config.Description != "到期后停服，窗口内可续费恢复；默认7天，范围0–3650。超出后自动删除订阅、链接、成员及自动续费配置，历史订单、账务和最小补报依据保留。0表示到期即删除；已取消订阅直接清理。" && config.Description != "到期后停服，可在此天数内续费恢复；默认7天，范围0–3650，0表示不保留恢复窗口。缩短窗口会使超过新期限的旧订阅结束并清理凭据，历史订单和账务保留。主动退订不进入恢复窗口。") {
 			return reject()
 		}
 		for _, table := range []string{"email_templates", "subscription_templates"} {

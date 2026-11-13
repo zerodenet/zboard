@@ -4,6 +4,8 @@ import (
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/catalog"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
+	capabilityapi "github.com/zerodenet/zboard/backend/pkg/capabilityapi/v1"
 	"net/http"
 )
 
@@ -79,6 +81,11 @@ func (h *handlers) WalletPayOrderHandler(w http.ResponseWriter, r *http.Request)
 	}
 	out, err := h.services.WalletPayments(h.credentialCipher, h.zeroMieruAccess).Pay(r.Context(), actor.UserID, id)
 	if err != nil {
+		if errors.Is(err, network.ErrResourcesBusy) {
+			w.Header().Set("Retry-After", "1")
+			writeCapabilityError(w, http.StatusServiceUnavailable, "服务配置正忙，本次付款未完成。请稍后重试此订单，无需重新下单。", capabilityapi.ErrorUnavailable)
+			return
+		}
 		fundingError(w, err)
 		return
 	}

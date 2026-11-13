@@ -20,9 +20,9 @@ async function open(path = '/account/orders/27') {
 describe('account order detail payment ownership', () => {
   beforeEach(() => { vi.clearAllMocks(); vi.mocked(fetchAccountOrder).mockResolvedValue(order()) })
   it('loads only the requested order and scopes payment to it without automatically opening confirmation', async () => {
-    const { wrapper } = await open()
+    const { wrapper } = await open('/account/orders/DD20261014080000000027')
     expect(fetchAccountOrder).toHaveBeenCalledWith(27, expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(wrapper.text()).toContain('订单 #27')
+    expect(wrapper.text()).toContain('DD20261014080000000027')
     expect(wrapper.text()).toContain('Pass Iron')
     expect(wrapper.text()).toContain('¥15.00')
     const payment = wrapper.get('order-funding-payment-stub')
@@ -64,7 +64,7 @@ describe('account order detail payment ownership', () => {
     vi.mocked(fetchAccountOrder).mockResolvedValue(order(28))
     await router.push('/account/orders/28'); await flushPromises()
     resolve(order(27)); await flushPromises()
-    expect(wrapper.text()).toContain('订单 #28')
+    expect(wrapper.text()).toContain('DD20261014080000000028')
     expect(wrapper.text()).not.toContain('trade-27')
     expect(wrapper.get('order-funding-payment-stub').attributes('orderid')).toBe('28')
     wrapper.unmount()

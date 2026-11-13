@@ -78,8 +78,12 @@ func TestRetirementPreservesHistoricalIdentitiesAndRenewableWindow(t *testing.T)
 	}
 
 	first = model.Subscription{}
-	if err := db.First(&first, 1).Error; err != nil || first.Status != "ended" || first.EndedAt == nil || entitlements.CanRenewAt(entitlements.Subscription(first), now) {
-		t.Fatal("historical instance lost or renewable", first, err)
+	if err := db.Unscoped().First(&first, 1).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatal("terminal service was not hard deleted", first, err)
+	}
+	var closed model.ClosedEntitlement
+	if e := db.Where("subscription_id=1 AND epoch=0").Take(&closed).Error; e != nil || closed.FlowUsed != 100 {
+		t.Fatal("minimal accounting evidence lost", closed, e)
 	}
 	var retiredCredential model.ProtocolCredential
 	if err := db.First(&retiredCredential, credential.ID).Error; err != nil || retiredCredential.Status != "revoked" || retiredCredential.Secret != "" || retiredCredential.RevokedAt == nil || retiredCredential.CredentialID != "credential" || retiredCredential.PrincipalKey != "principal" {
@@ -113,8 +117,8 @@ func TestRetirementPreservesHistoricalIdentitiesAndRenewableWindow(t *testing.T)
 	}
 
 	retained = model.Subscription{}
-	if err := db.First(&retained, 2).Error; err != nil || retained.Status != "ended" || entitlements.CanRenewAt(entitlements.Subscription(retained), now) {
-		t.Fatal("retired history lost or renewed", retained, err)
+	if err := db.Unscoped().First(&retained, 2).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatal("window did not delete terminal service", retained, err)
 	}
 
 	if due, err := service.HasDueCredentials(context.Background(), ended.Add(entitlements.RenewalGracePeriod)); err != nil || due {

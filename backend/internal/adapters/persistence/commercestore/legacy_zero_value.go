@@ -43,7 +43,13 @@ var legacyValueColumns = []string{"id", "user_id", "subscription_id", "plan_id",
 
 func legacyValueHash(rows []model.Order) string {
 	// Explicit selected fields exclude mutable UpdatedAt and later lifecycle closure.
-	raw, _ := json.Marshal(rows)
+	// Preserve the original evidence schema independently of public JSON aliases.
+	type evidenceOrder model.Order
+	evidence := make([]evidenceOrder, len(rows))
+	for i := range rows {
+		evidence[i] = evidenceOrder(rows[i])
+	}
+	raw, _ := json.Marshal(evidence)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }

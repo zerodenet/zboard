@@ -3,6 +3,7 @@ package commercestore
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -55,6 +56,10 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 				condition += " OR orders.id = ? OR orders.user_id = ? OR orders.subscription_id = ?"
 				args = append(args, id, id, id)
 			}
+			if id, ok := businessref.Parse(q.Search, 'O'); ok && (strings.HasPrefix(strings.ToUpper(strings.TrimSpace(q.Search)), "DD") || strings.HasPrefix(strings.ToUpper(strings.TrimSpace(q.Search)), "O")) {
+				condition += " OR orders.id = ?"
+				args = append(args, id)
+			}
 			query = query.Where(condition, args...)
 		}
 		if admin && q.OrderType != "" {
@@ -82,6 +87,9 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 	})
 	if err != nil {
 		return commerce.OrderPage{}, err
+	}
+	for i := range out.Items {
+		out.Items[i].OrderNo = businessref.Order(out.Items[i].ID, out.Items[i].CreatedAt)
 	}
 	return out, nil
 }

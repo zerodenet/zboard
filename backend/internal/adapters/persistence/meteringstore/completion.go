@@ -3,15 +3,16 @@ package meteringstore
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 	"time"
 )
@@ -27,6 +28,10 @@ func completionNonce(id string) string {
 	return hex.EncodeToString(digest[:])
 }
 func (s CompletionAccounting) Complete(ctx context.Context, in metering.CompletedFlow) (metering.TrafficRecord, bool, error) {
+	if e := EnsureIdentityFences(s.DB.WithContext(ctx), []uint{in.NodeID}); e != nil {
+		return metering.TrafficRecord{}, false, e
+	}
+	var activityID uint
 	var record model.TrafficRecord
 	exhausted := false
 	var err error
@@ -50,7 +55,16 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 		event, flow := in, in
 		record = model.TrafficRecord{}
 		exhausted = false
+		options := &sql.TxOptions{}
+		if s.DB.Dialector.Name() == "mysql" {
+			options.Isolation = sql.LevelReadCommitted
+		}
 		err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			authorities := newFlowBatch(tx)
+			sample := metering.FlowSample{NodeID: in.NodeID, PrincipalKey: flow.PrincipalKey}
+			if e := authorities.lockAuthorities(tx, s.Cipher, []metering.FlowSample{sample}); e != nil {
+				return e
+			}
 			receipts, err := readReportReceipts(tx, in.NodeID, []string{event.EventID})
 			if err != nil {
 				return err
@@ -62,16 +76,18 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 				}
 				return nil
 			}
-			credential, credentialErr := ResolveCompletionCredential(tx, s.Cipher, in.NodeID, flow.PrincipalKey)
+			credential, credentialErr := authorities.credential(s.Cipher, tx, in.NodeID, flow.PrincipalKey)
 			if credentialErr != nil {
 				return credentialErr
 			}
+			activityID = credential.ID
 			flow.PrincipalKey = credential.PrincipalKey
-			var subscription model.Subscription
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&subscription, credential.SubscriptionID).Error; err != nil {
+			subscriptionRef, err := authorities.subscription(tx, credential.SubscriptionID)
+			if err != nil {
 				return err
 			}
-			currentEpoch := credential.EntitlementEpoch == subscription.EntitlementEpoch
+			subscription := *subscriptionRef
+			currentEpoch := subscription.Status != "deleted" && credential.EntitlementEpoch == subscription.EntitlementEpoch
 			var closed model.ClosedEntitlement
 			if !currentEpoch {
 				var err error
@@ -199,13 +215,10 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			usage.LastEventID = event.EventID
 			usage.LastSeenAt = recordAt
 			usage.CompletedAt = &now
-			if err := saveFlowUsage(tx, &usage, usageExists, previousUsageKey); err != nil {
+			if err := saveFlowUsage(tx, &usage, usageExists, previousUsageKey, !currentEpoch); err != nil {
 				return err
 			}
 
-			if err := tx.Model(&credential).Updates(map[string]interface{}{"last_used_at": now, "updated_at": now}).Error; err != nil {
-				return err
-			}
 			if exhausted {
 				if s.EnqueuePublications == nil {
 					return errors.New("subscription publication capability unavailable")
@@ -220,12 +233,12 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 				}
 			}
 			return nil
-		})
+		}, options)
 		// Coverage can change after preparation when a concurrent grant retires
 		// credentials. Roll back first, recover within the same remaining row
 		// budget, and recheck ownership. Genuine ambiguity is never retried here.
 		var conflict *mysqlDriver.MySQLError
-		if errors.As(err, &conflict) && (conflict.Number == 1213 || conflict.Number == 1205) && attempt < 2 {
+		if attempt < 2 && ((errors.As(err, &conflict) && (conflict.Number == 1213 || conflict.Number == 1205)) || errors.Is(err, network.ErrResourcesBusy)) {
 			// GORM has rolled back the complete attempt, including quota, floor,
 			// identity and results. Retry only known transactional lock failures.
 			timer := time.NewTimer(time.Duration(attempt+1) * 10 * time.Millisecond)
@@ -237,12 +250,13 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			}
 			continue
 		}
-		if !errors.Is(err, credentialstore.ErrPrincipalIndexIncomplete) && !errors.Is(err, ErrNativeReportClaimed) {
+		if !errors.Is(err, credentialstore.ErrPrincipalIndexIncomplete) && !errors.Is(err, ErrNativeReportClaimed) && !errors.Is(err, ErrNativeAuthorityChanged) {
 			break
 		}
 	}
 	if err != nil {
 		return metering.TrafficRecord{}, false, err
 	}
+	TouchCredentialActivity(ctx, s.DB, []uint{activityID})
 	return metering.TrafficRecord(record), exhausted, nil
 }

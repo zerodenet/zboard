@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -77,7 +78,7 @@ func (s WalletAdjustments) Debit(ctx context.Context, actor uint, in commerce.Wa
 			return &commerce.ValidationError{Message: "可用余额不足，不能扣除订单预留资金或产生负余额。"}
 		}
 		now := time.Now().UTC()
-		entryID, err := appendWalletEntry(tx, walletEntrySource{UserID: in.UserID, Currency: in.Currency}, walletKey("adjustment-debit:"+key), "admin_debit", fmt.Sprintf("人工扣减：%s（工单#%d）", in.Reason, in.TicketID), -in.AmountMinor, 0, now)
+		entryID, err := appendWalletEntry(tx, walletEntrySource{UserID: in.UserID, Currency: in.Currency}, walletKey("adjustment-debit:"+key), "admin_debit", fmt.Sprintf("人工扣减：%s（工单 %s）", in.Reason, businessref.Ticket(ticket.ID, ticket.CreatedAt)), -in.AmountMinor, 0, now)
 		if err != nil {
 			return err
 		}
@@ -212,7 +213,7 @@ func (s WalletAdjustments) Reverse(ctx context.Context, actor, id uint, in comme
 			return commerce.ErrWalletAdjustmentConflict
 		}
 		now := time.Now().UTC()
-		entryID, err := appendWalletEntry(tx, walletEntrySource{UserID: row.UserID, Currency: row.Currency}, walletKey("adjustment-reversal:"+strconv.FormatUint(uint64(id), 10)), "admin_debit_reversal", fmt.Sprintf("出款确认失败恢复：%s（工单#%d）", in.Reason, row.TicketID), row.AmountMinor, 0, now)
+		entryID, err := appendWalletEntry(tx, walletEntrySource{UserID: row.UserID, Currency: row.Currency}, walletKey("adjustment-reversal:"+strconv.FormatUint(uint64(id), 10)), "admin_debit_reversal", fmt.Sprintf("出款确认失败恢复：%s（工单 %s）", in.Reason, businessref.Ticket(row.TicketID)), row.AmountMinor, 0, now)
 		if err != nil {
 			return err
 		}

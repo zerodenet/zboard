@@ -18,6 +18,9 @@ type NodeReports struct {
 }
 
 func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeReport) (metering.NodeReportResult, error) {
+	if e := EnsureIdentityFences(s.DB.WithContext(ctx), []uint{in.NodeID}); e != nil {
+		return metering.NodeReportResult{}, e
+	}
 	var sub model.Subscription
 	var record model.TrafficRecord
 	duplicate := false
@@ -98,6 +101,16 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 		// credential/period. It cannot distinguish delayed traffic after recovery
 		// or independent subscriptions sharing that endpoint. Reject attribution
 		// rather than select the latest entitlement and charge the wrong quota.
+		// A deleted service is intentionally absent from the live-subscription
+		// query. Its closed accounting identity must still prevent this legacy
+		// user-only API from charging delayed bytes to a newer service.
+		var historicalOwner struct{ LastEntitlementEnd *time.Time }
+		if e := tx.Table("account_subjects").Clauses(clause.Locking{Strength: "SHARE"}).Select("last_entitlement_end").Where("id=?", in.UserID).Take(&historicalOwner).Error; e != nil {
+			return e
+		}
+		if historicalOwner.LastEntitlementEnd != nil {
+			return metering.ErrNodeReportNeedsPrincipal
+		}
 		var owners []uint
 		if err := tx.Model(&model.Subscription{}).Select("subscriptions.id").Where("subscriptions.user_id = ?", in.UserID).
 			Where("EXISTS (SELECT 1 FROM node_group_endpoints e WHERE e.node_group_id = subscriptions.node_group_id AND e.protocol_endpoint_id = ?) OR EXISTS (SELECT 1 FROM protocol_credentials c WHERE c.subscription_id = subscriptions.id AND c.node_id = ? AND c.protocol_endpoint_id = ?)", endpoint.ID, lockedNode.ID, endpoint.ID).Limit(2).Pluck("subscriptions.id", &owners).Error; err != nil {

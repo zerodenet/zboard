@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -417,7 +418,7 @@ func (s AutomaticRenewals) processAutomaticStaged(ctx context.Context, prepared 
 		row.LastOrderID = &order.ID
 		clearAutomaticPending(&row)
 		row.State = "renewed"
-		row.Message = fmt.Sprintf("已使用余额完成续费，订单 #%d；配置交付在后台核验。", order.ID)
+		row.Message = fmt.Sprintf("已使用余额完成续费，订单 %s；配置交付在后台核验。", businessref.Order(order.ID, order.CreatedAt))
 		row.NextAttemptAt = renewed.EndAt
 		row.UpdatedAt = commerceNow(s.Now)
 		if err := tx.Save(&row).Error; err != nil {

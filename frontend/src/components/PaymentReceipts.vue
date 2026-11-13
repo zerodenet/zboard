@@ -16,13 +16,13 @@
           <div><dt>收据编号</dt><dd>#{{ receipt.id }}</dd></div>
           <div v-if="admin && receipt.provider"><dt>收款渠道</dt><dd>{{ receipt.provider }}</dd></div>
           <div v-if="admin && receipt.provider_trade_no"><dt>渠道交易号</dt><dd>{{ receipt.provider_trade_no }}</dd></div>
-          <div v-if="receipt.ticket_id"><dt>关联工单</dt><dd>#{{ receipt.ticket_id }}</dd></div>
+          <div v-if="receipt.ticket_id"><dt>关联工单</dt><dd>{{ ticketReference(receipt.ticket_id) }}</dd></div>
           <div v-if="receipt.resolution_reason"><dt>核对依据</dt><dd>{{ receipt.resolution_reason }}</dd></div>
         </dl></details>
         <PageAlert v-if="receipt.disposition === 'review_required'" tone="warning">旧人工付款缺少渠道身份，尚不能判断本收据是否已计入原付款；款项已留存待核对，请关联工单处理。</PageAlert>
         <div v-if="admin && receipt.disposition === 'review_required' && reviewing !== receipt.id" class="receipt-review-actions"><UiButton variant="secondary" :disabled="saving" @click="reviewing = receipt.id; ticket = ''; reason = ''; decision = ''">核对这笔收据</UiButton></div>
         <form novalidate class="receipt-review-form" v-if="admin && receipt.disposition === 'review_required' && reviewing === receipt.id" @submit.prevent="resolve(receipt.id)">
-          <FormField v-slot="{ controlAttrs }" label="该用户的工单编号" :name="`receipt-ticket-${receipt.id}`"><UiInput v-model="ticket" v-bind="controlAttrs" inputmode="numeric" :disabled="saving" /></FormField>
+          <FormField v-slot="{ controlAttrs }" label="该用户的工单编号" :name="`receipt-ticket-${receipt.id}`"><UiInput v-model="ticket" v-bind="controlAttrs" inputmode="text" :disabled="saving" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="核对结论" :name="`receipt-decision-${receipt.id}`"><UiSelect v-model="decision" v-bind="controlAttrs" :disabled="saving" :options="[{ value: '', label: '请选择核对结论' }, { value: 'credit_wallet', label: '确认是尚未入账的新款项，转入余额' }, { value: 'already_applied', label: '确认已计入原付款，关联原履约' }]" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="核对依据" :name="`receipt-reason-${receipt.id}`"><UiInput v-model="reason" v-bind="controlAttrs" maxlength="500" :disabled="saving" /></FormField>
           <div class="receipt-review-actions"><UiButton type="submit" :loading="saving" :disabled="!decision || !ticket || reason.trim().length < 3">确认结论并记账</UiButton></div>
@@ -35,6 +35,7 @@
   </UiSection>
 </template>
 <script setup lang="ts">
+import { ticketReference, parseBusinessReference } from '../utils/businessReference'
 import { ref, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { fetchPaymentReceipts, resolvePaymentReceipt, type PaymentReceiptPage } from '../api/paymentReceipts'
@@ -62,7 +63,7 @@ function label(value: string) { return ({ fulfilled: '已用于订单履约', wa
 function knownDisposition(value: string) { return ['fulfilled', 'wallet_topup', 'wallet_credit', 'legacy_applied'].includes(value) }
 function older() { after.value = page.value?.items.at(-1)?.id || 0; void load() }
 async function resolve(id: number) {
-  const ticketID = Number(ticket.value)
+  const ticketID = parseBusinessReference(ticket.value, 'T') || 0
   if (saving.value || !Number.isSafeInteger(ticketID) || ticketID < 1) return
   const actor = app.user.id, order = props.orderId
   saving.value = true; saveError.value = ''

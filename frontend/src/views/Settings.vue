@@ -189,7 +189,7 @@
           </UiSection>
 
           </SettingsDisclosure>
-          <UiSection v-if="recoveryConfigs.length" title="订阅续费恢复" description="到期后按既有停服流程处理，节点执行结果以交付状态为准；此窗口仅保留续费资格。缩短窗口会结束超过新期限的订阅并清理凭据；已结束或主动退订的订阅不会因延长窗口恢复。此设置不自动扣款。">
+          <UiSection v-if="recoveryConfigs.length" title="订阅续费恢复" description="到期后停服，窗口内可续费恢复；超过窗口自动删除订阅、链接和运行配置，历史订单与账务保留。0 天表示到期即删除；已取消订阅直接清理。">
             <div class="config-list"><ConfigRow v-for="config in recoveryConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
           </UiSection>
 

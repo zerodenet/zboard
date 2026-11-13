@@ -68,7 +68,15 @@ func PrepareLifecycleClosureScope(db *gorm.DB, candidates []model.Subscription) 
 			return err
 		}
 		if len(lockedOwners) != len(owners) {
-			return fmt.Errorf("expiry owner missing; restore before closing financial state")
+			// A physically removed login still has immutable accounting ownership.
+			// Account deletion has already checked and closed its money intents.
+			var subjects []uint
+			if e := tx.Table("account_subjects").Select("id").Where("id IN ?", owners).Order("id").Scan(&subjects).Error; e != nil {
+				return e
+			}
+			if len(subjects) != len(owners) {
+				return fmt.Errorf("expiry accounting owner missing; restore before closing financial state")
+			}
 		}
 		return nil
 	}

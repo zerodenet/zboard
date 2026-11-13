@@ -1,6 +1,7 @@
 <template>
   <section class="account-page stack">
-    <PageHeader :title="order ? accountOrderName(order) : '订单详情'" :description="order ? `订单 #${order.id}` : ''">
+    <PageHeader :title="order ? accountOrderName(order) : '订单详情'">
+      <template #description><BusinessReference v-if="order" :value="orderReference(order)" label="订单号" /></template>
       <template #actions>
         <UiButton as-child variant="secondary"><RouterLink  to="/account/orders">返回我的订单</RouterLink></UiButton>
         <UiButton v-if="orderSupportRoute" as-child variant="secondary"><RouterLink :to="orderSupportRoute">提交工单</RouterLink></UiButton>
@@ -15,7 +16,6 @@
         <details class="order-detail-more"><summary>订单信息</summary><dl class="order-detail-fields">
           <div v-if="order.sku_name && order.order_type !== 'topup'"><dt>规格</dt><dd>{{ order.sku_name }}</dd></div>
           <div><dt>创建时间</dt><dd><TimeBadge :value="order.created_at" /></dd></div>
-          <div><dt>交易编号</dt><dd>{{ order.trade_no || '—' }}</dd></div>
           <div><dt>更新时间</dt><dd><TimeBadge :value="order.updated_at" /></dd></div>
         </dl></details>
           <PageAlert v-if="order.subscription_ended_at" tone="info">
@@ -38,6 +38,7 @@
 </template>
 
 <script setup lang="ts">
+import { orderReference, parseBusinessReference } from '../../utils/businessReference'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchAccountOrder, type AdminOrderListItem } from '../../api/client'
@@ -46,6 +47,7 @@ import { accountOrderName } from '../../utils/accountOrders'
 import PageRefreshButton from '../../components/PageRefreshButton.vue'
 import TableSkeleton from '../../components/TableSkeleton.vue'
 import PageHeader from '../../components/PageHeader.vue'
+import BusinessReference from '../../components/BusinessReference.vue'
 import PageAlert from '../../components/PageAlert.vue'
 import UiSection from '../../components/UiSection.vue'
 import UiButton from '../../components/UiButton.vue'
@@ -57,7 +59,7 @@ import PaymentReceipts from '../../components/PaymentReceipts.vue'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const route = useRoute()
-const orderId = computed(() => Number(route.params.id))
+const orderId = computed(() => parseBusinessReference(route.params.id, 'O') || 0)
 const returnPlugin = computed(() => typeof route.query.payment_plugin === 'string' ? route.query.payment_plugin : '')
 const { data: order, loading, error, load, reset } = useRemoteResource<AdminOrderListItem | null>({
   initial: () => null,

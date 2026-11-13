@@ -362,3 +362,101 @@ used as historical cash.
 The focused integration cases are `TestLegacyZero*` and `TestMySQLLegacyZero*`
 in `internal/handler/legacy_zero_value_test.go`; MySQL uses the existing isolated
 `ZBOARD_TEST_MYSQL_DSN` fixture and never tests against a production schema.
+
+## Metering transaction ownership
+
+MySQL ingestion commits bounded, contiguous partitions of one subscription and
+entitlement epoch (at most 64 samples), preserving original event order and the
+column collation's duplicate-report precedence. The input spool is acknowledged
+only after all partitions commit. A later partition failure leaves the complete
+source replayable; exact receipts skip already committed contributions. Receipt,
+cumulative floor, capped charge, result and observation handoff commit together
+inside each partition. A whole input batch is no longer one financial transaction.
+SQLite retains its serialized writer/cohort path.
+
+Current-epoch accounting owns only its subscription quota row. Closed epochs own
+their closed quota and keep cumulative floors directly in the existing compact
+store: recreating hot flow rows would implicitly acquire a current-subscription
+FK lock. Historical budgets, per-report rounding, replay identities and quota caps
+are unchanged. Mutable user-profile rows are not accounting parents. Credential
+ownership uses short shared, revalidated fences; replaceable last-use hints are
+coalesced to a minute after commit and skipped when credentials are busy. A hint
+failure cannot turn a committed payment/charge into a failed request. Native MySQL
+transactions use READ COMMITTED without changing global isolation.
+
+Migration 0090 adds one metering identity fence per historically seen node, with
+no FK to the mutable management asset. Hot/cold transfers exclusively own that
+fence; financial readers share it. They no longer use the live node row as their
+conversion mutex, so cold maintenance cannot block heartbeat or wallet grants.
+Payment resource conflicts retry only after complete rollback, with the original
+order/funding identity, at most five attempts and 300 ms total backoff. Persistent
+configuration edits remain a retryable error, never an implied successful payment.
+
+Observation task discovery has separate indexed pending and expired-lease
+queries. It fetches bounded metadata without row locks, then locks only exact
+candidate primary keys, skips busy rows and rechecks the current state/lease.
+Migration 0089 adds the expired-lease index. LIMIT on a combined OR/filesort
+locking scan is not a bound on locked rows.
+
+Cold identity maintenance reads a consistent unlocked snapshot, prepares merged
+and split compressed pages outside the owning write transaction, then commits
+one node at a time. It rechecks checkpoint/source values and every touched
+page's exact header/payload before writing. Page/root updates, original identity
+removal and progress advancement are atomic; stale preparation retries without
+advancing, corrupt evidence remains held, and SQL failures roll back. No
+compression or decompression runs while the maintenance identity fence is held.
+Ledger retention skips busy subscription parents before touching ledger rows;
+it revisits them during its existing scheduled pass.
+
+Focused real MySQL coverage: `TestMySQLQuotaPartition*`,
+`TestMySQLObservationClaim*`, `TestMySQLColdPreparation*`,
+`TestMySQLLedgerRetentionSkips*`, `TestMySQLColdCommit*`,
+`TestMySQLHistoricalQuota*`, `TestMySQLWalletPaymentRetries*`, and the native-minute/history replay tests.
+Use an isolated `ZBOARD_TEST_MYSQL_DSN`; production is never a test fixture.
+
+Maintenance pacing: cold identity conversion, ledger retention, observation apply
+and observation material retention complete one bounded batch per configured
+interval. Remaining backlog stays durable in each capability's readiness check;
+these scans do not request the scheduler's accelerated 100 ms continuation path.
+The low-latency financial consumer and usage projection keep their existing
+continuation policy. This separates a successful batch from an empty backlog.
+
+Public business references: orders expose `order_no` as `DD`, the immutable
+creation timestamp (`YYYYMMDDhhmmss`, fixed UTC+8), and an at-least-six-digit numeric
+ID suffix; tickets expose `ticket_no` with the same `TK` format. Only D, T and K
+appear in generated public prefixes. Concurrent creations in the same second
+remain unique; changes to clocks or display timezone never regenerate a number.
+ID-only references have a DD/TK short alias for older association payloads. These
+references expand without truncation and need no sequence table, global lock or
+startup backfill. Migration 0091 only widens ticket_no to 64 characters; SQLite's
+existing TEXT already accommodates it. Creation replaces a private
+INSERT seed with the final number in the same transaction, before checkout or
+notifications. Numbers may have gaps after rollback; they are not credentials.
+
+Existing payment-bound `trade_no` values are preserved; historical orders still
+expose a stable `order_no`. Old ticket numbers remain searchable aliases without
+rewriting stored records. Public DD/TK references and numeric IDs resolve only in
+their own domains and retain all existing ownership/authorization checks. Raw
+order evidence hashing explicitly bypasses public JSON enrichment so historical
+financial verification remains byte-compatible.
+
+Subscription recovery windows also bound live-service retention. At expiry the
+existing worker first stops access; renewable services remain recoverable only
+until their ended_at + configured grace. At the exact boundary, or immediately
+for 0 days, it hard-deletes the live subscription, tokens, memberships, automatic
+renewal agreement and quota-operation state. Canceled and legacy ended instances
+join the same cleanup without reopening a renewal window. Changing the setting
+cannot resurrect a deleted instance.
+
+Closure snapshots/cancels current orders and releases existing wallet holds
+before deletion. The same transaction freezes the final quota in the existing
+closed_entitlements accounting table, revokes/wipes credential secrets, retains
+the indexed principal identity and replay floor, and commits deletion + audit.
+Late traffic updates the closed accounting budget only and never recreates a
+service; late verified payments follow the existing wallet-credit path. No new
+archive/shadow-subscription table or telemetry-history scan is introduced.
+Migration 0092 detaches only four historical subscription FK edges, retaining
+other financial constraints and runtime-child integrity. One last-entitlement-end
+scalar per account preserves inactivity cleanup timing after the live service
+and shared memberships are removed. All cleanup uses the existing bounded
+subscription worker; failed financial/publication/audit operations roll back.

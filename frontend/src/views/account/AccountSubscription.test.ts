@@ -563,7 +563,7 @@ it('offers renewal recovery on a stopped service without offering link managemen
   await flushPromises()
   expect(wrapper.find('a[href="/account/plans?operation=renew&subscription=1"]').text()).toBe('续费恢复')
   expect(wrapper.text()).toContain('可续费至')
-  expect(wrapper.findAll('button').find(button => button.text() === '连接设备')!.attributes('disabled')).toBeDefined()
+  expect(wrapper.findAll('button').some(button => button.text() === '连接设备')).toBe(false)
   wrapper.unmount()
 })
 

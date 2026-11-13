@@ -85,11 +85,12 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 				if err := scope.Validate(tx, subs); err != nil {
 					return err
 				}
+				terminal := sub.Status == "canceled" || sub.Status == "ended"
 				if err := endSubscription(tx, &sub, now); err != nil {
 					return err
 				}
 				deadline := entitlements.RenewalDeadline(entitlements.Subscription(sub), now, grace)
-				cleanup := deadline == nil || !deadline.After(now)
+				cleanup := terminal || deadline == nil || !deadline.After(now)
 				var credentials []model.ProtocolCredential
 				query := tx.Where("subscription_id = ?", sub.ID)
 				if !cleanup {
@@ -100,6 +101,11 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 				}
 				seen := map[uint]bool{}
 				for _, credential := range credentials {
+					// Backlog from already-finalized services needs no new
+					// remote publication or repeated node-wide configuration.
+					if credential.Status == "revoked" && credential.RevokedAt != nil {
+						continue
+					}
 					committed = append(committed, entitlements.ExpiredCredential{ID: credential.ID, SubscriptionID: sub.ID, NodeID: credential.NodeID, ProtocolEndpointID: credential.ProtocolEndpointID})
 					if !seen[credential.NodeID] {
 						if err := s.Publish(tx, credential.NodeID, credential.ProtocolEndpointID, 0); err != nil {
@@ -116,9 +122,7 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 					if err := s.BeforeRetire(tx, sub, now); err != nil {
 						return err
 					}
-					if err := retireSubscription(tx, sub, s.Cipher, now); err != nil {
-						return err
-					}
+					return retireSubscription(tx, sub, s.Cipher, now)
 				}
 				return tx.Model(&model.Subscription{}).Where("id = ?", sub.ID).UpdateColumns(map[string]any{"retirement_retry_at": nil, "updated_at": gorm.Expr("updated_at")}).Error
 			})

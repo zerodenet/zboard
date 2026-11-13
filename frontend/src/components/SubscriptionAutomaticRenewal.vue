@@ -5,7 +5,7 @@
       <PageAlert v-if="view" :tone="['insufficient_balance', 'history_review_required', 'stage_review_required', 'conditions_changed', 'agreement_unavailable', 'discount_unavailable', 'confirmation_required'].includes(view.state) ? 'warning' : 'info'" :title="['history_review_required', 'stage_review_required', 'conditions_changed', 'confirmation_required'].includes(view.state) ? '本项自动扣款已暂停' : view.enabled ? '已开启' : '已关闭'">
         {{ view.message }}
         <span v-if="view.pending_order_id">待处理续费订单 <RouterLink :to="`/account/orders/${view.pending_order_id}`">#{{ view.pending_order_id }}</RouterLink>；此关联不表示已扣款，刷新只核对状态。</span>
-        <span v-if="view.last_order_id">最近成功自动续费订单 #{{ view.last_order_id }}。</span>
+        <span v-if="view.last_order_id">最近成功自动续费订单 {{ orderReference(view.last_order_id) }}。</span>
         <span v-if="view.enabled && view.next_attempt_at">下次检查 <TimeBadge :value="view.next_attempt_at" />。</span>
       </PageAlert>
       <details class="account-renewal-rules"><summary>续费规则</summary><p>到期后按已购周期锁价续费；余额不足会在此显示提醒，并在恢复窗口内继续检查。主动退订或窗口结束后停止；换购或续费条件变化时需要重新确认。</p></details>
@@ -37,6 +37,7 @@
 </template>
 
 <script setup lang="ts">
+import { orderReference } from '../utils/businessReference'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { fetchPlanCatalogSKUs, type PlanSKU } from '../api/client'

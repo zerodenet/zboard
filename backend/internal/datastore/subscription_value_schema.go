@@ -101,7 +101,7 @@ func reconcileSubscriptionValueSchema(db *gorm.DB) error {
 			relations, indexes []string
 		}{
 			{&model.OrderValueBudget{}, []string{"Order", "User"}, []string{"idx_order_value_budgets_user_id"}},
-			{&model.SubscriptionValueSettlement{}, []string{"User", "Subscription", "RootOrder", "Entry", "Actor"}, []string{"idx_value_settlement_owner", "idx_subscription_value_settlements_root_order_id", "idx_subscription_value_settlements_request_key", "idx_subscription_value_settlements_entry_id"}},
+			{&model.SubscriptionValueSettlement{}, []string{"User", "RootOrder", "Entry", "Actor"}, []string{"idx_value_settlement_owner", "idx_subscription_value_settlements_root_order_id", "idx_subscription_value_settlements_request_key", "idx_subscription_value_settlements_entry_id"}},
 			{&model.SubscriptionValueSettlementSource{}, []string{"Settlement", "Budget"}, []string{"idx_subscription_value_settlement_sources_order_id"}},
 		} {
 			for _, name := range resource.relations {

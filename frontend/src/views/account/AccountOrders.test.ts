@@ -56,4 +56,18 @@ describe('account order terminal subscription history', () => {
     expect(wrapper.find('a[href="/account/orders/1"]').exists()).toBe(true)
     wrapper.unmount()
   })
+  it('accepts a circulated order number as an account-scoped filter and restores it in the URL', async () => {
+    vi.mocked(fetchAccountOrdersPage).mockResolvedValue({items: [], total:0, offset:0, limit:25} as any)
+    const router = createRouter({history:createMemoryHistory(), routes:[{path:'/account/orders',component:AccountOrders}]})
+    await router.push('/account/orders?number=DD0000000027&status=paid'); await router.isReady()
+    const wrapper = mount(AccountOrders, {global:{plugins:[router]}}); await flushPromises()
+    expect(fetchAccountOrdersPage).toHaveBeenLastCalledWith(expect.objectContaining({id:'DD0000000027',status:'paid'}), expect.any(Object))
+    expect(wrapper.text()).toContain('DD0000000027')
+    const filters = wrapper.findComponent({name:'WorkbenchFilterBar'})
+    filters.vm.$emit('clear'); await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(fetchAccountOrdersPage).toHaveBeenLastCalledWith(expect.objectContaining({id:undefined,status:undefined}), expect.any(Object))
+    wrapper.unmount()
+  })
+
 })

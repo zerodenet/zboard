@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -77,7 +78,7 @@ func (s ConsumptionRefunds) Approve(ctx context.Context, actor, orderID uint, in
 		if err := consumeOrderRefundBudget(tx, order, budget, in.AmountMinor, now); err != nil {
 			return err
 		}
-		entryID, err := appendWalletCredit(tx, order, walletKey("consumption-refund-entry:"+key), "consumption_refund", fmt.Sprintf("获批消费退款：%s（工单#%d）", in.Reason, in.TicketID), in.AmountMinor, now)
+		entryID, err := appendWalletCredit(tx, order, walletKey("consumption-refund-entry:"+key), "consumption_refund", fmt.Sprintf("获批消费退款：%s（工单 %s）", in.Reason, businessref.Ticket(ticket.ID, ticket.CreatedAt)), in.AmountMinor, now)
 		if err != nil {
 			return err
 		}

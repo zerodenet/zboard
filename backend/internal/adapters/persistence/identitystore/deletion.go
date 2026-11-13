@@ -198,6 +198,7 @@ func cleanupCandidates(db *gorm.DB, now time.Time, days int) *gorm.DB {
 	// The grace period restarts at the end of the last entitlement, not at
 	// registration for customers whose paid subscription has just expired.
 	query := db.Model(&model.User{}).Where("is_admin=? AND users.created_at<=?", false, cutoff).
+		Where("NOT EXISTS (SELECT 1 FROM account_subjects a WHERE a.id=users.id AND a.last_entitlement_end>?)", cutoff).
 		Where("NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id=users.id AND "+entitlementEnd("s")+">?)", cutoff).
 		Where("NOT EXISTS (SELECT 1 FROM subscription_members m JOIN subscriptions s ON s.id=m.subscription_id WHERE m.user_id=users.id AND "+sharedEntitlementEnd()+">?)", cutoff)
 	for _, guard := range accountFinancialGuards() {

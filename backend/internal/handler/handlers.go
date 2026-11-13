@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	sshadapter "github.com/zerodenet/zboard/backend/internal/adapters/ssh"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
@@ -3476,6 +3477,19 @@ func parsePathID(path string, prefix string) (uint, error) {
 		return 0, errors.New("missing id")
 	}
 
+	kind := byte(0)
+	if strings.HasSuffix(normalizedPrefix, "/orders") {
+		kind = 'O'
+	}
+	if strings.HasSuffix(normalizedPrefix, "/tickets") {
+		kind = 'T'
+	}
+	if kind != 0 {
+		if id, ok := businessref.Parse(value, kind); ok {
+			return id, nil
+		}
+		return 0, errors.New("invalid business reference")
+	}
 	parsed, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
 		return 0, errors.New("invalid id")

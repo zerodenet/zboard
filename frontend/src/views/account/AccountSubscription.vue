@@ -84,12 +84,12 @@
           <template #notice><div v-if="automaticNeedsAttention(sub.automatic_renewal_state)" class="subscription-renewal-result"><UiButton variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }"><UiIcon name="alert" />{{ sub.automatic_renewal_state === 'insufficient_balance' ? '自动续费余额不足' : '自动续费待核验' }}</UiButton></div></template>
           <template #actions>
             <RowActions :label="`${sub.plan_name || `订阅 #${sub.id}`}的更多操作`"><template #primary>
-              <UiButton variant="secondary" size="sm" :disabled="sub.status !== 'active' || working" @click="selectSubscription(sub.id)">{{ sub.flow_used >= sub.flow_total ? '管理订阅' : sub.id === selectedSubscriptionID ? '查看链接' : '连接设备' }}</UiButton>
+              <UiButton v-if="sub.status === 'active' && !sub.ended_at" variant="secondary" size="sm" :disabled="working" @click="selectSubscription(sub.id)">{{ sub.flow_used >= sub.flow_total ? '管理订阅' : sub.id === selectedSubscriptionID ? '查看链接' : '连接设备' }}</UiButton>
               <UiButton v-if="sub.can_renew" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink></UiButton>
             </template>
               <UiButton v-if="canReset(sub)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
               <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="ghost" size="sm" @click="terminationTarget = sub.id">退订</UiButton>
-              <UiButton variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">自动续费</UiButton>
+              <UiButton v-if="sub.can_renew" variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">自动续费</UiButton>
               <UiButton v-if="Number.isSafeInteger(sub.id) && sub.id > 0" as-child variant="ghost" size="sm"><RouterLink :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">提交工单</RouterLink></UiButton>
             </RowActions>
           </template>

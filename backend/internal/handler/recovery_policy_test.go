@@ -116,6 +116,10 @@ func assertRecoveryLateCash(t *testing.T, base orderFixture) {
 		t.Fatal(err)
 	}
 	setRecoveryPolicy(t, f, 7)
+	if _, e := f.base.h.services.CredentialExpiry(f.base.h.credentialCipher).ExpireDue(t.Context(), *f.at, 20); e != nil {
+		t.Fatal(e)
+	}
+	requireSubscriptionDeleted(t, f.db, f.subscription)
 	facts := commerce.PaymentFacts{Repository: commercestore.PaymentFacts{DB: f.db, Issuer: zeroadapter.Issuer{Cipher: base.h.credentialCipher, Mieru: base.h.zeroMieruAccess}, Now: func() time.Time { return *f.at }}}
 	fact := commerce.PaymentFact{OrderID: order.ID, ProviderEventID: "recovery-policy-late-cash", ProviderTradeNo: "recovery-policy-late-cash", Status: "paid", AmountMinor: 12000, Currency: "CNY", OccurredAt: *f.at}
 	for range 2 {
@@ -124,10 +128,7 @@ func assertRecoveryLateCash(t *testing.T, base orderFixture) {
 			t.Fatal("late cash was lost or restored expired rights", receipt, err)
 		}
 	}
-	var sub model.Subscription
-	if err := f.db.First(&sub, f.subscription).Error; err != nil || sub.EntitlementEpoch != 0 || sub.StartAt.Equal(*f.at) {
-		t.Fatal("late payment restored closed window", sub, err)
-	}
+	requireSubscriptionDeleted(t, f.db, f.subscription)
 	var wallet model.WalletAccount
 	if err := f.db.Where("user_id = ? AND currency = ?", 1, "CNY").First(&wallet).Error; err != nil || wallet.BalanceMinor != 30000 || wallet.ReservedMinor != 0 {
 		t.Fatal("late cash did not enter wallet exactly once", wallet, err)
@@ -140,10 +141,7 @@ func TestRecoveryPolicyCorruptionNeverDefaultsAndNeverResurrectsTerminal(t *test
 	if _, err := f.base.h.services.CredentialExpiry(f.base.h.credentialCipher).ExpireDue(t.Context(), *f.at, 20); err != nil {
 		t.Fatal(err)
 	}
-	var retired model.Subscription
-	if err := f.db.First(&retired, f.subscription).Error; err != nil || retired.Status != "ended" {
-		t.Fatal("disabled window did not end old service", retired.Status, err)
-	}
+	requireSubscriptionDeleted(t, f.db, f.subscription)
 	setRecoveryPolicy(t, f, 14)
 	if _, err := f.orders.Create(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.base.skuRecord.ID, TargetSubscriptionID: f.subscription}); err == nil {
 		t.Fatal("extension resurrected terminal service")

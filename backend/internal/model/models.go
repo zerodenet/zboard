@@ -667,7 +667,7 @@ type RegistrationEmailChallenge struct {
 // recorded in TicketMessage so the full history remains traceable.
 type Ticket struct {
 	ID             uint       `json:"id" gorm:"primaryKey"`
-	TicketNo       string     `json:"ticket_no" gorm:"size:32;uniqueIndex;not null"`
+	TicketNo       string     `json:"ticket_no" gorm:"size:64;uniqueIndex;not null"`
 	UserID         uint       `json:"user_id" gorm:"index;not null"`
 	OrderID        *uint      `json:"-"`
 	SubscriptionID *uint      `json:"-"`

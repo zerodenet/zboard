@@ -1,12 +1,12 @@
 <template>
         <article class="service-card" :data-selected="selected || undefined" :aria-label="sub.plan_name || `订阅 #${sub.id}`">
           <header class="service-card-heading"><div><slot name="name"><RouterLink class="service-name" :to="subscriptionLocation(sub)">{{ sub.plan_name || `订阅 #${sub.id}` }}</RouterLink></slot><span v-if="sub.sku_name" class="service-period">{{ sub.sku_name }}</span></div><div class="service-expiry"><StatusBadge v-if="sub.status && sub.status !== 'active'" :tone="sub.status === 'expired' ? 'warning' : 'neutral'">{{ stateLabel }}</StatusBadge><span>到期</span><TimeBadge :value="sub.ended_at || sub.end_at" mode="relative" /></div></header>
-          <slot name="notice" /><div class="service-quota"><div><span>剩余流量</span><strong>{{ formatBytes(remaining(sub)) }}</strong><small>/ {{ formatBytes(sub.flow_total) }}</small></div><span v-if="remaining(sub) === 0 && (!sub.status || sub.status === 'active')" class="quota-exhausted">本周期流量已用完</span></div>
-          <progress class="service-progress" :value="remainingPercent(sub)" max="100" :aria-label="`${sub.plan_name || `订阅 #${sub.id}`}剩余流量`" :aria-valuetext="`${formatBytes(remaining(sub))} / ${formatBytes(sub.flow_total)}`" />
-          <div v-if="sub.next_reset_at || sub.renewal_until" class="service-schedule"><span v-if="sub.next_reset_at">下次重置 <TimeBadge :value="sub.next_reset_at" mode="relative" /></span><span v-if="sub.renewal_until">可续费至 <TimeBadge :value="sub.renewal_until" /></span></div><footer class="service-actions"><slot name="actions">
-            <UiButton as-child :variant="primary && remaining(sub) > 0 ? 'primary' : 'secondary'" size="sm"><RouterLink :to="subscriptionLocation(sub)"><UiIcon name="key" />{{ remaining(sub) > 0 ? '连接设备' : '管理订阅' }}</RouterLink></UiButton>
+          <slot name="notice" /><div v-if="usable" class="service-quota"><div><span>剩余流量</span><strong>{{ formatBytes(remaining(sub)) }}</strong><small>/ {{ formatBytes(sub.flow_total) }}</small></div><span v-if="remaining(sub) === 0 && (!sub.status || sub.status === 'active')" class="quota-exhausted">本周期流量已用完</span></div>
+          <progress v-if="usable" class="service-progress" :value="remainingPercent(sub)" max="100" :aria-label="`${sub.plan_name || `订阅 #${sub.id}`}剩余流量`" :aria-valuetext="`${formatBytes(remaining(sub))} / ${formatBytes(sub.flow_total)}`" />
+          <div v-if="(usable && sub.next_reset_at) || sub.renewal_until" class="service-schedule"><span v-if="usable && sub.next_reset_at">下次重置 <TimeBadge :value="sub.next_reset_at" mode="relative" /></span><span v-if="sub.renewal_until">可续费至 <TimeBadge :value="sub.renewal_until" /></span></div><footer class="service-actions"><slot name="actions">
+            <UiButton v-if="usable" as-child :variant="primary && remaining(sub) > 0 ? 'primary' : 'secondary'" size="sm"><RouterLink :to="subscriptionLocation(sub)"><UiIcon name="key" />{{ remaining(sub) > 0 ? '连接设备' : '管理订阅' }}</RouterLink></UiButton>
             <UiButton v-if="sub.can_renew" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">续费</RouterLink></UiButton>
-            <UiButton v-if="remaining(sub) === 0 && sub.can_reset" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
+            <UiButton v-if="usable && remaining(sub) === 0 && sub.can_reset" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
           </slot></footer>
         </article>
 </template>
@@ -20,6 +20,7 @@ import StatusBadge from '../StatusBadge.vue'
 import TimeBadge from '../TimeBadge.vue'
 const props = defineProps<{ subscription: AdminSubscriptionListItem; selected?: boolean; primary?: boolean }>()
 const sub = computed(() => props.subscription)
+const usable = computed(() => (!sub.value.status || sub.value.status === 'active') && !sub.value.ended_at)
 const stateLabel = computed(() => sub.value.end_reason === 'exhausted' ? '已用完' : ({ expired: '已到期', exhausted: '流量耗尽', canceled: '已取消', inactive: '无效' } as Record<string, string>)[sub.value.status] || formatUnknownValue('状态', sub.value.status))
 function remaining(row: AdminSubscriptionListItem) { return Math.max(0, (row.flow_total || 0) - (row.flow_used || 0)) }
 function remainingPercent(row: AdminSubscriptionListItem) { return row.flow_total > 0 ? Math.min(100, Math.round(remaining(row) / row.flow_total * 1000) / 10) : 0 }

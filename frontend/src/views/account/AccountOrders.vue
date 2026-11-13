@@ -15,7 +15,8 @@
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
-        <WorkbenchFilterBar :active="Boolean(status)" @clear="clearFilters">
+        <WorkbenchFilterBar :active="Boolean(status || orderFilter)" @clear="clearFilters">
+          <WorkbenchFilterInput v-model="orderFilter" label="订单号" placeholder="DD0000000048" maxlength="32" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="status" label="订单状态" :options="statusOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
@@ -77,6 +78,7 @@ import TransientFeedback from '../../components/TransientFeedback.vue'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
+import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
 
@@ -95,6 +97,7 @@ const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const status = ref(String(route.query.status || ''))
+const orderFilter = ref(String(route.query.number || ''))
 const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '待支付', value: 'pending' },
@@ -111,6 +114,7 @@ const { items: orders, total, loading, refreshing, error, load } = useRemoteTabl
   offset,
   limit,
   fetchPage: ({ signal }) => fetchAccountOrdersPage({
+    id: orderFilter.value.trim() || undefined,
     status: status.value || undefined,
     offset: offset.value,
     limit: limit.value,
@@ -123,6 +127,7 @@ async function syncURL(replace = false) {
   const page = Math.floor(offset.value / limit.value) + 1
   const location = {
     query: {
+      ...(orderFilter.value.trim() ? { number: orderFilter.value.trim() } : {}),
       ...(status.value ? { status: status.value } : {}),
       ...(page > 1 ? { page: String(page) } : {}),
       ...(limit.value !== 25 ? { limit: String(limit.value) } : {}),
@@ -138,7 +143,7 @@ async function applyFilters() {
 }
 
 async function clearFilters() {
-  status.value = ''
+  status.value = ''; orderFilter.value = ''
   await applyFilters()
 }
 
@@ -173,10 +178,12 @@ async function doCancel() {
 
 watch(() => route.fullPath, async () => {
   const nextStatus = String(route.query.status || '')
+  const nextNumber = String(route.query.number || '')
   const rawLimit = Number(route.query.limit)
   const nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 25
   const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit
-  if (nextStatus !== status.value || nextLimit !== limit.value || nextOffset !== offset.value) {
+  if (nextNumber !== orderFilter.value || nextStatus !== status.value || nextLimit !== limit.value || nextOffset !== offset.value) {
+    orderFilter.value = nextNumber
     status.value = nextStatus
     limit.value = nextLimit
     offset.value = nextOffset

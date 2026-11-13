@@ -76,7 +76,7 @@ func TestProjectionJobDefinitionsPreserveExistingContract(t *testing.T) {
 			if pending, err := job.Ready(ctx); err != nil || !pending {
 				t.Fatal(pending, err)
 			}
-			if err := job.Run(ctx); !errors.Is(err, jobs.ErrContinue) {
+			if err := job.Run(ctx); (job.ID == UsageProjectionJobID && !errors.Is(err, jobs.ErrContinue)) || (job.ID == NodeObservationJobID && err != nil) {
 				t.Fatal("a committed full bounded batch must yield through the durable scheduler", err)
 			}
 			if tc.id == "usage_projection" {
@@ -105,7 +105,7 @@ func TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics(t *testing.T) 
 				t.Fatal("readiness error was hidden", got)
 			}
 			want := err
-			if want == nil {
+			if want == nil && job.ID == UsageProjectionJobID {
 				want = jobs.ErrContinue // The probe reports a committed full batch.
 			}
 			if got := job.Run(t.Context()); got != want {

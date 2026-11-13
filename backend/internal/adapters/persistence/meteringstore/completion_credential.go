@@ -54,8 +54,16 @@ func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecrypto
 		}
 	}
 	var subscription model.Subscription
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "user_id").First(&subscription, candidate.SubscriptionID).Error; err != nil {
-		return model.ProtocolCredential{}, err
+	read := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "user_id").Where("id=?", candidate.SubscriptionID).Limit(1).Find(&subscription)
+	if read.Error != nil {
+		return model.ProtocolCredential{}, read.Error
+	}
+	if read.RowsAffected == 0 {
+		archived, e := deletedSubscriptionAttribution(tx, candidate.SubscriptionID)
+		if e != nil {
+			return model.ProtocolCredential{}, e
+		}
+		subscription = archived
 	}
 	if subscription.UserID != owner.ID {
 		return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous

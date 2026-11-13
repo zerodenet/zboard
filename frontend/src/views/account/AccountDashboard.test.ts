@@ -131,7 +131,7 @@ describe('dashboard independent sections', () => {
     await open()
     expect(wrapper!.get('a[href="/account/subscription?subscription=1"]').text()).toBe('Fixture service')
     expect(wrapper!.get('a[href="/account/orders/2"]').text()).toContain('Fixture order')
-    expect(wrapper!.get('a[href="/account/orders/2"]').text()).toContain('#2')
+    expect(wrapper!.get('a[href="/account/orders/2"]').text()).toContain('DD0000000002')
     expect(wrapper!.find('table').exists()).toBe(false)
   })
   it('keeps access, renewal and quota actions bound to each eligible subscription', async () => {

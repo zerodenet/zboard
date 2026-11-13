@@ -36,7 +36,7 @@ type SubscriptionValueSettlement struct {
 	QuoteSnapshot      string `gorm:"type:text;not null"`
 	CreatedAt          time.Time
 	User               *AccountSubject `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT"`
-	Subscription       *Subscription   `gorm:"foreignKey:SubscriptionID;constraint:OnDelete:RESTRICT"`
+	Subscription       *Subscription   `gorm:"-"`
 	RootOrder          *Order          `gorm:"foreignKey:RootOrderID;constraint:OnDelete:RESTRICT"`
 	Entry              *WalletEntry    `gorm:"foreignKey:EntryID;constraint:OnDelete:RESTRICT"`
 	Actor              *AccountSubject `gorm:"foreignKey:ActorID;constraint:OnDelete:RESTRICT"`

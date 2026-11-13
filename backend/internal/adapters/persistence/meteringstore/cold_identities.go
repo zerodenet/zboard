@@ -16,11 +16,49 @@ import (
 	"strings"
 )
 
-// Readers share the node lock; the bounded cold transfer takes it exclusively.
-// This closes the read-hot/move/read-cold gap without serializing live reports.
+// EnsureIdentityFences runs before financial transactions. Ordinary reads never
+// write an existing fence: INSERT ON DUPLICATE on every report would turn shared
+// reader ownership into an exclusive bottleneck.
+func EnsureIdentityFences(db *gorm.DB, nodes []uint) error {
+	if db.Dialector.Name() != "mysql" || len(nodes) == 0 {
+		return nil
+	}
+	var present []uint
+	if e := db.Model(&model.MeteringIdentityFence{}).Where("node_id IN ?", nodes).Pluck("node_id", &present).Error; e != nil {
+		return e
+	}
+	have := map[uint]bool{}
+	for _, id := range present {
+		have[id] = true
+	}
+	missing := []model.MeteringIdentityFence{}
+	for _, id := range nodes {
+		if !have[id] {
+			missing = append(missing, model.MeteringIdentityFence{NodeID: id})
+			have[id] = true
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&missing).Error
+}
+
+// The conversion barrier belongs to metering identity, never the live node row.
+// SQLite already owns its single writer slot for mutating transactions.
 func lockIdentityReader(tx *gorm.DB, node uint) error {
-	var r struct{ ID uint }
-	return tx.Model(&model.Node{}).Select("id").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=?", node).Find(&r).Error
+	if tx.Dialector.Name() != "mysql" {
+		return nil
+	}
+	var fence model.MeteringIdentityFence
+	q := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("node_id=?", node).Find(&fence)
+	if q.Error != nil {
+		return q.Error
+	}
+	if q.RowsAffected == 0 {
+		return errors.New("metering identity fence not prepared")
+	}
+	return nil
 }
 func coldWeight(tx *gorm.DB, kind uint8, key string) ([]byte, error) {
 	if v, ok := tx.Statement.Settings.Load(fmt.Sprintf("metering:weights:%d", kind)); ok {

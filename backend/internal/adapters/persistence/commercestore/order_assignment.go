@@ -57,7 +57,7 @@ func (s OrderAssignment) Assign(ctx context.Context, actor uint, in commerce.Ass
 				return &commerce.ValidationError{Message: "订单分配失败。", Fields: map[string]string{"user_id": "请先启用该用户。"}}
 			}
 		}
-		err := tx.Where("trade_no = ?", in.TradeNo).First(&order).Error
+		err := tx.Where("creation_key = ? OR trade_no = ?", in.TradeNo, in.TradeNo).First(&order).Error
 		if err == nil {
 			if order.AssignmentFingerprint != in.Fingerprint {
 				return &commerce.ValidationError{Message: "本次操作标识已用于另一笔分配，请重新打开分配窗口。"}
@@ -96,7 +96,9 @@ func (s OrderAssignment) Assign(ctx context.Context, actor uint, in commerce.Ass
 				order.ChangeSnapshot = string(payload)
 			}
 		}
-		order.TradeNo = in.TradeNo
+		key := in.TradeNo
+		order.CreationKey = &key
+		order.CreationFingerprint = in.Fingerprint
 		order.AssignedBy = actor
 		order.AssignmentNote = request.Note
 		order.AssignmentFingerprint = in.Fingerprint
