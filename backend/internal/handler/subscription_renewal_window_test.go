@@ -59,8 +59,9 @@ func TestExpiredSubscriptionCanRenewWithinSevenDaysAndRecoversItsPeriodAndQuota(
 		t.Fatal(err)
 	}
 	f.planRecord, f.skuRecord = plan, f.sku(t, plan.ID, 500, "change")
-	if _, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: sub.ID}); err == nil {
-		t.Fatal("manually acknowledged recovery fabricated verified residual value")
+	quote, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: sub.ID})
+	if err != nil || quote.SettlementAmount <= 0 || quote.SettlementAmount > renewed.PaidAmount || quote.ChangeMode != "full_term" {
+		t.Fatalf("administrator-confirmed renewal lost its paid value: %+v %v", quote, err)
 	}
 }
 

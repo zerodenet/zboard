@@ -84,6 +84,13 @@ func assertMailboxSchema(t *testing.T, mysql bool) {
 	if _, err := retention.Retire(t.Context(), 8, observationstore.MaxDrainBytes); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Model(&model.NodeObservationIntent{}).Count(&pending).Error; err != nil || pending != 1 {
+		t.Fatal("completed receipt removed before its default one-day lifetime", pending, err)
+	}
+	retention.Now = func() time.Time { return at.Add(9*24*time.Hour + 2*time.Hour) }
+	if _, err := retention.Retire(t.Context(), 8, observationstore.MaxDrainBytes); err != nil {
+		t.Fatal(err)
+	}
 	for _, table := range []string{"node_observation_intents", "node_observation_parts", "node_observation_retirements"} {
 		var count int64
 		if err := db.Table(table).Count(&count).Error; err != nil || count != 0 {

@@ -90,12 +90,20 @@ func assertSubscriptionValueRead(t *testing.T, f orderFixture) {
 			t.Fatalf("per-order source or cycle summary %+v %v", original, err)
 		}
 	}
-	// Manual marking is retained as a business record, not invented cash proof.
+	// An administrator explicitly confirms actual receipt; its captured payment
+	// can be valued just like provider or wallet receipts, within the paid amount.
 	manualFixture := f
 	manualFixture.skuRecord = rootSKUForValue(t, f, root.PlanSKUID)
 	manual := manualFixture.paid(t, manualFixture.create(t, 0).ID)
-	if _, err := f.h.services.SubscriptionValues.Read(t.Context(), 1, manual.SubscriptionID); !errors.Is(err, commerce.ErrSubscriptionValueUnavailable) {
-		t.Fatalf("manual cash became refundable: %v", err)
+	manualValue, err := f.h.services.SubscriptionValues.Read(t.Context(), 1, manual.SubscriptionID)
+	if err != nil || manualValue.TotalMinor != manual.PaidAmount || manualValue.RootOrderID != manual.ID {
+		t.Fatalf("confirmed administrator receipt lost paid value: %+v %v", manualValue, err)
+	}
+	// A pending order remains unverified and grants no subscription value.
+	pending := manualFixture.create(t, 0)
+	var unconfirmed model.Order
+	if err := f.h.db.First(&unconfirmed, pending.ID).Error; err != nil || unconfirmed.Status != "pending" || unconfirmed.SubscriptionID != 0 || unconfirmed.EntitlementValueSnapshot != "" {
+		t.Fatalf("unconfirmed order acquired paid value: %+v %v", unconfirmed, err)
 	}
 	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("status", "disabled").Error; err != nil {
 		t.Fatal(err)
