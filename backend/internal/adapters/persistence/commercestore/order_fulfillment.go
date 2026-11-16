@@ -11,10 +11,7 @@ import (
 	"time"
 )
 
-func (s OrderSettlement) setPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
-	return s.setPaidWithFunding(tx, order, now, false)
-}
-func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now time.Time, fundingConfirmed bool) error {
+func (s OrderSettlement) fulfillConfirmedOrder(tx *gorm.DB, order *model.Order, now time.Time) error {
 	if order.OrderType == "topup" {
 		return quoteError("余额充值只能由已核验的支付渠道事实入账。")
 	}
@@ -43,9 +40,6 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if configured {
 		if fund.State != "reserved" || !fund.ExpiresAt.After(now) {
 			return commerce.ErrFundingConflict
-		}
-		if fund.WalletMinor > 0 && !fundingConfirmed {
-			return quoteError("该订单已预留余额，只能通过余额付款或核验渠道补差完成。")
 		}
 	}
 	if order.SubscriptionEndedAt != nil && order.TargetSubscriptionID == nil && order.OrderType != "new" {
@@ -138,7 +132,7 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 	if err := captureOrderFunding(tx, *order, now); err != nil {
 		return err
 	}
-	if err := captureEntitlementValue(tx, order, sub, previous, fundingConfirmed, now); err != nil {
+	if err := captureEntitlementValue(tx, order, sub, previous, now); err != nil {
 		return err
 	}
 	return markOrderPaid(tx, order, sub.ID, now)
@@ -146,7 +140,7 @@ func (s OrderSettlement) setPaidWithFunding(tx *gorm.DB, order *model.Order, now
 
 func (s OrderSettlement) setVerifiedPaid(tx *gorm.DB, order *model.Order, now time.Time) error {
 	if order.OrderType != "topup" {
-		return s.setPaidWithFunding(tx, order, now, true)
+		return s.fulfillConfirmedOrder(tx, order, now)
 	}
 	if order.Status == "paid" {
 		return nil

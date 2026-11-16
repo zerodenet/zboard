@@ -2,12 +2,13 @@
   <div class="business-detail subscription-detail">
     <div class="subscription-context">
       <div><StatusBadge :tone="statusTone">{{ statusLabel }}</StatusBadge><span>{{ subscription.sku_name || '-' }}</span></div>
+      <div class="subscription-actions"><UiButton v-if="editable" id="subscription-edit-all" variant="secondary" size="sm" :disabled="Boolean(editing)" @click="startEdit('all')">编辑订阅</UiButton>
       <RowActions label="订阅更多操作" :trigger-key="`subscription-detail-${subscription.id}`">
         <UiButton as-child variant="ghost" size="sm"><RouterLink :to="contextLink('/admin/orders', { user_id: String(subscription.user_id) })">用户订单</RouterLink></UiButton>
         <UiButton as-child variant="ghost" size="sm"><RouterLink :to="contextLink('/admin/users', { user: String(subscription.user_id) })">用户详情</RouterLink></UiButton>
         <UiButton as-child variant="ghost" size="sm"><RouterLink :to="contextLink('/admin/fair-use', { subscription: String(subscription.id) })">Fair Use 观测</RouterLink></UiButton>
         <UiButton v-if="canTerminate" variant="ghost" class="subscription-danger-action" size="sm" :disabled="Boolean(editing)" @click="terminationOpen = true">退订订阅</UiButton>
-      </RowActions>
+      </RowActions></div>
     </div>
 
     <section class="subscription-summary" aria-label="流量与有效期">
@@ -15,7 +16,7 @@
       <div class="subscription-expiry"><span>到期时间</span><strong v-if="perpetual">长期有效</strong><time v-else :datetime="subscription.end_at" :class="{ 'subscription-warning': elapsed }">{{ formatDateTime(subscription.end_at) }}</time></div>
       <div class="subscription-usage">
         <div class="usage-track" role="progressbar" :aria-label="`已用 ${formatBytes(subscription.flow_used)}，周期配额 ${formatBytes(subscription.flow_total)}`" :aria-valuenow="usagePercent" :aria-valuemin="0" :aria-valuemax="100"><i :class="{ exhausted }" :style="{ width: `${usagePercent}%` }" /></div>
-        <div><span>已用 {{ formatBytes(subscription.flow_used) }} / {{ formatBytes(subscription.flow_total) }}</span><UiButton v-if="editable" id="subscription-edit-quota" variant="ghost" size="sm" :disabled="Boolean(editing)" @click="startEdit('quota')">调整额度</UiButton></div>
+        <div><span>已用 {{ formatBytes(subscription.flow_used) }} / {{ formatBytes(subscription.flow_total) }}</span><UiButton v-if="editable && !subscription.ended_at" id="subscription-edit-quota" variant="ghost" size="sm" :disabled="Boolean(editing)" @click="startEdit('quota')">调整额度</UiButton></div>
       </div>
     </section>
     <PageAlert v-if="subscription.ended_at" :tone="subscription.can_renew ? 'info' : 'warning'" :title="subscription.end_reason === 'exhausted' ? '流量用尽，服务已结束' : '服务已到期'">
@@ -23,13 +24,13 @@
     </PageAlert>
     <PageAlert v-else-if="exhausted && subscription.status === 'active'" tone="warning" title="本周期流量已用完" />
 
-    <section v-if="editing === 'quota'" class="subscription-edit-section" aria-label="调整周期额度">
-      <h3>调整周期额度</h3>
-      <SubscriptionQuotaEditor ref="editor" :subscription="editSnapshot!" mode="quota" cancellable @cancel="finishEdit('quota')" @saved="saved('quota')" />
+    <section v-if="editing === 'quota' || editing === 'all'" class="subscription-edit-section" :aria-label="editing === 'all' ? '编辑订阅' : '调整周期额度'">
+      <h3>{{ editing === 'all' ? '编辑订阅' : '调整周期额度' }}</h3>
+      <SubscriptionQuotaEditor ref="editor" :subscription="editSnapshot!" :mode="editing" cancellable @cancel="finishEdit(editing)" @saved="saved(editing)" />
     </section>
 
-    <section class="subscription-settings" aria-label="订阅配置">
-      <div class="subscription-section-heading"><h3>重置设置</h3><UiButton v-if="editable && editing !== 'reset'" id="subscription-edit-reset" variant="ghost" size="sm" :disabled="Boolean(editing)" @click="startEdit('reset')">编辑重置</UiButton></div>
+    <section v-if="editing !== 'all'" class="subscription-settings" aria-label="订阅配置">
+      <div class="subscription-section-heading"><h3>重置设置</h3><UiButton v-if="editable && !subscription.ended_at && editing !== 'reset'" id="subscription-edit-reset" variant="ghost" size="sm" :disabled="Boolean(editing)" @click="startEdit('reset')">编辑重置</UiButton></div>
       <SubscriptionQuotaEditor v-if="editing === 'reset'" ref="editor" :subscription="editSnapshot!" mode="reset" cancellable @cancel="finishEdit('reset')" @saved="saved('reset')" />
       <dl v-else class="subscription-properties">
         <div><dt>重置周期</dt><dd>{{ resetPolicyLabel }}</dd></div>
@@ -80,7 +81,7 @@ import ModalDialog from './ModalDialog.vue'
 const props = defineProps<{ subscription: AdminSubscriptionDetail }>()
 const emit = defineEmits<{ changed: [] }>()
 const route = useRoute()
-const editing = ref<'' | 'quota' | 'reset'>('')
+const editing = ref<'' | 'quota' | 'reset' | 'all'>('')
 const editSnapshot = ref<AdminSubscriptionDetail | null>(null)
 const editor = ref<InstanceType<typeof SubscriptionQuotaEditor> | null>(null)
 const terminationOpen = ref(false), terminationBusy = ref(false)
@@ -89,27 +90,27 @@ const exhausted = computed(() => props.subscription.flow_used >= props.subscript
 const usagePercent = computed(() => props.subscription.flow_total > 0 ? Math.max(0, Math.min(100, Math.round(props.subscription.flow_used / props.subscription.flow_total * 100))) : 0)
 const perpetual = computed(() => props.subscription.end_at?.startsWith('9999-'))
 const elapsed = computed(() => props.subscription.status === 'expired' || Boolean(props.subscription.ended_at))
-const editable = computed(() => ['active', 'expired'].includes(props.subscription.status) && !props.subscription.ended_at)
+const editable = computed(() => ['active', 'expired'].includes(props.subscription.status))
 const canTerminate = computed(() => ['active', 'expired'].includes(props.subscription.status))
 const statusTone = computed(() => props.subscription.status === 'active' ? 'success' : props.subscription.status === 'expired' ? 'warning' : 'neutral')
 const statusLabel = computed(() => ({ active: '有效', expired: '已到期', canceled: '已取消', ended: '已结束' }[props.subscription.status] || formatUnknownValue('状态', props.subscription.status)))
 const resetPolicyLabel = computed(() => resetPolicyOptions.find(option => option.value === props.subscription.reset_policy)?.label || formatUnknownValue('重置策略', props.subscription.reset_policy))
 const trafficModeLabel = computed(() => ['上行 + 下行', '仅上行', '仅下行'][props.subscription.traffic_calc_mode] || formatUnknownValue('流量计费', props.subscription.traffic_calc_mode))
 function contextLink(path: string, query: Record<string, string>) { return withAdminReturnTo(path, route.fullPath, query) }
-async function startEdit(mode: 'quota' | 'reset') {
-  if (editing.value || !editable.value) return
+async function startEdit(mode: 'quota' | 'reset' | 'all') {
+  if (editing.value || !editable.value || mode !== 'all' && props.subscription.ended_at) return
   // Freeze the edit baseline; a read refresh must not become a stale usage write.
   editSnapshot.value = { ...props.subscription }
   editing.value = mode
   await nextTick()
   editor.value?.$el.querySelector('input,button')?.focus({ preventScroll: true })
 }
-async function finishEdit(mode: 'quota' | 'reset') {
+async function finishEdit(mode: 'quota' | 'reset' | 'all') {
   editing.value = ''; editSnapshot.value = null
   await nextTick()
   document.getElementById(`subscription-edit-${mode}`)?.focus({ preventScroll: true })
 }
-async function saved(mode: 'quota' | 'reset') { await finishEdit(mode); emit('changed') }
+async function saved(mode: 'quota' | 'reset' | 'all') { await finishEdit(mode); emit('changed') }
 async function confirmLeave() {
   if (terminationBusy.value) return false
   return editor.value ? editor.value.confirmLeave() : true
@@ -119,6 +120,7 @@ defineExpose({ confirmLeave, dirty: computed(() => Boolean(editor.value?.dirty |
 
 <style scoped>
 .subscription-detail { display: grid; gap: 24px; min-width: 0; }
+.subscription-actions { display: flex; align-items: center; gap: 8px; }
 .subscription-context,.subscription-context > div,.subscription-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .subscription-context > div { justify-content: flex-start; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
 .subscription-danger-action { color: var(--destructive); }

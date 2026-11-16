@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import { beforeEach, expect, it, vi } from 'vitest'
 import SubscriptionTermination from './SubscriptionTermination.vue'
+import { feedbackState } from '../utils/feedback'
 import { fetchSubscriptionValue, terminateSubscription, fetchAdministrativeSubscriptionValue, administrativelyTerminateSubscription } from '../api/subscriptionValue'
 const state = vi.hoisted(() => ({ app: null as any }))
 vi.mock('../stores/app', () => ({ useAppStore: () => state.app }))
@@ -11,6 +12,35 @@ const result = { id: 9, subscription_id: 7, currency: 'CNY', amount_minor: '9200
 function open() { return mount(SubscriptionTermination, { props: { subscriptionId: 7 } }) }
 async function click(wrapper: ReturnType<typeof open>, label: string) { await wrapper.findAll('button').find(button => button.text() === label)!.trigger('click'); await flushPromises() }
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); state.app = reactive({ user: { id: 1 } }); vi.mocked(fetchSubscriptionValue).mockResolvedValue(quote); vi.mocked(terminateSubscription).mockResolvedValue(result) })
+it('shows the refund before a single explicit customer confirmation and emits the verified receipt', async () => {
+ const wrapper = mount(SubscriptionTermination, { props: { subscriptionId: 7, subscriptionName: 'Pass Lite', embedded: true, autoloadQuote: true } })
+ await flushPromises()
+ expect(fetchSubscriptionValue).toHaveBeenCalledOnce()
+ expect(terminateSubscription).not.toHaveBeenCalled()
+ expect(wrapper.text()).toContain('退还余额 · CNY')
+ expect(wrapper.text()).not.toContain('金额未知')
+ await wrapper.findAll('button').find(button => button.text() === '确认退订')!.trigger('click')
+ await flushPromises()
+ expect(feedbackState.confirm).toBeNull()
+ expect(terminateSubscription).toHaveBeenCalledOnce()
+ expect(wrapper.emitted('settled')).toEqual([[result]])
+ expect(wrapper.get('.page-alert').text()).not.toContain('节点撤权')
+ expect(wrapper.get('details').attributes('open')).toBeUndefined()
+ wrapper.unmount()
+})
+it('keeps a zero-refund customer cancellation explicit and does not invent a wallet credit', async () => {
+ vi.mocked(fetchSubscriptionValue).mockResolvedValue({ ...quote, current_minor: '0', future_minor: '0', total_minor: '0' })
+ vi.mocked(terminateSubscription).mockResolvedValue({ ...result, amount_minor: '0' })
+ const wrapper = mount(SubscriptionTermination, { props: { subscriptionId: 7, embedded: true, autoloadQuote: true } })
+ await flushPromises()
+ expect(wrapper.text()).toContain('0.00')
+ expect(terminateSubscription).not.toHaveBeenCalled()
+ await click(wrapper, '确认退订')
+ expect(wrapper.get('.page-alert').text()).toContain('本次未退款')
+ expect(wrapper.emitted('settled')).toEqual([[{ ...result, amount_minor: '0' }]])
+ expect(terminateSubscription).toHaveBeenCalledOnce()
+ wrapper.unmount()
+})
 it('requires explicit quote and confirmation; reload never replays the saved write', async () => {
  let wrapper = open(); await flushPromises(); expect(fetchSubscriptionValue).not.toHaveBeenCalled(); expect(terminateSubscription).not.toHaveBeenCalled()
  await click(wrapper, '核对退订残值'); expect(wrapper.text()).toContain('CNY 92.00'); expect(wrapper.text()).toContain('终止本份订阅的全部剩余权益'); expect(wrapper.text()).toContain('退的是剩余价值，不是原支付全款')

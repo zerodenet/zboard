@@ -112,8 +112,8 @@ func (s Wallet) CreateTopUp(ctx context.Context, actor uint, in commerce.TopUpRe
 	return commerce.Order(order), nil
 }
 
-// Called only by the trusted payment-fact transaction, after order and account
-// authorization. Source order identity makes a repeated provider event or a
+// Called only by confirmed payment settlement, after provider verification or
+// an authorized administrator confirming receipt. Source order identity makes a repeated provider event or a
 // provider's new event ID for the same receipt unable to credit twice.
 func creditTopUp(tx *gorm.DB, order model.Order, now time.Time) error {
 	if order.OrderType != "topup" || order.PayableAmount <= 0 || order.AmountCents != order.PayableAmount || order.DiscountAmount != 0 {
@@ -122,6 +122,6 @@ func creditTopUp(tx *gorm.DB, order model.Order, now time.Time) error {
 	if _, err := commerce.NormalizeWalletCurrency(order.Currency); err != nil {
 		return err
 	}
-	_, err := appendWalletCredit(tx, order, walletKey("topup-order:"+strconv.FormatUint(uint64(order.ID), 10)), "topup", "已核验的渠道充值入账", order.PayableAmount, now)
+	_, err := appendWalletCredit(tx, order, walletKey("topup-order:"+strconv.FormatUint(uint64(order.ID), 10)), "topup", "已确认收款的充值入账", order.PayableAmount, now)
 	return err
 }

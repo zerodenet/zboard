@@ -60,26 +60,72 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if sub.Status == "ended" {
+		if sub.Status == "ended" || sub.Status == "canceled" {
 			return entitlements.ErrSubscriptionQuotaInvalid
 		}
 		now := time.Now().UTC()
+		scheduleEdited := in.EndAt != nil || in.NextResetAt != nil || in.ResetPolicy != nil
 		quotaEdited := in.FlowTotal != nil || in.FlowUsed != nil || in.ResetQuotaBytes != nil
-		if in.ResetPolicy == nil && sub.EndedAt == nil && (sub.Status == "active" || sub.Status == "expired") && sub.EndAt.After(now) {
+		if !scheduleEdited && sub.EndedAt == nil && (sub.Status == "active" || sub.Status == "expired") && sub.EndAt.After(now) {
 			if _, err := ApplyDueTrafficReset(tx, &sub, now); err != nil {
 				return err
 			}
 		}
 		total, used := entitlements.CycleQuota(entitlements.Subscription(sub))
 		old := map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": sub.ResetQuotaBytes}
-		if in.ResetPolicy != nil {
-			old["reset_policy"], old["next_reset_at"] = sub.ResetPolicy, sub.NextResetAt
-			changed, err := entitlements.ChangeTrafficResetSchedule(entitlements.Subscription(sub), *in.ResetPolicy, now)
-			if err != nil {
-				return err
+
+		if scheduleEdited {
+			old["end_at"], old["next_reset_at"], old["reset_policy"], old["status"], old["ended_at"], old["end_reason"] = sub.EndAt, sub.NextResetAt, sub.ResetPolicy, sub.Status, sub.EndedAt, sub.EndReason
+			if in.EndAt != nil && in.ExpectedEndAt != nil && !sub.EndAt.Equal(*in.ExpectedEndAt) {
+				return entitlements.ErrSubscriptionScheduleChanged
 			}
-			sub.ResetPolicy, sub.NextResetAt = changed.ResetPolicy, changed.NextResetAt
+			if in.NextResetAt != nil && in.ExpectedNextResetAt != nil {
+				expected := *in.ExpectedNextResetAt
+				if expected == "" {
+					if sub.NextResetAt != nil {
+						return entitlements.ErrSubscriptionScheduleChanged
+					}
+				} else {
+					date, _ := time.Parse(time.RFC3339Nano, expected)
+					if sub.NextResetAt == nil || !sub.NextResetAt.Equal(date) {
+						return entitlements.ErrSubscriptionScheduleChanged
+					}
+				}
+			}
+			if in.EndAt != nil {
+				if !in.EndAt.UTC().Truncate(time.Millisecond).After(sub.StartAt) {
+					return entitlements.ErrSubscriptionQuotaInvalid
+				}
+				sub.EndAt = in.EndAt.UTC().Truncate(time.Millisecond)
+				if sub.EndAt.After(now) && sub.Status == "expired" && (sub.EndReason == "" || sub.EndReason == "expired") {
+					sub.EndedAt = nil
+					sub.EndReason = ""
+					sub.Status = "active"
+					sub.RetirementRetryAt = nil
+					if in.NextResetAt == nil && sub.ResetPolicy >= 1 && sub.ResetPolicy <= 4 && (sub.NextResetAt == nil || !sub.NextResetAt.After(now)) {
+						sub.NextResetAt = entitlements.NextTrafficResetAfter(sub.StartAt, sub.ResetPolicy, now)
+					}
+				}
+			}
+			if in.ResetPolicy != nil {
+				changed, err := entitlements.ChangeTrafficResetSchedule(entitlements.Subscription(sub), *in.ResetPolicy, now)
+				if err != nil {
+					return err
+				}
+				sub.ResetPolicy, sub.NextResetAt = changed.ResetPolicy, changed.NextResetAt
+			}
+			if in.NextResetAt != nil {
+				if sub.ResetPolicy < 1 || sub.ResetPolicy > 4 || sub.EndsOnQuotaExhaustion || entitlements.IsPerpetualEnd(sub.EndAt) || sub.EndedAt != nil {
+					return entitlements.ErrSubscriptionResetPolicyNotApplicable
+				}
+				if !in.NextResetAt.UTC().Truncate(time.Millisecond).After(now) || in.NextResetAt.Before(sub.StartAt) || in.NextResetAt.After(sub.EndAt) {
+					return entitlements.ErrSubscriptionQuotaInvalid
+				}
+				date := in.NextResetAt.UTC().Truncate(time.Millisecond)
+				sub.NextResetAt = &date
+			}
 		}
+
 		resetQuota := sub.ResetQuotaBytes
 		if in.FlowTotal != nil {
 			total = *in.FlowTotal
@@ -104,11 +150,19 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 				sub.Status = "active"
 			}
 		}
+		if in.EndAt != nil {
+			sub.Status = entitlements.EffectiveStatus(entitlements.Subscription(sub), now)
+		}
 		sub.UpdatedAt = now
 		if err := tx.Save(&sub).Error; err != nil {
 			return err
 		}
-		if quotaEdited {
+		if in.EndAt != nil {
+			if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id=? AND current_scope=1", sub.ID).Updates(map[string]any{"expires_at": sub.EndAt, "updated_at": now}).Error; err != nil {
+				return err
+			}
+		}
+		if quotaEdited || in.EndAt != nil {
 			if entitlements.AccessAvailable(entitlements.Subscription(sub), now) {
 				if _, err := EnsureCredentials(tx, sub, s.Issuer); err != nil {
 					return err
@@ -121,9 +175,10 @@ func (s SubscriptionQuota) Update(ctx context.Context, actor uint, in entitlemen
 			}
 		}
 		updated := map[string]any{"flow_total": total, "flow_used": used, "reset_quota_bytes": resetQuota}
-		if in.ResetPolicy != nil {
-			updated["reset_policy"], updated["next_reset_at"] = sub.ResetPolicy, sub.NextResetAt
+		if scheduleEdited {
+			updated["end_at"], updated["next_reset_at"], updated["reset_policy"], updated["status"], updated["ended_at"], updated["end_reason"] = sub.EndAt, sub.NextResetAt, sub.ResetPolicy, sub.Status, sub.EndedAt, sub.EndReason
 		}
+
 		detail, err := json.Marshal(map[string]any{"hash": hash, "actor_id": actor, "reason": in.Reason, "before": old, "after": updated})
 		if err != nil {
 			return err

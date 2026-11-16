@@ -54,13 +54,13 @@
             <UiInput v-model.trim="form.system_timezone" v-bind="controlAttrs" maxlength="100" placeholder="Asia/Shanghai" autocomplete="off" />
           </FormField>
           <div class="retention-grid">
-            <FormField v-slot="{ controlAttrs }" label="审计日志保留" name="setup-audit-retention" hint="默认 180 天；0 表示永久保留。" :error="fieldErrors.fields.audit_log_retention_days" required>
+            <FormField v-slot="{ controlAttrs }" label="审计日志保留" name="setup-audit-retention" hint="默认 30 天；0 表示永久保留。" :error="fieldErrors.fields.audit_log_retention_days" required>
               <UiInput v-model.number="form.audit_log_retention_days" v-bind="controlAttrs" type="number" min="0" max="3650" step="1" inputmode="numeric" />
             </FormField>
-            <FormField v-slot="{ controlAttrs }" label="运行历史保留" name="setup-operation-retention" hint="默认 90 天；仅清理已结束的节点、发布、证书与供应商操作。" :error="fieldErrors.fields.operation_history_retention_days" required>
+            <FormField v-slot="{ controlAttrs }" label="运行历史保留" name="setup-operation-retention" hint="默认 14 天；仅清理已结束的节点、发布、证书与供应商操作。" :error="fieldErrors.fields.operation_history_retention_days" required>
               <UiInput v-model.number="form.operation_history_retention_days" v-bind="controlAttrs" type="number" min="0" max="3650" step="1" inputmode="numeric" />
             </FormField>
-            <FormField v-slot="{ controlAttrs }" label="运营任务保留" name="setup-task-retention" hint="默认 90 天；仅清理已完成任务及任务项。" :error="fieldErrors.fields.task_history_retention_days" required>
+            <FormField v-slot="{ controlAttrs }" label="运营任务保留" name="setup-task-retention" hint="默认 7 天；仅清理已完成任务及任务项。" :error="fieldErrors.fields.task_history_retention_days" required>
               <UiInput v-model.number="form.task_history_retention_days" v-bind="controlAttrs" type="number" min="0" max="3650" step="1" inputmode="numeric" />
             </FormField>
           </div>
@@ -121,9 +121,9 @@ const form = reactive({
   site_url: window.location.origin,
   allow_registration: true,
   system_timezone: browserTimezone,
-  audit_log_retention_days: 180,
-  operation_history_retention_days: 90,
-  task_history_retention_days: 90,
+  audit_log_retention_days: 30,
+  operation_history_retention_days: 14,
+  task_history_retention_days: 7,
   admin_email: '',
   admin_password: '',
 })

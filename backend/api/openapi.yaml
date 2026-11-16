@@ -4330,7 +4330,7 @@ paths:
       tags:
         - orders
       summary: Confirm a pending order as paid
-      description: Admin-only manual settlement endpoint. Normal users cannot mark their own orders as paid.
+      description: "Administrator confirmation of actual receipt. Atomically settles any reserved wallet portion, credits top-ups or grants subscription rights, and captures verified value evidence for later plan changes. Repeated confirmation does not credit or grant twice. Normal users cannot confirm their own receipt."
       parameters:
         - name: id
           in: path
@@ -4632,8 +4632,8 @@ paths:
   /api/v1/admin/subscriptions/{id}/quota:
     put:
       tags: [subscriptions, admin]
-      summary: Edit current-cycle quota and usage, and the reset quota
-      description: Applies only supplied fields to the latest locked subscription, after any due reset. Omitted fields retain current values; legacy expected_* fields are accepted and ignored. Preserves traffic records, plan and expiry; atomically audits the change, restores or suspends credentials and queues node publication. Retry with the same idempotency key and payload.
+      summary: Edit subscription quota, expiry and reset settings
+      description: "Applies only supplied fields to the latest locked subscription. Date and reset corrections never apply overdue resets or clear usage. End-at edits update credential expiry and publication atomically, including restoration of expired subscriptions retained by the platform. Ended/canceled subscriptions cannot be edited. Existing payment snapshots remain unchanged. Date baselines detect concurrent renewal or reset changes. Retry with the same idempotency key and payload."
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       requestBody:
@@ -4648,7 +4648,15 @@ paths:
                 - required: [flow_total]
                 - required: [flow_used]
                 - required: [reset_quota_bytes]
+                - required: [reset_policy]
+                - required: [end_at]
+                - required: [next_reset_at]
               properties:
+                end_at: { type: string, format: date-time, description: Absolute expiry after the subscription start. May be in the past to expire immediately. }
+                next_reset_at: { type: string, format: date-time, description: Future next reset within the subscription term. Requires a periodic reset policy; subsequent resets follow that policy. }
+                expected_end_at: { type: string, format: date-time, description: Optional baseline for expiry edits; a concurrent change returns 409. }
+                expected_next_reset_at: { type: string, description: "Optional baseline for next-reset edits. Empty means no scheduled reset; otherwise use RFC3339. A concurrent change returns 409." }
+                reset_policy: { type: integer, minimum: 0, maximum: 5, description: Explicit policy selection recalculates the next reset unless next_reset_at is also supplied. }
                 flow_total: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
                 flow_used: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
                 reset_quota_bytes: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
@@ -4896,7 +4904,7 @@ paths:
   /api/v1/admin/subscription-templates/preview:
     post:
       tags: [subscriptions, admin]
-      summary: Parse and render a bounded sample preview without saving
+      summary: Render an authorized read-only preview without saving or provisioning credentials
       requestBody:
         required: true
         content:
@@ -7038,6 +7046,7 @@ components:
             - { type: integer, format: int64 }
             - { type: object, additionalProperties: true }
             - { type: array, items: {} }
+        default_value: { type: integer, description: Built-in default for administrator retention policies; omitted for other and secret settings. }
         value_type: { type: string, enum: [string, bool, int, json] }
         description: { type: string }
         is_public: { type: boolean }
@@ -8076,6 +8085,9 @@ components:
         renderer: { type: string, enum: [znet-sink, clash, sing-box] }
         customization:
           $ref: "#/components/schemas/SubscriptionTemplateCustomization"
+        subscription_id: { type: integer, format: int64, minimum: 1, description: "Optional active subscription sample. Uses existing authorized node projection with ephemeral preview credentials; never provisions credentials. Limited to 256 nodes." }
+        live: { type: boolean, default: false, description: "Render without launching native client validation. Saves always perform full validation independently." }
+        full_content: { type: boolean, default: false, description: "Return the complete rendered configuration up to the existing 2 MiB renderer limit. Legacy display previews remain capped at 256 KiB." }
     SubscriptionTemplateCustomization:
       type: object
       additionalProperties: false
@@ -8159,7 +8171,8 @@ components:
           maxItems: 15
           uniqueItems: true
           items: { type: string, pattern: "^[a-z][a-z0-9-]{0,31}$" }
-        default_group: { type: string, pattern: "^[a-z][a-z0-9-]{0,31}$", description: Optional included group selected first by a select group. }
+        default_group: { type: string, pattern: "^([a-z][a-z0-9-]{0,31})?$", deprecated: true, description: Legacy included-group default; normalized to default_target. Conflicting defaults are rejected. }
+        default_target: { type: string, pattern: "^(direct|reject|group:[a-z][a-z0-9-]{0,31})?$", description: "Initial selection for a select group. Must be an included member. Reject is unavailable for sing-box. Empty or omitted uses member order; existing client selections may take precedence." }
         probe_url: { type: string, format: uri, maxLength: 2048 }
         interval: { type: integer, minimum: 60, maximum: 86400 }
         tolerance: { type: integer, minimum: 0, maximum: 10000 }
@@ -8183,11 +8196,26 @@ components:
       type: object
       required: [content, content_type, bytes, line_count, truncated]
       properties:
-        content: { type: string, maxLength: 262144, description: UTF-8-safe display preview capped at 256 KiB. }
+        content: { type: string, maxLength: 2097152, description: "Exact rendered configuration. Capped at 256 KiB unless full_content is requested. Zero configuration is JSON; delivery uses UTF-8 Base64 encoding." }
         content_type: { type: string, enum: [text/plain, text/yaml, application/yaml, application/json] }
         bytes: { type: integer, minimum: 0, description: Full rendered byte size before display truncation. }
         line_count: { type: integer, minimum: 1, description: Full rendered line count before display truncation. }
         truncated: { type: boolean }
+        groups:
+          type: array
+          description: Groups extracted from the final rendered document, including advanced overrides.
+          items:
+            type: object
+            required: [name, type, members, default]
+            properties:
+              name: { type: string }
+              type: { type: string }
+              members: { type: array, items: { type: string } }
+              default: { type: string }
+        sample: { type: string, enum: [example, subscription] }
+        sample_label: { type: string }
+        delivery_encoding: { type: string, enum: [identity, base64] }
+        delivery_content_type: { type: string }
     Order:
       type: object
       description: Bounded list projection. Raw payment callback bodies, provider references and failure diagnostics are omitted.

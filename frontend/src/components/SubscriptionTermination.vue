@@ -3,17 +3,17 @@
     <div class="panel-body stack">
       <PageAlert v-if="error" tone="danger" title="退订需要核对">{{ error }}</PageAlert>
       <PageAlert v-if="receipt" tone="success" title="订阅已终止">
-        <template v-if="receipt.amount_minor === '0'">订阅已终止，本次未退款。</template><template v-else>{{ money(receipt.amount_minor, receipt.currency) }} 已进入余额。</template>{{ receipt.record_kind === 'entitlement_mutation' ? '权益终止记录' : '结算' }} #{{ receipt.id }}。
-        节点撤权等待核验；当前连接终止取决于节点的实际能力。其他订阅继续独立使用。
+        <template v-if="receipt.amount_minor === '0'">本次未退款。</template><template v-else>{{ money(receipt.amount_minor, receipt.currency) }} 已退回余额。</template>
       </PageAlert>
+      <details v-if="receipt" class="termination-record"><summary>结算详情</summary><p>{{ receipt.record_kind === 'entitlement_mutation' ? '权益终止记录' : '结算' }} #{{ receipt.id }}。节点撤权等待核验；当前连接终止取决于节点的实际能力。</p></details>
       <template v-else>
-        <p v-if="embedded" class="termination-consequence">退订后停止此订阅，退款进入用户余额；不保留续费恢复窗口。</p>
+        <p v-if="embedded" class="termination-consequence">退订后停止此套餐，无法恢复。{{ administrative ? '退款进入用户余额。' : '剩余价值退入账户余额，不提供提现。' }}</p>
         <p v-else>{{ administrative ? '默认退款为剩余价值，实际金额由管理员确认；0元只终止权益，不退款。' : '退的是剩余价值，不是原支付全款；不保留部分套餐。' }}确认后不再保留续费恢复窗口。余额退款不提供提现；历史订单和计量记录保留。</p>
         <PageAlert v-if="quote?.valuation_status === 'unavailable'" tone="warning" title="默认残值未知">{{ quote.message }}本次只能明确确认0元终止，不提供任何自动退款。</PageAlert>
         <template v-else-if="quote">
           <div v-if="embedded" class="termination-values">
-            <div class="termination-default"><span>默认退款 · {{ quote.currency }}</span><strong>{{ major(quote.total_minor) }}</strong></div>
-            <dl><div><dt>本周期</dt><dd>{{ major(quote.current_minor) }}</dd></div><div><dt>后续已付周期</dt><dd>{{ major(quote.future_minor) }}</dd></div><div v-if="administrative"><dt>实付上限</dt><dd>{{ major(quote.max_refund_minor) }}</dd></div></dl>
+            <div class="termination-default"><span>{{ administrative ? '默认退款' : '退还余额' }} · {{ quote.currency }}</span><strong>{{ major(quote.total_minor) }}</strong></div>
+            <dl v-if="administrative || Number(quote.future_minor) > 0"><div><dt>本周期</dt><dd>{{ major(quote.current_minor) }}</dd></div><div><dt>后续已付周期</dt><dd>{{ major(quote.future_minor) }}</dd></div><div v-if="administrative"><dt>实付上限</dt><dd>{{ major(quote.max_refund_minor) }}</dd></div></dl>
           </div>
           <p v-else>本周期残值 {{ money(quote.current_minor, quote.currency) }}，后续已付周期 {{ money(quote.future_minor, quote.currency) }}，合计 {{ money(quote.total_minor, quote.currency) }}。确认时会重新校验用量和权益。</p>
         </template>
@@ -24,8 +24,8 @@
         </template>
         <p v-if="administrative && intent">已保留管理员审批：实际退款 {{ intent.quote.valuation_status === 'unavailable' ? '0（不退款）' : money(String(intent.request.amount_minor), intent.quote.currency) }}，原默认残值 {{ money(intent.quote.total_minor, intent.quote.currency) }}；原因：{{ intent.request.reason }}。</p>
         <p v-if="intent">已有一笔待核对请求。重新登录或刷新页面后，需要再次点击才能重试原请求。</p>
-        <UiButton v-if="!intent || knownConflict" type="button" variant="secondary" :disabled="busy || blocked" @click="loadQuote">{{ quote ? '重新核对残值' : '核对退订残值' }}</UiButton>
-        <UiButton v-if="quote && !knownConflict" type="button" :variant="embedded ? 'danger' : 'primary'" :disabled="busy || blocked || (administrative && !intent && !validApproval)" :loading="busy" @click="submitTermination">{{ intent ? '核对并重试原退订请求' : administrative && approvalMinor === 0 ? '确认终止订阅（不退款）' : '确认终止订阅并退款至余额' }}</UiButton>
+        <UiButton v-if="(!quote || administrative || !embedded || knownConflict) && (!intent || knownConflict)" type="button" variant="secondary" :disabled="busy || blocked" @click="loadQuote">{{ quote ? '重新核对残值' : '核对退订残值' }}</UiButton>
+        <UiButton v-if="quote && !knownConflict" type="button" :variant="embedded ? 'danger' : 'primary'" :disabled="busy || blocked || (administrative && !intent && !validApproval)" :loading="busy" @click="submitTermination">{{ intent ? '核对并重试原退订请求' : embedded && !administrative ? '确认退订' : administrative && approvalMinor === 0 ? '确认终止订阅（不退款）' : '确认终止订阅并退款至余额' }}</UiButton>
       </template>
     </div>
   </component>
@@ -44,7 +44,7 @@ import UiSection from './UiSection.vue'
 import UiButton from './UiButton.vue'
 import PageAlert from './PageAlert.vue'
 import { confirmAction } from '../utils/feedback'
-const props = defineProps<{ subscriptionId: number; administrative?: boolean; subscriptionName?: string; embedded?: boolean; autoloadQuote?: boolean }>(), emit = defineEmits<{ settled: []; busy: [value: boolean] }>()
+const props = defineProps<{ subscriptionId: number; administrative?: boolean; subscriptionName?: string; embedded?: boolean; autoloadQuote?: boolean }>(), emit = defineEmits<{ settled: [receipt: SubscriptionTerminationReceipt]; busy: [value: boolean] }>()
 const app = useAppStore(), actor = computed(() => app.user?.id || 0)
 type Quote = Omit<SubscriptionValueQuote, 'root_order_id' | 'current_minor' | 'future_minor' | 'total_minor'> & Partial<AdministrativeSubscriptionValueQuote>
 interface Intent { request: SubscriptionTerminationRequest & Partial<AdministrativeSubscriptionTerminationRequest>; quote: Quote; receipt?: SubscriptionTerminationReceipt }
@@ -101,9 +101,9 @@ async function submitTermination() {
   if (busy.value || blocked.value || knownConflict.value || !quote.value || !actor.value || props.administrative && (!app.user?.isAdmin || !intent.value && !validApproval.value)) return
   const version = generation, id = props.subscriptionId, key = scope(); busy.value = true; error.value = ''
   try {
-    if (props.embedded) {
-      const refund = intent.value?.request.amount_minor ?? approvalMinor.value
-      const confirmed = await confirmAction({ title: '确认退订此订阅？', message: refund === 0 ? '此订阅将停止服务，本次不退款。' : `此订阅将停止服务，${money(String(refund), quote.value.currency)} 将退入用户余额。`, confirmText: '确认退订', tone: 'danger' })
+    if (props.embedded && props.administrative) {
+      const refund = String(intent.value?.request.amount_minor ?? approvalMinor.value)
+      const confirmed = await confirmAction({ title: '确认退订此订阅？', message: refund === '0' ? '此订阅将停止服务，本次不退款。' : `此订阅将停止服务，${money(refund, quote.value.currency)} 将退入用户余额。`, confirmText: '确认退订', tone: 'danger' })
       if (!confirmed || generation !== version || key !== scope()) return
     }
     let attempt = intent.value
@@ -119,7 +119,7 @@ async function submitTermination() {
     if (result.subscription_id !== id || result.currency !== attempt.quote.currency || result.status !== 'canceled' || props.administrative && result.amount_minor !== String(attempt.request.amount_minor)) throw new Error('退订结果所属订阅不一致，请核对账务。')
     attempt.receipt = result; localStorage.setItem(key, JSON.stringify(attempt))
     if (generation !== version || key !== scope()) return
-    receipt.value = result; emit('settled')
+    receipt.value = result; emit('settled', result)
   } catch (cause: any) {
     if (generation !== version) return
     knownConflict.value = cause?.response?.status === 409

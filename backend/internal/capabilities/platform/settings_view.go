@@ -4,23 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"strconv"
 	"time"
 )
 
 type SettingView struct {
-	ID          uint               `json:"id"`
-	ConfigKey   string             `json:"config_key"`
-	Name        string             `json:"name"`
-	Value       interface{}        `json:"value,omitempty"`
-	ValueType   string             `json:"value_type"`
-	Description string             `json:"description"`
-	IsPublic    bool               `json:"is_public"`
-	IsSecret    bool               `json:"is_secret"`
-	Configured  bool               `json:"configured"`
-	Revision    uint64             `json:"revision"`
-	UpdatedAt   time.Time          `json:"updated_at"`
-	Input       SettingInputSchema `json:"input"`
+	DefaultValue *int               `json:"default_value,omitempty"`
+	ID           uint               `json:"id"`
+	ConfigKey    string             `json:"config_key"`
+	Name         string             `json:"name"`
+	Value        interface{}        `json:"value,omitempty"`
+	ValueType    string             `json:"value_type"`
+	Description  string             `json:"description"`
+	IsPublic     bool               `json:"is_public"`
+	IsSecret     bool               `json:"is_secret"`
+	Configured   bool               `json:"configured"`
+	Revision     uint64             `json:"revision"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	Input        SettingInputSchema `json:"input"`
 }
 
 type SettingInputOption struct {
@@ -47,6 +49,10 @@ func SettingToView(config Setting) (SettingView, error) {
 		Configured: config.Configured, Revision: config.Revision, UpdatedAt: config.UpdatedAt,
 		Input: SettingInputSchemaFor(config),
 	}
+	if setting, ok := observability.RetentionSettingFor(config.ConfigKey); ok && !config.IsSecret {
+		value := setting.Default
+		view.DefaultValue = &value
+	}
 	if config.IsSecret {
 		return view, nil
 	}
@@ -59,6 +65,11 @@ func SettingToView(config Setting) (SettingView, error) {
 }
 
 func SettingInputSchemaFor(config Setting) SettingInputSchema {
+	if setting, ok := observability.RetentionSettingFor(config.ConfigKey); ok {
+		minimum, maximum, step := int64(0), int64(setting.Maximum), int64(1)
+		return SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
+	}
+
 	maxStringBytes := 100000
 	schema := SettingInputSchema{Control: "text", MaxBytes: &maxStringBytes}
 	switch config.ValueType {

@@ -291,7 +291,7 @@ func (s WalletPayments) payReservedWalletOrder(tx *gorm.DB, order *model.Order, 
 		return out, quoteError("余额预留已失效，请核对余额后重新创建订单。")
 	}
 	settlement := OrderSettlement{DB: s.DB, Issuer: s.Issuer, Now: s.Now}
-	if err := settlement.setPaidWithFunding(tx, order, now, true); err != nil {
+	if err := settlement.fulfillConfirmedOrder(tx, order, now); err != nil {
 		return out, err
 	}
 	if err := tx.Model(order).Update("channel", "wallet").Error; err != nil {

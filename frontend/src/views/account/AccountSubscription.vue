@@ -2,29 +2,47 @@
   <section class="account-page stack">
     <PageHeader title="连接设备">
       <template #actions>
-        <PageRefreshButton label="刷新订阅" :loading="loading" :disabled="working" @click="loadAll" />
+        <PageRefreshButton label="刷新订阅" :loading="loading" :disabled="working || terminationBusy" @click="loadAll" />
       </template>
     </PageHeader>
 
     <TransientFeedback
       :success="message"
-      :error="error"
+      :error="listError || automaticRowError"
       success-title="订阅配置已更新"
-      error-title="订阅操作失败"
+      error-title="订阅列表未更新"
     />
 
     <PluginSlot name="account.subscriptions.actions" surface="account" />
 
+    <div v-if="terminationResult" class="subscription-completed" role="status">
+      <UiIcon name="check" /><span>{{ terminationResult.name }}已退订，{{ terminationResult.receipt.amount_minor === '0' ? '本次未退款' : `${refundLabel(terminationResult.receipt)} 已退回余额` }}。</span>
+      <RouterLink :to="{ path: '/account/wallet', query: { currency: terminationResult.receipt.currency } }">余额流水</RouterLink>
+      <UiButton variant="ghost" icon aria-label="关闭退订结果" @click="terminationResult = null">×</UiButton>
+    </div>
+
     <div ref="accessPanel" class="subscription-access-panel" tabindex="-1">
     <UiSection variant="outlined"
-      :title="selectedSubscription?.plan_name || '订阅链接'"
-      :description="selectedSubscription?.sku_name || ''"
+      title="订阅链接"
       class="subscription-access-section"
     >
       <template #actions>
         <UiButton v-if="subscriptionUrl" type="button" @click="copy"><UiIcon name="copy" />{{ copyLabel }}</UiButton>
         <UiButton v-else-if="selectedSubscription && !access.configured" type="button" :disabled="!accessReady || access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('generate')">生成订阅链接</UiButton>
       </template>
+      <div class="account-section-body access-selection">
+        <FormField v-slot="{ controlAttrs }" label="当前套餐" name="connection-subscription">
+          <UiAutocomplete v-model="pickerValue" v-bind="controlAttrs" :suggestions="pickerItems" option-label="label" placeholder="选择有效套餐" dropdown force-selection :clearable="false" :loading="pickerResource.loading.value" :disabled="working || terminationBusy" @open="openPicker" @complete="searchPicker($event.query)" @item-select="selectSubscription($event.value.id)" @clear="restorePicker">
+            <template #option="{ option }"><span class="access-picker-option"><span>{{ option.plan_name || '未命名套餐' }}</span><small>{{ option.sku_name }} · {{ formatBytes(Math.max(0, option.flow_total - option.flow_used)) }} 可用 · 到期 {{ formatDateTime(option.end_at) }}</small></span></template>
+            <template #footer>
+              <div v-if="pickerResource.error.value" class="access-picker-error" role="alert">套餐读取失败<UiButton variant="ghost" size="sm" @click="pickerResource.load()">重试</UiButton></div>
+              <TablePager v-else-if="pickerResource.data.value.total > pickerLimit" :total="pickerResource.data.value.total" :offset="pickerOffset" :limit="pickerLimit" :loading="pickerResource.loading.value" @change="pagePicker" />
+            </template>
+          </UiAutocomplete>
+        </FormField>
+        <PageAlert v-if="selectedNotice" tone="info" title="此订阅已不可用">请在上方选择其他有效套餐。</PageAlert>
+        <PageAlert v-else-if="contextError && !selectedSubscriptionResource.stale.value" tone="danger" title="订阅信息读取失败">{{ contextError }}<UiButton variant="ghost" size="sm" @click="loadMetadata">重试</UiButton></PageAlert>
+      </div>
       <div v-if="selectedSubscription" class="panel-body access-panel">
         <PageAlert v-if="selectedSubscriptionResource.stale.value" tone="warning" title="订阅详情尚未更新">
           暂时无法核对当前额度和期限，显示上次读取的信息。请刷新后再生成、轮换或吊销链接。
@@ -49,6 +67,7 @@
           <WorkbenchFilterInput v-model="templateDraftQuery" label="查找格式" placeholder="客户端或模板名称" @apply="searchTemplates" />
           <span v-if="templateTotal > templates.length" class="field-hint">{{ templates.length }} / {{ templateTotal }}</span>
         </div>
+        <PageAlert v-if="templateResource.error.value" tone="warning" title="客户端格式未更新">{{ templateResource.error.value }}<UiButton variant="ghost" size="sm" @click="searchTemplates">重试格式</UiButton></PageAlert>
         <FormField v-if="subscriptionUrl" v-slot="{ controlAttrs }" class="access-url" label="订阅链接" full>
           <UiInput :value="subscriptionUrl" v-bind="controlAttrs" readonly />
         </FormField>
@@ -65,7 +84,11 @@
         </div>
         </div></details>
       </div>
-      <EmptyState v-else icon="key" title="请选择有效订阅" description="每条订阅分别生成和管理自己的客户端链接。" />
+      <div v-else class="account-section-body access-empty" role="status">
+        <template v-if="metadataLoading">正在读取订阅…</template>
+        <template v-else-if="!contextError && !selectedNotice && activeSubscriptionResource.loaded.value && !activeSubscriptionResource.data.value.total">暂无可连接的套餐<UiButton as-child variant="secondary" size="sm"><RouterLink to="/account/plans">购买套餐</RouterLink></UiButton></template>
+        <template v-else-if="!contextError && !selectedNotice">选择套餐后查看连接方式。</template>
+      </div>
     </UiSection>
 
     </div>
@@ -88,14 +111,14 @@
               <UiButton v-if="sub.can_renew" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink></UiButton>
             </template>
               <UiButton v-if="canReset(sub)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
-              <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="ghost" size="sm" @click="terminationTarget = sub.id">退订</UiButton>
+              <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="ghost" size="sm" :disabled="working || terminationBusy" @click="openTermination(sub)">退订</UiButton>
               <UiButton v-if="sub.can_renew" variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">自动续费</UiButton>
               <UiButton v-if="Number.isSafeInteger(sub.id) && sub.id > 0" as-child variant="ghost" size="sm"><RouterLink :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">提交工单</RouterLink></UiButton>
             </RowActions>
           </template>
         </AccountSubscriptionCard>
       </div>
-      <EmptyState v-else-if="!listLoading && !listError" icon="plans" title="暂无订阅" description="" />
+      <EmptyState v-else-if="!listLoading && !listError" icon="plans" :title="status ? '暂无符合条件的订阅' : '暂无订阅'" description="" />
 
       <template #footer>
         <TablePager
@@ -108,7 +131,9 @@
       </template>
     </DataWorkbench>
 
-    <div v-if="terminationTarget" ref="terminationPanel" tabindex="-1"><SubscriptionTermination :subscription-id="terminationTarget" :subscription-name="subscriptions.find(sub => sub.id === terminationTarget)?.plan_name" @settled="loadAll" /></div>
+    <ModalDialog :open="Boolean(terminationTarget)" :title="`退订 · ${terminationTarget?.name || '套餐'}`" size="sm" :busy="terminationBusy" return-focus-selector=".subscription-access-panel" @close="terminationTarget = null">
+      <SubscriptionTermination v-if="terminationTarget" :subscription-id="terminationTarget.id" :subscription-name="terminationTarget.name" embedded autoload-quote @busy="terminationBusy = $event" @settled="onTerminated" />
+    </ModalDialog>
     <div v-if="automaticTarget" ref="automaticPanel" tabindex="-1"><SubscriptionAutomaticRenewal :subscription-id="automaticTarget.id" :plan-id="automaticTarget.planId" :subscription-name="subscriptions.find(sub => sub.id === automaticTarget?.id)?.plan_name" @changed="refreshAutomaticRenewal" /></div>
 
     <details class="subscription-diagnostics"><summary>查看线路运行情况</summary>
@@ -183,6 +208,9 @@ import {
   type SubscriptionAccess,
 } from '../../api/subscriptionAccess'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import ModalDialog from '../../components/ModalDialog.vue'
+import UiAutocomplete from '../../components/UiAutocomplete.vue'
+import type { SubscriptionTerminationReceipt } from '../../api/subscriptionValue'
 import DataTable from '../../components/DataTable.vue'
 import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
@@ -203,7 +231,8 @@ import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
 import { useRemoteResource } from '../../composables/useRemoteResource'
-import { formatBytes } from '../../utils/format'
+import { formatBytes, formatDateTime } from '../../utils/format'
+import { walletMajor } from '../../utils/walletMoney'
 import {
   buildSubscriptionURL,
   isBuiltInDeliveryMode,
@@ -212,13 +241,16 @@ import {
 } from '../../utils/subscriptionDelivery'
 
 const accessPanel = ref<HTMLElement | null>(null)
-const automaticPanel = ref<HTMLElement | null>(null), terminationPanel = ref<HTMLElement | null>(null)
+const automaticPanel = ref<HTMLElement | null>(null)
 
-const terminationTarget = ref(0)
+const terminationTarget = ref<{ id: number; name: string } | null>(null)
+const terminationBusy = ref(false)
+const terminationResult = ref<{ name: string; receipt: SubscriptionTerminationReceipt } | null>(null)
+const retiredSubscriptions = new Set<number>()
 const automaticTarget = ref<{ id: number; planId: number } | null>(null)
-watch([automaticTarget, terminationTarget], async ([automatic, termination], previous) => {
+watch(automaticTarget, async automatic => {
   await nextTick()
-  const panel = automatic !== previous?.[0] && automatic ? automaticPanel.value : termination ? terminationPanel.value : null
+  const panel = automatic ? automaticPanel.value : null
   panel?.focus({ preventScroll: true }); panel?.scrollIntoView?.({ block: 'start' })
 })
 function automaticNeedsAttention(state?: string) {
@@ -238,6 +270,10 @@ const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const status = ref(String(route.query.status || ''))
 const selectedSubscriptionID = ref(Math.max(0, Number(route.query.subscription) || 0))
+type PickerItem = AdminSubscriptionListItem & { label: string }
+const pickerValue = ref<PickerItem | string | null>(null)
+const pickerQuery = ref(''), pickerOffset = ref(0), pickerLimit = ref(25)
+let pickerTimer: ReturnType<typeof setTimeout> | undefined
 const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '有效', value: 'active' },
@@ -326,6 +362,34 @@ const activeSubscriptionResource = useRemoteResource({
   },
   errorMessage: '有效订阅加载失败。',
 })
+const pickerResource = useRemoteResource({
+  initial: () => ({ items: [] as AdminSubscriptionListItem[], total: 0 }),
+  fetch: ({ signal }) => fetchAccountSubscriptionsPage({ status: 'active', q: pickerQuery.value || undefined, offset: pickerOffset.value, limit: pickerLimit.value }, { signal }),
+  errorMessage: '有效套餐读取失败。',
+})
+const pickerItems = computed(() => (pickerResource.loaded.value ? pickerResource.data.value.items : pickerQuery.value ? [] : activeSubscriptions.value)
+  .filter(item => item.status === 'active' && !item.ended_at && !retiredSubscriptions.has(item.id))
+  .map(toPickerItem))
+function toPickerItem(item: AdminSubscriptionListItem): PickerItem {
+  return { ...item, label: [item.plan_name || '未命名套餐', item.sku_name].filter(Boolean).join(' · ') }
+}
+function restorePicker() { pickerValue.value = selectedSubscription.value ? toPickerItem(selectedSubscription.value) : null }
+function openPicker() {
+  clearTimeout(pickerTimer)
+  pickerQuery.value = ''; pickerOffset.value = 0
+  pickerResource.reset()
+  void pickerResource.load()
+}
+function searchPicker(query: string) {
+  clearTimeout(pickerTimer)
+  pickerQuery.value = query.trim(); pickerOffset.value = 0
+  pickerResource.reset()
+  pickerTimer = setTimeout(() => void pickerResource.load(), 200)
+}
+async function pagePicker(value: { offset: number; limit: number }) {
+  pickerOffset.value = value.offset; pickerLimit.value = value.limit
+  await pickerResource.load()
+}
 const templateResource = useRemoteResource({
   initial: () => ({ items: [] as SubscriptionTemplate[], total: 0 }),
   fetch: async ({ signal }) => {
@@ -354,6 +418,7 @@ const accessResource = useRemoteResource<SubscriptionAccess>({
 })
 
 const activeSubscriptions = computed(() => activeSubscriptionResource.data.value.items)
+watch(selectedSubscription, restorePicker)
 const templates = computed(() => templateResource.data.value.items)
 const templateTotal = computed(() => templateResource.data.value.total)
 const templateLoading = templateResource.loading
@@ -366,7 +431,7 @@ const accessReady = computed(() => Boolean(selectedSubscription.value) && access
   && !accessResource.error.value
   && access.value.subscription_id === selectedSubscriptionID.value)
 const loading = computed(() => listLoading.value || metadataLoading.value || accessLoading.value || templateLoading.value || protocolLoadResource.loading.value)
-const error = computed(() => listError.value || automaticRowError.value || selectedNotice.value || selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value || templateResource.error.value)
+const contextError = computed(() => selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value)
 const subscriptionUrl = computed(() => accessReady.value
   ? buildSubscriptionURL(access.value.subscription_url ? new URL(access.value.subscription_url, window.location.origin).toString() : '', selectedTemplate.value)
   : '')
@@ -412,7 +477,34 @@ function exhaustedMessage(sub: AdminSubscriptionListItem) {
 
 function selectDefaultSubscription() {
   if (selectedSubscriptionID.value) return
-  selectedSubscriptionID.value = activeSubscriptions.value[0]?.id || 0
+  selectedSubscriptionID.value = activeSubscriptions.value.find(item => item.status === 'active' && !item.ended_at && !retiredSubscriptions.has(item.id))?.id || 0
+}
+
+function openTermination(sub: AdminSubscriptionListItem) {
+  terminationTarget.value = { id: sub.id, name: sub.plan_name || '套餐' }
+}
+function refundLabel(receipt: SubscriptionTerminationReceipt) {
+  const amount = walletMajor(receipt.amount_minor)
+  return receipt.currency === 'CNY' ? `¥${amount}` : `${receipt.currency} ${amount}`
+}
+async function onTerminated(receipt: SubscriptionTerminationReceipt) {
+  const target = terminationTarget.value
+  if (!target || receipt.subscription_id !== target.id) return
+  const identity = identityScope()
+  retiredSubscriptions.add(target.id)
+  clearTimeout(pickerTimer)
+  terminationResult.value = { name: target.name, receipt }
+  terminationTarget.value = null
+  terminationBusy.value = false
+  // Known successful cancellation is a context transition, not a failed GET.
+  // Invalidate old credentials before any refresh or navigation can complete.
+  if (selectedSubscriptionID.value === target.id) {
+    selectedSubscriptionID.value = 0
+    activeSubscriptionResource.reset()
+    await syncURL(true)
+  }
+  pickerResource.reset()
+  if (!disposed && identity === identityScope()) await loadAll()
 }
 
 async function loadAccess() {
@@ -507,9 +599,10 @@ async function syncURL(replace = false) {
 }
 
 async function selectSubscription(subscriptionID: number) {
-  if (working.value) return
-  if (subscriptionID === selectedSubscriptionID.value) { focusAccess(); return }
+  if (working.value || terminationBusy.value || retiredSubscriptions.has(subscriptionID)) return
+  if (subscriptionID === selectedSubscriptionID.value) { restorePicker(); focusAccess(); return }
   selectedSubscriptionID.value = subscriptionID
+  restorePicker()
   message.value = ''
   const settled = Promise.all([syncURL(), loadAccess()])
   await nextTick()
@@ -621,13 +714,19 @@ watch([() => app.user?.id || 0, () => app.sessionEpoch], () => {
   automaticRowError.value = ''
   resetSubscriptions()
   activeSubscriptionResource.reset()
+  clearTimeout(pickerTimer)
+  pickerResource.reset()
+  pickerValue.value = null
+  retiredSubscriptions.clear()
   selectedSubscriptionResource.reset()
   accessResource.reset()
   templateResource.reset()
   protocolLoadResource.reset()
   selectedNotice.value = ''
   selectedUnavailable.value = false
-  terminationTarget.value = 0
+  terminationTarget.value = null
+  terminationBusy.value = false
+  terminationResult.value = null
   automaticTarget.value = null
   confirmOpen.value = false
   message.value = ''
@@ -661,6 +760,7 @@ onMounted(() => {
   }, protocolLoadRefreshIntervalMS)
 })
 onBeforeUnmount(() => {
+  clearTimeout(pickerTimer)
   automaticRowController?.abort()
   disposed = true
   selectionGeneration += 1
@@ -677,6 +777,18 @@ onBeforeUnmount(() => {
 
 .subscription-access-panel { scroll-margin-top: 100px; }
 .subscription-access-panel:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.access-selection { display: grid; gap: 12px; padding-bottom: 0; margin-bottom: 16px; }
+.access-selection > .form-field { width: min(100%, 480px); }
+.access-picker-error { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 13px; }
+.access-empty { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+.access-empty:empty { display: none; }
+.subscription-completed { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.subscription-completed > .ui-icon { color: var(--success); flex: none; }
+.subscription-completed > span { overflow-wrap: anywhere; }
+.subscription-completed > a { white-space: nowrap; }
+.subscription-completed > button { margin-left: auto; flex: none; }
+.access-picker-option { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.access-picker-option small { color: var(--muted); font-size: 12px; }
 .subscription-options, .subscription-diagnostics { padding-top: 12px; }
 .subscription-options summary, .subscription-diagnostics summary { width: fit-content; cursor: pointer; font-size: 13px; color: var(--foreground); }
 .subscription-options summary:focus-visible, .subscription-diagnostics summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
@@ -740,6 +852,11 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
+  .access-selection > .form-field { width: 100%; }
+  .subscription-completed { display: grid; grid-template-columns: 16px minmax(0, 1fr) 32px; gap: 4px 8px; }
+  .subscription-completed > span { grid-column: 2; min-width: 0; }
+  .subscription-completed > a { grid-column: 2; grid-row: 2; width: fit-content; }
+  .subscription-completed > button { grid-column: 3; grid-row: 1; }
   .subscription-access-context { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inline-filter { grid-template-columns: 1fr; }
   .access-template-picker > .form-field { min-width: 0; flex-basis: 170px; }

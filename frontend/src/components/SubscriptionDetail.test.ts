@@ -98,3 +98,17 @@ it('keeps ended subscriptions readable and hides quota mutations', async () => {
   expect(view.text()).toContain('重置设置')
   expect(view.find('form').exists()).toBe(false)
 })
+it('offers a unified editor for expiry, reset date and quota without financial reads', async () => {
+  const view = await open()
+  await view.get('#subscription-edit-all').trigger('click')
+  expect(view.getComponent(SubscriptionQuotaEditor).props('mode')).toBe('all')
+  expect(view.find('#subscription-end-at').exists()).toBe(true)
+  expect(view.find('#subscription-next-reset-at').exists()).toBe(true)
+  expect(view.findAllComponents(ByteSizeInput)).toHaveLength(3)
+  expect(fetchAdministrativeSubscriptionValue).not.toHaveBeenCalled()
+})
+it('allows editing expiry to recover a retained expired subscription', async () => {
+  const view = await open({ ...sub, status: 'expired', ended_at: '2026-10-01T00:00:00Z', end_reason: 'expired' })
+  await view.get('#subscription-edit-all').trigger('click')
+  expect(view.find('#subscription-end-at').exists()).toBe(true)
+})

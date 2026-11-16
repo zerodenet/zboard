@@ -116,6 +116,17 @@ the shared menu and protocol telemetry in a collapsed section. Credential
 generation, rotation and revocation keep their existing confirmation and
 subscription-isolation rules.
 
+Keep the active-plan selector next to the link, with server-side search and
+pagination rather than preloading every subscription. An unavailable deep link
+shows a local selection notice and never silently returns another plan's
+credentials. A confirmed cancellation of the selected plan clears its URL and
+credentials immediately, then selects a remaining active plan after a fresh
+read. Canceling another plan preserves the current context. A failed refresh
+must retain the successful financial result and expose a read-only retry.
+Cancellation uses a focused dialog with the plan name, refund and destructive
+confirmation. Close it after success; show a short result with a wallet-history
+link. Settlement IDs and node revocation diagnostics belong in optional details.
+
 ## Plugin lists
 
 The market and installed-plugin lists use the same capsule search and filters,
@@ -135,6 +146,13 @@ links with a title only when clipped; descriptions use measured `TableText`
 expansion instead of stretching every card to fit an entire document.
 
 ## Account centre
+
+Navigation groups use one trigger containing both the name and chevron; include
+the group's landing page in the dropdown alongside its other pages. A single
+page remains a direct link. All labels, order and plugin pages follow the server
+menu. The owned-plan section in the purchase catalog starts collapsed as a
+compact surface: summarize one plan by name and billing option, or multiple
+plans by a labeled count. Put read failures and retry beside this section.
 
 Use the real `AccountLayout` when reviewing customer pages, with its navigation,
 content width and responsive table containers. A shared-component fixture alone
@@ -157,3 +175,9 @@ shown once with nearby quota/expiry and copy action; keep technical options
 collapsed. Announcement content stays flat, readable and without decorative
 rank numbers or shadows. Connection instructions for integrations are opt-in;
 one-time secret handling and revocation consequences stay explicit.
+
+### 订阅模板工作区
+
+模板使用整页编辑：桌面左侧配置、右侧预览，窄屏切换“编辑 / 预览”，切换不卸载表单、不丢草稿。返回列表恢复筛选、位置和触发按钮焦点。
+
+预览在停止输入 450ms 后调用现有后端渲染器，只接受当前身份、当前草稿的最新结果；失败保留上次结果并停止导出。分组效果从最终正文提取，Raw 展示原始 JSON/YAML，支持查找、复制和下载，不做日志文本清洗。Zero 同时提供 JSON 配置正文与 Base64 订阅正文。实际订阅样本复用授权节点投影并替换凭据，不生成凭据、不入库。自动预览不启动内核校验，显式保存仍完整校验并检查修订版本。

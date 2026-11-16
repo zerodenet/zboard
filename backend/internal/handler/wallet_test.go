@@ -54,8 +54,14 @@ func assertWalletTopUp(t *testing.T, f orderFixture, mysql bool) {
 	if order.PlanID != 0 || order.PlanSKUID != 0 || order.SubscriptionID != 0 || order.OrderType != "topup" {
 		t.Fatal("topup invented product or entitlement")
 	}
-	if out := f.pay(t, order.ID, false); out.Code != http.StatusBadRequest {
-		t.Fatalf("unverified administrator transition created cash: %d", out.Code)
+	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if out := f.pay(t, order.ID, false); out.Code != http.StatusForbidden {
+		t.Fatalf("buyer confirmed their own receipt: %d", out.Code)
+	}
+	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", true).Error; err != nil {
+		t.Fatal(err)
 	}
 	issued, err := f.h.services.Integrations().Issue(t.Context(), 1, identity.IntegrationIssue{Name: "trusted receipt", Scopes: []string{"commerce.payments.record"}, ExpiresAt: time.Now().UTC().Add(time.Hour)})
 	if err != nil {

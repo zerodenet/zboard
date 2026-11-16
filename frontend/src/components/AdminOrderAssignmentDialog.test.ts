@@ -130,3 +130,50 @@ describe('administrator order assignment', () => {
     resolve({ id: 81 }); await flushPromises(); wrapper.unmount()
   })
 })
+
+async function fillChange(wrapper: ReturnType<typeof render>) {
+  await flushPromises()
+  wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 'change'); await flushPromises()
+  findLookup(wrapper, 'assign-target').vm.$emit('update:modelValue', { id: 30, label: '原订阅', planId: 11 }); await flushPromises()
+  await fill(wrapper)
+}
+function createButton(wrapper: ReturnType<typeof render>) { return wrapper.findAll('button').find(button => button.text() === '创建待付款订单')! }
+it('does not display a price or waiting-for-payment state when the historical quote fails', async () => {
+  mocks.preview.mockRejectedValue({ response: { status: 400, data: { message: '原订阅的实付、周期或权益依据待核对，暂不能自动换购。' } } })
+  const wrapper = render(); await fillChange(wrapper)
+  expect(wrapper.text()).toContain('报价失败')
+  expect(wrapper.text()).not.toContain('等待用户付款')
+  expect(wrapper.findComponent(MoneyInput).exists()).toBe(false)
+  expect(createButton(wrapper).attributes('disabled')).toBeDefined()
+  await wrapper.get('form').trigger('submit'); expect(mocks.assign).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+it('blocks a stale successful quote during refresh and after failure, then uses the newly confirmed price', async () => {
+  const wrapper = render(); await fillChange(wrapper)
+  let reject!: (cause: unknown) => void
+  mocks.preview.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+  const retry = (wrapper.vm as any).loadQuote(); await flushPromises()
+  expect(wrapper.text()).toContain('正在计算应付金额')
+  expect(createButton(wrapper).attributes('disabled')).toBeDefined()
+  await wrapper.get('form').trigger('submit'); expect(mocks.assign).not.toHaveBeenCalled()
+  reject(new Error('offline')); await retry; await flushPromises()
+  expect(wrapper.findComponent(MoneyInput).exists()).toBe(false)
+  await wrapper.get('form').trigger('submit'); expect(mocks.assign).not.toHaveBeenCalled()
+  mocks.preview.mockResolvedValueOnce({ payable_amount: 800, currency: 'CNY', quote_fingerprint: 'fresh-quote' })
+  await wrapper.findAll('button').find(button => button.text() === '重新报价')!.trigger('click'); await flushPromises()
+  expect(wrapper.getComponent(MoneyInput).props('modelValue')).toBe(800)
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(mocks.assign).toHaveBeenCalledWith(expect.objectContaining({ payable_amount: 800, quote_fingerprint: 'fresh-quote' }))
+  wrapper.unmount()
+})
+it('ignores late quotes after selecting another SKU and blocks submission after closing', async () => {
+  let resolve!: (quote: unknown) => void
+  mocks.preview.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  const wrapper = render(); await fillChange(wrapper)
+  findLookup(wrapper, 'assign-sku').vm.$emit('update:modelValue', { id: 19, label: '年付', sku: { price_cents: 22000, currency: 'CNY' } }); await flushPromises()
+  resolve({ payable_amount: 999, currency: 'CNY', quote_fingerprint: 'old' }); await flushPromises()
+  expect(wrapper.getComponent(MoneyInput).props('modelValue')).toBe(1000)
+  await wrapper.setProps({ open: false }); await wrapper.get('form').trigger('submit')
+  expect(mocks.assign).not.toHaveBeenCalled()
+  wrapper.unmount()
+})

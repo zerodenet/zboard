@@ -62,6 +62,7 @@ type subscriptionPolicyGroup struct {
 	IncludeDirect  *bool    `json:"include_direct,omitempty"`
 	IncludeReject  *bool    `json:"include_reject,omitempty"`
 	DefaultGroup   string   `json:"default_group,omitempty"`
+	DefaultTarget  string   `json:"default_target,omitempty"`
 	ProbeURL       string   `json:"probe_url,omitempty"`
 	Interval       int      `json:"interval,omitempty"`
 	Tolerance      int      `json:"tolerance,omitempty"`
@@ -410,6 +411,15 @@ func normalizeSubscriptionPolicyGroups(renderer string, customization *subscript
 			group.ProbeURL = defaultSubscriptionProbeURL
 		}
 		group.DefaultGroup = strings.ToLower(strings.TrimSpace(group.DefaultGroup))
+		group.DefaultTarget = strings.ToLower(strings.TrimSpace(group.DefaultTarget))
+		if group.DefaultGroup != "" {
+			legacyTarget := "group:" + group.DefaultGroup
+			if group.DefaultTarget != "" && group.DefaultTarget != legacyTarget {
+				return fmt.Errorf("策略组 %q 的默认选中项与旧默认子策略组冲突", group.Name)
+			}
+			group.DefaultTarget = legacyTarget
+			group.DefaultGroup = ""
+		}
 		if !subscriptionPolicyGroupIDPattern.MatchString(group.ID) {
 			return fmt.Errorf("第 %d 个策略组标识只能使用小写字母、数字和连字符", index+1)
 		}
@@ -492,12 +502,24 @@ func normalizeSubscriptionPolicyGroups(renderer string, customization *subscript
 			normalizedIncludes = append(normalizedIncludes, included)
 		}
 		group.IncludeGroups = normalizedIncludes
-		if group.DefaultGroup != "" {
+		if group.DefaultTarget != "" {
 			if group.Type != "select" {
-				return fmt.Errorf("只有 select 策略组可以设置默认子策略组")
+				return fmt.Errorf("只有 select 策略组可以设置默认选中项")
 			}
-			if _, exists := seenIncludes[group.DefaultGroup]; !exists {
-				return fmt.Errorf("策略组 %q 的默认子策略组必须先加入包含列表", group.Name)
+			switch group.DefaultTarget {
+			case subscriptionTargetDirect:
+				if !subscriptionPolicyGroupIncludesDirect(*group) {
+					return fmt.Errorf("策略组 %q 需要先包含 DIRECT 才能默认直连", group.Name)
+				}
+			case subscriptionTargetReject:
+				if renderer == subscriptionRendererSingBox || !subscriptionPolicyGroupIncludesReject(*group) {
+					return fmt.Errorf("策略组 %q 当前不能默认选择 REJECT", group.Name)
+				}
+			default:
+				groupID, valid := strings.CutPrefix(group.DefaultTarget, "group:")
+				if _, exists := seenIncludes[groupID]; !valid || !exists {
+					return fmt.Errorf("策略组 %q 的默认选中项必须先加入成员列表", group.Name)
+				}
 			}
 		}
 	}

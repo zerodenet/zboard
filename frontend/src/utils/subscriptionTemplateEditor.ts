@@ -298,6 +298,16 @@ export function setSubscriptionPolicyGroupSpecialTarget(
   const editable = group as EditableSubscriptionPolicyGroup
   if (target === 'direct') editable.include_direct = enabled
   else editable.include_reject = enabled
+  if (!enabled && subscriptionPolicyGroupDefaultTarget(group) === target) setSubscriptionPolicyGroupDefaultTarget(group, '')
+}
+
+export function subscriptionPolicyGroupDefaultTarget(group: SubscriptionPolicyGroup) {
+  return group.default_target || (group.default_group ? `group:${group.default_group}` : '')
+}
+
+export function setSubscriptionPolicyGroupDefaultTarget(group: SubscriptionPolicyGroup, target: string) {
+  group.default_target = target
+  group.default_group = ''
 }
 
 export function initializeSubscriptionPolicyGroupSpecialTargets(group: SubscriptionPolicyGroup) {
@@ -374,6 +384,7 @@ function normalizeSubscriptionPolicyGroup(value: Record<string, any>, index: num
     exclude_pattern: String(value?.exclude_pattern || ''),
     include_groups: Array.isArray(value?.include_groups) ? value.include_groups.map(String) : [],
     default_group: String(value?.default_group || ''),
+    default_target: String(value?.default_target || ''),
     probe_url: String(value?.probe_url || ''),
     interval: Number(value?.interval || 300),
     tolerance: Number(value?.tolerance || 0),

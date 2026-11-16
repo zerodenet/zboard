@@ -14,7 +14,7 @@ import (
 func entitlementValueState(sub model.Subscription) commerce.EntitlementValueState {
 	return commerce.EntitlementValueState{PlanID: sub.PlanID, PlanSKUID: sub.PlanSKUID, StartAt: sub.StartAt, EndAt: sub.EndAt, Status: sub.Status, EndedAt: sub.EndedAt, EndReason: sub.EndReason, FlowTotal: sub.FlowTotal, FlowUsed: sub.FlowUsed, CycleStartUsed: sub.CycleStartUsed, ResetQuotaBytes: sub.ResetQuotaBytes, ResetPolicy: sub.ResetPolicy, NextResetAt: sub.NextResetAt}
 }
-func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscription, previous *model.Subscription, verified bool, now time.Time) error {
+func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscription, previous *model.Subscription, now time.Time) error {
 	// Read the authoritative persisted timestamps too: MySQL stores datetime(3),
 	// while a Go grant may still carry nanoseconds before its write is rounded.
 	var persisted model.Subscription
@@ -25,10 +25,7 @@ func captureEntitlementValue(tx *gorm.DB, order *model.Order, sub model.Subscrip
 	if order.EntitlementValueSnapshot != "" {
 		return fmt.Errorf("unpaid order already contains entitlement value evidence")
 	}
-	snap := commerce.EntitlementValueSnapshot{Version: 1, OrderID: order.ID, SubscriptionID: sub.ID, Currency: order.Currency, ActualPaidMinor: order.PayableAmount, PaymentVerified: verified, PaymentBasis: "manual_record_unverified", Kind: order.OrderType, Mode: "unsupported_legacy_effect", CapturedAt: now, TermStartAt: now, TermEndAt: sub.EndAt, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, AllocationModel: "uniform_paid_units_v1", After: entitlementValueState(sub)}
-	if verified {
-		snap.PaymentBasis = "verified_cash_or_wallet"
-	}
+	snap := commerce.EntitlementValueSnapshot{Version: 1, OrderID: order.ID, SubscriptionID: sub.ID, Currency: order.Currency, ActualPaidMinor: order.PayableAmount, PaymentVerified: true, PaymentBasis: "verified_cash_or_wallet", Kind: order.OrderType, Mode: "unsupported_legacy_effect", CapturedAt: now, TermStartAt: now, TermEndAt: sub.EndAt, BillingUnit: order.BillingUnit, BillingValue: order.BillingValue, AllocationModel: "uniform_paid_units_v1", After: entitlementValueState(sub)}
 	if order.PayableAmount == 0 {
 		snap.PaymentVerified = true
 		snap.PaymentBasis = "zero_additional_payment"

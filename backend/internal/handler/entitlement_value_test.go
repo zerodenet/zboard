@@ -55,14 +55,14 @@ func assertActualEntitlementValueCapture(t *testing.T, f orderFixture) {
 	if string(original) != string(replay) {
 		t.Fatal("payment replay or catalog edit rewrote paid value evidence")
 	}
-	// A manual grant remains a manual record; it is not invented verified cash.
+	// An authorized administrator confirms actual receipt, not an unverified grant.
 	manual := f.create(t, 0)
 	if out := f.pay(t, manual.ID, false); out.Code != 200 {
 		t.Fatal(out.Body.String())
 	}
 	manualValue := readValueEvidence(t, f, manual.ID)
-	if manualValue.PaymentVerified || manualValue.PaymentBasis != "manual_record_unverified" || len(manualValue.PaidPeriods) != 0 {
-		t.Fatalf("manual assignment invented verified cash: %+v", manualValue)
+	if !manualValue.PaymentVerified || manualValue.PaymentBasis != "verified_cash_or_wallet" || len(manualValue.PaidPeriods) != 1 || manualValue.ActualPaidMinor != manual.PayableAmount {
+		t.Fatalf("administrator receipt failed to capture complete paid evidence: %+v", manualValue)
 	}
 	raw, _ := json.Marshal(commerce.Order(model.Order{EntitlementValueSnapshot: string(original)}))
 	if strings.Contains(string(raw), "entitlement_value_snapshot") || strings.Contains(string(raw), "payment_verified") {

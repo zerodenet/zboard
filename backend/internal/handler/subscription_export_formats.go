@@ -77,13 +77,14 @@ func renderZnetSinkSubscription(data subscriptionTemplateData, customization sub
 			return "", err
 		}
 		members = appendPermanentSelectionTargets(subscriptionRendererZnetSink, group, members)
+		members = prioritizeSubscriptionDefault(subscriptionRendererZnetSink, group, members, groupNames)
 		rendered := map[string]interface{}{
 			"tag": group.Name, "type": zeroSubscriptionPolicyGroupType(group.Type), "outbounds": members,
 		}
 		switch group.Type {
 		case "select":
-			if group.DefaultGroup != "" {
-				rendered["default"] = groupNames[group.DefaultGroup]
+			if selected := subscriptionPolicyGroupDefaultTag(subscriptionRendererZnetSink, group, groupNames); selected != "" {
+				rendered["default"] = selected
 			}
 		case "urltest":
 			rendered["url"] = group.ProbeURL
@@ -170,6 +171,7 @@ func renderClashSubscription(data subscriptionTemplateData, customization subscr
 			return "", err
 		}
 		members = appendPermanentSelectionTargets(subscriptionRendererClash, group, members)
+		members = prioritizeSubscriptionDefault(subscriptionRendererClash, group, members, groupNames)
 		rendered := clashSubscriptionGroup{
 			Name: group.Name, Type: clashSubscriptionPolicyGroupType(group.Type), Proxies: members,
 		}
@@ -344,11 +346,14 @@ func renderSingBoxSubscription(data subscriptionTemplateData, customization subs
 			return "", err
 		}
 		members = appendPermanentSelectionTargets(subscriptionRendererSingBox, group, members)
+		members = prioritizeSubscriptionDefault(subscriptionRendererSingBox, group, members, groupNames)
 		rendered := map[string]interface{}{
 			"type": singBoxSubscriptionPolicyGroupType(group.Type), "tag": group.Name, "outbounds": members,
 		}
-		if group.Type == "select" && group.DefaultGroup != "" {
-			rendered["default"] = groupNames[group.DefaultGroup]
+		if group.Type == "select" {
+			if selected := subscriptionPolicyGroupDefaultTag(subscriptionRendererSingBox, group, groupNames); selected != "" {
+				rendered["default"] = selected
+			}
 		}
 		if group.Type == "urltest" {
 			rendered["url"] = group.ProbeURL
@@ -447,10 +452,52 @@ func subscriptionPolicyGroupMembers(
 		members = append(members, tag)
 	}
 	members = uniqueSubscriptionTargets(members)
-	if len(members) == 0 {
+	if len(members) == 0 && !(group.Type == "select" && (subscriptionPolicyGroupIncludesDirect(group) || subscriptionPolicyGroupIncludesReject(group))) {
 		return nil, fmt.Errorf("策略组 %q 没有匹配任何协议配置名称，也没有包含其他策略组", group.Name)
 	}
 	return members, nil
+}
+
+func subscriptionPolicyGroupDefaultTarget(group subscriptionPolicyGroup) string {
+	if group.DefaultTarget != "" {
+		return group.DefaultTarget
+	}
+	if group.DefaultGroup != "" {
+		return "group:" + group.DefaultGroup
+	}
+	return ""
+}
+
+func subscriptionPolicyGroupDefaultTag(renderer string, group subscriptionPolicyGroup, names map[string]string) string {
+	if group.Type != "select" {
+		return ""
+	}
+	target := subscriptionPolicyGroupDefaultTarget(group)
+	direct, reject := subscriptionSelectionTargets(renderer)
+	switch target {
+	case subscriptionTargetDirect:
+		return direct
+	case subscriptionTargetReject:
+		return reject
+	default:
+		return names[strings.TrimPrefix(target, "group:")]
+	}
+}
+
+func prioritizeSubscriptionDefault(renderer string, group subscriptionPolicyGroup, members []string, names map[string]string) []string {
+	selected := subscriptionPolicyGroupDefaultTag(renderer, group, names)
+	if selected == "" {
+		return members
+	}
+	// Clash uses member order; Zero and sing-box also receive an explicit default.
+	for index, member := range members {
+		if member == selected {
+			copy(members[1:index+1], members[:index])
+			members[0] = selected
+			break
+		}
+	}
+	return members
 }
 
 func compileOptionalSubscriptionPattern(pattern string) (*regexp.Regexp, error) {

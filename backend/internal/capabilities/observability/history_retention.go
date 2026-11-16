@@ -60,13 +60,14 @@ type HistoryPolicy struct {
 }
 
 func HistoryPolicies() []HistoryPolicy {
-	return []HistoryPolicy{
-		{AuditLogs, AuditLogRetentionKey, 180}, {Tasks, TaskRetentionKey, 90},
-		{NodeOperations, OperationRetentionKey, 90}, {ProtocolDeployments, OperationRetentionKey, 90},
-		{ArchivedFlowCursors, ArchiveCursorRetentionKey, 7},
-		{PeriodicSuccess, PeriodicSuccessRetentionKey, 7}, {PeriodicFailure, PeriodicFailureRetentionKey, 30},
+	policies := []HistoryPolicy{{AuditLogs, AuditLogRetentionKey, 0}, {Tasks, TaskRetentionKey, 0}, {NodeOperations, OperationRetentionKey, 0}, {ProtocolDeployments, OperationRetentionKey, 0}, {ArchivedFlowCursors, ArchiveCursorRetentionKey, 0}, {PeriodicSuccess, PeriodicSuccessRetentionKey, 0}, {PeriodicFailure, PeriodicFailureRetentionKey, 0}}
+	for i := range policies {
+		setting, _ := RetentionSettingFor(policies[i].Key)
+		policies[i].DefaultDays = setting.Default
 	}
+	return policies
 }
+
 func (s HistoryRetention) cutoff(ctx context.Context, now time.Time, target HistoryTarget) (time.Time, error) {
 	for _, policy := range HistoryPolicies() {
 		if policy.Target == target {

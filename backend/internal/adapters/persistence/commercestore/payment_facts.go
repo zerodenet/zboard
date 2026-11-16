@@ -170,7 +170,7 @@ func (s PaymentFacts) applyReceipt(tx *gorm.DB, order *model.Order, receipt *mod
 	if reviewed, err := preserveReceiptWithDamagedDiscountAuthority(tx, *order, receipt); reviewed || err != nil {
 		return err
 	}
-	if order.PaidAmount > 0 && order.ProviderTradeNo == nil && order.Channel != "wallet" && order.OrderType != "topup" {
+	if order.PaidAmount > 0 && order.ProviderTradeNo == nil && order.Channel != "wallet" {
 		// Legacy/manual payment has no verifiable channel receipt identity. Keep
 		// collected money visible for reconciliation; never invent a second value.
 		receipt.Disposition = "review_required"

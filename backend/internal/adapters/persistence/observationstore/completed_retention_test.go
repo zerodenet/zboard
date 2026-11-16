@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestCompletedReceiptGCProtectsPinnedAndInvalidEvidence(t *testing.T) {
+func TestCompletedReceiptGCProtectsCurrentStateWithoutRetainingExpiredAuxiliaryProofs(t *testing.T) {
 	a, _, node := mailboxFixture(t)
 	if e := a.Model(&model.NodeObservationMaterialBudget{}).Where("id = 1").Update("retained_bytes", MaterialCapacityBytes).Error; e != nil {
 		t.Fatal(e)
@@ -35,7 +35,7 @@ func TestCompletedReceiptGCProtectsPinnedAndInvalidEvidence(t *testing.T) {
 		var count int64
 		a.Model(&model.NodeObservationIntent{}).Where("id = ?", id).Count(&count)
 		want := int64(1)
-		if i == 0 {
+		if i != 1 {
 			want = 0
 		}
 		if count != want {

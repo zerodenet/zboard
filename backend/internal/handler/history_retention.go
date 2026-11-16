@@ -17,9 +17,9 @@ const (
 	taskRetentionKey          = observability.TaskRetentionKey
 	systemTimezoneKey         = "system_timezone"
 	defaultSystemTimezone     = "UTC"
-	defaultAuditRetentionDays = 180
-	defaultOperationRetention = 90
-	defaultTaskRetentionDays  = 90
+	defaultAuditRetentionDays = observability.DefaultAuditRetentionDays
+	defaultOperationRetention = observability.DefaultOperationRetentionDays
+	defaultTaskRetentionDays  = observability.DefaultTaskRetentionDays
 	historyRetentionMaxDays   = observability.RetentionMaxDays
 )
 

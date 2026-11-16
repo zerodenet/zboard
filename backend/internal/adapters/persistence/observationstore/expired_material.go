@@ -27,6 +27,11 @@ func (s MaterialRetention) HasPending(ctx context.Context) (bool, error) {
 	if s.DB == nil {
 		return false, errors.New("observation retention unavailable")
 	}
+	var policyErr error
+	s, policyErr = s.withPolicy(ctx)
+	if policyErr != nil {
+		return false, policyErr
+	}
 	now := s.retentionNow()
 	var id struct{ IntentID string }
 	q := s.DB.WithContext(ctx).Model(&model.NodeObservationRetirement{}).Select("intent_id").Where("state IN ? AND review_at <= ?", []string{"verifying", "deleting"}, now).Limit(1).Scan(&id)
@@ -34,9 +39,11 @@ func (s MaterialRetention) HasPending(ctx context.Context) (bool, error) {
 		return q.RowsAffected > 0, q.Error
 	}
 	var h struct{ ID string }
-	q = s.DB.WithContext(ctx).Model(&model.NodeObservationIntent{}).Select("id").Where("status IN ? AND material_retired_at IS NULL AND material_review_at <= ?", []string{"pending", "held", "claimed"}, now).Limit(1).Scan(&h)
-	if q.Error != nil || q.RowsAffected > 0 {
-		return q.RowsAffected > 0, q.Error
+	if s.materialAge() > 0 {
+		q = s.DB.WithContext(ctx).Model(&model.NodeObservationIntent{}).Select("id").Where("status IN ? AND material_retired_at IS NULL AND material_review_at <= ?", []string{"pending", "held", "claimed"}, now).Limit(1).Scan(&h)
+		if q.Error != nil || q.RowsAffected > 0 {
+			return q.RowsAffected > 0, q.Error
+		}
 	}
 	pending, e := s.hasAppliedPending(ctx)
 	if pending || e != nil {
@@ -47,6 +54,11 @@ func (s MaterialRetention) HasPending(ctx context.Context) (bool, error) {
 func (s MaterialRetention) Retire(ctx context.Context, limit int, budget int64) (out MaterialRetentionResult, err error) {
 	if s.DB == nil || limit < 1 || limit > MaterialRetentionLimit || budget < MaxApplyBytes || budget > MaxDrainBytes {
 		return out, errors.New("invalid observation retention budget")
+	}
+	var policyErr error
+	s, policyErr = s.withPolicy(ctx)
+	if policyErr != nil {
+		return out, policyErr
 	}
 	if e := s.pruneCompleted(ctx); e != nil {
 		return out, e
@@ -184,8 +196,11 @@ func (s MaterialRetention) expireStep(ctx context.Context, now time.Time, budget
 			if h.MaterialRetiredAt != nil || h.CreatedAt.IsZero() || h.UpdatedAt.Before(h.CreatedAt) || h.CreatedAt.After(now) || h.UpdatedAt.After(now) {
 				return quarantine("invalid observation lifecycle")
 			}
-			if h.CreatedAt.Add(MaterialMinimumAge).After(now) {
-				return s.deferExpired(tx, h, h.CreatedAt.Add(MaterialMinimumAge))
+			if s.materialAge() == 0 {
+				return s.deferExpired(tx, h, now.Add(MaterialReviewDelay))
+			}
+			if h.CreatedAt.Add(s.materialAge()).After(now) {
+				return s.deferExpired(tx, h, h.CreatedAt.Add(s.materialAge()))
 			}
 			if h.Reason == "unattributed_legacy_floor" {
 				return s.deferExpired(tx, h, now.Add(MaterialReviewDelay))

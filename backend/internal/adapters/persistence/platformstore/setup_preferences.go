@@ -2,6 +2,7 @@ package platformstore
 
 import (
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -9,40 +10,11 @@ import (
 )
 
 func SetupPreferenceDefinitions() []model.SystemConfig {
-	return []model.SystemConfig{
-		{ConfigKey: "periodic_success_retention_days", Name: "成功周期任务保留天数", Value: "7", ValueType: "int", Description: "已结束的周期任务执行记录；不影响运营任务、显式提交幂等键或当前任务。0 表示永久保留。", Revision: 1},
-		{ConfigKey: "periodic_failure_retention_days", Name: "失败周期任务保留天数", Value: "30", ValueType: "int", Description: "已确认失败或取消的周期任务；结果不明和中断的执行证据保留。0 表示永久保留。", Revision: 1},
-		{ConfigKey: "archived_flow_cursor_retention_days", Name: "归档节点计费游标保留天数", Value: "7", ValueType: "int", Description: "仅回收永久归档且凭证已撤销节点的累计游标；结算汇总与报告去重身份独立保留；图表与账本明细按各自策略淘汰。0 表示永久保留。", Revision: 1},
-		{
-			ConfigKey:   "audit_log_retention_days",
-			Name:        "审计日志保留天数",
-			Value:       strconv.Itoa(180),
-			ValueType:   "int",
-			Description: "超过该天数的审计日志会自动清理；0 表示永久保留。",
-			IsPublic:    false,
-			IsSecret:    false,
-			Revision:    1,
-		},
-		{
-			ConfigKey:   "operation_history_retention_days",
-			Name:        "运行历史保留天数",
-			Value:       strconv.Itoa(90),
-			ValueType:   "int",
-			Description: "超过该天数且已结束的节点操作、协议发布、证书与供应商操作会自动清理；0 表示永久保留。",
-			IsPublic:    false,
-			IsSecret:    false,
-			Revision:    1,
-		},
-		{
-			ConfigKey:   "task_history_retention_days",
-			Name:        "运营任务保留天数",
-			Value:       strconv.Itoa(90),
-			ValueType:   "int",
-			Description: "超过该天数且已完成的运营任务及任务项会自动清理；0 表示永久保留。",
-			IsPublic:    false,
-			IsSecret:    false,
-			Revision:    1,
-		},
+	defaults := []model.SystemConfig{}
+	for _, setting := range observability.RetentionSettings() {
+		defaults = append(defaults, model.SystemConfig{ConfigKey: setting.Key, Name: setting.Name, Value: strconv.Itoa(setting.Default), ValueType: "int", Description: setting.Description, Revision: 1})
+	}
+	return append(defaults, []model.SystemConfig{
 		{
 			ConfigKey:   "system_timezone",
 			Name:        "系统时区",
@@ -53,7 +25,7 @@ func SetupPreferenceDefinitions() []model.SystemConfig {
 			IsSecret:    false,
 			Revision:    1,
 		},
-	}
+	}...)
 }
 
 func upsertSetupSystemPreferences(tx *gorm.DB, preferences platform.SetupPreferences) error {

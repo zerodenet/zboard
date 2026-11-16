@@ -49,7 +49,7 @@ async function fillRequired() {
 describe('managed rule set editor', () => {
   it('defaults remote imports to auto detection and explains process compatibility', async () => {
     await render()
-    expect(wrapper!.text()).toContain('不能绑定 Zero 模板')
+    expect(wrapper!.text()).toContain('Zero 订阅格式暂不支持')
     const mode = wrapper!.findAllComponents(UiSelect).find(select =>
       (select.props('options') as Array<{ value: string }>).some(option => option.value === 'remote'))!
     mode.vm.$emit('update:modelValue', 'remote')

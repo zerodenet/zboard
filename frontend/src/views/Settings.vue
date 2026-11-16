@@ -178,6 +178,9 @@
           <UiSection id="account-cleanup" title="账号自动清理" description="默认0关闭。开启后，已有账号也适用；连续无有效订阅达到配置天数后永久删除，无法恢复。管理员、有余额或未结业务的账号受保护，历史结算与流量账本保留。">
             <ConfigRow v-if="accountCleanupConfig" :config="accountCleanupConfig" :draft="drafts[accountCleanupConfig.config_key]" :dirty="configDirty(accountCleanupConfig)" :saving="savingKey === accountCleanupConfig.config_key" :error="configErrors[accountCleanupConfig.config_key]" :conflict="Boolean(configConflicts[accountCleanupConfig.config_key])" @update:draft="updateDraft(accountCleanupConfig.config_key, $event)" @reload="reloadConfig(accountCleanupConfig.config_key)" @save="saveConfig(accountCleanupConfig)" />
           </UiSection>
+          <UiSection v-if="retentionConfigs.length" title="日志与自动清理">
+            <div class="config-list"><ConfigRow v-for="config in retentionConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+          </UiSection>
           <SettingsDisclosure title="部署安全信息">
           <UiSection description="敏感凭证由部署环境管理。">
             <template #meta><UiIcon class="security-header" name="shield" /></template>
@@ -328,12 +331,13 @@ function orderSettings(items: SystemConfig[], order: string[]) {
   return [...items].sort((a,b) => (order.indexOf(a.config_key) < 0 ? order.length : order.indexOf(a.config_key)) - (order.indexOf(b.config_key) < 0 ? order.length : order.indexOf(b.config_key)))
 }
 const alertConfigs = computed(() => orderSettings(operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')), alertFieldOrder))
-const emailConfigs = computed(() => orderSettings(operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)), smtpFieldOrder))
+const emailConfigs = computed(() => orderSettings(operationalConfigs.value.filter(item => !retentionConfigs.value.includes(item) && !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)), smtpFieldOrder))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
 const currencyConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'default_currency'))
 const subscriptionEntryConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'subscription_url_prefix'))
 const accountCleanupConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'user_cleanup_inactive_days'))
 const recoveryConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key === 'subscription_renewal_grace_days'))
+const retentionConfigs = computed(() => operationalConfigs.value.filter(item => /_retention_days$/.test(item.config_key) || item.config_key === 'history_cleanup_interval_minutes'))
 const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && item.config_key !== 'subscription_renewal_grace_days' && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))

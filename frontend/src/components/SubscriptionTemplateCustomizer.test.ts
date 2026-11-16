@@ -1,9 +1,38 @@
 import { mount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { defaultSubscriptionCustomization } from '../utils/subscriptionTemplateEditor'
 import SubscriptionTemplateCustomizer from './SubscriptionTemplateCustomizer.vue'
+import UiSelect from './UiSelect.vue'
+import { subscriptionPolicyGroupDefaultTarget, setSubscriptionPolicyGroupSpecialTarget } from '../utils/subscriptionTemplateEditor'
 
 describe('SubscriptionTemplateCustomizer', () => {
+  it('offers a default even when no other policy group exists', () => {
+    const customization = defaultSubscriptionCustomization('clash')
+    customization.policy_groups = [{ id: 'main', name: '支付服务', type: 'select', include_groups: [] }]
+    const wrapper = mount(SubscriptionTemplateCustomizer, { props: { renderer: 'clash', modelValue: customization } })
+    const picker = wrapper.findAllComponents(UiSelect).find(select => (select.props('options') || []).some(option => option.label === '第一个成员'))!
+    expect((picker.props('options') || []).some(option => option.value === 'direct')).toBe(true)
+    wrapper.unmount()
+  })
+  it.each(['clash', 'sing-box', 'znet-sink'] as const)('selects DIRECT as the default member for %s and clears it when excluded', async renderer => {
+    const customization = reactive(defaultSubscriptionCustomization(renderer))
+    const wrapper = mount(SubscriptionTemplateCustomizer, { props: { renderer, modelValue: customization } })
+    const main = customization.policy_groups[0]
+    const picker = wrapper.findAllComponents(UiSelect).find(select => (select.props('options') || []).some(option => option.label === '第一个成员'))!
+    expect(picker).toBeDefined()
+    expect(picker.props('options')).toEqual(expect.arrayContaining([{ label: 'DIRECT · 直连', value: 'direct' }]))
+    if (renderer === 'sing-box') expect((picker.props('options') || []).some(option => option.value === 'reject')).toBe(false)
+    picker.vm.$emit('update:modelValue', 'direct')
+    await wrapper.vm.$nextTick()
+    expect(subscriptionPolicyGroupDefaultTarget(main)).toBe('direct')
+    expect(main.default_group).toBe('')
+    setSubscriptionPolicyGroupSpecialTarget(main, 'direct', false)
+    await wrapper.vm.$nextTick()
+    expect(subscriptionPolicyGroupDefaultTarget(main)).toBe('')
+    expect((picker.props('options') || []).some(option => option.value === 'direct')).toBe(false)
+    wrapper.unmount()
+  })
   it('hides the desktop proxy setter for TUN clients even when an older template enabled it', async () => {
     const customization = defaultSubscriptionCustomization('sing-box')
     customization.system_proxy = true

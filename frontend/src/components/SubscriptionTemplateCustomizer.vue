@@ -30,7 +30,7 @@
       </div>
 
       <div class="policy-group-list">
-        <section v-for="(group, index) in model.policy_groups" :key="group.id" class="policy-group-row">
+        <section v-for="(group, index) in model.policy_groups" :key="group.id" class="policy-group-row" @focusin="emit('select-group', group.name)" @input="emit('select-group', group.name)">
           <header>
             <div>
               <span class="group-index">{{ index + 1 }}</span>
@@ -94,12 +94,12 @@
             </label>
           </div>
 
-          <div v-if="otherGroups(group.id).length" class="group-reference-editor">
-            <div>
+          <div v-if="otherGroups(group.id).length || group.type === 'select'" class="group-reference-editor">
+            <div v-if="otherGroups(group.id).length">
               <strong>包含其他策略组</strong>
 
             </div>
-            <div class="group-reference-options">
+            <div v-if="otherGroups(group.id).length" class="group-reference-options">
               <label v-for="candidate in otherGroups(group.id)" :key="candidate.id" class="group-reference-option">
                 <UiCheckbox
                   :model-value="(group.include_groups || []).includes(candidate.id)"
@@ -108,9 +108,9 @@
                 <span>{{ candidate.name }}</span>
               </label>
             </div>
-            <FormField v-if="group.type === 'select' && (group.include_groups || []).length" label="默认子策略组" :name="`policy-group-${index}-default`" hint="未指定时使用第一个匹配节点。">
+            <FormField v-if="group.type === 'select'" label="默认选中项" :name="`policy-group-${index}-default`">
               <template #default="{ controlAttrs }">
-                <UiSelect v-model="group.default_group" v-bind="controlAttrs" :options="defaultGroupOptions(group)" placeholder="第一个匹配节点" />
+                <UiSelect :model-value="subscriptionPolicyGroupDefaultTarget(group)" v-bind="controlAttrs" :options="defaultGroupOptions(group)" @update:model-value="setSubscriptionPolicyGroupDefaultTarget(group, $event)" />
               </template>
             </FormField>
           </div>
@@ -231,6 +231,8 @@ import {
   initializeSubscriptionPolicyGroupSpecialTargets,
   nextSubscriptionPolicyGroupID,
   setSubscriptionPolicyGroupSpecialTarget,
+  subscriptionPolicyGroupDefaultTarget,
+  setSubscriptionPolicyGroupDefaultTarget,
   subscriptionPolicyGroupIncludesDirect,
   subscriptionPolicyGroupIncludesReject,
   subscriptionPolicyGroupTypeOptions,
@@ -254,7 +256,7 @@ import UiSelect from './UiSelect.vue'
 import UiTabs from './UiTabs.vue'
 
 const props = withDefaults(defineProps<{ renderer: SubscriptionRenderer | SupportedSubscriptionRenderer; error?: string }>(), { error: '' })
-defineEmits<{ 'raw-error': [value: string] }>()
+const emit = defineEmits<{ 'raw-error': [value: string]; 'select-group': [name: string] }>()
 const model = defineModel<SubscriptionTemplateCustomization>({ required: true })
 const activeTab = ref('basic')
 const tabs = [
@@ -317,7 +319,7 @@ function removePolicyGroup(index: number) {
   if (model.value.final === removedTarget) model.value.final = fallbackTarget
   for (const group of model.value.policy_groups) {
     group.include_groups = (group.include_groups || []).filter(id => id !== removed.id)
-    if (group.default_group === removed.id) group.default_group = ''
+    if (subscriptionPolicyGroupDefaultTarget(group) === removedTarget) setSubscriptionPolicyGroupDefaultTarget(group, '')
   }
   for (const rule of model.value.rule_sets) {
     if (rule.target === removedTarget) rule.target = fallbackTarget
@@ -335,7 +337,7 @@ function normalizeGroupType(group: SubscriptionPolicyGroup) {
     group.probe_url = ''
     group.tolerance = 0
   }
-  if (group.type !== 'select') group.default_group = ''
+  if (group.type !== 'select') setSubscriptionPolicyGroupDefaultTarget(group, '')
 }
 
 function groupTypeLabel(groupType: string) {
@@ -351,15 +353,17 @@ function toggleIncludedGroup(group: SubscriptionPolicyGroup, targetID: string, c
   if (checked) current.add(targetID)
   else current.delete(targetID)
   group.include_groups = [...current]
-  if (!checked && group.default_group === targetID) group.default_group = ''
+  if (!checked && subscriptionPolicyGroupDefaultTarget(group) === `group:${targetID}`) setSubscriptionPolicyGroupDefaultTarget(group, '')
 }
 
 function defaultGroupOptions(group: SubscriptionPolicyGroup) {
   return [
-    { label: '第一个匹配节点', value: '' },
+    { label: '第一个成员', value: '' },
+    ...(subscriptionPolicyGroupIncludesDirect(group) ? [{ label: 'DIRECT · 直连', value: 'direct' }] : []),
+    ...(props.renderer !== 'sing-box' && subscriptionPolicyGroupIncludesReject(group) ? [{ label: 'REJECT · 拒绝', value: 'reject' }] : []),
     ...(group.include_groups || []).map(id => ({
       label: model.value.policy_groups.find(item => item.id === id)?.name || id,
-      value: id,
+      value: `group:${id}`,
     })),
   ]
 }
@@ -445,7 +449,7 @@ onBeforeUnmount(() => detailController?.abort())
 .customizer-counts,.group-actions{display:flex;align-items:center;gap:6px}
 .customizer-basic,.customizer-advanced{display:grid;gap:13px}
 .policy-group-list,.rule-set-list{display:grid;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.policy-group-row,.rule-set-row{display:grid;gap:10px;padding:11px 12px;background:var(--surface)}
+.policy-group-row,.rule-set-row{min-width:0;display:grid;gap:10px;padding:11px 12px;background:var(--surface)}
 .policy-group-row+.policy-group-row,.rule-set-row+.rule-set-row{border-top:1px solid var(--line)}
 .policy-group-row>header,.rule-set-row>header{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .policy-group-row>header>div:first-child,.rule-set-row>header>div{display:flex;align-items:center;gap:8px;color:var(--text-strong);font-size: 12px}
@@ -468,4 +472,14 @@ onBeforeUnmount(() => detailController?.abort())
 .customizer-advanced code{padding:1px 4px;border-radius:4px;background:var(--code-soft);color:var(--code-text)}
 @media(max-width:900px){.group-reference-editor,.group-special-target-editor{grid-template-columns:1fr}}
 @media(max-width:700px){.customizer-header,.section-heading,.advanced-editor-heading,.policy-group-row>header,.rule-set-row>header{align-items:flex-start;flex-direction:column}.policy-group-grid,.rule-set-grid,.library-rule-grid{grid-template-columns:1fr}.policy-group-grid :deep(.form-field-full),.rule-set-grid :deep(.form-field-full){grid-column:auto}.customizer-counts,.group-actions{flex-wrap:wrap}}
+.subscription-customizer { container-type: inline-size; min-width: 0; }
+@container (max-width: 720px) {
+  .group-reference-editor { grid-template-columns: minmax(0, 1fr) minmax(180px, .7fr); }
+  .group-reference-editor > div:first-child:not(.group-reference-options):not(.form-field) { grid-column: 1 / -1; }
+}
+@container (max-width: 420px) {
+  .group-reference-editor, .group-special-target-editor, .policy-group-grid, .rule-set-grid, .library-rule-grid { grid-template-columns: minmax(0, 1fr); }
+  .policy-group-row > header, .rule-set-row > header { flex-wrap: wrap; }
+  .group-actions { flex-wrap: wrap; }
+}
 </style>

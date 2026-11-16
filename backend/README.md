@@ -460,3 +460,28 @@ other financial constraints and runtime-child integrity. One last-entitlement-en
 scalar per account preserves inactivity cleanup timing after the live service
 and shared memberships are removed. All cleanup uses the existing bounded
 subscription worker; failed financial/publication/audit operations roll back.
+
+Retention settings are managed under **System settings → Runtime → Logs and
+cleanup**. Built-in defaults are audit 30 days, operation history 14 days,
+operational tasks 7 days, successful periodic runs 7 days, failed periodic runs 30
+days, deleted-node cursors 7 days, observation material 7 days, and completed
+observation cleanup records 1 day. Administrator values survive upgrades. The
+settings response includes `default_value`; restoring a default changes the
+editor draft and still requires Save.
+
+`history_cleanup_interval_minutes` defaults to 5 (0 disables automatic log/task
+history cleanup, 1–60 selects UTC minute slots). Retention days accept0–3650;
+0 explicitly retains that category indefinitely. Observation cleanup has its
+existing bounded executor and reads its own two lifetimes on each invocation.
+Shortening a lifetime revisits older future review dates through the existing
+bounded cursor sweep, never a full-table rewrite in the settings request.
+Active leases, referenced node state and unfinished material deletion remain
+protected; expired completed auxiliary history does not need its old source
+proof to be kept forever. Metering receipts, cumulative traffic and financial
+summaries are independent and are not deleted by observation cleanup.
+
+Deleting old rows allows InnoDB to reuse allocated pages; it does not necessarily
+shrink `.ibd` files. Do not run a full-table rebuild on every cleanup cycle.
+One-off online space reclamation needs measured working space, a bounded metadata
+lock wait and a disk-space guard. Host/container log rotation and shared MySQL
+binlog retention are deployment settings, not application retention controls.

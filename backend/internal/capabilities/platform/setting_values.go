@@ -7,6 +7,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/security"
 	"net/url"
 	"strconv"
@@ -54,6 +55,14 @@ func NormalizeSettingValue(config Setting, raw json.RawMessage) (string, error) 
 }
 
 func ValidateSettingValue(key, value string) error {
+	if setting, ok := observability.RetentionSettingFor(key); ok {
+		n, e := strconv.Atoi(value)
+		if e != nil || n < 0 || n > setting.Maximum {
+			return fmt.Errorf("%s必须为0–%d之间的整数", setting.Name, setting.Maximum)
+		}
+		return nil
+	}
+
 	if minimum, maximum, ok := alertSettingBounds(key); ok {
 		number, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || number < minimum || number > maximum {

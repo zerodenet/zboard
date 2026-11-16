@@ -45,9 +45,9 @@ export function templateRecoveryCustomization(v: unknown, original?: Subscriptio
   }
   const groups: Record<string, any>[] = []
   for (const group of v.policy_groups) {
-    if (!record(group) || !keys(group, ['id', 'name', 'type', 'include_pattern', 'exclude_pattern', 'include_groups', 'default_group', 'probe_url', 'interval', 'tolerance', 'include_direct', 'include_reject']) || !text(group.id, 256) || !text(group.name, 256) || !['select', 'urltest', 'fallback'].includes(group.type)) return
+    if (!record(group) || !keys(group, ['id', 'name', 'type', 'include_pattern', 'exclude_pattern', 'include_groups', 'default_group', 'default_target', 'probe_url', 'interval', 'tolerance', 'include_direct', 'include_reject']) || !text(group.id, 256) || !text(group.name, 256) || !['select', 'urltest', 'fallback'].includes(group.type)) return
     const next: Record<string, any> = { id: group.id, name: group.name, type: group.type }
-    for (const key of ['include_pattern', 'exclude_pattern', 'default_group']) if (group[key] !== undefined) { if (!text(group[key], 2048)) return; next[key] = group[key] }
+    for (const key of ['include_pattern', 'exclude_pattern', 'default_group', 'default_target']) if (group[key] !== undefined) { if (!text(group[key], 2048)) return; next[key] = group[key] }
     for (const key of ['interval', 'tolerance']) if (group[key] !== undefined) { if (!int(group[key])) return; next[key] = group[key] }
     for (const key of ['include_direct', 'include_reject']) if (group[key] !== undefined) { if (typeof group[key] !== 'boolean') return; next[key] = group[key] }
     if (group.include_groups !== undefined) { if (!texts(group.include_groups, 256, 64)) return; next.include_groups = [...group.include_groups] }

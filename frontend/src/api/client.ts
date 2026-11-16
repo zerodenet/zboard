@@ -189,6 +189,7 @@ export async function updateSiteSettings(body: Pick<InstallRequest, 'site_name' 
 }
 
 export interface SystemConfig {
+  default_value?: number
 	id: number
 	config_key: string
 	name: string
@@ -1653,6 +1654,10 @@ export async function fetchAccountSubscriptionsPage(params: { status?: string; o
 }
 
 export interface SubscriptionQuotaUpdate {
+  end_at?: string
+  next_reset_at?: string
+  expected_end_at?: string
+  expected_next_reset_at?: string
   flow_total?: number
   flow_used?: number
   reset_quota_bytes?: number
@@ -1721,6 +1726,7 @@ export interface SubscriptionPolicyGroup {
 	exclude_pattern?: string
 	include_groups?: string[]
 	default_group?: string
+	default_target?: string
 	probe_url?: string
 	interval?: number
 	tolerance?: number
@@ -1830,6 +1836,17 @@ export type SubscriptionTemplatePreview = {
 	bytes: number
 	line_count: number
 	truncated: boolean
+	groups?: Array<{ name: string; type: string; members: string[]; default: string }>
+	sample?: 'example' | 'subscription'
+	sample_label?: string
+	delivery_encoding?: 'identity' | 'base64'
+	delivery_content_type?: string
+}
+
+export type SubscriptionTemplatePreviewRequest = Pick<SubscriptionTemplateWriteRequest, 'renderer' | 'customization'> & {
+	subscription_id?: number
+	live?: boolean
+	full_content?: boolean
 }
 
 export async function fetchSubscriptionRuleSetsPage(params: {
@@ -1910,8 +1927,8 @@ export async function createSubscriptionTemplate(payload: SubscriptionTemplateWr
 	return unwrap(response)
 }
 
-export async function previewSubscriptionTemplate(payload: Pick<SubscriptionTemplateWriteRequest, 'renderer' | 'customization'>): Promise<SubscriptionTemplatePreview> {
-	const response = await api.post('/admin/subscription-templates/preview', payload)
+export async function previewSubscriptionTemplate(payload: SubscriptionTemplatePreviewRequest, options: ApiRequestOptions = {}): Promise<SubscriptionTemplatePreview> {
+	const response = await api.post('/admin/subscription-templates/preview', payload, { signal: options.signal })
 	return unwrap(response)
 }
 

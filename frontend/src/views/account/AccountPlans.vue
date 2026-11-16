@@ -18,7 +18,7 @@
     </PageHeader>
 
     <PageAlert v-if="actionError && !checkoutOpen" tone="danger" title="套餐操作失败">{{ actionError }}</PageAlert>
-    <PageAlert v-if="subscriptionError" tone="danger" title="订阅加载失败">{{ subscriptionError }}</PageAlert>
+    <PageAlert v-if="subscriptionError && operation !== 'purchase'" tone="danger" title="订阅加载失败">{{ subscriptionError }}</PageAlert>
     <PageAlert v-if="planError" tone="danger" title="套餐目录加载失败">{{ planError }}</PageAlert>
     <PageAlert v-if="detailError && !selectedPlan" tone="danger" title="套餐详情加载失败">
       {{ detailError }} <UiButton variant="secondary" @click="retryDetail">重试详情</UiButton>
@@ -164,7 +164,8 @@
 
     <template v-else-if="!detailLoading && !detailError">
       <details v-if="operation === 'purchase' && (!subscriptionsLoaded || subscriptionLoading || subscriptionError || subscriptionTotal > 0)" class="commerce-existing-subscriptions">
-        <summary>当前套餐<span v-if="subscriptionsLoaded">{{ subscriptionTotal }}</span></summary>
+        <summary><span class="existing-subscriptions-label">当前套餐</span><span v-overflow-title="existingSubscriptionSummary" class="existing-subscriptions-summary" :class="{ 'existing-subscriptions-error': subscriptionError }">{{ existingSubscriptionSummary }}</span><UiIcon name="chevron" /></summary>
+        <PageAlert v-if="subscriptionError" tone="warning" title="当前套餐未更新">{{ subscriptionError }}<UiButton variant="ghost" size="sm" :disabled="subscriptionLoading" @click="subscriptionTable.load()">重试</UiButton></PageAlert>
         <div v-if="subscriptionLoading && !subscriptionsLoaded" class="commerce-loading-state"><UiIcon name="refresh" />正在加载订阅</div>
         <div v-else-if="subscriptions.length" class="commerce-subscription-cards">
           <article v-for="subscription in subscriptions" :key="subscription.id" class="commerce-subscription-card">
@@ -370,6 +371,15 @@ const subscriptionTable = useRemoteTable<AdminSubscriptionListItem>({
   errorMessage: '可操作订阅加载失败，请重试。',
 })
 const { items: subscriptions, total: subscriptionTotal, hasLoaded: subscriptionsLoaded } = subscriptionTable
+const existingSubscriptionSummary = computed(() => {
+  if (!subscriptionsLoaded.value) return subscriptionTable.error.value ? '读取失败' : '正在读取…'
+  let summary = `${subscriptionTotal.value} 份套餐`
+  if (subscriptionTotal.value === 1 && subscriptions.value[0]) {
+    const sub = subscriptions.value[0]
+    summary = [sub.plan_name || '未命名套餐', sub.sku_name].filter(Boolean).join(' · ')
+  }
+  return subscriptionTable.error.value ? `${summary} · 暂未更新` : summary
+})
 // The selected ID is resolved independently of the current candidate page.
 const targetResource = useRemoteResource<AdminSubscriptionListItem | null>({
   initial: () => null,
@@ -778,13 +788,17 @@ async function submitOrder() {
 </script>
 
 <style scoped>
-.commerce-existing-subscriptions { padding: 4px 0; }
-.commerce-existing-subscriptions > summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; font-size: 13px; font-weight: 500; }
-.commerce-existing-subscriptions > summary::before { content: '▸'; color: var(--muted-foreground); }
-.commerce-existing-subscriptions[open] > summary::before { content: '▾'; }
-.commerce-existing-subscriptions > summary span { color: var(--muted-foreground); font-size: 12px; }
-.commerce-existing-subscriptions > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
-.commerce-existing-subscriptions .commerce-subscription-cards { margin-top: 16px; }
+.commerce-existing-subscriptions { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); }
+.commerce-existing-subscriptions > summary { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 12px 16px; cursor: pointer; list-style: none; font-size: 13px; }
+.commerce-existing-subscriptions > summary::-webkit-details-marker { display: none; }
+.existing-subscriptions-label { flex: none; font-weight: 600; }
+.existing-subscriptions-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
+.existing-subscriptions-summary.existing-subscriptions-error { color: var(--warning); }
+.commerce-existing-subscriptions > summary > .ui-icon { margin-left: auto; flex: none; width: 14px; color: var(--muted-foreground); transform: rotate(90deg); }
+.commerce-existing-subscriptions[open] > summary > .ui-icon { transform: rotate(270deg); }
+.commerce-existing-subscriptions > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--radius-card); }
+.commerce-existing-subscriptions > .commerce-subscription-cards { margin: 0; padding: 0 16px 16px; }
+.commerce-existing-subscriptions > .page-alert, .commerce-existing-subscriptions > .table-pager { margin: 0 16px 16px; }
 .commerce-account-page .commerce-hub-section { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .commerce-account-page .commerce-hub-heading h2 { font-size: 16px; }
 .account-plan-detail :deep(.storefront-detail__hero), .account-plan-detail :deep(.storefront-plan-description), .account-plan-detail :deep(.storefront-specifications) { padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }

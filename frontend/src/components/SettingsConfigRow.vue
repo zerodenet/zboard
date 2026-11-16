@@ -2,7 +2,7 @@
   <article class="config-row" :class="{ 'config-row-switch': input.control === 'switch' }" :aria-labelledby="labelID">
     <div class="config-copy">
       <div class="config-heading"><strong :id="labelID">{{ config.name }}</strong><StatusBadge v-if="dirty" tone="warning" icon="edit">已修改</StatusBadge>
-        <details class="config-meta"><summary :aria-label="`${config.name}的设置说明`"><UiIcon name="info" /><span class="sr-only">设置说明</span></summary><div><p v-if="config.description" :id="descriptionID" class="config-description">{{ config.description }}</p><code>{{ config.config_key }}</code><span>{{ controlLabel }}</span><span>版本 {{ config.revision }}</span><TimeBadge :value="config.updated_at" mode="relative" /></div></details>
+        <details class="config-meta"><summary :aria-label="`${config.name}的设置说明`"><UiIcon name="info" /><span class="sr-only">设置说明</span></summary><div><p v-if="config.description" :id="descriptionID" class="config-description">{{ config.description }}</p><code>{{ config.config_key }}</code><span>{{ controlLabel }}</span><span v-if="config.default_value !== undefined">默认 {{ config.default_value }}</span><span>版本 {{ config.revision }}</span><TimeBadge :value="config.updated_at" mode="relative" /></div></details>
       </div>
     </div>
     <div class="config-control">
@@ -17,6 +17,7 @@
       <span v-if="error" :id="errorID" class="config-error" role="alert"><UiIcon name="alert" />{{ error }}</span>
     </div>
     <div class="config-actions">
+      <UiButton v-if="config.default_value !== undefined && Number(draft) !== config.default_value" variant="ghost" size="sm" type="button" :disabled="saving" @click="emit('update:draft', config.default_value)">恢复默认</UiButton>
       <UiButton v-if="conflict" variant="ghost" size="sm" type="button" :disabled="saving" @click="emit('reload')"><UiIcon name="refresh" />重新载入</UiButton>
       <UiButton variant="secondary" size="sm" type="button" :loading="saving" :disabled="!dirty" @click="emit('save')">保存</UiButton>
     </div>

@@ -17,14 +17,18 @@ const MaterialReviewDelay = time.Hour
 const MaterialRetentionLimit = 32
 
 type MaterialRetention struct {
-	DB  *gorm.DB
-	Now func() time.Time
+	DB     *gorm.DB
+	Now    func() time.Time
+	policy *materialRetentionPolicy
 }
 type MaterialRetentionResult = network.ObservationMaterialRetentionResult
 
 func (s MaterialRetention) retireApplied(ctx context.Context, limit int, budget int64) (out MaterialRetentionResult, err error) {
 	if s.DB == nil || limit < 1 || limit > MaterialRetentionLimit || budget < MaxApplyBytes || budget > MaxDrainBytes {
 		return out, errors.New("invalid observation material retention budget")
+	}
+	if s.materialAge() == 0 {
+		return out, nil
 	}
 	now := clockNow()
 	if s.Now != nil {
@@ -90,8 +94,8 @@ func (s MaterialRetention) retireApplied(ctx context.Context, limit int, budget 
 				materialErr = invalid("retention candidate has inconsistent lifecycle times")
 				return deferMaterialReview(tx, h.ID, now, deferAt)
 			}
-			if h.UpdatedAt.After(now.Add(-MaterialMinimumAge)) {
-				if due := h.UpdatedAt.Add(MaterialMinimumAge); due.After(deferAt) {
+			if h.UpdatedAt.After(now.Add(-s.materialAge())) {
+				if due := h.UpdatedAt.Add(s.materialAge()); due.After(deferAt) {
 					deferAt = due
 				}
 				return deferMaterialReview(tx, h.ID, now, deferAt)
@@ -193,6 +197,9 @@ func deferMaterialReview(tx *gorm.DB, id string, now, next time.Time) error {
 }
 
 func (s MaterialRetention) hasAppliedPending(ctx context.Context) (bool, error) {
+	if s.materialAge() == 0 {
+		return false, nil
+	}
 	if s.DB == nil {
 		return false, errors.New("observation material retention unavailable")
 	}

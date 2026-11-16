@@ -4,6 +4,14 @@ import { publicSubscriptionDraftURL, templateRecoveryCustomization, templateReco
 const templateFields = () => ({ name: 'Local name', slug: 'local', description: 'Ordinary text', renderer: 'clash', customization: defaultSubscriptionCustomization('clash'), is_active: true, sort_order: 1 })
 const ruleFields = () => ({ name: 'Rules', description: '', tag: 'rules', mode: 'manual', source_url: '', source_format: 'auto', content: '{"password":"ordinary rule text is not inspected"}', sync_interval: 3600, is_active: true })
 describe('subscription editor explicit recovery schemas', () => {
+  it('preserves an explicit native default through reauthentication draft storage and restore', () => {
+    const original = defaultSubscriptionCustomization('clash')
+    original.policy_groups[0].default_group = ''
+    original.policy_groups[0].default_target = 'direct'
+    const captured = templateRecoveryCustomization(original, original, true)!
+    expect(captured.policy_groups[0].default_target).toBe('direct')
+    expect(restoreTemplateCustomization(captured, original).policy_groups[0].default_target).toBe('direct')
+  })
   it('retains structured visual configuration, renderer drafts and original authority without arbitrary object fields', () => {
     const original = defaultSubscriptionCustomization('clash'), fields = templateRecoveryFields(templateFields(), original, true)!
     const recovery = subscriptionTemplateRecoveryDraft({ id: 3, revision: 4, fields, baseline: fields, rendererDrafts: [{ renderer: 'clash', customization: fields.customization }], token: 'DO-NOT-STORE', approved: true })!

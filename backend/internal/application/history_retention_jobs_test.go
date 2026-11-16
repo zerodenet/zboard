@@ -10,15 +10,22 @@ import (
 )
 
 type historyPolicyProbe struct {
-	pending bool
-	failure observability.HistoryTarget
-	last    observability.HistoryTarget
-	limit   int
-	cutoff  time.Time
+	pending        bool
+	cleanupMinutes *int
+	failure        observability.HistoryTarget
+	last           observability.HistoryTarget
+	limit          int
+	cutoff         time.Time
 }
 
 func (p *historyPolicyProbe) ReconcileDefaults(context.Context) error { return nil }
-func (p *historyPolicyProbe) RetentionDays(_ context.Context, _ string, fallback, _ int) (int, error) {
+func (p *historyPolicyProbe) RetentionDays(_ context.Context, key string, fallback, _ int) (int, error) {
+	if key == observability.CleanupIntervalKey {
+		if p.cleanupMinutes != nil {
+			return *p.cleanupMinutes, nil
+		}
+		return 1, nil
+	}
 	return fallback, nil
 }
 func (p *historyPolicyProbe) HasPendingHistory(_ context.Context, target observability.HistoryTarget, before time.Time) (bool, error) {
@@ -96,5 +103,26 @@ func TestHistoryRetentionJobsSeparateFailureReadinessAndBoundedExecution(t *test
 	}
 	if operations.limit != network.HistoryBatchSize {
 		t.Fatal("operation batch is unbounded", operations.limit)
+	}
+}
+
+func TestCleanupIntervalCanBeChangedAndDisabledWithoutRestart(t *testing.T) {
+	minutes := 5
+	p := &historyPolicyProbe{cleanupMinutes: &minutes}
+	s := observability.HistoryRetention{Repository: p}
+	now := time.Date(2026, 11, 16, 2, 10, 0, 0, time.UTC)
+	if due, e := s.CleanupDue(t.Context(), now); e != nil || !due {
+		t.Fatal(due, e)
+	}
+	if due, e := s.CleanupDue(t.Context(), now.Add(time.Minute)); e != nil || due {
+		t.Fatal("cleaned outside configured slot", due, e)
+	}
+	minutes = 0
+	if due, e := s.CleanupDue(t.Context(), now); e != nil || due {
+		t.Fatal("disabled cleanup dispatched", due, e)
+	}
+	minutes = 1
+	if due, e := s.CleanupDue(t.Context(), now.Add(time.Minute)); e != nil || !due {
+		t.Fatal("new interval was cached", due, e)
 	}
 }

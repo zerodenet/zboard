@@ -7,7 +7,7 @@
       </template>
     </PageHeader>
 
-    <details><summary>格式兼容说明</summary><p>进程匹配规则支持 Clash / sing-box，不能绑定 Zero 模板。</p></details>
+    <details><summary>格式兼容说明</summary><p>按应用名称或路径分流的规则（进程匹配）可用于 Clash、sing-box。Zero 订阅格式暂不支持，不能忽略这些规则后发布。</p></details>
 
     <TransientFeedback :success="message" :error="feedbackError" success-title="规则集操作已完成" error-title="规则集操作失败" />
 

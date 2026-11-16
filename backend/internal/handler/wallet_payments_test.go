@@ -69,8 +69,14 @@ func assertMixedFunding(t *testing.T, f orderFixture) {
 	if _, err := service.Pay(t.Context(), 1, order.ID); err == nil {
 		t.Fatal("wallet payment bypassed required cash")
 	}
-	if out := f.pay(t, order.ID, false); out.Code != 400 {
-		t.Fatalf("manual state bypassed mixed cash: %d %s", out.Code, out.Body.String())
+	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if out := f.pay(t, order.ID, false); out.Code != 403 {
+		t.Fatalf("buyer bypassed mixed cash without receipt authority: %d %s", out.Code, out.Body.String())
+	}
+	if err := f.h.db.Model(&model.User{}).Where("id = ?", 1).Update("is_admin", true).Error; err != nil {
+		t.Fatal(err)
 	}
 	provider := "test-mixed-channel"
 	context, permitted, err := f.h.services.PaymentCheckout.Open(t.Context(), 1, order.ID, provider)

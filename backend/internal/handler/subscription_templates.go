@@ -66,16 +66,24 @@ type subscriptionTemplateWriteReq struct {
 }
 
 type subscriptionTemplatePreviewReq struct {
-	Renderer      string          `json:"renderer"`
-	Customization json.RawMessage `json:"customization"`
+	Renderer       string          `json:"renderer"`
+	Customization  json.RawMessage `json:"customization"`
+	SubscriptionID uint            `json:"subscription_id,omitempty"`
+	Live           bool            `json:"live,omitempty"`
+	FullContent    bool            `json:"full_content,omitempty"`
 }
 
 type subscriptionTemplatePreview struct {
-	Content     string `json:"content"`
-	ContentType string `json:"content_type"`
-	Bytes       int    `json:"bytes"`
-	LineCount   int    `json:"line_count"`
-	Truncated   bool   `json:"truncated"`
+	Content             string                             `json:"content"`
+	ContentType         string                             `json:"content_type"`
+	Bytes               int                                `json:"bytes"`
+	LineCount           int                                `json:"line_count"`
+	Truncated           bool                               `json:"truncated"`
+	Groups              []subscriptionTemplatePreviewGroup `json:"groups"`
+	Sample              string                             `json:"sample"`
+	SampleLabel         string                             `json:"sample_label"`
+	DeliveryEncoding    string                             `json:"delivery_encoding"`
+	DeliveryContentType string                             `json:"delivery_content_type"`
 }
 
 type subscriptionManifestSummary struct {
@@ -423,9 +431,11 @@ func (h *handlers) AdminSubscriptionTemplateGetHandler(w http.ResponseWriter, r 
 }
 
 func (h *handlers) AdminSubscriptionTemplatePreviewHandler(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.requireAdmin(w, r); err != nil {
+	actor, err := h.requireAdmin(w, r)
+	if err != nil {
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	var req subscriptionTemplatePreviewReq
 	if err := decodeBody(r, &req); err != nil {
 		BadRequest(w, err.Error())
@@ -446,16 +456,43 @@ func (h *handlers) AdminSubscriptionTemplatePreviewHandler(w http.ResponseWriter
 		BadRequestFields(w, "订阅输出格式预览校验失败。", map[string]string{"customization": err.Error()})
 		return
 	}
-	rendered, contentType, err := renderSubscriptionWithRenderer(req.Renderer, resolvedCustomization, sampleSubscriptionTemplateData())
+	data, label, err := h.subscriptionPreviewData(r.Context(), actor.UserID, req.SubscriptionID)
+	if err != nil {
+		writeSubscriptionQueryError(w, err)
+		return
+	}
+	rendered, contentType, err := renderSubscriptionWithRenderer(req.Renderer, resolvedCustomization, data)
 	if err != nil {
 		BadRequestFields(w, "订阅输出格式预览失败。", map[string]string{"customization": err.Error()})
 		return
 	}
-	if err := h.validateZeroSubscriptionPreview(r.Context(), req.Renderer, rendered); err != nil {
-		BadRequestFields(w, "订阅输出格式预览失败。", map[string]string{"customization": err.Error()})
+	if !req.Live {
+		if err := h.validateZeroSubscriptionPreview(r.Context(), req.Renderer, rendered); err != nil {
+			BadRequestFields(w, "订阅输出格式预览失败。", map[string]string{"customization": err.Error()})
+			return
+		}
+	}
+	if r.Context().Err() != nil {
 		return
 	}
-	OK(w, buildSubscriptionTemplatePreview(rendered, contentType))
+	preview := buildSubscriptionTemplatePreview(rendered, contentType)
+	if req.FullContent {
+		preview.Content = rendered
+		preview.Truncated = false
+	}
+	preview.Groups = subscriptionPreviewGroups(req.Renderer, rendered)
+	preview.Sample = "example"
+	if req.SubscriptionID != 0 {
+		preview.Sample = "subscription"
+	}
+	preview.SampleLabel = label
+	preview.DeliveryEncoding = "identity"
+	preview.DeliveryContentType = contentType
+	if req.Renderer == subscriptionRendererZnetSink {
+		preview.DeliveryEncoding = "base64"
+		preview.DeliveryContentType = "text/plain"
+	}
+	OK(w, preview)
 }
 
 func (h *handlers) AdminSubscriptionTemplateCreateHandler(w http.ResponseWriter, r *http.Request) {

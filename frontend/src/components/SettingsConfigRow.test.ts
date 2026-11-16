@@ -192,3 +192,11 @@ it('keeps diagnostic capture opt-in with explicit save, bounded JSON and actiona
   await wrapper.findAll('button').find(button => button.text().includes('保存'))!.trigger('click')
   expect(wrapper.emitted('save')).toHaveLength(1)
 })
+
+it('restores a retention default into the draft without saving automatically', async () => {
+  const wrapper = mount(SettingsConfigRow, { props: { config: config({ config_key: 'audit_log_retention_days', name: '审计日志保留天数', value: 14, default_value: 30, input: { control: 'integer', min: 0, max: 3650, step: 1 } }), draft: 14 } })
+  expect(wrapper.get('details').text()).toContain('默认 30')
+  await wrapper.findAll('button').find(button => button.text() === '恢复默认')!.trigger('click')
+  expect(wrapper.emitted('update:draft')).toEqual([[30]])
+  expect(wrapper.emitted('save')).toBeUndefined()
+})

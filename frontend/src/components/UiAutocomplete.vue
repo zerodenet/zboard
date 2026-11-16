@@ -22,7 +22,7 @@
         @blur="handleBlur"
       />
       <span v-if="loading" class="ui-button-spinner" aria-label="搜索中" />
-      <button v-if="query || selectedValue" type="button" class="ui-autocomplete-clear" aria-label="清除选择" :disabled="disabled" @click="clear">×</button>
+      <button v-if="clearable && (query || selectedValue)" type="button" class="ui-autocomplete-clear" aria-label="清除选择" :disabled="disabled" @click="clear">×</button>
       <ComboboxTrigger v-if="dropdown" class="ui-autocomplete-trigger" aria-label="展开建议" :disabled="disabled"><UiIcon name="chevron" /></ComboboxTrigger>
     </ComboboxAnchor>
     <ComboboxPortal>
@@ -57,8 +57,9 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   forceSelection?: boolean
   dropdown?: boolean
+  clearable?: boolean
   fluid?: boolean
-}>(), { suggestions: () => [], optionLabel: 'label', disabled: false, loading: false, forceSelection: false, dropdown: false, fluid: true })
+}>(), { suggestions: () => [], optionLabel: 'label', disabled: false, loading: false, forceSelection: false, dropdown: false, clearable: true, fluid: true })
 const attrs = useAttrs()
 const inputAttrs = computed(() => {
   const { id: _id, ...rest } = attrs

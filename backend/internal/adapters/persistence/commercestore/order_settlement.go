@@ -42,11 +42,13 @@ func (s OrderSettlement) Apply(ctx context.Context, actor uint, command commerce
 		previous := order.Status
 		now := time.Now().UTC()
 		updates := make(map[string]interface{})
+		// An authorized administrator confirming receipt is verified payment
+		// evidence, with the same atomic funding and entitlement settlement.
 		if command.Status == "paid" {
-			if err := s.setPaid(tx, order, now); err != nil {
+			if err := s.setVerifiedPaid(tx, order, now); err != nil {
 				return err
 			}
-			result.Fulfilled = previous != "paid"
+			result.Fulfilled = previous != "paid" && order.OrderType != "topup"
 			if result.Fulfilled {
 				if err := networkstore.EnqueueSubscriptionPublications(tx, order.SubscriptionID, actor); err != nil {
 					return err

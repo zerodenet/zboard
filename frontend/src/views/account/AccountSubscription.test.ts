@@ -13,6 +13,8 @@ import TicketCenter from '../../components/TicketCenter.vue'
 import UiButton from '../../components/UiButton.vue'
 import UiInput from '../../components/UiInput.vue'
 import UiSelect from '../../components/UiSelect.vue'
+import UiAutocomplete from '../../components/UiAutocomplete.vue'
+import TablePager from '../../components/TablePager.vue'
 import UiTextarea from '../../components/UiTextarea.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import AccountSubscription from './AccountSubscription.vue'
@@ -75,6 +77,7 @@ describe('account subscription independent loading and access identity', () => {
       { path: '/account/subscription', component: routed ? AccountSubscription : { template: '<div />' } },
       { path: '/account/plans', component: { template: '<div />' } },
       { path: '/account/tickets', component: TicketCenter },
+      { path: '/account/wallet', component: { template: '<div />' } },
     ] })
     await router.push(path)
     await router.isReady()
@@ -202,7 +205,7 @@ describe('account subscription independent loading and access identity', () => {
       { subscriptionId: 201, status: 'active', offset: 0, limit: 1 }, expect.anything(),
     )
     expect(fetchSubscriptionAccess).toHaveBeenCalledWith(201, expect.anything())
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Old subscription')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Old subscription')
     expect((wrapper!.get('.access-url input[readonly]').element as HTMLInputElement).value).toContain('/fixture-access/201')
     expect(router.currentRoute.value.query.subscription).toBe('201')
   })
@@ -211,7 +214,7 @@ describe('account subscription independent loading and access identity', () => {
     vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId ? page([]) : page(subscriptions))
     await open('/account/subscription?subscription=201')
     expect(fetchSubscriptionAccess).not.toHaveBeenCalled()
-    expect(wrapper!.text()).toContain('所选订阅不存在或已失效')
+    expect(wrapper!.text()).toContain('此订阅已不可用')
     expect(router.currentRoute.value.query.subscription).toBe('201')
   })
 
@@ -222,7 +225,7 @@ describe('account subscription independent loading and access identity', () => {
     vi.mocked(fetchAccountProtocolLoads).mockReturnValue(slow.promise)
     await open()
     expect(fetchSubscriptionAccess).toHaveBeenCalledOnce()
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Plan 1')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Plan 1')
     expect((wrapper!.get('.access-url input[readonly]').element as HTMLInputElement).value).toContain('/fixture-access/1')
     expect(button('复制链接').exists()).toBe(true)
   })
@@ -231,7 +234,7 @@ describe('account subscription independent loading and access identity', () => {
     vi.mocked(fetchAccountProtocolLoads).mockRejectedValue(new Error('fixture failure'))
     vi.mocked(fetchActiveSubscriptionTemplatesPage).mockRejectedValue(new Error('fixture failure'))
     await open()
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Plan 1')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Plan 1')
     expect((wrapper!.get('.access-url input[readonly]').element as HTMLInputElement).value).toContain('/fixture-access/1')
     expect(wrapper!.text()).toContain('协议实时负载加载失败')
     expect(wrapper!.text()).not.toContain('暂无可用协议')
@@ -276,7 +279,7 @@ describe('account subscription independent loading and access identity', () => {
     await flushPromises()
     old.resolve(access(1))
     await flushPromises()
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Plan 2')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Plan 2')
     expect((wrapper!.get('.access-url input[readonly]').element as HTMLInputElement).value).toContain('/fixture-access/2')
     expect(wrapper!.text()).not.toContain('fixture-1')
     expect(wrapper!.text()).toContain('fixture-2')
@@ -300,7 +303,7 @@ describe('account subscription independent loading and access identity', () => {
     expect(button('生成订阅链接').attributes('disabled')).toBeDefined()
     await button('重试链接').trigger('click')
     await flushPromises()
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Plan 1')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Plan 1')
     expect((wrapper!.get('.access-url input[readonly]').element as HTMLInputElement).value).toContain('/fixture-access/1')
   })
 
@@ -324,7 +327,7 @@ describe('account subscription independent loading and access identity', () => {
     await flushPromises()
     mutation.resolve(access(1))
     await flushPromises()
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Plan 2')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Plan 2')
     expect((wrapper!.get('.access-url input[readonly]').element as HTMLInputElement).value).toContain('/fixture-access/2')
     expect(wrapper!.text()).not.toContain('fixture-1')
     expect(wrapper!.text()).not.toContain('订阅 #1 的链接已轮换')
@@ -360,7 +363,7 @@ describe('account subscription independent loading and access identity', () => {
     mutation.resolve({ ...access(1), token_prefix: 'outdated-mutation-view' })
     await flushPromises()
     expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(3)
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Plan 1')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Plan 1')
     expect((wrapper!.get('.access-url input[readonly]').element as HTMLInputElement).value).toContain('/fixture-access/1')
     expect(wrapper!.text()).not.toContain('outdated-mutation-view')
     expect(wrapper!.text()).not.toContain('正在读取链接状态')
@@ -377,7 +380,7 @@ describe('account subscription independent loading and access identity', () => {
     await flushPromises()
     expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith({ subscriptionId: 2, status: 'active', offset: 0, limit: 1 }, expect.anything())
     const panel = wrapper!.get('.access-panel')
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Updated selected plan')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Updated selected plan')
     expect(panel.get('.subscription-access-context').text()).toContain('120 B')
     expect(panel.findAllComponents(TimeBadge).some((badge: VueWrapper<InstanceType<typeof TimeBadge>>) => badge.props('value') === updated.end_at)).toBe(true)
     expect(panel.text()).toContain('fixture-2')
@@ -386,24 +389,127 @@ describe('account subscription independent loading and access identity', () => {
     slowTemplates.resolve(page([]))
     slowProtocols.resolve({ sampled_at: '', activity_window_seconds: 120, items: [] })
     await flushPromises()
-    expect(wrapper!.get('.subscription-access-section > .panel-header').text()).toContain('Updated selected plan')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Updated selected plan')
   })
 
-  it('rechecks the exact selected target after termination settles and never selects another active subscription', async () => {
+  it('closes a successful cancellation, clears the old credentials immediately and selects the remaining plan', async () => {
     await open('/account/subscription?subscription=1')
     await button('退订').trigger('click')
     await flushPromises()
-    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId === 1
-      ? page([]) : page([subscriptions[1]]))
-    const before = vi.mocked(fetchSubscriptionAccess).mock.calls.length
-    wrapper!.findComponent(SubscriptionTermination).vm.$emit('settled')
+    const remaining = deferred<any>()
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => params?.subscriptionId === 2
+      ? page([subscriptions[1]]) : params?.status === 'active' ? remaining.promise : page([subscriptions[1]]))
+    const receipt = { subscription_id: 1, amount_minor: '548', currency: 'CNY', status: 'canceled' }
+    wrapper!.findComponent(SubscriptionTermination).vm.$emit('settled', receipt)
     await flushPromises()
-    expect(wrapper!.text()).toContain('所选订阅不存在或已失效')
-    expect(wrapper!.find('.access-panel').exists()).toBe(false)
     expect(wrapper!.text()).not.toContain('fixture-1')
-    expect(wrapper!.text()).not.toContain('fixture-2')
-    expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(before)
+    expect(router.currentRoute.value.query.subscription).toBeUndefined()
+    expect(wrapper!.findComponent(SubscriptionTermination).exists()).toBe(false)
+    expect(wrapper!.get('.subscription-completed').text()).toContain('Plan 1已退订，¥5.48 已退回余额')
+    expect(wrapper!.get('.subscription-completed a').attributes('href')).toBe('/account/wallet?currency=CNY')
+    remaining.resolve(page([subscriptions[1]]))
+    await flushPromises()
+    expect(wrapper!.text()).toContain('fixture-2')
+    expect(wrapper!.text()).not.toContain('此订阅已不可用')
+    expect(wrapper!.text()).not.toContain('订阅操作失败')
+    expect(router.currentRoute.value.query.subscription).toBe('2')
+    expect(rotateSubscriptionAccess).not.toHaveBeenCalled()
+    expect(revokeSubscriptionAccess).not.toHaveBeenCalled()
+  })
+
+  it('preserves the current selection when another subscription is canceled', async () => {
+    await open('/account/subscription?subscription=1')
+    const other = wrapper!.findAll('.account-service-grid > .service-card')[1]!
+    await other.findAll('button').find(item => item.text() === '退订')!.trigger('click')
+    await flushPromises()
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([subscriptions[0]]))
+    wrapper!.findComponent(SubscriptionTermination).vm.$emit('settled', { subscription_id: 2, amount_minor: '0', currency: 'CNY' })
+    await flushPromises()
+    expect(wrapper!.text()).toContain('fixture-1')
     expect(router.currentRoute.value.query.subscription).toBe('1')
+    expect(wrapper!.get('.subscription-completed').text()).toContain('Plan 2已退订，本次未退款')
+  })
+
+  it('offers purchase after the final subscription is canceled without requesting credentials for zero', async () => {
+    await open('/account/subscription?subscription=1')
+    await button('退订').trigger('click')
+    await flushPromises()
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([]))
+    const reads = vi.mocked(fetchSubscriptionAccess).mock.calls.length
+    wrapper!.findComponent(SubscriptionTermination).vm.$emit('settled', { subscription_id: 1, amount_minor: '0', currency: 'CNY' })
+    await flushPromises()
+    expect(wrapper!.get('.access-empty').text()).toContain('暂无可连接的套餐')
+    expect(wrapper!.get('.access-empty a').attributes('href')).toBe('/account/plans')
+    expect(router.currentRoute.value.query.subscription).toBeUndefined()
+    expect(fetchSubscriptionAccess).toHaveBeenCalledTimes(reads)
+    expect(wrapper!.text()).not.toContain('此订阅已不可用')
+  })
+
+  it('keeps the financial result separate from a failed refresh and recovers through a read-only retry', async () => {
+    await open('/account/subscription?subscription=1')
+    await button('退订').trigger('click')
+    await flushPromises()
+    vi.mocked(fetchAccountSubscriptionsPage).mockRejectedValue(new Error('offline'))
+    wrapper!.findComponent(SubscriptionTermination).vm.$emit('settled', { subscription_id: 1, amount_minor: '548', currency: 'CNY' })
+    await flushPromises()
+    expect(wrapper!.get('.subscription-completed').text()).toContain('¥5.48 已退回余额')
+    expect(wrapper!.text()).not.toContain('fixture-1')
+    expect(wrapper!.text()).not.toContain('暂无可连接的套餐')
+    expect(wrapper!.text()).toContain('订阅信息读取失败')
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([subscriptions[1]]))
+    await wrapper!.get('.access-selection .page-alert button').trigger('click')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('fixture-2')
+  })
+
+  it('searches and pages the top selector independently of the subscription list', async () => {
+    await open('/account/subscription?subscription=1')
+    const picker = wrapper!.getComponent(UiAutocomplete)
+    await picker.get('button[aria-label="展开建议"]').trigger('click')
+    await flushPromises()
+    expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith({ status: 'active', q: undefined, offset: 0, limit: 25 }, expect.anything())
+    expect(picker.props('suggestions')).toHaveLength(2)
+    picker.vm.$emit('item-select', { value: subscriptions[1] })
+    await flushPromises()
+    expect(router.currentRoute.value.query.subscription).toBe('2')
+    expect(wrapper!.text()).toContain('fixture-2')
+    expect(wrapper!.text()).not.toContain('fixture-1')
+    expect((wrapper!.get('.access-selection input').element as HTMLInputElement).value).toContain('Plan 2')
+  })
+
+  it('does not restore a late credential response for a subscription canceled during refresh', async () => {
+    await open('/account/subscription?subscription=1')
+    const late = deferred<SubscriptionAccess>()
+    vi.mocked(fetchSubscriptionAccess).mockImplementation(async id => id === 1 ? late.promise : access(id))
+    await button('刷新').trigger('click')
+    await flushPromises()
+    await button('退订').trigger('click')
+    await flushPromises()
+    vi.mocked(fetchAccountSubscriptionsPage).mockResolvedValue(page([subscriptions[1]]))
+    wrapper!.findComponent(SubscriptionTermination).vm.$emit('settled', { subscription_id: 1, amount_minor: '548', currency: 'CNY' })
+    await flushPromises()
+    late.resolve(access(1))
+    await flushPromises()
+    expect(wrapper!.text()).toContain('fixture-2')
+    expect(wrapper!.text()).not.toContain('fixture-1')
+    expect(router.currentRoute.value.query.subscription).toBe('2')
+  })
+
+  it('searches beyond the first picker page without changing the managed credential until selection', async () => {
+    await open('/account/subscription?subscription=1')
+    const picker = wrapper!.getComponent(UiAutocomplete)
+    vi.mocked(fetchAccountSubscriptionsPage).mockImplementation(async params => ({ ...page(subscriptions), total: 75 }))
+    await picker.get('button[aria-label="展开建议"]').trigger('click')
+    await flushPromises()
+    picker.findComponent(TablePager).vm.$emit('change', { offset: 25, limit: 25 })
+    await flushPromises()
+    expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith({ status: 'active', q: undefined, offset: 25, limit: 25 }, expect.anything())
+    picker.vm.$emit('complete', { query: '远端套餐' })
+    await new Promise(resolve => setTimeout(resolve, 220))
+    await flushPromises()
+    expect(fetchAccountSubscriptionsPage).toHaveBeenCalledWith({ status: 'active', q: '远端套餐', offset: 0, limit: 25 }, expect.anything())
+    expect(router.currentRoute.value.query.subscription).toBe('1')
+    expect(wrapper!.text()).toContain('fixture-1')
   })
 
   it.each([403, 404])('clears a previously selected target after authoritative %s without a hidden fallback', async status => {
@@ -486,7 +592,7 @@ describe('account subscription independent loading and access identity', () => {
       ? page([{ ...subscriptions[1], status: 'ended' }]) : page(subscriptions))
     await button('刷新').trigger('click')
     await flushPromises()
-    expect(wrapper!.text()).toContain('所选订阅不存在或已失效')
+    expect(wrapper!.text()).toContain('此订阅已不可用')
     expect(wrapper!.find('.access-panel').exists()).toBe(false)
     expect(wrapper!.text()).not.toContain('fixture-1')
     expect(wrapper!.text()).not.toContain('fixture-2')

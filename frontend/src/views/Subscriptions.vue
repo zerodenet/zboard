@@ -87,7 +87,7 @@ const { items: subscriptions, total, loading, refreshing, error, load } = useRem
   errorMessage: (cause: any) => cause?.response?.data?.message || '订阅数据加载失败。',
   onOffsetCorrected: () => syncURL(true),
 })
-async function quotaSaved() { quotaMessage.value = '流量与重置设置已保存'; await Promise.all([detailResource.load(), load()]) }
+async function quotaSaved() { quotaMessage.value = '订阅设置已保存'; await Promise.all([detailResource.load(), load()]) }
 function usagePercent(sub: AdminSubscriptionListItem) { return sub.flow_total ? Math.min(100, Math.round(sub.flow_used / sub.flow_total * 100)) : 0 }
 function statusName(status: string) { return ({ active: '有效', expired: '已到期', canceled: '已取消', ended: '已结束' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
 function statusTone(status: string): 'success' | 'warning' | 'neutral' { return status === 'active' ? 'success' : status === 'expired' ? 'warning' : 'neutral' }

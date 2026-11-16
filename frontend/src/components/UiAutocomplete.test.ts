@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 import UiAutocomplete from './UiAutocomplete.vue'
 
 describe('UiAutocomplete', () => {
+  it('can require a selection without displaying a misleading clear action', () => {
+    const wrapper = mount(UiAutocomplete, { props: { modelValue: { label: '当前套餐' }, clearable: false } })
+    expect(wrapper.find('button[aria-label="清除选择"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('当前套餐')
+    wrapper.unmount()
+  })
   it('displays a selection loaded after the input is mounted', async () => {
     const wrapper = mount(UiAutocomplete, { props: { modelValue: null, optionLabel: 'name', forceSelection: true } })
     await flushPromises()
