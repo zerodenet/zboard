@@ -106,3 +106,41 @@ func TestStartupRemovesLegacyPackageHistoryAndInterruptedWrites(t *testing.T) {
 		t.Fatal("recovery removed current package", err)
 	}
 }
+
+func TestFailedCandidateCleanupCannotDeleteCommittedOrSuccessorOwnedPackages(t *testing.T) {
+	raw, keys := fixturePackage(t, nil)
+	m, db, opts := testManager(t, keys)
+	current, err := m.Import(raw, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.removeFailedCandidate(current.Digest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.packageFor(current); err != nil {
+		t.Fatal("cleanup deleted committed package", err)
+	}
+	abandoned := strings.Repeat("c", 64)
+	path := filepath.Join(opts.Directory, "versions", abandoned)
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.removeFailedCandidate(abandoned); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("active owner did not clean failed candidate", err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.PluginHostLease{}).Where("id = 1").Update("owner", "successor").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := m.removeFailedCandidate(abandoned); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("old owner cleaned successor files", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("old owner deleted package after lease replacement", err)
+	}
+}

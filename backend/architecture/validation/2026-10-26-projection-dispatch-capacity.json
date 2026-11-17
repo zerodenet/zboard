@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "phase": "P6 dispatch query capacity under unchanged SQLite guard",
+  "before_commit": "f0c2202e2bd9c9a6905dacd6f68af58100bc367a",
+  "after_source_parent": "f0c2202e2bd9c9a6905dacd6f68af58100bc367a",
+  "gate_milliseconds": 500,
+  "backlog": 240,
+  "environment": {
+    "GOMAXPROCS": "2",
+    "go_package_parallelism": 1,
+    "race": true,
+    "driver": "SQLite",
+    "count": 3
+  },
+  "before": {
+    "p95_milliseconds": [
+      672.682478,
+      707.204459,
+      679.738458
+    ],
+    "check": {
+      "name": "jobs-sqlite-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-json",
+        "-p",
+        "1",
+        "./internal/capabilities/jobs",
+        "./internal/adapters/persistence/jobstore",
+        "-count=3",
+        "-timeout",
+        "15m"
+      ],
+      "exit_code": 1,
+      "wall_seconds": 365.175,
+      "log_sha256": "19c589ee1791a6111b77a97a0703fa99db9c572bce45f63ac060af3480e57201",
+      "events": {
+        "pass": 198,
+        "fail": 3,
+        "skip": 6
+      },
+      "top_events": {
+        "pass": 156,
+        "fail": 3,
+        "skip": 6
+      },
+      "failures": [
+        "TestDispatchCapacityP95WithBacklog",
+        "TestDispatchCapacityP95WithBacklog",
+        "TestDispatchCapacityP95WithBacklog"
+      ]
+    },
+    "source_unchanged": true
+  },
+  "after": {
+    "p95_milliseconds": [
+      43.932425,
+      46.517583,
+      40.519402
+    ],
+    "check": {
+      "name": "jobs-sqlite-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-json",
+        "-p",
+        "1",
+        "./internal/capabilities/jobs",
+        "./internal/adapters/persistence/jobstore",
+        "-count=3",
+        "-timeout",
+        "15m"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 97.2,
+      "log_sha256": "c5836fa1f38cf7c3269b7140bfe9bb0a062a4445abc7164764fb5636091a303a",
+      "events": {
+        "pass": 204,
+        "skip": 6
+      },
+      "top_events": {
+        "pass": 162,
+        "skip": 6
+      },
+      "failures": []
+    },
+    "source_unchanged": true
+  },
+  "source_files": {
+    "backend/internal/adapters/persistence/jobstore/store.go": "9db987f7d15fe53c432ba86a6e97dcedad2e6b3f2b19cc2ca2e6289531ec18bd",
+    "backend/internal/adapters/persistence/jobstore/fairness_test.go": "1a2a0b8cc430f315f3daf3c4f7d8d22843aea37453cdbe68a519c2d2ea64279f",
+    "backend/internal/adapters/persistence/jobstore/group_admission_test.go": "427f5e65dd6d7932c4b01f2509356d1a81dffd84b92d7292911f96eb3f6116a4",
+    "backend/internal/capabilities/jobs/runtime.go": "d165c83496607fe714a30742d20bd262807a35821dd01e1ef0efb26c5ecd506b"
+  },
+  "scope": [
+    "No timeout, performance gate, workload size, candidate cap or exclusion changed",
+    "No schema/index change; original authoritative budget and resource fence retained",
+    "SQLite full suite retains six original MySQL-environment skips; actual MySQL runs are separately recorded",
+    "Does not measure standalone-worker benefit, autoscaling or core HTTP p95"
+  ]
+}

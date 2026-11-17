@@ -7,11 +7,13 @@ import SKUCycleFields from '../components/SKUCycleFields.vue'
 import TableText from '../components/TableText.vue'
 import UiCheckbox from '../components/UiCheckbox.vue'
 import FormField from '../components/FormField.vue'
+import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import { fetchPlanDetail, fetchPlanSKU, fetchPlanSKUs, fetchPlansPage, updatePlan, updatePlanSKU, deletePlan, deletePlanSKU } from '../api/client'
 import { confirmAction } from '../utils/feedback'
 
 vi.mock('../api/client', () => ({ createPlan: vi.fn(), createPlanSKU: vi.fn(), fetchPlanDetail: vi.fn(), fetchPlanSKU: vi.fn(), fetchPlanSKUs: vi.fn(), fetchPlansPage: vi.fn(), updatePlan: vi.fn(), updatePlanSKU: vi.fn(), deletePlan: vi.fn(), deletePlanSKU: vi.fn() }))
-vi.mock('../stores/app', () => ({ useAppStore: () => ({ isAdmin: true }) }))
+const currencyState = vi.hoisted(() => ({ configs: [] as { config_key: string; value: string }[] }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ isAdmin: true, publicConfigs: currencyState.configs }) }))
 vi.mock('../utils/feedback', () => ({ notify: vi.fn(), confirmAction: vi.fn() }))
 const plan = { id: 1, name: 'Starter', slug: 'starter', summary: '', description: '', node_group_id: 1, traffic_bytes: 1024 ** 3, speed_limit_mbps: 0, max_active_subscriptions: 0, is_renewable: true, device_limit: 1, family_limit: 0, reset_policy: 2, traffic_calc_mode: 0, is_active: true, sort_order: 0, revision: 1, sku_count: 1, active_sku_count: 1 }
 const sku = { id: 1, plan_id: 1, code: 'starter-month', name: 'Month', sku_type: 'new', billing_mode: 'periodic', entitlement_mode: 'plan', renewal_effect: 'none', allowed_operations: ['purchase'], billing_unit: 'month', billing_value: 1, currency: 'CNY', price_cents: 1000, is_active: true, sort_order: 0, grant_traffic_bytes: 0 }
@@ -20,6 +22,7 @@ const button = defineComponent({ template: '<button><slot /></button>' })
 let wrapper: VueWrapper | undefined
 beforeEach(() => {
   vi.resetAllMocks()
+  currencyState.configs = []
   vi.mocked(confirmAction).mockResolvedValue(true)
   vi.mocked(fetchPlanDetail).mockResolvedValue(structuredClone(plan) as any)
   vi.mocked(fetchPlanSKU).mockResolvedValue(structuredClone(sku) as any)
@@ -71,6 +74,72 @@ it('saves false renewal and publication values', async () => {
   await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
   expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ is_renewable: false, is_active: false }))
 })
+it('keeps historical quota synchronization off unless explicitly selected', async () => {
+  const view = await open('&editor=plan')
+  const control = view.get('#edit-plan-sync-traffic-quota')
+  expect(control.attributes('aria-checked')).toBe('false')
+  expect(view.text()).toContain('保留已用流量、有效期、原重置日期和续费锁价')
+  await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_traffic_quota: false, traffic_bytes: plan.traffic_bytes, expected_revision: plan.revision }))
+})
+it('sends explicit historical quota synchronization and retains its draft on failure', async () => {
+  vi.mocked(updatePlan).mockRejectedValueOnce(new Error('temporary save failure'))
+  const view = await open('&editor=plan')
+  await view.get('#edit-plan-sync-traffic-quota').trigger('click')
+  await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_traffic_quota: true, traffic_bytes: plan.traffic_bytes }))
+  expect(view.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('true')
+  expect(view.find('#edit-plan-form').exists()).toBe(true)
+})
+it('synchronizes reset policy independently and retains the selection on failure', async () => {
+  vi.mocked(updatePlan).mockRejectedValueOnce(new Error('temporary save failure'))
+  const view = await open('&editor=plan')
+  expect(view.get('#edit-plan-sync-reset-policy').attributes('aria-checked')).toBe('false')
+  await view.get('#edit-plan-sync-reset-policy').trigger('click')
+  await view.get('#edit-plan-form').trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ sync_reset_policy: true, sync_traffic_quota: false, reset_policy: 2 }))
+  expect(view.get('#edit-plan-sync-reset-policy').attributes('aria-checked')).toBe('true')
+})
+it('explains automatic group synchronization independently of the optional quota checkbox', async () => {
+  const view = await open('&editor=plan')
+  const editor = view.get('#edit-plan-form')
+  expect(editor.text()).toContain('所有未结束订阅的接入范围自动同步')
+  expect(editor.text()).toContain('共有且已确认交付的接入点继续保留')
+  expect(editor.text()).toContain('新增接入点需等待配置交付核验后才能使用')
+  expect(editor.text()).toContain('此选项只控制流量配额')
+  const group = view.getComponent(NodeGroupLookup)
+  group.vm.$emit('update:modelValue', 9)
+  await flushPromises()
+  expect(editor.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('false')
+  await editor.trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledWith(1, expect.objectContaining({ node_group_id: 9, sync_traffic_quota: false, expected_revision: plan.revision }))
+})
+it('keeps a group-change draft and original revision on retryable 503 until an explicit retry', async () => {
+  vi.mocked(updatePlan).mockRejectedValueOnce({ response: { status: 503, data: { message: 'resource contention', error: { version: 1, code: 'unavailable', retryable: true } } } })
+  const view = await open('&editor=plan')
+  const editor = view.get('#edit-plan-form')
+  const group = view.getComponent(NodeGroupLookup)
+  group.vm.$emit('update:modelValue', 9)
+  editor.get('#edit-plan-name').getComponent({ name: 'UiInput' }).vm.$emit('update:modelValue', 'Changed name')
+  await editor.get('#edit-plan-sync-traffic-quota').trigger('click')
+  await editor.trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledTimes(1)
+  expect(updatePlan).toHaveBeenLastCalledWith(1, expect.objectContaining({ name: 'Changed name', node_group_id: 9, sync_traffic_quota: true, expected_revision: plan.revision }))
+  const firstPayload = structuredClone(vi.mocked(updatePlan).mock.calls[0][1])
+  expect(view.find('#edit-plan-form').exists()).toBe(true)
+  expect(group.props('modelValue')).toBe(9)
+  expect(editor.get('#edit-plan-name').attributes('modelvalue')).toBe('Changed name')
+  expect(editor.get('#edit-plan-sync-traffic-quota').attributes('aria-checked')).toBe('true')
+  expect(editor.get('.editor-version-meta').text()).toContain('版本 1')
+  expect(editor.text()).toContain('请稍后再次点击“保存套餐”重试')
+  await flushPromises()
+  expect(updatePlan).toHaveBeenCalledTimes(1)
+  expect(fetchPlanDetail).toHaveBeenCalledTimes(1)
+  await editor.trigger('submit'); await flushPromises()
+  expect(updatePlan).toHaveBeenCalledTimes(2)
+  expect(updatePlan).toHaveBeenLastCalledWith(1, firstPayload)
+  expect(view.find('#edit-plan-form').exists()).toBe(false)
+})
 it('deletes an inactive SKU and reloads the counts', async () => {
   vi.mocked(fetchPlanSKUs).mockResolvedValue({ items: [{ ...sku, is_active: false }], total: 1 } as any)
   const view = await open('')
@@ -80,14 +149,14 @@ it('deletes an inactive SKU and reloads the counts', async () => {
 })
 it('removes a product and closes its detail after confirmation', async () => {
   const view = await open('')
-  await view.findAll('button').find(button => button.text() === '删除商品')!.trigger('click'); await flushPromises()
+  await view.findAll('button').find(button => button.text() === '删除套餐')!.trigger('click'); await flushPromises()
   expect(deletePlan).toHaveBeenCalledWith(1)
   expect(view.find('.detail-toolbar').exists()).toBe(false)
 })
 it('leaves catalog data intact when deletion confirmation is cancelled', async () => {
   vi.mocked(confirmAction).mockResolvedValue(false)
   const view = await open('')
-  await view.findAll('button').find(button => button.text() === '删除商品')!.trigger('click'); await flushPromises()
+  await view.findAll('button').find(button => button.text() === '删除套餐')!.trigger('click'); await flushPromises()
   expect(deletePlan).not.toHaveBeenCalled()
 })
 
@@ -105,4 +174,15 @@ it('renders backend sales summaries without loading each listed product SKU', as
   const values = view.findAllComponents(TableText).map(item=>item.props('value'))
   expect(values).toContain('新购 · 重置流量');expect(values).toContain('新购 ¥10.00 起 · 重置流量 ¥5.00')
   expect(fetchPlanSKUs).toHaveBeenCalledTimes(1) // Only the explicitly opened detail.
+})
+
+it('uses the platform currency for a new SKU while retaining the currency on an existing SKU', async () => {
+  currencyState.configs = [{ config_key: 'default_currency', value: 'USD' }]
+  await open('&sku=new')
+  expect((wrapper!.vm as any).skuDraft.currency).toBe('USD')
+  currencyState.configs[0]!.value = 'EUR'
+  expect((wrapper!.vm as any).skuDraft.currency).toBe('USD')
+  wrapper!.unmount(); wrapper = undefined
+  await open('&sku=1')
+  expect((wrapper!.vm as any).skuDraft.currency).toBe('CNY')
 })

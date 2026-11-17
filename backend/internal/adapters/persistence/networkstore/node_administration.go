@@ -23,7 +23,7 @@ func (s NodeAdministration) LoadNodeAdministration(ctx context.Context, actor, i
 			return err
 		}
 		var row model.Node
-		if err := tx.First(&row, id).Error; err != nil {
+		if err := withObservationEvidence(tx.Model(&model.Node{})).Where("nodes.id = ?", id).First(&row).Error; err != nil {
 			return nodeAdministrationError(err)
 		}
 		out = nodeAdministrationSnapshot(row)
@@ -53,6 +53,18 @@ func (s NodeAdministration) CreateNodeAdministration(ctx context.Context, actor 
 		}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
+		}
+		if len(change.ProxyPoolIDs) > 100 {
+			return &network.NodeAdministrationValidation{Message: "一次最多引用 100 个代理池"}
+		}
+		for _, id := range uniqueSortedIDs(change.ProxyPoolIDs) {
+			var pool model.NodeProxyPool
+			if e := tx.Clauses(currentResourceReadLock(tx)).First(&pool, id).Error; e != nil {
+				return &network.NodeAdministrationValidation{Message: "请选择存在的共享代理池"}
+			}
+			if e := bindSharedProxyPool(tx, row.ID, id); e != nil {
+				return e
+			}
 		}
 		if err := tx.Create(&model.NodeKernelState{NodeID: row.ID, Status: "unknown", Phase: "idle", RecommendedAction: "detect"}).Error; err != nil {
 			return err
@@ -133,7 +145,7 @@ func (s NodeAdministration) UpdateNodeSSHConfiguration(ctx context.Context, acto
 			return err
 		}
 		row, err := lockNodeAdministration(tx, id)
-		if err != nil {
+		if err != nil && !(errors.Is(err, network.ErrNodeAdministrationDeleting) && retirementSSHRepairAllowed(tx, row, change)) {
 			return err
 		}
 		updates := map[string]any{
@@ -291,7 +303,7 @@ func lockNodeAdministration(tx *gorm.DB, id uint) (model.Node, error) {
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, id).Error; err != nil {
 		return row, nodeAdministrationError(err)
 	}
-	if row.LifecycleStatus == "deleting" {
+	if network.NodeManagementClosed(row.LifecycleStatus) {
 		return row, network.ErrNodeAdministrationDeleting
 	}
 	return row, nil
@@ -320,7 +332,7 @@ func nodeAdministrationRecord(row model.Node) network.NodeAdministrationRecord {
 	return network.NodeAdministrationRecord{
 		ID: row.ID, Name: row.Name, Region: row.Region, Address: row.Address,
 		NodeCredentialPrefix: row.NodeCredentialPrefix, NodeCredentialRevokedAt: row.NodeCredentialRevokedAt,
-		CommunicationProtocol: row.CommunicationProtocol, Status: row.Status, LifecycleStatus: row.LifecycleStatus,
+		CommunicationProtocol: row.CommunicationProtocol, Status: row.Status, LifecycleStatus: row.LifecycleStatus, ArchivedAt: row.ArchivedAt,
 		Config: row.Config, IsEnabled: row.IsEnabled, Remark: row.Remark, IsOnline: row.IsOnline,
 		LastSeenAt: row.LastSeenAt, LastSyncAt: row.LastSyncAt, Version: row.Version,
 		SSHHost: row.SSHHost, SSHPort: row.SSHPort, SSHUser: row.SSHUser, SSHAuthMethod: row.SSHAuthMethod,
@@ -328,7 +340,8 @@ func nodeAdministrationRecord(row model.Node) network.NodeAdministrationRecord {
 		SSHHostKeyFingerprint: row.SSHHostKeyFingerprint, SSHVerifiedAt: row.SSHVerifiedAt,
 		ConnectorLastSeenAt: row.ConnectorLastSeenAt, ConnectorOnline: row.ConnectorOnline,
 		UptimeSeconds: row.UptimeSeconds, ActiveFlows: row.ActiveFlows,
-		BytesUp: row.BytesUp, BytesDown: row.BytesDown, TrafficSecretPrefix: row.TrafficSecretPrefix,
+		Observation: nodeCounterEvidence(row),
+		BytesUp:     row.BytesUp, BytesDown: row.BytesDown, TrafficSecretPrefix: row.TrafficSecretPrefix,
 		TrafficSecretRevokedAt: row.TrafficSecretRevokedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }

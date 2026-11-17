@@ -20,6 +20,7 @@ import (
 // schema created here is ever migrated or dropped; a supplied DBName is ignored.
 func newMySQLPublishHandlers(t *testing.T) (*handlers, string) {
 	t.Helper()
+	reportMySQLFixtureTimingOnCleanup(t)
 	dsn := os.Getenv("ZBOARD_TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("set ZBOARD_TEST_MYSQL_DSN to run isolated real MySQL integration tests")
@@ -36,16 +37,24 @@ func newMySQLPublishHandlers(t *testing.T) (*handlers, string) {
 	}
 	t.Cleanup(func() { _ = admin.Close() })
 	schema := "zboard_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := admin.Exec("CREATE DATABASE `" + schema + "` CHARACTER SET utf8mb4"); err != nil {
+	finishCreate := beginMySQLFixtureTiming("publish", "create_schema")
+	_, createErr := admin.Exec("CREATE DATABASE `" + schema + "` CHARACTER SET utf8mb4")
+	finishCreate(createErr)
+	if err := createErr; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, err := admin.Exec("DROP DATABASE `" + schema + "`"); err != nil {
+		finishDrop := beginMySQLFixtureTiming("publish", "drop_schema")
+		_, dropErr := admin.Exec("DROP DATABASE `" + schema + "`")
+		finishDrop(dropErr)
+		if err := dropErr; err != nil {
 			t.Errorf("clean test schema: %v", err)
 		}
 	})
 	config.DBName = schema
+	finishOpen := beginMySQLFixtureTiming("publish", "open_pool")
 	db, err := datastore.Open(config.FormatDSN())
+	finishOpen(err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,17 +62,22 @@ func newMySQLPublishHandlers(t *testing.T) (*handlers, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = pool.Close() })
-	for _, migrate := range []func(*gorm.DB) error{
+	t.Cleanup(func() { finish := beginMySQLFixtureTiming("publish", "close_pool"); err := pool.Close(); finish(err) })
+	for i, migrate := range []func(*gorm.DB) error{
 		datastore.RunMigrations, datastore.ReconcileCommerceSchema, datastore.ReconcileSubscriptionAccessSchema,
 		datastore.ReconcileZeroEventSchema, datastore.ReconcileTrafficReadSchema,
 		datastore.ReconcileOperationsSchema, datastore.ReconcileFairUseTelemetrySchema,
 	} {
-		if err := migrate(db); err != nil {
+		finish := beginMySQLFixtureTiming("publish", mysqlFixturePreparationPhases[i])
+		err := migrate(db)
+		finish(err)
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
+	finishServices := beginMySQLFixtureTiming("publish", "services")
 	h, err := newTestHandlers(db, "0123456789abcdef0123456789abcdef", newTestCredentialCipher(t), "", "legacy", "")
+	finishServices(err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +96,11 @@ func TestMySQLPublishQueueConcurrencyAndRecovery(t *testing.T) {
 	}
 	if err := datastore.RunMigrations(h.db); err != nil {
 		t.Fatal(err)
+	}
+	for _, field := range []string{"Deferred", "Reconciling", "Suspended", "Phase", "AppliedConfigSHA256"} {
+		if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
+			t.Fatalf("recreated publication table lost the already-applied column %s", field)
+		}
 	}
 	var node model.Node
 	if err := h.db.First(&node, 1).Error; err != nil || node.Name != "mysql-publish" {
@@ -200,4 +219,117 @@ func TestMySQLPublishQueueConcurrencyAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNoPublishClaim(t, h, now.Add(time.Hour))
+}
+
+func TestMySQLPublicationColumnMigrationsRestoreMissingBaselineTables(t *testing.T) {
+	h, _ := newMySQLPublishHandlers(t)
+	if err := h.db.Create(&model.Node{ID: 1, Name: "preserved-node", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a recorded older baseline whose publication resources are absent,
+	// with the new column migrations still pending. Each migration must see the
+	// original table first, without pre-adding columns and duplicating its ALTER.
+	for _, name := range []string{"node_group_network_entries", "network_entries", "node_config_publishes"} {
+		if err := h.db.Migrator().DropTable(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.db.Exec("DELETE FROM schema_migrations WHERE version IN ?", []string{"0034_network_entry_listen_address.up.sql", "0035_publication_capability_deferral.up.sql"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.RunMigrations(h.db); err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.RunMigrations(h.db); err != nil {
+		t.Fatalf("repeated migration failed: %v", err)
+	}
+	if !h.db.Migrator().HasColumn(&model.NetworkEntry{}, "ListenAddress") {
+		t.Fatal("current network entry listen column absent")
+	}
+	for _, field := range []string{"Deferred", "Reconciling", "Suspended", "Phase", "AppliedConfigSHA256"} {
+		if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, field) {
+			t.Fatalf("current publication column %s absent", field)
+		}
+	}
+	var node model.Node
+	if err := h.db.First(&node, 1).Error; err != nil || node.Name != "preserved-node" {
+		t.Fatalf("unrelated node data changed: %+v %v", node, err)
+	}
+	if err := enqueueNodeConfigPublish(h.db, 1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMySQLPublicationSchemaReconciliationPreservesOutcomeState(t *testing.T) {
+	h, _ := newMySQLPublishHandlers(t)
+	if err := h.db.Create(&model.Node{ID: 1, Name: "preserved-outcome", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := enqueueNodeConfigPublish(h.db, 1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 1).
+		Updates(map[string]interface{}{"reconciling": true, "suspended": true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := datastore.RunMigrations(h.db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pending model.NodeConfigPublish
+	if err := h.db.First(&pending, 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !pending.Reconciling || !pending.Suspended {
+		t.Fatalf("migration changed existing outcome state: %+v", pending)
+	}
+}
+
+func TestMySQLConnectionPhaseMigrationPreservesIntentAndRepairsPartialDDL(t *testing.T) {
+	h, _ := newMySQLPublishHandlers(t)
+	if err := h.db.Create(&model.Node{ID: 1, Name: "connection-phase", Config: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := enqueueNodeConfigPublish(h.db, 1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("a", 64)
+	if err := h.db.Model(&model.NodeConfigPublish{}).Where("node_id = ?", 1).Updates(map[string]any{"phase": "connections", "applied_config_sha256": sha, "generation": 7, "lease_token": "phase-owner", "reconciling": true, "suspended": true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := datastore.RunMigrations(h.db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pending model.NodeConfigPublish
+	if err := h.db.First(&pending, 1).Error; err != nil || pending.Phase != "connections" || pending.AppliedConfigSHA256 != sha || pending.Generation != 7 || pending.LeaseToken != "phase-owner" || !pending.Reconciling || !pending.Suspended {
+		t.Fatal("state changed", pending, err)
+	}
+	// Simulate interruption after the first ALTER but before migration recording.
+	if err := h.db.Exec("DELETE FROM schema_migrations WHERE version = ?", "0045_publication_connection_phase.up.sql").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Migrator().DropColumn(&model.NodeConfigPublish{}, "AppliedConfigSHA256"); err != nil {
+		t.Fatal(err)
+	}
+	if err := datastore.RunMigrations(h.db); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.First(&pending, 1).Error; err != nil || pending.Phase != "" || pending.AppliedConfigSHA256 != "" || pending.Generation != 7 || pending.LeaseToken != "phase-owner" || !pending.Reconciling || !pending.Suspended {
+		t.Fatal("partial DDL lost intent or invented application proof", pending, err)
+	}
+	// Already-recorded migration with a missing phase column must recover too.
+	if err := h.db.Migrator().DropColumn(&model.NodeConfigPublish{}, "Phase"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := datastore.RunMigrations(h.db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !h.db.Migrator().HasColumn(&model.NodeConfigPublish{}, "Phase") {
+		t.Fatal("recorded partial table not repaired")
+	}
 }

@@ -77,6 +77,26 @@ class AcceptanceReportTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["runtime_diagnostics"], {})
 
+    def test_comparison_profile_never_changes_the_default_capacity_gate(self):
+        meta = json.loads((self.directory / "container.json").read_text())
+        meta[0]["HostConfig"].update(NanoCpus=1500000000, Memory=1610612736, MemorySwap=1610612736)
+        self.write("container.json", meta)
+        self.assertFalse(report.evaluate(self.directory)["passed"])
+        self.assertTrue(report.evaluate(self.directory, expected_nanocpus=1500000000,
+                                        expected_memory=1610612736)["passed"])
+        meta[0]["HostConfig"]["MemorySwap"] += 1
+        self.write("container.json", meta)
+        self.assertFalse(report.evaluate(self.directory, expected_nanocpus=1500000000,
+                                         expected_memory=1610612736)["passed"])
+
+    def test_explicit_comparison_resources_cannot_override_request_failure(self):
+        self.write("data/load-result.json", {
+            "metrics": {"/api/zero/events": {"count": 100, "errors": 1, "p95_ms": 2}},
+            "generator_dropped": 0, "undelivered_jobs": 0,
+        })
+        self.assertFalse(report.evaluate(self.directory, expected_nanocpus=1000000000,
+                                         expected_memory=1073741824)["passed"])
+
 
 if __name__ == "__main__":
     unittest.main()

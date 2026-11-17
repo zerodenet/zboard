@@ -38,6 +38,11 @@ func (s Integrations) Create(ctx context.Context, actor uint, in identity.Integr
 		if err != nil {
 			return err
 		}
+		for _, scope := range in.Scopes {
+			if identity.IntegrationScopeRequiresAdministrator(scope) && !user.IsAdmin {
+				return identity.ErrPermission
+			}
+		}
 		var count int64
 		if err := tx.Model(&model.UserAPIToken{}).Where("user_id = ? AND revoked_at IS NULL AND expires_at > ?", actor, time.Now().UTC()).Count(&count).Error; err != nil {
 			return err
@@ -145,6 +150,18 @@ func (s Integrations) Resolve(ctx context.Context, c catalog.Credential, operati
 	if !allowed {
 		return catalog.Grant{}, catalog.ErrDenied
 	}
+	if identity.IntegrationScopeRequiresAdministrator(operation) {
+		user, err := integrationAccount(s.DB.WithContext(ctx), token.UserID)
+		if err != nil {
+			if errors.Is(err, identity.ErrPermission) {
+				return catalog.Grant{}, catalog.ErrDenied
+			}
+			return catalog.Grant{}, err
+		}
+		if !user.IsAdmin {
+			return catalog.Grant{}, catalog.ErrDenied
+		}
+	}
 	return catalog.Grant{Principal: catalog.Principal{
 		Kind: "integration", Subject: fmt.Sprintf("integration:%d", token.ID),
 		AccountID: token.UserID, CredentialID: token.ID,
@@ -158,14 +175,15 @@ func (s Integrations) Admit(ctx context.Context, _ catalog.Credential, grant cat
 	}
 	now := s.now()
 	window := now.Truncate(time.Minute)
+	requireAdmin := identity.IntegrationScopeRequiresAdministrator(descriptor.Name)
 	result := s.DB.WithContext(ctx).Exec(`UPDATE user_api_tokens
 		SET invocation_window_count = CASE WHEN invocation_window_started_at IS NULL OR invocation_window_started_at < ? THEN 1 ELSE invocation_window_count + 1 END,
 			invocation_window_started_at = CASE WHEN invocation_window_started_at IS NULL OR invocation_window_started_at < ? THEN ? ELSE invocation_window_started_at END,
 			last_used_at = ?
 		WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?
 			AND (invocation_window_started_at IS NULL OR invocation_window_started_at < ? OR invocation_window_count < ?)
-			AND EXISTS (SELECT 1 FROM users WHERE users.id = user_api_tokens.user_id AND users.status = ? AND users.deleted_at IS NULL)`,
-		window, window, window, now, principal.CredentialID, principal.AccountID, now, window, descriptor.RateLimitPerMinute, "active")
+			AND EXISTS (SELECT 1 FROM users WHERE users.id = user_api_tokens.user_id AND users.status = ? AND users.deleted_at IS NULL AND (? = ? OR users.is_admin = ?))`,
+		window, window, window, now, principal.CredentialID, principal.AccountID, now, window, descriptor.RateLimitPerMinute, "active", requireAdmin, false, true)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -175,6 +193,7 @@ func (s Integrations) Admit(ctx context.Context, _ catalog.Credential, grant cat
 	var valid int64
 	if err := s.DB.WithContext(ctx).Model(&model.UserAPIToken{}).
 		Joins("JOIN users ON users.id = user_api_tokens.user_id AND users.status = ? AND users.deleted_at IS NULL", "active").
+		Where("? = ? OR users.is_admin = ?", requireAdmin, false, true).
 		Where("user_api_tokens.id = ? AND user_api_tokens.user_id = ? AND user_api_tokens.revoked_at IS NULL AND user_api_tokens.expires_at > ?", principal.CredentialID, principal.AccountID, now).
 		Count(&valid).Error; err != nil {
 		return err

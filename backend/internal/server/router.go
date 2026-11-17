@@ -24,8 +24,21 @@ func newRoute(method, path string, fn func(http.ResponseWriter, *http.Request)) 
 
 // RegisterRoutes binds transports and starts application services after
 // application.PrepareDatabaseSchema has completed. It never changes the schema.
-func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options) (func() error, error) {
-	services := application.New(db, jwtSecret)
+func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options, fileStorageDir ...string) (func() error, error) {
+	return RegisterRoutesWithProjectionSupervisor(srv, db, jwtSecret, credentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion, zeroEventSpoolConfig, pluginOptions, nil, fileStorageDir...)
+}
+
+// RegisterRoutesWithProjectionSupervisor keeps optional same-host capacity
+// assistance in the server composition root. All existing callers retain the
+// complete single-process behavior through RegisterRoutes above.
+func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialCipher *security.CredentialCipher, zeroArtifactDir, zeroKernelContract, zeroLocalVersion string, zeroEventSpoolConfig zeroevent.Config, pluginOptions plugins.Options, supervisor *application.ProjectionSupervisorOptions, fileStorageDir ...string) (func() error, error) {
+	var services *application.Services
+	_ = runStartupPhase("application_services", func() error { services = application.New(db, jwtSecret); return nil })
+	directory := ""
+	if len(fileStorageDir) > 0 {
+		directory = fileStorageDir[0]
+	}
+	services.ConfigureFileStorage(directory)
 	initialized := false
 	defer func() {
 		if !initialized {
@@ -36,13 +49,20 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	if err != nil {
 		return nil, err
 	}
-	if _, err := services.RecoverLegacyOperations(context.Background()); err != nil {
+	if err := runStartupPhase("legacy_operation_recovery", func() error { _, err := services.RecoverLegacyOperations(context.Background()); return err }); err != nil {
 		return nil, err
 	}
 	srv.Use(h.InstallationMiddleware)
+	srv.AddRoute(newRoute(http.MethodPost, "/api/v1/files", h.FileUploadHandler), rest.WithMaxBytes((5<<20)+(64<<10)), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodGet, "/media/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodHead, "/media/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodGet, "/api/v1/files/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
+	srv.AddRoute(newRoute(http.MethodHead, "/api/v1/files/:id", h.FileGetHandler), rest.WithTimeout(time.Minute))
 	srv.AddRoute(newRoute(http.MethodPost, "/api/v1/nodes/:id/kernel/upload", h.NodeKernelUploadHandler), rest.WithMaxBytes((128<<20)+(64<<10)), rest.WithTimeout(3*time.Minute))
+	srv.AddRoute(newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/reality-probe", h.ProtocolRealityProbeHandler), rest.WithTimeout(25*time.Second))
 
 	srv.AddRoutes([]rest.Route{
+		newRoute(http.MethodDelete, "/api/v1/files/:id", h.FileDeleteHandler),
 		newRoute(http.MethodGet, "/healthz", h.HealthHandler),
 		newRoute(http.MethodGet, "/api/v1/navigation", h.NavigationHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/menus", h.AdminMenusHandler),
@@ -68,6 +88,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/finish", h.ExternalAuthFinishHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/registration-code", h.ExternalRegistrationCodeHandler),
 		newRoute(http.MethodPost, "/api/v1/auth/oidc/password", h.ExternalPasswordSetupHandler),
+		newRoute(http.MethodGet, "/api/v1/account/cleanup-status", h.AccountCleanupStatusHandler),
 		newRoute(http.MethodGet, "/api/v1/account/identities/security", h.ExternalPasswordStatusHandler),
 		newRoute(http.MethodPost, "/api/v1/account/security/password", h.ChangeAccountPasswordHandler),
 		newRoute(http.MethodPost, "/api/v1/account/security/confirm-password", h.ConfirmAccountPasswordHandler),
@@ -82,6 +103,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/tickets/:id/status", h.AdminTicketStatusHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/users", h.AdminUsersListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/users/:id", h.AdminUserGetHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/users/:id/deletion-preview", h.AdminUserDeletionPreviewHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/users/:id", h.AdminUserDeleteHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/settings", h.AdminSettingsUpdateHandler),
 		newRoute(http.MethodGet, "/api/v1/system/configs", h.PublicSystemConfigsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-configs", h.AdminSystemConfigsListHandler),
@@ -101,6 +124,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/email-templates/:id", h.AdminEmailTemplateUpdateHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/email-templates/:id", h.AdminEmailTemplateDeleteHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/system-info", h.AdminSystemInfoHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/system-metrics", h.AdminSystemMetricsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs", h.AdminRuntimeJobsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs/registered", h.AdminRuntimeRegisteredJobsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/runtime-jobs/runs", h.AdminRuntimeHistoryHandler),
@@ -122,6 +146,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/users/:id", h.AdminUserUpdateHandler),
 
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/node-proxy-pools/:id/reference", h.NodeProxyPoolReferenceHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/node-proxy-pools/:id/reference", h.NodeProxyPoolReferenceHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/config", h.NodeProxyPoolConfigHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/runtime", h.NodeProxyPoolRuntimeHandler),
@@ -133,6 +159,12 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodPut, "/api/v1/admin/network-entries/:id", h.NetworkEntriesHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/network-entries/:id", h.NetworkEntriesHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-cleanup-script", h.NodeCleanupScriptHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/node-observation-intents", h.NodeObservationIntentsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/node-observation-intents/:id/retry", h.NodeObservationIntentRetryHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/nodes/:id/deletion", h.NodeRetirementHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/nodes/:id/deletion", h.NodeRetirementHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/nodes/:id/retirement", h.NodeRetirementHandler),
 		newRoute(http.MethodGet, "/api/v1/nodes", h.NodeListHandler),
 		newRoute(http.MethodPost, "/api/v1/nodes", h.NodeCreateHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/node-operations", h.NodeBatchOperationHandler),
@@ -195,6 +227,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints/:id/usage-resets", h.ProtocolEndpointUsageResetsHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/:id/usage-resets", h.ProtocolEndpointUsageResetsHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/protocol-endpoints/:id", h.ProtocolEndpointUpdateHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/network-entries/:id/deletion-check", h.NetworkEntryDeletionCheckHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/protocol-endpoints/:id/deletion-check", h.ProtocolEndpointDeletionCheckHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/protocol-endpoints/:id", h.ProtocolEndpointDeleteHandler),
 		newRoute(http.MethodPatch, "/api/v1/admin/protocol-endpoints/:id/multiplier", h.ProtocolEndpointMultiplierHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/protocol-endpoints/:id/deploy", h.ProtocolEndpointDeployHandler),
@@ -220,24 +254,52 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/admin/plan-skus/:id", h.PlanSKUGetCommerceHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/plan-skus/:id", h.PlanSKUUpdateCommerceHandler),
 		newRoute(http.MethodDelete, "/api/v1/admin/plan-skus/:id", h.PlanSKUDeleteCommerceHandler),
+		newRoute(http.MethodGet, "/api/v1/account/wallet", h.WalletHandler),
+		newRoute(http.MethodPost, "/api/v1/account/wallet/topups", h.WalletTopUpHandler),
 		newRoute(http.MethodGet, "/api/v1/orders", h.OrderListHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders", h.OrderListHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders", h.AdminOrderAssignHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/preview", h.AdminOrderPreviewHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders/:id", h.AdminOrderGetHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/consumption-refunds", h.AdminOrderConsumptionRefundsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/consumption-refunds/:id", h.AdminConsumptionRefundHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/subscription-access", h.AdminOrderSubscriptionAccessHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/orders/:id/payment-events", h.AdminOrderPaymentEventsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/users/:id/wallet", h.AdminUserWalletHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-credits", h.AdminWalletCreditHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-debits", h.AdminWalletDirectDebitHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/wallet-adjustments", h.AdminWalletAdjustmentsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-adjustments", h.AdminWalletAdjustmentsHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/wallet-adjustments/:id", h.AdminWalletAdjustmentHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-adjustments/:id/payout-results", h.AdminWalletAdjustmentHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/wallet-adjustments/:id/reverse", h.AdminWalletAdjustmentHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/orders/:id/payment-receipts", h.PaymentReceiptsHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/payment-receipts/resolve", h.ResolvePaymentReceiptHandler),
+		newRoute(http.MethodGet, "/api/v1/orders/:id/payment-receipts", h.PaymentReceiptsHandler),
+		newRoute(http.MethodGet, "/api/v1/orders/:id/funding", h.OrderFundingHandler),
+		newRoute(http.MethodPost, "/api/v1/orders/:id/funding", h.OrderFundingHandler),
+		newRoute(http.MethodPost, "/api/v1/orders/:id/wallet-pay", h.WalletPayOrderHandler),
 		newRoute(http.MethodPost, "/api/v1/orders", h.OrderCreateCommerceValidatedHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/preview", h.OrderPreviewHandler),
+		newRoute(http.MethodGet, "/api/v1/commerce/discount-providers", h.CommerceDiscountProvidersHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/pay", h.OrderPayCommerceHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/pay", h.OrderPayCommerceHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/cancel", h.OrderCancelHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/orders/:id/cancel", h.OrderCancelHandler),
 		newRoute(http.MethodPost, "/api/v1/orders/:id/pay-callback", h.OrderPayCallbackCommerceHandler),
 		newRoute(http.MethodGet, "/api/v1/subscriptions", h.SubscriptionsHandler),
+		newRoute(http.MethodGet, "/api/v1/subscriptions/:id/value", h.SubscriptionValueHandler),
+		newRoute(http.MethodPost, "/api/v1/subscriptions/:id/unsubscribe", h.SubscriptionValueHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/value", h.AdminSubscriptionValueHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/subscriptions/:id/unsubscribe", h.AdminSubscriptionValueHandler),
+		newRoute(http.MethodGet, "/api/v1/subscriptions/:id/automatic-renewal", h.AutomaticRenewalHandler),
+		newRoute(http.MethodPut, "/api/v1/subscriptions/:id/automatic-renewal", h.AutomaticRenewalHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/subscriptions/:id/quota", h.AdminSubscriptionQuotaHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/credential-migration", h.AdminSubscriptionCredentialMigrationHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/subscriptions/:id/credential-migration", h.AdminSubscriptionCredentialMigrationHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/subscriptions/:id/credential-migration", h.AdminSubscriptionCredentialMigrationHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/metrics", h.AdminSubscriptionFairUseMetricsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/observations", h.AdminSubscriptionFairUseObservationsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),
@@ -257,6 +319,7 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodGet, "/api/v1/traffic/records", h.TrafficUsageRecordsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/traffic/records", h.TrafficUsageRecordsHandler),
 		newRoute(http.MethodGet, "/api/v1/traffic/trends", h.TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/traffic/user-activity", h.AdminUserTrafficActivityHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/traffic/trends", h.TrafficTrendsSystemCalendarWithPrincipalFlowReplayHandler),
 		newRoute(http.MethodGet, "/api/v1/traffic/reconciliation", h.TrafficReconciliationHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/traffic/reconciliation", h.TrafficReconciliationHandler),
@@ -287,36 +350,42 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		newRoute(http.MethodDelete, "/api/v1/admin/subscription-templates/:id", h.AdminSubscriptionTemplateDeleteHandler),
 		newRoute(http.MethodGet, "/api/v1/system/info", h.SystemInfoHandler),
 	})
-	if err := h.ReconcileSystemConfigDefaults(); err != nil {
+	if err := runStartupPhase("system_defaults", h.ReconcileSystemConfigDefaults); err != nil {
 		return nil, err
 	}
-	if err := services.RecoverLegacyDatabaseMigrations(context.Background()); err != nil {
+	if err := runStartupPhase("legacy_database_migration_recovery", func() error { return services.RecoverLegacyDatabaseMigrations(context.Background()) }); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileSiteCustomizationDefaults(); err != nil {
+	if err := runStartupPhase("site_defaults", h.ReconcileSiteCustomizationDefaults); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileSubscriptionTemplateDefaults(); err != nil {
+	if err := runStartupPhase("subscription_templates", h.ReconcileSubscriptionTemplateDefaults); err != nil {
 		return nil, err
 	}
-	if err := h.SeedSubscriptionClientTemplateDefaults(); err != nil {
+	if err := runStartupPhase("subscription_client_templates", h.SeedSubscriptionClientTemplateDefaults); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileMieruEndpointCredentials(); err != nil {
+	if err := runStartupPhase("mieru_credentials", h.ReconcileMieruEndpointCredentials); err != nil {
 		return nil, err
 	}
-	if err := h.ReconcileSubscriptionAccessTokens(); err != nil {
+	if err := runStartupPhase("subscription_access", h.ReconcileSubscriptionAccessTokens); err != nil {
 		return nil, err
 	}
-	closeTrafficReads, err := h.ConfigureTrafficReads()
+	var closeTrafficReads func() error
+	err = runStartupPhase("traffic_read_pool", func() error { var err error; closeTrafficReads, err = h.ConfigureTrafficReads(); return err })
 	if err != nil {
 		return nil, err
 	}
-	if err := h.ConfigureZeroEventSpool(zeroEventSpoolConfig); err != nil {
+	if err := runStartupPhase("zero_event_spool_recovery", func() error { return h.ConfigureZeroEventSpool(zeroEventSpoolConfig) }); err != nil {
 		_ = closeTrafficReads()
 		return nil, err
 	}
-	pluginManager, pluginErr := plugins.NewManager(db, credentialCipher, pluginOptions, version.Version)
+	var pluginManager *plugins.Manager
+	pluginErr := runStartupPhase("plugin_runtime", func() error {
+		var err error
+		pluginManager, err = plugins.NewManager(db, credentialCipher, pluginOptions, version.Version)
+		return err
+	})
 	if pluginErr != nil {
 		logx.Errorf("plugin runtime unavailable; core service remains online: %v", pluginErr)
 	} else {
@@ -324,7 +393,9 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	}
 	h.SetPluginManager(pluginManager)
 	if pluginManager != nil {
-		pluginManager.SetHostServices(application.NewPluginHostServices(services, h))
+		hostServices := application.NewPluginHostServices(services, h)
+		h.ConfigureNativePluginHost(hostServices)
+		pluginManager.SetHostServices(hostServices)
 	}
 	pluginRoute := func(method, path string, fn http.HandlerFunc) rest.Route {
 		return newRoute(method, path, h.PluginGuard(fn))
@@ -346,6 +417,8 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 		pluginRoute(http.MethodGet, "/api/v1/plugin-ui/catalog", h.PluginCatalogHandler),
 		pluginRoute(http.MethodGet, "/api/v1/plugin-ui/slots", h.PluginSlotCatalogHandler),
 		pluginRoute(http.MethodPost, "/api/v1/plugin-ui/:id/session", h.PluginSessionHandler),
+		pluginRoute(http.MethodGet, "/api/v1/plugin-ui/composition", h.PluginCompositionHandler),
+		pluginRoute(http.MethodPost, "/api/v1/plugin-ui/:id/identity-start", h.PluginIdentityStartHandler),
 		pluginRoute(http.MethodPost, "/api/v1/plugin-ui/:id/slot-session", h.PluginSlotSessionHandler),
 		pluginRoute(http.MethodPost, "/api/v1/plugin-ui/bridge", h.PluginBridgeHandler),
 		pluginRoute(http.MethodDelete, "/api/v1/plugin-ui/session", h.PluginRevokeSessionHandler),
@@ -358,38 +431,56 @@ func RegisterRoutes(srv *rest.Server, db *gorm.DB, jwtSecret string, credentialC
 	publicPluginPath := "/.well-known"
 	for depth := 1; depth <= 6; depth++ {
 		publicPluginPath += fmt.Sprintf("/:part%d", depth)
-		srv.AddRoute(pluginRoute(http.MethodGet, publicPluginPath, h.PluginPublicRouteHandler), rest.WithTimeout(20*time.Second))
+		srv.AddRoute(pluginRoute(http.MethodGet, publicPluginPath, h.PluginPublicRouteHandler), rest.WithMaxBytes(plugins.MaxPublicRouteBodyBytes), rest.WithTimeout(20*time.Second))
 		srv.AddRoute(pluginRoute(http.MethodPost, publicPluginPath, h.PluginPublicRouteHandler), rest.WithMaxBytes(plugins.MaxPublicRouteBodyBytes), rest.WithTimeout(20*time.Second))
 	}
 
 	h.StartAdminTaskWorker()
 	h.StartNodePublishWorker()
 	h.StartTrafficResetWorker()
+	h.StartDiscountRedemptionWorker()
+	h.StartWalletReservationWorker()
+	h.StartAutomaticRenewalWorker()
+	h.StartUserCleanupWorker()
+	h.StartUsageProjectionWorker()
+	h.StartPrincipalStatisticsWorker()
+	h.StartNodeObservationWorker()
+	h.StartNodeObservationMaterialRetentionWorker()
+	h.StartTrafficDiagnosticRetentionWorker()
 	h.StartProxyPoolSubscriptionWorker()
 	h.StartFairUseEvaluationWorker()
 	h.StartCertificateRenewalWorker()
 	h.StartDNSPublicObservationWorker()
 	if err := services.RegisterDatabaseMigrationJobs(credentialCipher); err != nil {
+		h.CloseBackgroundJobs()
 		if pluginManager != nil {
 			pluginManager.Close()
 		}
 		_ = h.CloseZeroEventSpool()
-		h.CloseBackgroundJobs()
 		_ = closeTrafficReads()
 		return nil, err
 	}
 	services.StartWork()
+	closeSupervisor, supervisorErr := services.StartProjectionSupervisor(supervisor)
+	if supervisorErr != nil {
+		// This is an optional capacity failure, not a reason to revoke business
+		// authorization or prevent the complete built-in executor from running.
+		logx.Errorf("local projection supervisor unavailable; single-process core continues: %v", supervisorErr)
+	}
 	initialized = true
 	return func() error {
+		var supervisorCloseErr error
+		if closeSupervisor != nil {
+			supervisorCloseErr = closeSupervisor()
+		}
+		// Leave room within the default30-second container grace period for local
+		// interruption/completion fences, plugin teardown and durable file flush.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := h.Shutdown(ctx)
 		if pluginManager != nil {
 			pluginManager.Close()
 		}
-		h.CloseNodePublishWorker()
-		h.CloseTrafficResetWorker()
-		h.CloseProxyPoolSubscriptionWorker()
-		h.CloseFairUseEvaluationWorker()
-		err := h.CloseZeroEventSpool()
-		h.CloseBackgroundJobs()
-		return errors.Join(err, closeTrafficReads())
+		return errors.Join(supervisorCloseErr, err, closeTrafficReads())
 	}, nil
 }

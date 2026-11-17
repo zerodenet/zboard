@@ -66,7 +66,7 @@ func (s *Services) DatabaseMigration(cipher platform.MigrationCipher) platform.M
 	if datastore.IsSQLite(s.Identity.db) {
 		driver = datastore.DriverSQLite
 	}
-	return platform.Migration{SourceDriver: driver, Repository: migrationAdmissionRepository{MigrationRepository: platformstore.MigrationAdmission{DB: s.Identity.db}, invalidate: s.InvalidateMaintenance}, Targets: platformstore.MigrationTargets{}, Cipher: cipher}
+	return platform.Migration{SourceDriver: driver, Repository: migrationAdmissionRepository{MigrationRepository: platformstore.MigrationAdmission{DB: s.Identity.db}, invalidate: s.InvalidateMaintenance}, Targets: platformstore.MigrationTargets{DB: s.Identity.db}, Cipher: cipher}
 }
 
 func (s *Services) DatabaseMigrationInspection() platform.MigrationInspection {
@@ -75,5 +75,5 @@ func (s *Services) DatabaseMigrationInspection() platform.MigrationInspection {
 		driver = datastore.DriverSQLite
 	}
 	store := platformstore.MigrationInspection{DB: s.Identity.db}
-	return platform.MigrationInspection{SourceDriver: driver, Repository: store, Admission: platformstore.MigrationAdmission{DB: s.Identity.db}, Targets: platformstore.MigrationTargets{}, Source: store}
+	return platform.MigrationInspection{SourceDriver: driver, Repository: store, Admission: platformstore.MigrationAdmission{DB: s.Identity.db}, Targets: platformstore.MigrationTargets{DB: s.Identity.db}, Source: store}
 }

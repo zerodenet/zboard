@@ -23,7 +23,7 @@ func isHostServiceCapability(capability string) bool {
 	case AccountAssertionCapability, SubscriptionProjectionCapability, MessageProjectionCapability,
 		AccountSelfReadCapability, AccountAdminReadCapability, SubscriptionReadCapability, SubscriptionConfigReadCapability, SubscriptionAdminReadCapability,
 		SubscriptionQuotaWriteCapability, SubscriptionTermWriteCapability, SubscriptionStatusWriteCapability,
-		MessageReadCapability, MessageAckCapability:
+		MessageReadCapability, MessageAckCapability, CommerceOrdersReadCapability, CommercePaymentsWriteCapability:
 		return true
 	case HostDiscoveryCapability:
 		return true
@@ -42,4 +42,8 @@ func requiresHostCallback(v Installation) bool {
 		}
 	}
 	return false
+}
+
+type PluginActorIssuer interface {
+	PluginActor(context.Context, string, uint) (string, bool, error)
 }

@@ -1,9 +1,15 @@
-import axios from 'axios'
+import axios, { AxiosError } from 'axios'
+import { expireAuthSession, isAuthSessionExpired, resetAuthSessionExpired } from '../utils/authSession'
 import { normalizeApiErrorPayload } from '../utils/apiError'
 import { appendQueryID, type QueryID } from './queryID'
 import { requirePageResponse } from './pageResponse'
+import type { TicketAttachment } from './files'
 
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
+
+export function isPublicPluginRequest(config: { method?: string; url?: string; params?: any }) {
+ return config.method === 'get' && (config.url === '/plugin-ui/composition' && config.params?.surface === 'public' || config.url === '/plugin-ui/slots' && config.params?.surface === 'public' && config.params?.slot === 'auth.login.methods') || config.method === 'post' && /^\/plugin-ui\/[a-zA-Z0-9._-]+\/identity-start$/.test(config.url || '')
+}
 
 const tokenKey = 'zboard.auth.token'
 export const MAINTENANCE_STATE_EVENT = 'zboard:maintenance-state'
@@ -14,6 +20,11 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use((cfg) => {
+  const loginMethods = isPublicPluginRequest(cfg)
+  // Reauthentication only verifies identity. Never queue or replay business calls.
+  if (isAuthSessionExpired() && cfg.url !== '/auth/login' && cfg.url !== '/auth/me' && !loginMethods) {
+    throw new AxiosError('登录已过期，请重新登录后确认并重试操作。', 'AUTH_SESSION_EXPIRED', cfg)
+  }
   const token = localStorage.getItem(tokenKey)
   if (token) {
     cfg.headers = cfg.headers || {}
@@ -23,9 +34,27 @@ api.interceptors.request.use((cfg) => {
 })
 
 api.interceptors.response.use(
-  response => response,
+  response => {
+    const credential = response.config.headers?.Authorization
+    if (!isPublicPluginRequest(response.config) && typeof credential === 'string' && credential.startsWith('Bearer ') && credential !== `Bearer ${getAuthToken()}`) {
+      throw new AxiosError('登录身份已变化，请刷新后核对操作结果。', 'AUTH_SESSION_CHANGED', response.config)
+    }
+    return response
+  },
   (cause) => {
-    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
+    const pluginManagement = /^\/(?:api\/v1\/)?admin\/(?:plugins|plugin-market)(?:\/|\?|$)/.test(cause?.config?.url || '')
+    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data, pluginManagement ? 'plugin-management' : undefined)
+    const token = getAuthToken()
+    const config = cause?.config
+    // Only the credential used by this request can invalidate the current login.
+    // Password confirmations and plugin proofs have their own expiry lifecycle.
+    if (cause?.response?.status === 401 && token && config?.headers?.Authorization === `Bearer ${token}` && config.url !== '/auth/login' && !isPublicPluginRequest(config)) {
+      if (config.headers['X-Plugin-Session'] || config.url?.startsWith('/account/security/')) {
+        verifyAuthSession(token)
+      } else {
+        expireAuthSession()
+      }
+    }
 		const maintenance = cause?.response?.status === 503 ? cause?.response?.data?.data?.maintenance : null
 		if (maintenance && typeof window !== 'undefined') {
 			window.dispatchEvent(new CustomEvent(MAINTENANCE_STATE_EVENT, { detail: maintenance }))
@@ -34,16 +63,28 @@ api.interceptors.response.use(
   },
 )
 
+let sessionVerification: { token: string; promise: Promise<void> } | undefined
+function verifyAuthSession(token: string) {
+  if (sessionVerification?.token === token) return
+  const promise = api.get('/auth/me').then(() => undefined).catch(() => undefined)
+    .finally(() => { if (sessionVerification?.promise === promise) sessionVerification = undefined })
+  sessionVerification = { token, promise }
+}
+
 export function getAuthToken() {
   return localStorage.getItem(tokenKey) || ''
 }
 
-export function setAuthToken(token: string) {
+export function setAuthToken(token: string, resetExpiry = true) {
+  if (resetExpiry) resetAuthSessionExpired()
+  const changed = getAuthToken() !== token
   localStorage.setItem(tokenKey, token)
+  if (changed && typeof window !== 'undefined') window.dispatchEvent(new Event('zboard:plugin-ui-identity-changed'))
 }
 
 export function clearAuthToken() {
   localStorage.removeItem(tokenKey)
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('zboard:plugin-ui-identity-changed'))
 }
 
 function unwrap(response: any) {
@@ -148,6 +189,7 @@ export async function updateSiteSettings(body: Pick<InstallRequest, 'site_name' 
 }
 
 export interface SystemConfig {
+  default_value?: number
 	id: number
 	config_key: string
 	name: string
@@ -311,13 +353,30 @@ export async function fetchNodes() {
   return unwrap(response) || []
 }
 
+export interface NodeCounterEvidence {
+ projection_issue?: string
+	known: boolean
+	source: string
+	latest_source_known: boolean
+	stats_source_known: boolean
+	latest_reference?: string
+	stats_reference?: string
+	counter_received_at?: string | null
+	latest_occurred_at?: string | null
+	latest_received_at?: string | null
+	stats_occurred_at?: string | null
+	stats_received_at?: string | null
+}
+
 export interface AdminNodeListItem {
+	observation?: NodeCounterEvidence
 	id: number
 	name: string
 	region: string
 	address: string
 	status: number
-	lifecycle_status: 'active' | 'maintenance' | 'retired' | 'deleting'
+	lifecycle_status: 'active' | 'maintenance' | 'retired' | 'deleting' | 'archived'
+ archived_at?: string
 	is_enabled: boolean
 	connector_last_seen_at?: string
 	connector_online: boolean
@@ -376,8 +435,8 @@ export async function fetchNodesPage(params: {
 	return normalizePageResult<AdminNodeListItem>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchNode(id: number): Promise<AdminNodeDetail> {
-	const response = await api.get(`/nodes/${id}`)
+export async function fetchNode(id: number, options: ApiRequestOptions = {}): Promise<AdminNodeDetail> {
+	const response = await api.get(`/nodes/${id}`, { signal: options.signal })
 	return unwrap(response)
 }
 
@@ -401,7 +460,10 @@ export interface NodeAddressCandidates {
 
 export async function fetchNodeAddressCandidates(nodeId: number, options: ApiRequestOptions = {}): Promise<NodeAddressCandidates> {
 	const response = await api.get(`/admin/nodes/${nodeId}/address-candidates`, { signal: options.signal })
-	return unwrap(response)
+	const result = unwrap(response) as NodeAddressCandidates
+	// Older servers serialize empty Go slices as null. Keep the array contract
+	// at the API boundary so forms still permit manual address entry.
+	return { ...result, ipv4: result.ipv4 ?? [], ipv6: result.ipv6 ?? [] }
 }
 
 export interface NodeLoadSnapshot {
@@ -419,8 +481,8 @@ export interface NodeLoadSnapshot {
 	latency_ms: number
 }
 
-export async function fetchNodeLoad(id: number): Promise<NodeLoadSnapshot> {
-	const response = await api.get(`/nodes/${id}/load`)
+export async function fetchNodeLoad(id: number, options: ApiRequestOptions = {}): Promise<NodeLoadSnapshot> {
+	const response = await api.get(`/nodes/${id}/load`, { signal: options.signal })
 	return unwrap(response)
 }
 
@@ -466,7 +528,7 @@ export async function resetNodeSSHHostKey(nodeId: number) {
 
 export interface NodeKernelState {
   node_id: number
-  status: 'unknown' | 'not_installed' | 'healthy' | 'degraded' | 'failed' | 'unsupported' | 'publishing' | 'apply_failed'
+  status: 'unknown' | 'not_installed' | 'healthy' | 'degraded' | 'failed' | 'unsupported' | 'publishing' | 'apply_failed' | 'reconciling'
   phase: string
   recommended_action: string
   platform_os: string
@@ -490,7 +552,7 @@ export interface NodeKernelOperation {
   id: number
   node_id: number
   operation_type: string
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'running' | 'succeeded' | 'failed' | 'deferred' | 'reconciling' | 'superseded'
   phase: string
   desired_version: string
   result_summary: string
@@ -501,6 +563,7 @@ export interface NodeKernelOperation {
 export interface ZeroRelease {
   version: string
   tag: string
+  prerelease: boolean
   artifact_url: string
   artifact_sha256: string
   artifact_size: number
@@ -515,8 +578,8 @@ export interface ZeroReleaseOption {
   musl_available: boolean
 }
 
-export async function fetchNodeKernel(nodeId: number): Promise<{ state: NodeKernelState; operations: NodeKernelOperation[] }> {
-  const response = await api.get(`/nodes/${nodeId}/kernel`)
+export async function fetchNodeKernel(nodeId: number, options: ApiRequestOptions = {}): Promise<{ state: NodeKernelState; operations: NodeKernelOperation[] }> {
+  const response = await api.get(`/nodes/${nodeId}/kernel`, { signal: options.signal })
   return unwrap(response)
 }
 
@@ -535,8 +598,8 @@ export async function fetchLatestZeroRelease(): Promise<ZeroRelease> {
   return unwrap(response)
 }
 
-export async function fetchZeroReleases(): Promise<ZeroReleaseOption[]> {
-  const response = await api.get('/admin/kernel/releases')
+export async function fetchZeroReleases(options: ApiRequestOptions = {}): Promise<ZeroReleaseOption[]> {
+  const response = await api.get('/admin/kernel/releases', { signal: options.signal })
   return unwrap(response)
 }
 
@@ -696,6 +759,24 @@ export async function generateRealityTemplate(preset = 'compatible'): Promise<Re
 	return unwrap(response)
 }
 
+export interface RealityProbeResult {
+	server_name: string
+	available: boolean
+	status: 'available' | 'timeout' | 'certificate' | 'unsupported' | 'unreachable'
+	latency_ms: number
+}
+
+export interface RealityProbeSnapshot {
+	node_id: number
+	sampled_at: string
+	items: RealityProbeResult[]
+}
+
+export async function probeRealityDomains(nodeID: number, domains: string[], signal?: AbortSignal): Promise<RealityProbeSnapshot> {
+	const response = await api.post('/admin/protocol-endpoints/reality-probe', { node_id: nodeID, domains }, { signal })
+	return unwrap(response)
+}
+
 export async function fetchProtocolEndpoints(nodeId?: number) {
 	const response = await api.get(nodeId ? `/admin/protocol-endpoints?node_id=${nodeId}` : '/admin/protocol-endpoints')
 	return unwrap(response) || []
@@ -714,6 +795,7 @@ export interface ProtocolEndpointListItem {
 	name: string
 	protocol: string
 	address: string
+	listen_address?: string
 	port: number
 	public_port: number
 	parent_protocol_id?: number
@@ -730,12 +812,13 @@ export interface ProtocolEndpointListItem {
 		active_users: number
 		active_credentials: number
 		last_used_at?: string
-		used_bytes_today: number
-		used_bytes_total: number
+		used_bytes_today: number | null
+		used_bytes_total: number | null
+		traffic_projection_pending?: boolean
 		reset_at?: string
 	}
 	latest_deployment?: Pick<ProtocolDeployment, 'id' | 'status' | 'started_at' | 'finished_at' | 'created_at'> & { has_error: boolean }
-	publication?: { status: 'queued' | 'running' | 'failed'; attempts: number; next_attempt_at: string; has_error: boolean }
+	publication?: { status: 'queued' | 'running' | 'failed' | 'deferred' | 'reconciling' | 'suspended' | 'connections_pending'; attempts: number; next_attempt_at: string; has_error: boolean }
 	created_at: string
 	updated_at: string
 }
@@ -831,7 +914,7 @@ export type ProtocolDeployment = {
   protocol_endpoint_id: number
   node_id: number
   config_revision: number
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'running' | 'succeeded' | 'failed' | 'deferred' | 'reconciling' | 'superseded'
   output?: string
   error?: string
   started_at?: string
@@ -1338,6 +1421,7 @@ export async function fetchOrders(params: { status?: string; userId?: number } =
 }
 
 export interface AdminOrderListItem {
+  order_no?: string
   user_email?: string
   subscription_ended_at?: string | null
   subscription_end_reason?: 'expired' | 'exhausted'
@@ -1406,12 +1490,21 @@ export async function fetchOrdersPage(params: { q?: string; status?: string; ord
   return normalizePageResult<AdminOrderListItem>(unwrap(response), params.offset || 0, params.limit || 50)
 }
 
-export async function fetchAccountOrdersPage(params: { status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminOrderListItem>> {
+export async function fetchAccountOrdersPage(params: { id?: number | string; status?: string; offset?: number; limit?: number } = {}, options: ApiRequestOptions = {}): Promise<PageResult<AdminOrderListItem>> {
   const query = new URLSearchParams()
   appendPageParams(query, params)
+  if (params.id !== undefined) query.set('id', String(params.id))
   if (params.status) query.set('status', params.status)
   const response = await api.get(`/orders?${query}`, { signal: options.signal })
   return normalizePageResult<AdminOrderListItem>(unwrap(response), params.offset || 0, params.limit || 25)
+}
+
+export async function fetchAccountOrder(id: number, options: ApiRequestOptions = {}): Promise<AdminOrderListItem> {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('订单编号无效。')
+  const page = await fetchAccountOrdersPage({ id, offset: 0, limit: 1 }, options)
+  const order = page.items[0]
+  if (page.items.length !== 1 || order?.id !== id || typeof order.status !== 'string') throw new Error('订单不存在或当前账户无权查看。')
+  return order
 }
 
 export async function fetchAdminOrderDetail(id: number, options: ApiRequestOptions = {}): Promise<AdminOrderDetail> {
@@ -1427,9 +1520,20 @@ export async function fetchAdminOrderPaymentEvents(orderId: number, params: { of
 }
 
 export interface OrderPreview {
+  base_price_minor?: number
+  discount_amount?: number
+  discount?: import('./commerceDiscounts').DiscountQuote
+  price_basis?: 'purchased_period' | 'current_catalog'
+  requires_price_acceptance?: boolean
   order_type: string
   amount_cents: number
   credit_amount: number
+  change_mode?: 'full_term'
+  settlement_amount?: string
+  current_residual?: string
+  future_residual?: string
+  surplus_amount?: string
+  additional_amount?: string
   payable_amount: number
   currency: string
   time_credit: number
@@ -1445,18 +1549,20 @@ export async function previewAdminOrder(userId: number, planSkuId: number, targe
   return unwrap(response)
 }
 
-export async function previewOrder(planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions = {}): Promise<OrderPreview> {
-  const response = await api.post('/orders/preview', { plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId }, { signal: options.signal })
+export async function previewOrder(planSkuId: number, targetSubscriptionId: number, options: ApiRequestOptions & { discount?: import('./commerceDiscounts').OrderDiscountSelection } = {}): Promise<OrderPreview> {
+  const response = await api.post('/orders/preview', { plan_sku_id: planSkuId, target_subscription_id: targetSubscriptionId, ...(options.discount ? { discount: options.discount } : {}) }, { signal: options.signal })
   return unwrap(response)
 }
 
-export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string } = {}) {
+export async function createOrder(planSkuId: number, options: { channel?: string; orderType?: string; targetSubscriptionId?: number; quoteFingerprint?: string; idempotencyKey?: string; discount?: import('./commerceDiscounts').OrderDiscountSelection } = {}) {
 	const response = await api.post('/orders', {
 		plan_sku_id: planSkuId,
 		channel: options.channel || 'manual',
 		order_type: options.orderType || 'new',
 		target_subscription_id: options.targetSubscriptionId || undefined,
-    quote_fingerprint: options.quoteFingerprint || undefined
+    quote_fingerprint: options.quoteFingerprint || undefined,
+    idempotency_key: options.idempotencyKey || undefined,
+    ...(options.discount ? { discount: options.discount } : {})
 	})
   return unwrap(response)
 }
@@ -1477,6 +1583,10 @@ export async function fetchSubscriptions(params: { userId?: number; status?: str
 }
 
 export interface AdminSubscriptionListItem {
+  /** Persisted per-subscription renewal notice; an absent row has no consent. */
+  automatic_renewal_state?: string
+  automatic_renewal_message?: string
+  automatic_renewal_checked_at?: string | null
   lifecycle?: 'renewable' | 'fixed'
   ends_on_quota_exhaustion?: boolean
   ended_at?: string | null
@@ -1544,12 +1654,38 @@ export async function fetchAccountSubscriptionsPage(params: { status?: string; o
 }
 
 export interface SubscriptionQuotaUpdate {
+  end_at?: string
+  next_reset_at?: string
+  expected_end_at?: string
+  expected_next_reset_at?: string
   flow_total?: number
   flow_used?: number
   reset_quota_bytes?: number
+  reset_policy?: number
   reason: string
   idempotency_key: string
 }
+export interface SubscriptionCredentialMigrationStatus {
+  subscription_id: number
+  state: 'legacy' | 'awaiting_confirmation' | 'compatibility' | 'revoking' | 'current'
+  legacy_credentials: number
+  pending_confirmation: number
+  compatible_credentials: number
+  revoking_credentials: number
+  retired_credentials: number
+  compatibility_until?: string
+  can_rollback: boolean
+}
+export async function fetchSubscriptionCredentialMigration(id: number, options: ApiRequestOptions = {}): Promise<SubscriptionCredentialMigrationStatus> {
+  return unwrap(await api.get(`/admin/subscriptions/${id}/credential-migration`, { signal: options.signal }))
+}
+export async function prepareSubscriptionCredentialMigration(id: number): Promise<SubscriptionCredentialMigrationStatus> {
+  return unwrap(await api.post(`/admin/subscriptions/${id}/credential-migration`, {}))
+}
+export async function rollbackSubscriptionCredentialMigration(id: number): Promise<SubscriptionCredentialMigrationStatus> {
+  return unwrap(await api.delete(`/admin/subscriptions/${id}/credential-migration`))
+}
+
 export async function updateSubscriptionQuota(id: number, input: SubscriptionQuotaUpdate): Promise<void> {
   await api.put(`/admin/subscriptions/${id}/quota`, input)
 }
@@ -1565,6 +1701,10 @@ export async function fetchSubscriptionAccess() {
 }
 
 export interface AccountProtocolLoadItem {
+	connector_online: boolean
+	connector_last_seen_at?: string
+	load_fresh: boolean
+	load_observed_at?: string
 	protocol_endpoint_id: number
 	name: string
 	region: string
@@ -1607,6 +1747,7 @@ export interface SubscriptionPolicyGroup {
 	exclude_pattern?: string
 	include_groups?: string[]
 	default_group?: string
+	default_target?: string
 	probe_url?: string
 	interval?: number
 	tolerance?: number
@@ -1716,6 +1857,17 @@ export type SubscriptionTemplatePreview = {
 	bytes: number
 	line_count: number
 	truncated: boolean
+	groups?: Array<{ name: string; type: string; members: string[]; default: string }>
+	sample?: 'example' | 'subscription'
+	sample_label?: string
+	delivery_encoding?: 'identity' | 'base64'
+	delivery_content_type?: string
+}
+
+export type SubscriptionTemplatePreviewRequest = Pick<SubscriptionTemplateWriteRequest, 'renderer' | 'customization'> & {
+	subscription_id?: number
+	live?: boolean
+	full_content?: boolean
 }
 
 export async function fetchSubscriptionRuleSetsPage(params: {
@@ -1796,8 +1948,8 @@ export async function createSubscriptionTemplate(payload: SubscriptionTemplateWr
 	return unwrap(response)
 }
 
-export async function previewSubscriptionTemplate(payload: Pick<SubscriptionTemplateWriteRequest, 'renderer' | 'customization'>): Promise<SubscriptionTemplatePreview> {
-	const response = await api.post('/admin/subscription-templates/preview', payload)
+export async function previewSubscriptionTemplate(payload: SubscriptionTemplatePreviewRequest, options: ApiRequestOptions = {}): Promise<SubscriptionTemplatePreview> {
+	const response = await api.post('/admin/subscription-templates/preview', payload, { signal: options.signal })
 	return unwrap(response)
 }
 
@@ -1814,6 +1966,21 @@ export async function deleteSubscriptionTemplate(id: number) {
 export async function fetchTrafficSummary(admin = false, options: ApiRequestOptions = {}) {
   const response = await api.get(`${admin ? '/admin' : ''}/traffic/summary`, { signal: options.signal })
   return unwrap(response) || {}
+}
+
+export interface TrafficQuotaSnapshot {
+  remaining_bytes: number
+  scope_user: number
+  as_of: string
+}
+
+export async function fetchTrafficQuota(admin = false, options: ApiRequestOptions = {}): Promise<TrafficQuotaSnapshot> {
+  const response = await api.get(`${admin ? '/admin' : ''}/traffic/summary?view=quota`, { signal: options.signal })
+  const data = unwrap(response)
+  if (!data || !Number.isFinite(data.remaining_bytes) || data.remaining_bytes < 0 || !Number.isFinite(data.scope_user) || !data.as_of) {
+    throw new Error('剩余流量响应不完整。')
+  }
+  return data
 }
 
 export async function fetchTrafficRecords(params: { userId?: number; nodeId?: number; protocolEndpointId?: number; subscriptionId?: number } = {}, admin = false) {
@@ -1835,6 +2002,8 @@ export async function fetchTrafficRecords(params: { userId?: number; nodeId?: nu
 }
 
 export type TrafficRecordSummary = {
+  is_aggregate?: boolean
+  record_count?: number
   id: number
   user_id: number
   subscription_id?: number
@@ -1960,7 +2129,7 @@ export interface OperationLog {
 	id: number
 	source: 'protocol_publish' | 'node_kernel' | 'task'
 	action: string
-	status: 'queued' | 'running' | 'succeeded' | 'failed'
+	status: 'queued' | 'running' | 'succeeded' | 'failed' | 'deferred'
 	target_type: string
 	target_id: number
 	node_id?: number
@@ -2010,7 +2179,25 @@ export async function fetchUsers(params: { q?: string; status?: string; isAdmin?
   return unwrap(response) || []
 }
 
+export interface AccountCleanupStatus {
+  enabled: boolean
+  inactive_days: number
+  state: 'disabled' | 'protected' | 'subscribed' | 'scheduled' | 'eligible'
+  eligible_at: string | null
+  reason: string
+}
+export interface AccountWalletBalance {
+  currency: string
+  balance_minor: string
+  reserved_minor: string
+}
+export async function fetchAccountCleanupStatus(options: ApiRequestOptions = {}): Promise<AccountCleanupStatus> {
+  const response = await api.get('/account/cleanup-status', { signal: options.signal })
+  return unwrap(response)
+}
+
 export interface AdminUserListItem {
+  admin_note?: string
   id: number
   email: string
   is_admin: boolean
@@ -2020,6 +2207,8 @@ export interface AdminUserListItem {
   pending_order_count: number
   total_order_count: number
   created_at: string
+  wallet_balances?: AccountWalletBalance[]
+  cleanup?: AccountCleanupStatus
 }
 
 export interface AdminUserDetail extends AdminUserListItem {
@@ -2051,12 +2240,12 @@ export async function fetchAdminUserDetail(id: number, options: ApiRequestOption
   return unwrap(response)
 }
 
-export async function createAdminUser(payload: { email: string; password: string; is_admin?: boolean; status?: string }) {
+export async function createAdminUser(payload: { email: string; password: string; is_admin?: boolean; status?: string; admin_note?: string }) {
   const response = await api.post('/admin/users', payload)
   return unwrap(response)
 }
 
-export async function updateAdminUser(id: number, payload: { status?: string; is_admin?: boolean; password?: string }) {
+export async function updateAdminUser(id: number, payload: { status?: string; is_admin?: boolean; password?: string; admin_note?: string }) {
   const response = await api.put(`/admin/users/${id}`, payload)
   return unwrap(response)
 }
@@ -2079,10 +2268,13 @@ export interface AdminTask {
 	running_count?: number
 	succeeded_count?: number
 	failed_count?: number
+	needs_review_count?: number
+	suppressed_count?: number
 	idempotency_key: string
 	priority: number
 	attempts: number
 	max_attempts: number
+	locked_until?: string
 	started_at?: string
 	finished_at?: string
 	created_at: string
@@ -2118,6 +2310,9 @@ export interface AdminTaskSummary {
 }
 
 export interface AdminTaskItem {
+ target_name?: string
+ target_description?: string
+ target_missing?: boolean
 	delivery_state?: 'accepted' | 'not_accepted' | 'unknown' | 'suppressed' | ''
 	id: number
 	task_id: number
@@ -2172,8 +2367,8 @@ export async function runAdminTask(id: number) {
 	return unwrap(response)
 }
 
-export async function fetchAdminTask(id: number, summary = true): Promise<AdminTask> {
-	const response = await api.get(`/admin/tasks/${id}${summary ? '?summary=true' : ''}`)
+export async function fetchAdminTask(id: number, summary = true, options: ApiRequestOptions = {}): Promise<AdminTask> {
+	const response = await api.get(`/admin/tasks/${id}${summary ? '?summary=true' : ''}`, { signal: options.signal })
 	return unwrap(response)
 }
 
@@ -2194,7 +2389,7 @@ export interface NodeBatchFilters {
 }
 
 export async function createNodeBatchOperation(payload: {
-	action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'retire'
+	action: 'detect' | 'reconcile' | 'activate' | 'maintenance' | 'disable' | 'retire'
 	node_ids?: number[]
 	all_matching?: boolean
 	filters?: NodeBatchFilters
@@ -2238,6 +2433,12 @@ export async function updateProtocolEndpointsBatch(payload: {
 export type TicketStatus = 'open' | 'pending_admin' | 'pending_user' | 'resolved' | 'closed'
 export type TicketCategory = 'connection' | 'billing' | 'account' | 'other'
 
+export interface TicketReferences {
+	order_id?: number
+	subscription_id?: number
+	wallet_entry_id?: number
+}
+
 export interface Ticket {
 	id: number
 	ticket_no: string
@@ -2253,6 +2454,7 @@ export interface Ticket {
 	closed_at?: string | null
 	created_at: string
 	updated_at: string
+	references?: TicketReferences | null
 }
 
 export interface TicketMessage {
@@ -2263,6 +2465,7 @@ export interface TicketMessage {
 	author_email: string
 	type: 'message' | 'status'
 	body: string
+	attachments?: TicketAttachment[]
 	from_status: string
 	to_status: string
 	created_at: string
@@ -2296,13 +2499,17 @@ export async function fetchTicket(id: number, admin = false, options: ApiRequest
 	return unwrap(response)
 }
 
-export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string }): Promise<TicketDetail> {
-	const response = await api.post('/tickets', payload)
+function attachmentInputs(items: TicketAttachment[] = []) {
+ return items.map(item => item.file_id ? { file_id: item.file_id } : { name: item.name, url: item.url })
+}
+
+export async function createTicket(payload: { subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments?: TicketAttachment[]; references?: TicketReferences }): Promise<TicketDetail> {
+	const response = await api.post('/tickets', { ...payload, attachments: attachmentInputs(payload.attachments) })
 	return unwrap(response)
 }
 
-export async function replyTicket(id: number, body: string, admin = false): Promise<TicketDetail> {
-	const response = await api.post(`${admin ? '/admin' : ''}/tickets/${id}/messages`, { body })
+export async function replyTicket(id: number, body: string, admin = false, attachments: TicketAttachment[] = []): Promise<TicketDetail> {
+	const response = await api.post(`${admin ? '/admin' : ''}/tickets/${id}/messages`, { body, attachments: attachmentInputs(attachments) })
 	return unwrap(response)
 }
 
@@ -2449,6 +2656,7 @@ export async function startDatabaseMigration(payload: { target_driver: 'mysql' |
 }
 
 export interface NetworkEntry {
+ listen_address?: string
  deployment_mode?: 'managed' | 'external'
  node_online?: boolean
  node_last_seen_at?: string
@@ -2463,15 +2671,18 @@ export async function saveNetworkEntry(id: number, data: Record<string, unknown>
 }
 export async function deleteNetworkEntry(id: number) { return unwrap(await api.delete(`/admin/network-entries/${id}`)) }
 
-export interface NodeProxyPool { id: number; node_id: number; name: string; revision: number; entry_count: number; subscription_configured?: boolean; subscription_format?: string; auto_sync?: boolean; sync_interval_seconds?: number; subscription_node_count?: number; last_sync_at?: string; next_sync_at?: string; last_sync_error?: string }
-export async function fetchNodeProxyPools(nodeID: number): Promise<NodeProxyPool[]> { return unwrap(await api.get(`/admin/node-proxy-pools?node_id=${nodeID}`)) || [] }
+export interface NodeProxyPool { nodes?: {id: number; name: string}[]; id: number; node_id: number; name: string; revision: number; entry_count: number; subscription_configured?: boolean; subscription_format?: string; auto_sync?: boolean; sync_interval_seconds?: number; subscription_node_count?: number; last_sync_at?: string; next_sync_at?: string; last_sync_error?: string }
+export async function fetchNodeProxyPools(nodeID = 0): Promise<NodeProxyPool[]> { return unwrap(await api.get(`/admin/node-proxy-pools?node_id=${nodeID}`)) || [] }
 export interface NodeProxyPoolSubscription { configured: boolean; url?: string; format: 'auto'|'zero'|'zero-json'|'clash'|'sing-box'|'links'; user_agent: string; auto_sync: boolean; sync_interval_seconds: number; node_count: number; last_sync_at?: string; next_sync_at?: string; last_sync_error?: string }
 export interface NodeProxyPoolConfig { pool: NodeProxyPool; config: import('../utils/proxyPoolGraph').ProxyPoolGraph; compiled: Record<string, unknown>; subscription?: NodeProxyPoolSubscription }
 export interface NodeProxyPoolRuntime { source: string; node_id: number; sha256: string; read_at: string; present: boolean; config: Record<string, unknown> }
 export async function fetchNodeProxyPoolConfig(id: number): Promise<NodeProxyPoolConfig> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/config`)) }
-export async function fetchNodeProxyPoolRuntime(id: number): Promise<NodeProxyPoolRuntime> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/runtime`, { timeout: 25000 })) }
+export async function fetchNodeProxyPoolRuntime(id: number, nodeID?: number): Promise<NodeProxyPoolRuntime> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/runtime`, { timeout: 25000, params: nodeID ? {node_id: nodeID} : undefined })) }
 export async function saveNodeProxyPool(id: number, payload: Record<string, unknown>): Promise<NodeProxyPool> { return unwrap(id ? await api.put(`/admin/node-proxy-pools/${id}`,payload) : await api.post('/admin/node-proxy-pools',payload)) }
 export async function syncNodeProxyPool(id: number, expectedRevision: number): Promise<NodeProxyPool> { return unwrap(await api.post(`/admin/node-proxy-pools/${id}/sync`, { expected_revision: expectedRevision })) }
+export async function setNodeProxyPoolReference(poolID: number, nodeID: number, attach: boolean) {
+ return unwrap(await api.request({method: attach ? 'put' : 'delete', url: `/admin/node-proxy-pools/${poolID}/reference`, data: {node_id: nodeID}}))
+}
 export async function deleteNodeProxyPool(id: number) { return unwrap(await api.delete(`/admin/node-proxy-pools/${id}`)) }
 
 export async function fetchNodeCleanupScript(): Promise<string> {
@@ -2522,4 +2733,25 @@ export async function deletePlan(id: number): Promise<void> {
 }
 export async function deletePlanSKU(id: number): Promise<void> {
   await api.delete(`/admin/plan-skus/${id}`)
+}
+
+export interface ResourceDeletionCheck {
+  id: number
+  name: string
+  already_deleted: boolean
+  blockers: { code: string; message: string; href?: string }[]
+  warnings?: { code: string; message: string; href?: string }[]
+  effects: string[]
+}
+export async function checkResourceDeletion(kind: 'protocol' | 'entry', id: number): Promise<ResourceDeletionCheck> {
+  const resource = kind === 'protocol' ? 'protocol-endpoints' : 'network-entries'
+  return unwrap(await api.get(`/admin/${resource}/${id}/deletion-check`))
+}
+
+export type UserDeletionPreview = { user_id: number; allowed: boolean; blockers: string[]; history_retained: boolean }
+export async function fetchUserDeletionPreview(id: number): Promise<UserDeletionPreview> {
+  return unwrap(await api.get(`/admin/users/${id}/deletion-preview`))
+}
+export async function deleteAdminUser(id: number): Promise<void> {
+  await api.delete(`/admin/users/${id}`)
 }

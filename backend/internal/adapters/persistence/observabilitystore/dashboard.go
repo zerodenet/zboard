@@ -2,11 +2,11 @@ package observabilitystore
 
 import (
 	"context"
-	"fmt"
+	"database/sql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
-	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"gorm.io/gorm"
 )
@@ -69,11 +69,14 @@ type dashboardOperationalAggregate struct {
 }
 
 type dashboardTrendRow struct {
-	BucketStart  string
-	RevenueCents int64
-	PaidOrders   int64
-	NewOrders    int64
-	RenewOrders  int64
+	BucketStart   string
+	RevenueCents  int64
+	PaidOrders    int64
+	NewOrders     int64
+	RenewOrders   int64
+	CurrencyCount int64
+	MinCurrency   string
+	MaxCurrency   string
 }
 
 func (s Dashboard) LoadDashboardTotals(ctx context.Context, now time.Time) (out observability.DashboardTotals, err error) {
@@ -110,7 +113,7 @@ CROSS JOIN
    COALESCE(SUM(CASE WHEN is_enabled = 1 AND connector_last_seen_at >= ? THEN 1 ELSE 0 END),0) AS connector_online_nodes,
    COALESCE(SUM(CASE WHEN ssh_verified_at IS NOT NULL AND ssh_host_key_fingerprint <> '' THEN 1 ELSE 0 END),0) AS ssh_verified_nodes,
    COALESCE(SUM(CASE WHEN traffic_secret_prefix <> '' AND traffic_secret_revoked_at IS NULL THEN 1 ELSE 0 END),0) AS traffic_ready_nodes
-  FROM nodes) AS node_summary
+  FROM nodes WHERE `+currentNodeSQL+`) AS node_summary
 CROSS JOIN
  (SELECT COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END),0) AS plans FROM plans) AS plan_summary
 CROSS JOIN
@@ -128,21 +131,54 @@ CROSS JOIN
 CROSS JOIN
  (SELECT COUNT(*) AS protocol_endpoints,
    COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END),0) AS active_protocol_endpoints
-  FROM protocol_endpoints) AS endpoint_summary
+  FROM protocol_endpoints WHERE deleted_at IS NULL AND node_id IN (SELECT id FROM nodes WHERE `+currentNodeSQL+`)) AS endpoint_summary
 CROSS JOIN
  (SELECT COALESCE(SUM(CASE WHEN status IN ('open','pending_admin') THEN 1 ELSE 0 END),0) AS pending_tickets FROM tickets) AS ticket_summary
 CROSS JOIN
  (SELECT COALESCE(SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END),0) AS failed_tasks FROM tasks) AS task_summary
 CROSS JOIN
  (SELECT COUNT(*) AS failed_deployments FROM protocol_deployments
-  WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = 'failed') AS deployment_summary`, cutoff, cutoff, now, now).Scan(&out).Error
+  WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = 'failed' AND `+currentDeploymentEndpointSQL+`) AS deployment_summary`, cutoff, cutoff, now, now).Scan(&out).Error
 	return out, err
 }
 
 func (s Dashboard) LoadDashboard(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket) (observability.DashboardSnapshot, error) {
-	db := s.readDB().WithContext(ctx)
+	return s.loadDashboardSnapshot(ctx, period, now, buckets, "")
+}
+
+func (s Dashboard) LoadDashboardView(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (observability.DashboardSnapshot, error) {
+	return s.loadDashboardSnapshot(ctx, period, now, buckets, view)
+}
+
+func (s Dashboard) loadDashboardSnapshot(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (out observability.DashboardSnapshot, err error) {
+	// Current business health and revenue-only charts do not wait for auxiliary
+	// traffic statistics. Reads which do use hourly data share its readiness
+	// check and aggregates in one snapshot, including during worker commits.
+	if view == "current" || view == "trend" {
+		return s.loadDashboard(ctx, period, now, buckets, view)
+	}
+	err = s.readDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := meteringstore.EnsureHourlyUsageWindowsReadable(tx, meteringstore.TrafficScope{}, [][2]time.Time{{period.From, period.To}, {period.PreviousFrom, period.PreviousTo}}); err != nil {
+			return err
+		}
+		out, err = (Dashboard{DB: tx, ReadDB: tx}).loadDashboard(ctx, period, now, buckets, view)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return
+}
+
+func (s Dashboard) loadDashboard(ctx context.Context, period observability.DashboardPeriod, now time.Time, buckets []observability.DashboardTrendBucket, view string) (observability.DashboardSnapshot, error) {
+	if view == "trend" {
+		trend, currency, mixed, err := loadDashboardTrendFacts(s.readDB().WithContext(ctx), period, buckets)
+		return observability.DashboardSnapshot{Trend: trend, TrendCurrency: currency, TrendMixedCurrency: mixed}, err
+	}
+	db := s.DB.WithContext(ctx)
+	if view != "current" {
+		db = s.readDB().WithContext(ctx)
+	}
 	var orders dashboardOrderAggregate
-	if err := db.Table("orders").Select(`
+	if view != "current" {
+		if err := db.Table("orders").Select(`
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? THEN (CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount ELSE 0 END),0) AS revenue_cents,
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? THEN (CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount ELSE 0 END),0) AS previous_revenue_cents,
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? THEN 1 ELSE 0 END),0) AS paid_orders,
@@ -152,16 +188,27 @@ func (s Dashboard) LoadDashboard(ctx context.Context, period observability.Dashb
  COALESCE(SUM(CASE WHEN paid_at >= ? AND paid_at < ? AND order_type IN ('renew','renewal') THEN 1 ELSE 0 END),0) AS previous_renew_orders,
  COUNT(DISTINCT CASE WHEN TRIM(currency) <> '' THEN UPPER(TRIM(currency)) END) AS currency_count,
  COALESCE(MIN(CASE WHEN TRIM(currency) <> '' THEN UPPER(TRIM(currency)) END),'') AS currency`,
-		period.From, period.To, period.PreviousFrom, period.PreviousTo,
-		period.From, period.To, period.PreviousFrom, period.PreviousTo,
-		period.From, period.To, period.From, period.To, period.PreviousFrom, period.PreviousTo).
-		Where("status = ? AND paid_at IS NOT NULL AND paid_at >= ? AND paid_at < ?", "paid", period.PreviousFrom, period.To).
-		Scan(&orders).Error; err != nil {
-		return observability.DashboardSnapshot{}, err
-	}
+			period.From, period.To, period.PreviousFrom, period.PreviousTo,
+			period.From, period.To, period.PreviousFrom, period.PreviousTo,
+			period.From, period.To, period.From, period.To, period.PreviousFrom, period.PreviousTo).
+			Where("status = ? AND paid_at IS NOT NULL AND paid_at >= ? AND paid_at < ?", "paid", period.PreviousFrom, period.To).
+			Scan(&orders).Error; err != nil {
+			return observability.DashboardSnapshot{}, err
+		}
 
+	}
 	var subscriptions dashboardSubscriptionAggregate
-	if err := db.Table("subscriptions").Select(`
+	var subscriptionErr error
+	switch view {
+	case "current":
+		subscriptionErr = loadDashboardSubscriptionHealth(db, now, &subscriptions)
+	case "statistics":
+		subscriptionErr = db.Table("subscriptions").Select(`
+ COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END),0) AS new_subscriptions,
+ COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END),0) AS previous_new_subscriptions`,
+			period.From, period.To, period.PreviousFrom, period.PreviousTo).Where("created_at >= ? AND created_at < ?", period.PreviousFrom, period.To).Scan(&subscriptions).Error
+	default:
+		if err := db.Table("subscriptions").Select(`
  COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END),0) AS new_subscriptions,
  COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END),0) AS previous_new_subscriptions,
  COALESCE(SUM(CASE WHEN status = 'active' AND end_at > ? AND flow_used < flow_total THEN 1 ELSE 0 END),0) AS active_subscriptions,
@@ -169,45 +216,71 @@ func (s Dashboard) LoadDashboard(ctx context.Context, period observability.Dashb
  COALESCE(SUM(CASE WHEN status = 'active' AND end_at > ? AND end_at <= ? AND flow_used < flow_total THEN 1 ELSE 0 END),0) AS expiring_within3_days,
  COALESCE(SUM(CASE WHEN status = 'active' AND end_at > ? AND end_at <= ? AND flow_used < flow_total THEN 1 ELSE 0 END),0) AS expiring_within7_days,
  COALESCE(SUM(CASE WHEN end_at > ? AND flow_total > 0 AND flow_used >= flow_total AND status IN ('active','expired') THEN 1 ELSE 0 END),0) AS quota_exhausted`,
-		period.From, period.To, period.PreviousFrom, period.PreviousTo,
-		now, now, now.Add(24*time.Hour), now, now.Add(72*time.Hour), now, now.Add(7*24*time.Hour), now).
-		Scan(&subscriptions).Error; err != nil {
-		return observability.DashboardSnapshot{}, err
+			period.From, period.To, period.PreviousFrom, period.PreviousTo,
+			now, now, now.Add(24*time.Hour), now, now.Add(72*time.Hour), now, now.Add(7*24*time.Hour), now).
+			Scan(&subscriptions).Error; err != nil {
+			subscriptionErr = err
+		}
+	}
+	if subscriptionErr != nil {
+		return observability.DashboardSnapshot{}, subscriptionErr
 	}
 
 	var operational dashboardOperationalAggregate
-	traffic := meteringstore.TrafficAggregateSource(db, period.From, period.To, meteringstore.TrafficScope{}).Select("COALESCE(SUM(used_bytes), 0)")
-	previousTraffic := meteringstore.TrafficAggregateSource(db, period.PreviousFrom, period.PreviousTo, meteringstore.TrafficScope{}).Select("COALESCE(SUM(used_bytes), 0)")
-	if err := db.Raw(`SELECT
+	switch view {
+	case "current":
+		if err := loadDashboardCurrentOperations(db, now, &operational); err != nil {
+			return observability.DashboardSnapshot{}, err
+		}
+	case "statistics":
+		if err := loadDashboardPeriodOperations(db, period, &operational); err != nil {
+			return observability.DashboardSnapshot{}, err
+		}
+	default:
+		traffic := meteringstore.TrafficAggregateSource(db, period.From, period.To, meteringstore.TrafficScope{}).Select("COALESCE(SUM(used_bytes), 0)")
+		previousTraffic := meteringstore.TrafficAggregateSource(db, period.PreviousFrom, period.PreviousTo, meteringstore.TrafficScope{}).Select("COALESCE(SUM(used_bytes), 0)")
+		if err := db.Raw(`SELECT
  (?) AS traffic_bytes,
  (?) AS previous_traffic_bytes,
  (SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?) AS new_users,
  (SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?) AS previous_new_users,
- (SELECT COUNT(*) FROM nodes) AS nodes_total,
- (SELECT COUNT(*) FROM nodes WHERE is_enabled = ?) AS nodes_enabled,
- (SELECT COUNT(*) FROM nodes WHERE is_enabled = ? AND connector_last_seen_at >= ?) AS connector_online,
- (SELECT COUNT(*) FROM nodes WHERE ssh_verified_at IS NOT NULL AND ssh_host_key_fingerprint <> '') AS ssh_verified,
- (SELECT COUNT(*) FROM nodes WHERE traffic_secret_prefix <> '' AND traffic_secret_revoked_at IS NULL) AS traffic_ready,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+`) AS nodes_total,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND is_enabled = ?) AS nodes_enabled,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND is_enabled = ? AND connector_last_seen_at >= ?) AS connector_online,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND ssh_verified_at IS NOT NULL AND ssh_host_key_fingerprint <> '') AS ssh_verified,
+ (SELECT COUNT(*) FROM nodes WHERE `+currentNodeSQL+` AND traffic_secret_prefix <> '' AND traffic_secret_revoked_at IS NULL) AS traffic_ready,
  (SELECT COUNT(*) FROM principal_flow_scope_currents WHERE scope_type = ?) AS observed_scopes,
  (SELECT COUNT(*) FROM principal_flow_scope_currents WHERE scope_type = ? AND active_flows > 0) AS active_subscriptions,
  (SELECT COALESCE(SUM(active_flows),0) FROM principal_flow_scope_currents WHERE scope_type = ?) AS active_flows,
- (SELECT COUNT(*) FROM protocol_endpoints) AS protocol_endpoints,
- (SELECT COUNT(*) FROM protocol_endpoints WHERE is_active = ?) AS active_protocol_endpoints,
+ (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND node_id IN (SELECT id FROM nodes WHERE `+currentNodeSQL+`)) AS protocol_endpoints,
+ (SELECT COUNT(*) FROM protocol_endpoints WHERE deleted_at IS NULL AND is_active = ? AND node_id IN (SELECT id FROM nodes WHERE `+currentNodeSQL+`)) AS active_protocol_endpoints,
  (SELECT COUNT(*) FROM plans WHERE is_active = ?) AS published_plans,
  (SELECT COUNT(*) FROM tickets WHERE status IN (?,?)) AS pending_tickets,
- (SELECT COUNT(*) FROM protocol_deployments WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = ?) AS unresolved_deployments`,
-		traffic, previousTraffic, period.From, period.To, period.PreviousFrom, period.PreviousTo, true, true, now.Add(-2*time.Minute),
-		"subscription", "subscription", "subscription", true, true, "open", "pending_admin", "failed").Scan(&operational).Error; err != nil {
-		return observability.DashboardSnapshot{}, err
-	}
+ (SELECT COUNT(*) FROM protocol_deployments WHERE id IN (SELECT MAX(id) FROM protocol_deployments GROUP BY protocol_endpoint_id) AND status = ? AND `+currentDeploymentEndpointSQL+`) AS unresolved_deployments`,
+			traffic, previousTraffic, period.From, period.To, period.PreviousFrom, period.PreviousTo, true, true, now.Add(-2*time.Minute),
+			"subscription", "subscription", "subscription", true, true, "open", "pending_admin", "failed").Scan(&operational).Error; err != nil {
+			return observability.DashboardSnapshot{}, err
+		}
 
-	trend, err := loadDashboardTrend(db, period, buckets)
-	if err != nil {
-		return observability.DashboardSnapshot{}, err
+	}
+	trend := []observability.DashboardTrendPoint{}
+	if view == "" {
+		var err error
+		trend, err = loadDashboardTrend(db, period, buckets)
+		if err != nil {
+			return observability.DashboardSnapshot{}, err
+		}
 	}
 	currency, mixed := orders.Currency, orders.CurrencyCount > 1
 	if orders.CurrencyCount == 0 {
 		currency = "CNY"
+		if orders.PaidOrders == 0 && orders.PreviousPaidOrders == 0 && (view == "" || view == "statistics") {
+			var err error
+			currency, err = platformstore.DefaultCurrency(db)
+			if err != nil {
+				return observability.DashboardSnapshot{}, err
+			}
+		}
 	} else if mixed {
 		currency = ""
 	}
@@ -229,44 +302,15 @@ func (s Dashboard) LoadDashboard(ctx context.Context, period observability.Dashb
 		Subscriptions:  observability.DashboardSubscriptionHealth{ExpiringWithin24Hours: subscriptions.ExpiringWithin24Hours, ExpiringWithin3Days: subscriptions.ExpiringWithin3Days, ExpiringWithin7Days: subscriptions.ExpiringWithin7Days, QuotaExhausted: subscriptions.QuotaExhausted},
 		Attention:      observability.DashboardAttention{OfflineNodes: offline, UnresolvedDeployments: operational.UnresolvedDeployments, PendingTickets: operational.PendingTickets},
 		Infrastructure: observability.DashboardInfrastructure{NodesTotal: operational.NodesTotal, NodesEnabled: operational.NodesEnabled, ConnectorOnline: operational.ConnectorOnline, SSHVerified: operational.SSHVerified, TrafficReady: operational.TrafficReady, ProtocolEndpoints: operational.ProtocolEndpoints, ActiveProtocolEndpoints: operational.ActiveProtocolEndpoints, PublishedPlans: operational.PublishedPlans, UnresolvedDeployments: operational.UnresolvedDeployments},
-		Coverage:       observability.DashboardCoverage{PrincipalFlows: operational.ObservedScopes > 0}, Trend: trend,
+		// Existing per-principal lifecycle snapshots do not certify a full
+		// registry snapshot, coverage of all nodes, or observation freshness.
+		// In particular a persisted zero is not proof of zero live connections.
+		Coverage: observability.DashboardCoverage{PrincipalFlows: false, PrincipalFlowsState: "unknown", PrincipalFlowsReason: "no_principal_observations"}, Trend: trend,
 	}
-	if result.Coverage.PrincipalFlows {
+	if operational.ObservedScopes > 0 {
 		activeSubscriptions, activeFlows := operational.ActiveSubscriptions, operational.ActiveFlows
-		result.Service.ActiveSubscriptions, result.Service.ActiveFlows = &activeSubscriptions, &activeFlows
+		result.Service.ObservedActiveSubscriptions, result.Service.ObservedActiveFlows = &activeSubscriptions, &activeFlows
+		result.Coverage.PrincipalFlowsReason = "snapshot_coverage_unverified"
 	}
 	return result, nil
-}
-
-func loadDashboardTrend(db *gorm.DB, period observability.DashboardPeriod, buckets []observability.DashboardTrendBucket) ([]observability.DashboardTrendPoint, error) {
-	if len(buckets) == 0 {
-		return []observability.DashboardTrendPoint{}, nil
-	}
-	parts := make([]string, 0, len(buckets))
-	args := make([]interface{}, 0, len(buckets)*2)
-	for _, bucket := range buckets {
-		parts = append(parts, fmt.Sprintf("WHEN paid_at >= ? AND paid_at < ? THEN '%s'", bucket.Key))
-		args = append(args, bucket.StartUTC, bucket.EndUTC)
-	}
-	expression := "CASE " + strings.Join(parts, " ") + " END"
-	var rows []dashboardTrendRow
-	if err := db.Table("orders").Select(expression+` AS bucket_start,
- COALESCE(SUM((CASE WHEN assigned_by > 0 OR paid_amount > 0 THEN paid_amount ELSE amount_cents END) - refund_amount),0) AS revenue_cents,
- COUNT(*) AS paid_orders,
- COALESCE(SUM(CASE WHEN order_type = 'new' THEN 1 ELSE 0 END),0) AS new_orders,
- COALESCE(SUM(CASE WHEN order_type IN ('renew','renewal') THEN 1 ELSE 0 END),0) AS renew_orders`, args...).
-		Where("status = ? AND paid_at IS NOT NULL AND paid_at >= ? AND paid_at < ?", "paid", period.From, period.To).
-		Group("bucket_start").Order("bucket_start ASC").Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	byBucket := make(map[string]dashboardTrendRow, len(rows))
-	for _, row := range rows {
-		byBucket[strings.TrimSpace(row.BucketStart)] = row
-	}
-	points := make([]observability.DashboardTrendPoint, 0, len(buckets))
-	for _, bucket := range buckets {
-		row := byBucket[bucket.Key]
-		points = append(points, observability.DashboardTrendPoint{BucketStart: bucket.StartUTC, RevenueCents: row.RevenueCents, PaidOrders: row.PaidOrders, NewOrders: row.NewOrders, RenewOrders: row.RenewOrders})
-	}
-	return points, nil
 }

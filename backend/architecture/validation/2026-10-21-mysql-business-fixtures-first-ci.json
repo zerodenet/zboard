@@ -1,0 +1,65 @@
+{
+  "source": "90734ed5683c850f293a42a1435c269eceded27f",
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39547192685",
+  "run_id": 39547192685,
+  "status": "completed",
+  "conclusion": "failure",
+  "jobs": [
+    {
+      "name": "backend",
+      "id": 119047917713,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "compose",
+      "id": 119047917948,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "mysql",
+      "id": 119047917969,
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "name": "frontend",
+      "id": 119047917980,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "contract",
+      "id": 119047918129,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "zrs-compiler",
+      "id": 119047918159,
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "mysql": {
+    "datastore_seconds": 186.138,
+    "handler_seconds": 900.021,
+    "networkstore_seconds": 188.777,
+    "timeout_running": "TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay (1s)",
+    "jobstore": "NOT EXECUTED after failed core",
+    "copy": "NOT EXECUTED after failed core"
+  },
+  "limits": [
+    "Per-setup paired3 gain and44targeted passes did not meet original complete900s gate; P7 is incomplete.",
+    "Last active1s case identifies only timeout instant, not cumulative cause.",
+    "All original timeout/exclusions/assertions retained; no duplicate retry or old CI substitution."
+  ],
+  "assertion_failures": [],
+  "last_case_stack": [
+    "2026-10-21T05:17:28.2674995Z \t\tTestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay (1s)",
+    "2026-10-21T05:17:28.2705393Z github.com/zerodenet/zboard/backend/internal/handler.TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay(0x16204bd05d48)"
+  ],
+  "raw_log_bytes": 1140030,
+  "raw_log_sha256": "18d6b80d7f39e314a2c1c88bc87874e0747bff46b9f636ebe80a7ceaee450ce5"
+}

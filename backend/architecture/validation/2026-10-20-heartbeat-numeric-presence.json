@@ -1,0 +1,214 @@
+{
+  "baseline": "e9021b2b698cbb06d402a20b7ead28c696a8befa",
+  "source_hashes": {
+    "backend/internal/handler/handlers.go": "38b161ac8b30ca74dcff4529deb966710b14acc7aefdf5d0a52c9dc74f275202",
+    "backend/internal/handler/handlers_test.go": "b129033ae13219cc40419113a326fd4c2f8b17ba4b462ed3e153d4d1e2f2c9b1",
+    "backend/internal/handler/node_connector_heartbeat_presence_test.go": "588107a041a08537c556f06491857a5f93704212a6020ef2733905b3629fcb02",
+    "backend/api/openapi.yaml": "ffbfec08f7dd5ad187f61297ae1dd1ed3bb05b6865209291b97b40d309070a51"
+  },
+  "results": [
+    {
+      "name": "old-compile-warm",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-p",
+        "1",
+        "-o",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-z1qc42wu/old-handler.test",
+        "."
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/verify-clone/backend/internal/handler",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 19.467,
+      "isolated_mysql": false
+    },
+    {
+      "name": "old-controlled-expected-failure",
+      "command": [
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-z1qc42wu/old-handler.test",
+        "-test.run",
+        "^(TestDecodeNodeConnectorHeartbeatUsesZeroContract|TestDecodeNodeConnectorHeartbeatPreservesNumericPresence|TestNodeConnectorHeartbeatPreservesMissingObservations)$",
+        "-test.v",
+        "-test.timeout=10m"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/verify-clone/backend/internal/handler",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "elapsed_seconds": 0.22,
+      "isolated_mysql": false
+    },
+    {
+      "name": "fixed-compile",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-p",
+        "1",
+        "-o",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-z1qc42wu/fixed-handler.test",
+        "."
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/verify-clone/backend/internal/handler",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 19.314,
+      "isolated_mysql": false
+    },
+    {
+      "name": "fixed-parser-sqlite",
+      "command": [
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-z1qc42wu/fixed-handler.test",
+        "-test.run",
+        "^(TestDecodeNodeConnectorHeartbeatUsesZeroContract|TestDecodeNodeConnectorHeartbeatPreservesNumericPresence|TestNodeConnectorHeartbeatPreservesMissingObservations)$",
+        "-test.v",
+        "-test.timeout=10m"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/verify-clone/backend/internal/handler",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 0.219,
+      "isolated_mysql": false
+    },
+    {
+      "name": "fixed-actual-mysql",
+      "command": [
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-z1qc42wu/fixed-handler.test",
+        "-test.run",
+        "^TestMySQLNodeConnectorHeartbeatPreservesMissingObservations$",
+        "-test.v",
+        "-test.timeout=10m"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/verify-clone/backend/internal/handler",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 4.368,
+      "isolated_mysql": true
+    },
+    {
+      "name": "race-compile",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-race",
+        "-p",
+        "1",
+        "-o",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-z1qc42wu/race-handler.test",
+        "."
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/verify-clone/backend/internal/handler",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 160.022,
+      "isolated_mysql": false
+    },
+    {
+      "name": "fixed-race-count3",
+      "command": [
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-z1qc42wu/race-handler.test",
+        "-test.run",
+        "^(TestDecodeNodeConnectorHeartbeatUsesZeroContract|TestDecodeNodeConnectorHeartbeatPreservesNumericPresence|TestNodeConnectorHeartbeatPreservesMissingObservations)$",
+        "-test.v",
+        "-test.count=3",
+        "-test.timeout=10m"
+      ],
+      "cwd": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/verify-clone/backend/internal/handler",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "elapsed_seconds": 16.301,
+      "isolated_mysql": false
+    }
+  ],
+  "main_unchanged": true,
+  "fixed_source_unchanged": true,
+  "old_expected_leaf_failures": 17,
+  "timeouts": "Default Go10m per test invocation, unchanged; compile wall recorded separately.",
+  "mysql_fixture_count": 1,
+  "race_count": 3,
+  "binary_hashes": {
+    "race-handler.test": "ff92014c4e043d2565cd86584dd36fc007a17b7190c9af28231101b47899bd2a",
+    "fixed-handler.test": "4f8bba6e9fc077e4712c23d701dfe8ee2466fb73e685666c7117c00f79e783a7",
+    "old-handler.test": "feebab27477cd48fdc8f5ed08e933c7384bf82d76f4443578188e17c0fee36a7"
+  },
+  "patch_sha256": "c54635a032d3fb2e2dd2fc219fd83d44187ce78cc556e944569915f36ddf2186",
+  "limits": "Selected parser and real HTTP/service/repository matrix only; no full suite, native core, capacity, new credential permissions, sample timestamps or Stats cursors.",
+  "freeze_sha256": "515ede98fbac103fbff90a12c9e5f22cf14825f97ed0c37ad4f941c38eb08e62",
+  "leaf_counts": {
+    "fixed-parser-sqlite": {
+      "passed_leaf_occurrences": 66,
+      "top_level_pass_occurrences": 3,
+      "failed_occurrences": 0
+    },
+    "fixed-actual-mysql": {
+      "passed_leaf_occurrences": 25,
+      "top_level_pass_occurrences": 1,
+      "failed_occurrences": 0
+    },
+    "fixed-race-count3": {
+      "passed_leaf_occurrences": 198,
+      "top_level_pass_occurrences": 9,
+      "failed_occurrences": 0
+    }
+  },
+  "known_failed_attempts": [
+    {
+      "directory": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-2m57482j",
+      "cold_compile_seconds": 143.537,
+      "controlled_run_seconds": 0.201,
+      "actual_failed_leaves": 24,
+      "accepted_as_expected_regression": false,
+      "reason": "First actual partial case reproduced 0 overwrite; 15 later node setups failed unique nodes.name because the fixture reused a name (plus8 parser failures). Fixed test-only serial suffix. Original raw/binary/log retained."
+    },
+    {
+      "directory": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/heartbeat-presence-draft/validation-hjdbje00",
+      "old_expected17_matches": true,
+      "fixed_parser_sqlite_pass_seconds": 0.244,
+      "mysql_setup_failure_seconds": 5.043,
+      "mysql_heartbeat_requests_reached": false,
+      "reason": "Fixture prefix string length14 exceeded existing varchar12; fixed test-only real secret[:12] convention. No production/schema/expected17/timeout changes. Original raw/binaries/log retained."
+    }
+  ],
+  "evidence_hashes": {
+    "clone-status-final.txt": "89eb02c0ad6be7c55f4246e8cc54a47fcbf1dc03ebeb039830633ef26d047079",
+    "command-results.json": "7d3d8371a543ebfe93ac55faaceb2864b954e83725efaf94818103eb09efbf69",
+    "final.patch": "c54635a032d3fb2e2dd2fc219fd83d44187ce78cc556e944569915f36ddf2186",
+    "fixed-actual-mysql.log": "f67d81cfe0b7e26a43b598541e6b70289113f5f6421b26a0b2146939908439a8",
+    "fixed-compile.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fixed-handler.test": "4f8bba6e9fc077e4712c23d701dfe8ee2466fb73e685666c7117c00f79e783a7",
+    "fixed-parser-sqlite.log": "a590b553da6e03a1ef3b377770edcdb3742c748cc43348966c1ad49641b8ffad",
+    "fixed-race-count3.log": "bf5a9019349025c917923f253368e30f34a001a2af333d1b5a50a91fd0a37aaa",
+    "main-apply-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "old-compile-warm.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "old-controlled-expected-failure.log": "08b4fdc79e6f3e0bb06ab7104612411c66370bd2606c6275e817df3ad694c53b",
+    "old-controlled-failures.json": "194e490380cb4e0abc2b0da14481b593b75b6563758136369eb0dc79d265f163",
+    "old-handler.test": "feebab27477cd48fdc8f5ed08e933c7384bf82d76f4443578188e17c0fee36a7",
+    "race-compile.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "race-handler.test": "ff92014c4e043d2565cd86584dd36fc007a17b7190c9af28231101b47899bd2a",
+    "receipt.json": "08b9ba10305acb1026c2af55e477d20c12d9d169aa5698767c49d5f4edeef696",
+    "static-contract-checks.json": "10dfc211c1738d06b3736d0ed788e6700be68dae6c4f1636bb49e3002ebc2832"
+  },
+  "root_openapi_check": {
+    "command": "docker run --rm --network none --label zboard.convergence.validation=true -v <exact candidate clone>:/spec:ro -w /spec redocly/cli:1.34.3 lint backend/api/openapi.yaml",
+    "image_id": "sha256:110999bb12a3144672745a2c7035faa8d25be7601a3952641805da86c8f6326c",
+    "exit_code": 0,
+    "warnings": 282,
+    "api_sha256": "ffbfec08f7dd5ad187f61297ae1dd1ed3bb05b6865209291b97b40d309070a51",
+    "raw_log_sha256": "468f75f3a328bb6e7efa3d64356803c2817a96ba0cce4453e51efa2f23396deb"
+  },
+  "root_observer_checks": {
+    "command": [
+      "python3 -m unittest discover -s scripts -p test_acceptance_capacity_baseline.py",
+      "python3 -m unittest discover -s scripts -p test_acceptance_report.py"
+    ],
+    "results": [
+      "6PASS",
+      "6PASS"
+    ],
+    "scope": "Observer/report logic only, with explicit e902 pin; no load or capacity acceptance"
+  }
+}

@@ -1,0 +1,42 @@
+# Independent high-cost measurement, all original private proof consumed in ONE temporary VM.
+# Summary-only public retention; no raw DB/config/credentials/logs or durable backup claim.
+name: p6-internal-once
+run-name: p6-internal ${{ github.event.pull_request.head.sha || github.sha }}
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+jobs:
+  p6-internal:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' &&
+       github.event.label.name == 'validation:p6-internal' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+          cache-dependency-path: backend/go.sum
+      - name: Verify no-database P6 orchestration and privacy policy
+        run: python3 -m unittest discover -s scripts -p 'test_acceptance_p6_once.py'
+      - name: Original baseline, paired gain prerequisite and complete autoscale fault matrix
+        env:
+          P6_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          parent=$(mktemp -d "$RUNNER_TEMP/zboard-p6-XXXXXXXX")
+          python3 scripts/acceptance-p6-once.py --checkout "$PWD" --revision "$P6_REVISION" --private-root "$parent/private" --output "$RUNNER_TEMP/p6-public/summary.json" --execute
+      - name: Preserve only the same positive-allowlist summary printed to the job log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p6-internal-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/p6-public/summary.json
+          if-no-files-found: error

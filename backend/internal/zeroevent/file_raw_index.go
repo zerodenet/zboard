@@ -150,14 +150,20 @@ func scanRawIndex(ctx context.Context, file *os.File, segment segmentFile, index
 }
 
 func (s *FileSpool) readSegmentBatch(ctx context.Context, segment segmentFile, checkpoint Checkpoint, limit int) ([]Envelope, Checkpoint, error) {
+	return s.readSegmentBatchBudget(ctx, segment, checkpoint, limit, nil)
+}
+func (s *FileSpool) readSegmentBatchBudget(ctx context.Context, segment segmentFile, checkpoint Checkpoint, limit int, budget *eventReadBudget) ([]Envelope, Checkpoint, error) {
 	if segment.codec != CompressionNone || checkpoint.Block != 0 {
+		if segment.codec != CompressionNone {
+			return readCompressedSegmentBatchBudget(ctx, segment, checkpoint, limit, budget)
+		}
 		return readSegmentBatch(ctx, segment, checkpoint, limit)
 	}
 	position, err := s.rawPosition(ctx, segment, checkpoint.Record)
 	if err != nil {
 		return nil, checkpoint, err
 	}
-	events, next, err := readRawSegmentBatchAt(ctx, segment, checkpoint.Record, limit, position.record, position.offset)
+	events, next, err := readRawSegmentBatchBudget(ctx, segment, checkpoint.Record, limit, position.record, position.offset, budget)
 	return events, Checkpoint{Segment: segment.sequence, Record: next}, err
 }
 

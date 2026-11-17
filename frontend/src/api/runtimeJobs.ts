@@ -1,15 +1,16 @@
 import { authenticatedAPI as api } from './client'
 export interface RuntimeJob {
   id: string; name: string; kind: string; interval_seconds: number; concurrency: number
-  state: string; running: number; runs: number; failures: number; missed_runs?: number; timezone?: string; misfire_policy?: string; last_started_at: string | null
+  compact_history?: boolean; state: string; running: number; runs: number; failures: number; missed_runs?: number; timezone?: string; misfire_policy?: string; last_started_at: string | null
   last_finished_at: string | null; last_duration_ms: number; last_result: string; last_error: string; next_scan_at: string | null
 }
 export interface PluginTask extends RuntimeJob { plugin_id: string; plugin_name: string; task_id: string; timeout_seconds: number }
-export interface RegisteredJob { id: string; name: string; owner: string; interval_seconds: number; timeout_seconds: number }
+export interface RegisteredJob { compact_history?: boolean; id: string; name: string; owner: string; interval_seconds: number; timeout_seconds: number }
 export interface RuntimeQueue { oldest_at?: string | null; id: string; name: string; pending: number; running: number; delayed: number; stale: number; drafts: number; failed: number }
 export interface QueueItem { id: number; kind: string; state: string; attempts: number; created_at: string; next_attempt_at: string | null; lease_until: string | null; last_error: string }
 export interface QueuePage { items: QueueItem[]; total: number; offset: number; limit: number }
-export interface RuntimeStatusIssue { section: 'queues' | 'runtime' | 'execution' | 'plugin_tasks' | 'registration_messages'; message: string }
+export interface RuntimeStatusIssue { section: 'queues' | 'runtime' | 'execution' | 'plugin_tasks' | 'registration_messages'; message: string; code?: string; detail?: string }
+export interface DatabasePool { maximum: number; open: number; in_use: number; idle: number; wait_count: number; wait_seconds: number }
 export interface RuntimeJobs {
   as_of: string; started_at: string; observation_scope: string; jobs: RuntimeJob[]; registered_jobs?: RegisteredJob[]; queues: RuntimeQueue[]
   issues?: RuntimeStatusIssue[]
@@ -17,9 +18,14 @@ export interface RuntimeJobs {
   execution_queue?: { pending: number; running: number; delayed: number; unknown: number; maintenance_reserved?: boolean; pending_limit?: number; plugin_pending_limit?: number; plugin_owner_pending_limit?: number }; execution_concurrency?: number; external_execution_concurrency?: number; admin_task_concurrency: number; admin_item_concurrency: number
   plugin_tasks?: PluginTask[] | null; plugin_task_concurrency?: number
   plugin_host: { state: string; epoch: number; lease_until: string | null; renewal_failures: number; interval_seconds: number } | null
-  runtime: { event_spool: { pending_events: number; pending_bytes: number; oldest_event_at?: string; pressure_level: string } | null }
+  runtime: { accounting_db?: DatabasePool; traffic_read_db?: DatabasePool; shared_pool?: boolean; event_spool: { pending_unknown?: boolean; read_error?: string; pending_events: number; pending_bytes: number; oldest_event_at?: string; pressure_level: string } | null }
 }
-export async function fetchRuntimeJobs(signal?: AbortSignal): Promise<RuntimeJobs> { return (await api.get('/admin/runtime-jobs', { signal })).data.data }
+export type RuntimeJobsView = 'execution' | 'queues' | 'runtime' | 'plugins'
+export function fetchRuntimeJobs(signal?: AbortSignal): Promise<RuntimeJobs>
+export function fetchRuntimeJobs(signal: AbortSignal | undefined, view: RuntimeJobsView): Promise<Partial<RuntimeJobs>>
+export async function fetchRuntimeJobs(signal?: AbortSignal, view?: RuntimeJobsView): Promise<Partial<RuntimeJobs>> {
+ return (await api.get('/admin/runtime-jobs', { signal, params: view ? { view } : undefined })).data.data
+}
 export async function fetchRegisteredJobs(signal?: AbortSignal): Promise<RegisteredJob[]> { return (await api.get('/admin/runtime-jobs/registered', { signal })).data.data }
 export async function fetchRuntimeQueue(name: string, offset: number, signal?: AbortSignal): Promise<QueuePage> { return (await api.get('/admin/runtime-jobs/queue', { params: { name, offset, limit: 25 }, signal })).data.data }
 export async function retryNodePublication(nodeId: number): Promise<void> { await api.post(`/admin/runtime-jobs/queue/node_publish/${nodeId}/retry`) }

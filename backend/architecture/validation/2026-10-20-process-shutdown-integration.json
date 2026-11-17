@@ -1,0 +1,27 @@
+{
+  "base": "9109284f17aa66cfe91dd113c0d527b0f02edbb0",
+  "scope": "Actual route cleanup, spool close/startup failure, plugin-host close/lost-lease cleanup use local drain/detach; explicit domain permission revocation stays global",
+  "old_source_failures": [
+    {"test": "TestRegisteredRouteShutdownPreservesForeignLeaseAndCoreIntents", "result": "expected failure: foreign lease cancel_requested", "package_seconds": 0.296},
+    {"test": "TestSQLiteSpoolStartupFailurePreservesOtherProcessTasks", "result": "expected failure: foreign active cancel_requested and pending canceled", "package_seconds": 0.211},
+    {"scope": "Manager.Close, lost sync, lost supervisor foreign lease/pending guards", "result": "three expected failures", "package_seconds": 0.849}
+  ],
+  "corrected": [
+    {"scope": "Route shutdown, active handler/spool ownership, pending event recovery, timeout unknown, failed spool startup;3 repetitions", "result": "pass", "server_seconds": 0.792, "handler_seconds": 2.193},
+    {"scope": "Same focused scenarios;3 race repetitions", "result": "pass", "server_seconds": 23.526, "handler_seconds": 59.034, "wall_seconds": 203.250},
+    {"scope": "Final stricter shutdown admission latch;3 repetitions", "result": "pass", "normal_handler_seconds": 3.111, "race_handler_seconds": 19.014},
+    {"scope": "Detach3 cases and plugin local lifecycle5 cases including explicit global revocation control", "result": "pass", "jobs_seconds": 0.108, "plugins_seconds": 1.382},
+    {"scope": "Whole jobs package", "result": "pass", "seconds": 0.685},
+    {"scope": "Detach/plugin selected lifecycle;3 race repetitions", "result": "pass", "jobs_seconds": 1.355, "plugins_seconds": 178.669, "native_plugin_suite_included": false}
+  ],
+  "shutdown_budget": {"drain_seconds": 10, "existing_container_grace_seconds": 30, "hard_process_exit_bound_claimed": false, "fallback": "Local Close interrupts and waits for completion fences before spool/read-pool release; uncooperative handlers/storage may exceed budget"},
+  "migration": "None; persistent intents, lease tokens, cancellation states and financial writers unchanged",
+  "rollback": "Source revert restores foreign-task revocation on shutdown; stop old processes and inspect leases/unknown results before resuming",
+  "prior_source_results": {
+    "9109284_full_go": {"result": "pass", "seconds": 372.265, "vet_and_build": "pass", "pure_go_sqlite_seconds": 23.872},
+    "5964c53_ci": {"result": "all6pass", "url": "https://github.com/zerodenet/zboard/actions/runs/39488458309"},
+    "5964c53_local_mysql": {"result": "original15-minute timeout", "handler_seconds": 900.022, "last_case": "TestMySQLWalletReservationsReleaseBeforeLateCash/expired", "individual_assertion_failure_before_timeout": false, "copy": "running separately in sequence; result not yet known"}
+  },
+  "remaining": ["Current-source whole backend/CI and native plugin suite", "Actual MySQL drain/cancellation/spool-failure and whole jobstore", "Independent worker, resource guards, measured autoscaling benefit", "No production acceptance"],
+  "production_migration_executed": false
+}

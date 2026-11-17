@@ -38,7 +38,7 @@ func TestHistoryRetentionPrunesOnlyTerminalBoundedHistory(t *testing.T) {
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}
-	attempt := model.MailDeliveryAttempt{TaskID: finished.ID, ItemID: item.ID, Attempt: 1, LeaseToken: "lease", Acceptance: "accepted", StartedAt: old}
+	attempt := model.MailDeliveryAttempt{TaskID: finished.ID, ItemID: item.ID, Attempt: 1, LeaseToken: "lease", Acceptance: "accepted", StartedAt: old, FinishedAt: &old}
 	if err := db.Create(&attempt).Error; err != nil {
 		t.Fatal(err)
 	}

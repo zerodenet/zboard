@@ -60,6 +60,9 @@ func (s administrationTx) Create(in identity.PublicAccount, hash string) (identi
 }
 func (s administrationTx) Update(id uint, in identity.StoredAccountChange) (identity.PublicAccount, error) {
 	values := map[string]any{}
+	if in.AdminNote != nil {
+		values["admin_note"] = *in.AdminNote
+	}
 	if in.Status != nil {
 		values["status"] = *in.Status
 	}

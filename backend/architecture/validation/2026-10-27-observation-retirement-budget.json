@@ -1,0 +1,166 @@
+{
+  "recorded_utc": "2026-10-27T06:52:22.046604+00:00",
+  "parent_commit": "32205a84287de23f52df4a0bd367ec71c861c42c",
+  "state": "implemented; local backend runtime and new-head CI not verified",
+  "source_sha256": {
+    "backend/api/openapi.yaml": "06d036bc4593e4498ced8941b562d39bba8d014ac357bd406ff23902a6d259b7",
+    "backend/architecture/capability-ownership.json": "c62609abdf7453fdbfe467efb30339919b9ae901b7183c2d6d165ed7127444a8",
+    "backend/internal/adapters/persistence/networkstore/node_observation_handoff_test.go": "d64ec35abb917a64079338fdbc747933ad4f1136bc505f020f594ed78ff3b4c0",
+    "backend/internal/adapters/persistence/networkstore/node_observation_operations.go": "8e380fef77e62cf687c787b6ecc7ef7c217b926dc77ebfc8ab3c9239e85bc7a2",
+    "backend/internal/adapters/persistence/networkstore/node_observation_retry.go": "eeb78b9aeb3266adfb3486333efb6386e2033fe7860ea46658ac9371081a7810",
+    "backend/internal/adapters/persistence/networkstore/observation_material_retention_test.go": "452990b110eaeee307ed798db9f653e576b691e217fddf612779ff548f0d6ecc",
+    "backend/internal/adapters/persistence/networkstore/observation_retirement_budget_mysql_test.go": "0b27a88549420ef1ae3d44be11a2285c9731f218963efb1a6d540f9b0bb8997e",
+    "backend/internal/adapters/persistence/observationstore/expired_material.go": "d8a3343afe9fee241b6ff93bdc197f10dcfb4044635b404a78c111bc3b18d0da",
+    "backend/internal/adapters/persistence/observationstore/expired_material_test.go": "90041aaab2c651c70c4f70cc19123b5485669d6df0746c274863b9aed515e075",
+    "backend/internal/adapters/persistence/observationstore/material.go": "50a18dbb248a48674c10f427e3caf8fa9a4abfe7cc8e23ed239a3df1ecaaaa77",
+    "backend/internal/adapters/persistence/observationstore/material_budget.go": "d947d0cbb59c38357378708f17b79a0fa2dfde3432522ade22078bfd23027856",
+    "backend/internal/adapters/persistence/observationstore/ownership_test.go": "622ef2ba8c18820a965fa31f9679eb21f612349fd7d3fd5965e77ff91e679f54",
+    "backend/internal/adapters/persistence/observationstore/retention.go": "f034941487060a8b4d6c91dfd6d54dab10680c390c50d399ffd7c731869bb0b9",
+    "backend/internal/adapters/persistence/observationstore/retirement_read.go": "b25a889abd836ff8bf8df7eba572e6cff7fdf9ec0e604fa84c8e870f9ea62652",
+    "backend/internal/adapters/persistence/observationstore/retirement_read_test.go": "f3fe431e9dab6b2dce06e97959ed8e474692b16462352050839530ccb68911be",
+    "backend/internal/application/zero_event_projection.go": "10a9b4359b96f90c84587c36bbc81fcee7a6915bee6606e2c21de614347bba87",
+    "backend/internal/capabilities/network/node_observation_operations.go": "6edbb64d812f8ac29f9e817e670850b712067f91d8b095debadd3ce5ccfc2320",
+    "backend/internal/datastore/database_copy.go": "077ddcde53a91bae57c3003a6cfb2e116949a1d928a4912d2ba83c874a76a8e8",
+    "backend/internal/datastore/migrations.go": "3ae4ac310e6ffb30fc2c37bb9683a0186f8786b046432ffc4c7f6c2a5020098d",
+    "backend/internal/datastore/migrations_test.go": "ae88e48a85000bccbc7d29d36f08e5b250571d905c720f50d5f77cc72b6905c5",
+    "backend/internal/datastore/node_observation_budget_measure_test.go": "b410bce178b8e2fd447a82a22627d851da19b8e81d689c94ea84339386f833e3",
+    "backend/internal/datastore/node_observation_retirement_schema.go": "e1f56095359f7184c18a05419b4fa52b428271ee27d0748a47226940c122b370",
+    "backend/internal/datastore/node_observation_retirement_schema_test.go": "85050ad519f66ddae2779357320fd5e700cafef69721ed9ef6e6f636ca8923a8",
+    "backend/internal/datastore/sqlite_migrations.go": "a0c6d0272c2adfa848a66b79ad902b5f01d3b6fb4fe50b30e19a424222a4f0e4",
+    "backend/internal/handler/metering_proof_retention_growth_test.go": "a1d24328dacf7f8cb4482680ba718c6c1af8eeb2af307b873ec223740f7f33a0",
+    "backend/internal/handler/mysql_business_fixture_test.go": "1200ba0bb357f9e969959ca8bb1577aca396f672d9228ffdbe9de32f79d906c0",
+    "backend/internal/handler/mysql_fixture_timing_contract_test.go": "d631cc721093d84ba5d25974b507e6216793519cae09f43ac338c81067feba72",
+    "backend/internal/handler/mysql_fixture_timing_test.go": "7ef88720865f148a0b4623c86a651f4484233ff7a7ef35c2c526b50e0fb58f4d",
+    "backend/internal/handler/node_publish_mysql_test.go": "788c0ac566ae15c233a532f1552b78a18da62d26c89d00a458a21767dca40c85",
+    "backend/internal/model/node_observation_retirement.go": "6869bf4ad07c475469b2d1aff3d873842f47091f582b75b94b0e9ba43461bc20",
+    "backend/migrations/0067_node_observation_retirement_budget.down.sql": "aeefbedbca38e83343192fcd1393a063b2f57e36bb6fccaee69807bdab128fea",
+    "backend/migrations/0067_node_observation_retirement_budget.up.sql": "38f37de3e958511e1d1041e14cf685d0d97e33343508cb275c35f9785f95385a",
+    "backend/migrations/sqlite/0067_node_observation_retirement_budget.sql": "c399d4c60434c2b909865d0c640698e19f28e20b2653c199a675db0b862b22c3",
+    "backend/tools/capabilityinventory/main.go": "3ed23cc0267256e42c5289e89fa78690d0b0b87ab125c4a76e1eb06b284dc263",
+    "backend/tools/capabilityinventory/main_test.go": "9962db35ca9296c7ae4cf0fa34c15d498eb22bd24d6a4c872f11f9442303f841",
+    "frontend/src/api/nodeObservationIntents.ts": "a2e1a5396e88ae76208598122152b840a2465c052cdee605d24faaa948fbe873",
+    "frontend/src/components/NodeObservationQueue.vue": "bdb190773029fedbab50b720de8d6d661f787b72174549f5dafad6705fdb25e0",
+    "frontend/src/components/NodeObservationRetentionGap.test.ts": "c125dc5b6750db1bd843316eebf776c654af09331e53968669290819fcccd6bd"
+  },
+  "frontend": {
+    "status": "completed",
+    "started_utc": "2026-10-27T06:49:52.878449+00:00",
+    "source_before": "e5d0876aa89190ca5def9f104fd2c1123d456e523d463fe350250e0647cd09e3",
+    "steps": [
+      {
+        "command": [
+          "pnpm",
+          "test",
+          "--no-file-parallelism",
+          "src/components/NodeObservationQueue.test.ts",
+          "src/components/NodeObservationRetentionGap.test.ts"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 3.766,
+        "log_sha256": "10f2ddb07347934b2161f621408288fd92b0081f2a60918269be58349e2732e0"
+      },
+      {
+        "command": [
+          "pnpm",
+          "build"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 31.292,
+        "log_sha256": "9695c29678664acfdce0602fd498808d5f85628fc282cebd12e7274cefd988dd"
+      }
+    ],
+    "source_after": "e5d0876aa89190ca5def9f104fd2c1123d456e523d463fe350250e0647cd09e3",
+    "finished_utc": "2026-10-27T06:50:27.971987+00:00",
+    "source_unchanged": true
+  },
+  "inventory": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./tools/capabilityinventory",
+      "./architecture",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "started_utc": "2026-10-27T06:32:50.066002+00:00",
+    "source_before": "1914b40bca774b36e05c336b419cd76fde9de05e30aff2cb0dcce2bc1b94381d",
+    "source_scope": "all backend Go/SQL/module/ownership sources",
+    "status": "completed",
+    "exit_code": 0,
+    "wall_seconds": 1.514,
+    "source_after": "1914b40bca774b36e05c336b419cd76fde9de05e30aff2cb0dcce2bc1b94381d",
+    "log_sha256": "3621e161f53ecc68856d0d48f5ab1d2784aa91d98972bf02ae90dd32dbe12cd5",
+    "finished_utc": "2026-10-27T06:32:51.677660+00:00",
+    "source_unchanged": true,
+    "events": {
+      "pass": 75
+    },
+    "failures": [],
+    "build_failures": []
+  },
+  "backend_attempt": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/adapters/persistence/observationstore",
+      "./internal/adapters/persistence/networkstore",
+      "./internal/datastore",
+      "./internal/handler",
+      "./tools/capabilityinventory",
+      "-run",
+      "Observation|Retirement|NativeProofFinite|RepositoryContractInventory|FixtureTiming",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "started_utc": "2026-10-27T06:25:14.833349+00:00",
+    "source_before": "61e2981bba1b1fae2b2a019dae5ea3003e668332ef985480a1b179ebf6fa4216",
+    "source_scope": "all backend Go/SQL/module/ownership sources",
+    "status": "completed",
+    "exit_code": 1,
+    "wall_seconds": 5.442,
+    "source_after": "61e2981bba1b1fae2b2a019dae5ea3003e668332ef985480a1b179ebf6fa4216",
+    "log_sha256": "4f81f48210f7d27cfa019d2cc0580644658e6e92c307d753556dc561e6f3aa8b",
+    "finished_utc": "2026-10-27T06:25:20.385133+00:00",
+    "source_unchanged": true,
+    "events": {
+      "fail": 1,
+      "pass": 1
+    },
+    "failures": [
+      "TestRepositoryContractInventoryIsComplete"
+    ],
+    "build_failures": [
+      "modernc.org/sqlite",
+      "modernc.org/sqlite",
+      "modernc.org/sqlite/lib",
+      "modernc.org/sqlite",
+      "modernc.org/sqlite/lib",
+      "modernc.org/sqlite",
+      "modernc.org/sqlite/lib",
+      "github.com/klauspost/compress/zstd",
+      "github.com/pierrec/lz4/v4"
+    ]
+  },
+  "known_failure_disposition": {
+    "initial_inventory_source_assertion": "corrected to actual expired_material owner; 75 tests passed afterward",
+    "dependency_fetch": "normal Go proxy redirected to storage.googleapis.com HTTP403 for modernc.org/sqlite@v1.56.0, github.com/klauspost/compress@v1.18.7, github.com/pierrec/lz4/v4@v4.1.27; no runtime database test executed; no alternate source attempted",
+    "github_status_read": "gh API read of run40460682203 returned Forbidden at06:55; new-head CI status currently unverified"
+  },
+  "migration": "0067 additive auxiliary authority; recorded missing tables/budget refuse recovery-as-zero; immutable source/financial facts retained; no production execution",
+  "not_executed": [
+    "0067 local SQLite/MySQL runtime tests",
+    "full local backend on 0067",
+    "0067 race/count3",
+    "0067 P7 upgrade/copy/backup rehearsal",
+    "final capacity/worker/autoscaling comparison",
+    "external provider/kernel/payment acceptance"
+  ]
+}

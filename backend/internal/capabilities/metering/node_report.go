@@ -9,6 +9,7 @@ import (
 
 var ErrNodeReportCredentialChanged = errors.New("node report credential changed")
 var ErrNodeReportNonceReplayed = errors.New("node report nonce replayed")
+var ErrNodeReportNeedsPrincipal = errors.New("legacy traffic report cannot identify one subscription period; use authenticated principal flow events")
 var ErrSubscriptionNotFound = errors.New("no active subscription")
 var ErrProtocolEndpointUnavailable = errors.New("protocol endpoint is unavailable on this node")
 var ErrNoBillableTraffic = errors.New("selected traffic direction contains no billable bytes")

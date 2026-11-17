@@ -1,0 +1,416 @@
+{
+  "source_parent": "6bffb693ed6f7549e0e9e0aee2f62e2cdd17d2ed",
+  "branch": "codex/core-convergence",
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "captured_utc": "2026-10-23T12:36:18.390167+00:00",
+  "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+  "modified_code": [
+    {
+      "path": "backend/api/openapi.yaml",
+      "sha256": "fe71358ba1d1f25d92c188ccf2821812eb48acd5020600e6feb18f69697f4e2d"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/entitlement_value.go",
+      "sha256": "63fac83d0697fdcd25f852fe01335c0b0c29adabce0443804d42093bc7749770"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/order_creation.go",
+      "sha256": "f52c8e1a0191f6087998cb3fa284a5b7f73d03a9d0dc5c9668c520bd71ba9dd1"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/order_discount.go",
+      "sha256": "2e56941797a01fa5b5d20030ed8012ec973c444a996616dd4ab91790326c48d0"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/order_operation_discount.go",
+      "sha256": "0ecc6e95f0a4aa8237feea7f28d100524abeeb8f91a4b651c7e9eb2933eb8f60"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/commercestore/order_renewal_discount.go",
+      "sha256": "3a1d41e9e847e4898d3ce89d4760d4336c9d748244443e4f17c80b5f245fa165"
+    },
+    {
+      "path": "backend/internal/capabilities/commerce/discount_providers.go",
+      "sha256": "921d99f2c713f4cc87c5d7016af9522aa7f7bfca1d5c7d1a27082c344e2c7f8a"
+    },
+    {
+      "path": "backend/internal/capabilities/commerce/value_projection.go",
+      "sha256": "b92bcce5ef428c77fee733541af8bea7326ecf60def216b656da096a65a2400a"
+    },
+    {
+      "path": "backend/internal/capabilities/commerce/value_timed_addition_test.go",
+      "sha256": "bb7a88f169eef5cac084b9e1c335eae099ea5ec025ef919a648a7dc9bf43a73d"
+    },
+    {
+      "path": "backend/internal/handler/operation_discount_checkout_test.go",
+      "sha256": "830fe4c2e11dac9f587b76d29aebcaff2ee0bea2977c9042679452ce04698b1a"
+    },
+    {
+      "path": "backend/internal/handler/operation_discount_reader_test.go",
+      "sha256": "d59068dd2013fb54618971f69ec02af9c2072a7253fae1a761f794c365506f98"
+    },
+    {
+      "path": "backend/internal/plugins/commerce_quote_choices.go",
+      "sha256": "494d2addfde714be89c149ece5f54f680e55e5e0637f5ed5c50e4ccdd6fe7706"
+    },
+    {
+      "path": "backend/internal/plugins/testdata/quote/main.go",
+      "sha256": "87818829c0e5489ee6a1b9a0e2d967fb2d97accc975a8df77ee86fa5b5f4f6f5"
+    },
+    {
+      "path": "backend/pkg/pluginapi/v1/commerce_quote.go",
+      "sha256": "df0d91dce33390f112b7ac600b5da287e24f05b18ea6fce5d92c4f20ab4456c5"
+    },
+    {
+      "path": "frontend/src/api/commerceDiscounts.test.ts",
+      "sha256": "e8e94584453ed4580b84e178ef82daf61bc8b74220ddd0f3638e439a8aaf5403"
+    },
+    {
+      "path": "frontend/src/api/commerceDiscounts.ts",
+      "sha256": "f87265838f862276d38ab78d65a652c468cf112be8df67f23675cb300c3cb32d"
+    },
+    {
+      "path": "frontend/src/views/account/AccountPlans.test.ts",
+      "sha256": "6ed7a57d0a2e346298dbda9a7cbecfa73906e9073f4096510bad90c3b7170a75"
+    },
+    {
+      "path": "frontend/src/views/account/AccountPlans.vue",
+      "sha256": "c70abf15caa742ac863a99ce9d96ede97501a1101feeef08772bef5ddc8b845f"
+    }
+  ],
+  "checks": [
+    {
+      "receipt": "go-final4",
+      "started_utc": "2026-10-23T12:34:39.268884+00:00",
+      "finished_utc": "2026-10-23T12:34:44.013200+00:00",
+      "source_stable": true,
+      "all_code_sha256": "a04a9f9681d6ebb9d9e11c7fdc729300da4a6579e802fa722212ebbb72bd8916",
+      "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "./internal/adapters/persistence/commercestore",
+            "./internal/handler",
+            "-run",
+            "^Test(MySQL)?OperationDiscount",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 4.617,
+          "log": "go-final4-target.log",
+          "log_sha256": "e9aaea4f7bad1cb9bd2bfb9a12e71534fbee4dee86f5a074da0abd5682b8bb1e"
+        }
+      ]
+    },
+    {
+      "receipt": "core-shared2",
+      "started_utc": "2026-10-23T12:34:38.318846+00:00",
+      "finished_utc": "2026-10-23T12:34:39.221011+00:00",
+      "source_stable": true,
+      "all_code_sha256": "a04a9f9681d6ebb9d9e11c7fdc729300da4a6579e802fa722212ebbb72bd8916",
+      "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "commerce",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "-count=1"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.775,
+          "log": "core-shared2-commerce.log",
+          "log_sha256": "8dfb69095e7fe4812a1d6c8aa7360a231ff1d72fd454697952993380d770b84d"
+        }
+      ]
+    },
+    {
+      "receipt": "mysql-first1",
+      "started_utc": "2026-10-23T12:26:53.918218+00:00",
+      "finished_utc": "2026-10-23T12:27:06.709425+00:00",
+      "source_stable": true,
+      "all_code_sha256": "8c72c8f68762237bc4c8dcecdaec4a6ffe2cd472d59aeb89a2aac3a87deb64af",
+      "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+      "mysql_configured": true,
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "./internal/adapters/persistence/commercestore",
+            "./internal/handler",
+            "-run",
+            "^TestMySQLOperationDiscount",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 12.655,
+          "log": "mysql-first1-target.log",
+          "log_sha256": "5551287870499181a142db8630c3f77ab3f507d03762060f730485b0e7e0beb9"
+        }
+      ]
+    },
+    {
+      "receipt": "frontend-target-first1",
+      "started_utc": "2026-10-23T12:27:45.495296+00:00",
+      "finished_utc": "2026-10-23T12:27:53.323233+00:00",
+      "source_stable": true,
+      "all_code_sha256": "8c72c8f68762237bc4c8dcecdaec4a6ffe2cd472d59aeb89a2aac3a87deb64af",
+      "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "test",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "src/api/commerceDiscounts.test.ts",
+            "src/views/account/AccountPlans.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 7.704,
+          "log": "frontend-target-first1-test.log",
+          "log_sha256": "6b1c0744cb97595d86be1abf7dae1ea6d21b72e739e12e1330f96be1b2b73bc6"
+        }
+      ]
+    },
+    {
+      "receipt": "frontend-full-first1",
+      "started_utc": "2026-10-23T12:29:51.516488+00:00",
+      "finished_utc": "2026-10-23T12:32:57.633091+00:00",
+      "source_stable": true,
+      "all_code_sha256": "8c72c8f68762237bc4c8dcecdaec4a6ffe2cd472d59aeb89a2aac3a87deb64af",
+      "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "install",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile",
+            "--package-import-method=copy"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.612,
+          "log": "frontend-full-first1-install.log",
+          "log_sha256": "3f400adaf11a88766f9c591e70d3669afeb240dc763017cd88e9c7b7781e2d69"
+        },
+        {
+          "name": "test",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "--exclude",
+            "src/theme/designTokens.test.ts",
+            "--exclude",
+            "src/views/commercePurchaseExperience.test.ts",
+            "--exclude",
+            "src/utils/adminRowActionsAudit.test.ts",
+            "--exclude",
+            "src/utils/catalogScalePolicy.test.ts",
+            "--exclude",
+            "src/utils/formPolicy.test.ts",
+            "--exclude",
+            "src/utils/frontendArchitecturePolicy.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 149.149,
+          "log": "frontend-full-first1-test.log",
+          "log_sha256": "89d82a5b543b56327943a6551c3e0e43d424408bb3d259394b35284d85732f6a"
+        },
+        {
+          "name": "build",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "build"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 36.234,
+          "log": "frontend-full-first1-build.log",
+          "log_sha256": "63ea0e1be2391ae4266f2a53636e0e91982b86ba68f955296360ba1b94d0a6ed"
+        }
+      ]
+    },
+    {
+      "receipt": "sdk-first1",
+      "started_utc": "2026-10-23T12:29:02.735764+00:00",
+      "finished_utc": "2026-10-23T12:29:21.467195+00:00",
+      "source_stable": true,
+      "all_code_sha256": "8c72c8f68762237bc4c8dcecdaec4a6ffe2cd472d59aeb89a2aac3a87deb64af",
+      "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+      "mysql_configured": false,
+      "checks": [
+        {
+          "name": "tidy",
+          "cwd": "backend/pkg/pluginapi",
+          "command": [
+            "go",
+            "mod",
+            "tidy"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.793,
+          "log": "sdk-first1-tidy.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "module-consistency",
+          "cwd": "backend/pkg/pluginapi",
+          "command": [
+            "git",
+            "diff",
+            "--exit-code",
+            "--",
+            "go.mod",
+            "go.sum"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.003,
+          "log": "sdk-first1-module-consistency.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "test",
+          "cwd": "backend/pkg/pluginapi",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 11.496,
+          "log": "sdk-first1-test.log",
+          "log_sha256": "29b1503d4f374f8b2f99e232f767ff4a5e2c749a0af32ca0a5a557ed679c5edf"
+        },
+        {
+          "name": "vet",
+          "cwd": "backend/pkg/pluginapi",
+          "command": [
+            "go",
+            "vet",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 6.297,
+          "log": "sdk-first1-vet.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ],
+  "historical_failures": [
+    {
+      "receipt": "go-first1",
+      "reason": "native monetary flow passed but final source-change probe called provider zero times; timed-pack value preflight unavailable",
+      "source_stable": true,
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "./internal/adapters/persistence/commercestore",
+            "./internal/handler",
+            "-run",
+            "^Test(MySQL)?OperationDiscount",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 22.526,
+          "log": "go-first1-target.log",
+          "log_sha256": "07d07270c656294d1b237a6efc563999dd2ec626da86e688dc287f6eef293d0c"
+        }
+      ]
+    },
+    {
+      "receipt": "go-valueprobe2",
+      "reason": "direct value read confirms historical unsupported_legacy_effect/legacy_value_requires_review timed-pack gap",
+      "source_stable": true,
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "./internal/adapters/persistence/commercestore",
+            "./internal/handler",
+            "-run",
+            "^Test(MySQL)?OperationDiscount",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 17.34,
+          "log": "go-valueprobe2-target.log",
+          "log_sha256": "3e6245036d2eb7213a3c3a39cf70899c5e2d017def208b826e88c7b52760ada3"
+        }
+      ]
+    }
+  ],
+  "interpretation": [
+    "All passing checks share exact production code; the subsequently added shared-year/free-quota Go test is independently included in the final whole-commerce run.",
+    "Local SQLite Go target deliberately skips two opt-in MySQL cases; the independent real MySQL target actually runs both handler cases. Other packages no-tests-to-run are not counted as MySQL coverage.",
+    "Frontend full test:204 files/1170 passed/8 pre-existing skips; original six exclusions unchanged.",
+    "Actual signed native fixture, isolated databases and synthetic source-change probe are separate from external coupon/channel/kernel or OS-process acceptance."
+  ],
+  "migration": "No schema, SQL or table change;154 published SQL assets unchanged. New timed-quota-addition evidence requires its new reader for complete value/termination rollback.",
+  "pending": [
+    "full backend checks on the resulting exact commit",
+    "full three-command MySQL suite on resulting exact commit",
+    "own exact-commit six-job CI",
+    "race/count3 for the newly admitted behavior",
+    "real browser/native external providers and kernels",
+    "original capacity disk gate and long-duration bounds",
+    "remaining P2/P4/P6/P7 work"
+  ],
+  "external_limitation": "Read-only quote RPC has no finite-coupon reservation/consume/commit/release. No external payment/coupon implementation was modified or claimed integrated."
+}

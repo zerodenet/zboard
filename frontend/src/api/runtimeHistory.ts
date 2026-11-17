@@ -1,5 +1,5 @@
 import { authenticatedAPI as api } from './client'
-export interface RunRecord { id: string; owner: string; handler: string; state: string; attempts?: number; max_attempts?: number; next_attempt_at?: string; planned_at?: string; created_at: string; finished_at: string | null }
+export interface RunRecord { id: string; owner: string; handler: string; state: string; node_id?: number; attempts?: number; max_attempts?: number; next_attempt_at?: string; planned_at?: string; created_at: string; finished_at: string | null }
 export interface RunHistory { items: RunRecord[]; total: number; offset: number; limit: number }
 export interface RunAttempt { attempt_number: number; worker: string; state: string; started_at: string; expires_at: string; finished_at: string | null }
 export interface RunAttempts { items: RunAttempt[]; total: number; offset: number; limit: number }

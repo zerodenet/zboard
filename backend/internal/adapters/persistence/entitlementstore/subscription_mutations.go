@@ -2,8 +2,6 @@ package entitlementstore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,15 +20,7 @@ type SubscriptionMutations struct {
 }
 
 func subscriptionMutationHash(in entitlements.SubscriptionMutationInput) string {
-	data, _ := json.Marshal(struct {
-		SubscriptionID uint   `json:"subscription_id"`
-		Kind           string `json:"kind"`
-		Days           int    `json:"days"`
-		Reason         string `json:"reason"`
-		Origin         string `json:"origin"`
-	}{in.SubscriptionID, in.Kind, in.Days, in.Reason, in.Origin})
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return entitlements.SubscriptionMutationFingerprint(in)
 }
 
 func subscriptionMutationReceipt(row model.SubscriptionMutation) entitlements.SubscriptionMutationReceipt {
@@ -92,14 +82,9 @@ func (s SubscriptionMutations) Apply(ctx context.Context, actor uint, in entitle
 				return err
 			}
 		case entitlements.SubscriptionCancel:
-			sub.Status = "canceled"
-			if err := tx.Model(&sub).Updates(map[string]any{"status": sub.Status, "updated_at": now}).Error; err != nil {
-				return err
-			}
-			query := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status IN ?", sub.ID, []string{"active", "prepared"})
-			if err := persistCredentialRevocation(tx, query, "revoked", now); err != nil {
-				return err
-			}
+			// New cancellation writes belong to commerce's whole-termination path.
+			// Authorized immutable receipts above remain readable after the upgrade.
+			return entitlements.ErrSubscriptionMutationUnavailable
 		default:
 			return entitlements.ErrSubscriptionMutationInvalid
 		}

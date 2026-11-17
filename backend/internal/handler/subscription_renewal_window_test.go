@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
@@ -32,6 +33,9 @@ func TestExpiredSubscriptionCanRenewWithinSevenDaysAndRecoversItsPeriodAndQuota(
 		t.Fatal(err)
 	}
 	renewed := f.paid(t, f.create(t, paid.SubscriptionID).ID)
+	if renewed.AmountCents != paid.AmountCents || renewed.PaidAmount != paid.AmountCents {
+		t.Fatal("recovery discarded the purchased base price", renewed)
+	}
 	if renewed.SubscriptionID != paid.SubscriptionID {
 		t.Fatal("renewal created another instance")
 	}
@@ -55,9 +59,9 @@ func TestExpiredSubscriptionCanRenewWithinSevenDaysAndRecoversItsPeriodAndQuota(
 		t.Fatal(err)
 	}
 	f.planRecord, f.skuRecord = plan, f.sku(t, plan.ID, 500, "change")
-	quote := previewPricedOrder(t, f, sub.ID)
-	if quote.TrafficCredit != renewed.PaidAmount || quote.CreditAmount < 199 || quote.CreditAmount > 200 || quote.PayableAmount != 500-quote.CreditAmount {
-		t.Fatal("recovered service reused the ended period's paid value", quote, renewed)
+	quote, err := f.h.services.OrderCreation.Preview(t.Context(), 1, commerce.OrderCreateRequest{PlanSKUID: f.skuRecord.ID, TargetSubscriptionID: sub.ID})
+	if err != nil || quote.SettlementAmount <= 0 || quote.SettlementAmount > renewed.PaidAmount || quote.ChangeMode != "full_term" {
+		t.Fatalf("administrator-confirmed renewal lost its paid value: %+v %v", quote, err)
 	}
 }
 

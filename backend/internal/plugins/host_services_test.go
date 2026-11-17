@@ -44,10 +44,21 @@ func TestNativeHostServiceRequiresManifestAndAdmissionCapability(t *testing.T) {
 }
 
 func TestNativeHostDiscoveryReturnsOnlyOwnAdmittedCapabilities(t *testing.T) {
-	manager, _, _ := testManager(t, nil)
+	raw, keys := fixturePackage(t, func(m *Manifest, _ map[string][]byte) {
+		m.Capabilities = append(m.Capabilities, HostDiscoveryCapability, AccountSelfReadCapability)
+	})
+	manager, db, _ := testManager(t, keys)
 	proc := &process{}
 	installation := Installation{Admission: Admission{Accepted: true, Capabilities: []string{ConfigCapability, HostDiscoveryCapability, AccountSelfReadCapability}}, Manifest: Manifest{Capabilities: []string{ConfigCapability, HostDiscoveryCapability, AccountSelfReadCapability}}}
-	installation.ID = "example.discovery"
+	installation, err := importFixture(t, manager, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&installation.PluginInstallation).Updates(map[string]any{"enabled": true, "state": "active"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	installation.Enabled = true
+	installation.State = "active"
 	manager.processes[installation.ID] = proc
 	defer delete(manager.processes, installation.ID)
 	request, _ := json.Marshal(pluginv1.HostCallRequest{Capability: HostDiscoveryCapability, Operation: "capabilities.list", Payload: json.RawMessage(`{}`)})
@@ -67,7 +78,7 @@ func TestNativeHostDiscoveryReturnsOnlyOwnAdmittedCapabilities(t *testing.T) {
 	if err := json.Unmarshal(result.Data, &data); err != nil {
 		t.Fatal(err)
 	}
-	if len(data.Capabilities) != 3 || data.Capabilities[1] != HostDiscoveryCapability || data.HostVersion == "" {
+	if len(data.Capabilities) != 4 || data.Capabilities[2] != HostDiscoveryCapability || data.HostVersion == "" {
 		t.Fatalf("wrong discovery data: %+v", data)
 	}
 }

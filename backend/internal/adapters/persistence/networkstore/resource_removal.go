@@ -75,6 +75,18 @@ func removalError(err error) error {
 }
 func resourceRemovalBlockers(tx *gorm.DB, kind network.OperationKind, id uint, status string) (map[string]int64, error) {
 	blockers := map[string]int64{}
+	retiringNodes := tx.Model(&model.NodeRetirement{}).Select("node_id").Where("state <> ?", "succeeded")
+	modelType := any(&model.ManagedDNSRecord{})
+	if kind == network.CertificateOperation {
+		modelType = &model.ManagedCertificate{}
+	}
+	var retirementCount int64
+	if err := tx.Model(modelType).Where("id = ? AND node_id IN (?)", id, retiringNodes).Count(&retirementCount).Error; err != nil {
+		return nil, err
+	}
+	if retirementCount > 0 {
+		blockers["node_retirement"] = retirementCount
+	}
 	var operations *gorm.DB
 	var resources []string
 	if kind == network.DNSOperation {

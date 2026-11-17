@@ -1,0 +1,161 @@
+{
+  "baseline_sha": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "clone": "/workspace/zboard-refund-browser-verify",
+  "owned_sources": {
+    "backend/internal/handler/consumption_refund_browser_test.go": "30dfdb182123e1a14ccbe2b26da60ebf9810294a5b11a298e2fde3e1451be24f",
+    "scripts/acceptance-consumption-refund-browser.py": "ba7d6e987167853c75df2a128849ac707823b36ff5ee986892a87494dda1fc78"
+  },
+  "result": "PASS",
+  "test": "TestConsumptionRefundChromiumAcceptance",
+  "duration_seconds": 9.61,
+  "browser_assertions": 32,
+  "failed_browser_assertions": [],
+  "screenshots": 5,
+  "frontend_build": "PASS; vue-tsc --noEmit + vite build; Vite 12.20s",
+  "frontend_source_files": 529,
+  "dist_files": 188,
+  "backend_tracked_files": 1903,
+  "test_binary_sha256": "1deac7af3490cd0b7b60d85dda5bc0c39464d8b171998dd634f61b9471689f07",
+  "financial_checks": {
+    "admin_id": 2,
+    "entry_id": 1,
+    "expiry_now": "2026-11-27T22:19:06.388044339Z",
+    "explicit_same_key_replays": 2,
+    "mutations": {
+      "POST /api/v1/admin/orders/1/consumption-refunds": 5,
+      "POST /api/v1/auth/login": 2,
+      "POST /api/v1/tickets": 1
+    },
+    "owner_id": 1,
+    "paid_minor_unchanged": 1000,
+    "passed": true,
+    "refund_audit_count": 1,
+    "refund_count": 1,
+    "refund_id": 1,
+    "refund_minor": 300,
+    "refund_wallet_entry_count": 1,
+    "reserved_minor": 0,
+    "rights_payment_metering_sha256_unchanged": "848c03be761fa72d58678c52cec638aa6b3a686789d9d730afa06ea835dfa23b",
+    "synthetic_clock_only_not_natural_term_passage": true,
+    "ticket_id": 2,
+    "wallet_after_minor": 300,
+    "wallet_before_minor": 0
+  },
+  "created_credentials": 1,
+  "issued_tokens": 1,
+  "expiry_clock": {
+    "original_end_at": "2026-11-20T22:19:05.388044339Z",
+    "grace_seconds": 604800,
+    "expiry_now": "2026-11-27T22:19:06.388044339Z",
+    "synthetic": true
+  },
+  "network": {
+    "api_mocks": false,
+    "external_requests_permitted": false,
+    "blocked_release_get_attempts": 3,
+    "policy": "All non-loopback browser requests aborted before network. Expected administrator release metadata GET attempts recorded and exact URLs checked."
+  },
+  "evidence_dir": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-fnrc7q1_",
+  "source_binding_before_sha256": "54f3d2bcbe133349ef4a90043a560f07e1f73b3ff6149d43512e09b6de11286c",
+  "source_binding_after_sha256": "ba171a595c692a81eea73e8082928ad1b45f9cb7b2c643f1226199064c0d7c2e",
+  "post_run_checks": {
+    "tracked_backend": true,
+    "owned": true,
+    "frontend_source": true,
+    "owned_main_clone_equal": true,
+    "all_dist_snapshot_and_main_equal": true,
+    "binary_self_report_matches": true,
+    "clone_only_two_untracked": true,
+    "private_directory_0700": true
+  },
+  "retained_failed_attempts": [
+    {
+      "directory": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-ol7ve_fo",
+      "duration_seconds": 0.18,
+      "reason": "Generic purchase fixture had no configured endpoint and therefore no credential; nonempty assertion correctly failed before browser."
+    },
+    {
+      "directory": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-1pnx2_8o",
+      "reason": "Harness login redirect was not URL encoded, dropping user_id; missing empty real plugin manager dependency caused real slot handler nil panic. Fixed harness only."
+    },
+    {
+      "directory": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-d93go7ns",
+      "duration_seconds": 9.35,
+      "reason": "Final no-external-attempt assertion rejected three admin release metadata attempts already blocked before network; financial/UI checks passed through approval. Replaced with exact expected GET whitelist plus blocking evidence."
+    }
+  ],
+  "commands": {
+    "gofmt": "/workspace/toolchains/go/bin/gofmt -w backend/internal/handler/consumption_refund_browser_test.go",
+    "frontend_build": {
+      "cwd": "/workspace/zboard/frontend",
+      "command": "PATH=/workspace/toolchains/node-v22.23.0-linux-x64/bin:/workspace/toolchains/pnpm/node_modules/.bin:$PATH pnpm build",
+      "log": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-ol7ve_fo/frontend-build-private.log"
+    },
+    "compile": {
+      "cwd": "/workspace/zboard-refund-browser-verify/backend",
+      "command": "PATH=/workspace/toolchains/go/bin:$PATH GOPATH=/workspace/toolchains/gopath GOCACHE=/workspace/toolchains/cache/go-build GOMAXPROCS=1 go test -c -p 1 -o /workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-d93go7ns/handler.test ./internal/handler",
+      "note": "Final run copies byte-identical binary from d93go7ns; Go source unchanged, Python-only assertion patch has its own final hash."
+    },
+    "run": {
+      "cwd": "/workspace/zboard-refund-browser-verify/backend/internal/handler",
+      "environment": {
+        "GOMAXPROCS": "1",
+        "ZBOARD_CONSUMPTION_REFUND_BROWSER": "1",
+        "ZBOARD_CONSUMPTION_REFUND_BROWSER_EVIDENCE_DIR": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-fnrc7q1_",
+        "ZBOARD_CONSUMPTION_REFUND_BROWSER_WEB_DIR": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-fnrc7q1_/web",
+        "ZBOARD_CONSUMPTION_REFUND_BROWSER_SCRIPT": "/workspace/zboard-refund-browser-verify/scripts/acceptance-consumption-refund-browser.py"
+      },
+      "command": "/workspace/zboard/.codex-local-artifacts/acceptance/consumption-refund-browser-fnrc7q1_/handler.test -test.run '^TestConsumptionRefundChromiumAcceptance$' -test.timeout=5m -test.v"
+    }
+  },
+  "dependencies": {
+    "go": "go1.26.8 linux/amd64",
+    "node": "22.23.0",
+    "pnpm": "11.9.0",
+    "python": "3.12.14",
+    "playwright": "1.62.0",
+    "chromium": "154.0.8037.57 /usr/bin/chromium",
+    "installation_performed": false,
+    "permission_or_security_changes": false
+  },
+  "limits": [
+    "isolated SQLite and selected real handlers; not full router/middleware acceptance",
+    "authorized test PaymentFact purchase; no live external gateway transaction",
+    "explicit future clock passed to expiry; not natural-term passage",
+    "closed source-order approval only; active partial-refund policy remains unsupported",
+    "known-success exact-key HTTP replay; no browser unknown-outcome fault injection",
+    "no API mocks, no external websites, no capacity claim",
+    "Endpoint delivery remains pending; no native runtime delivery, remote reachability or connection revocation acceptance claim.",
+    "Source purchase uses existing real handler/services and authorized test payment attempt + PaymentFact; no direct order paid, wallet, usage, approval or credential fabrication.",
+    "No active partial-refund policy decisions, live gateway, MySQL, full suite, performance or capacity claim."
+  ],
+  "no_live_harness_processes": true,
+  "frozen": true,
+  "evidence_hashes": {
+    "verification_checked.done": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+    "source-binding-after.json": "ba171a595c692a81eea73e8082928ad1b45f9cb7b2c643f1226199064c0d7c2e",
+    "05-owner-wallet-once.png": "9e58fee2698a335a70a4147620691b09b6aabc0a66a054737f2c6d563e4a1bf1",
+    "compile-private.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ticket_checked.done": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+    "protected-facts-private.json": "20b365453f0c05a070bd45ce6b4212511ca2283548c0e6bf83389eac26234880",
+    "01-owner-ended-order.png": "ecf56e66f2b98e9470365f782eeb2c9fd58ca1c1afa6919920f96594e291029c",
+    "test-private.log": "ed8b5e5f06a5ef46ffedd2b66996a584a9e97966e213a8f99298f44f603ea6e7",
+    "browser-checks.json": "4afd6cb8b4a6fc2d35b4e362aa8d3623bb199e931dfab4efeab8b61bb7108812",
+    "source-binding-before.json": "54f3d2bcbe133349ef4a90043a560f07e1f73b3ff6149d43512e09b6de11286c",
+    "verified.request": "b24d6d33736ecd5604a4b17bc9c6481039fac362bb7df044ef1c10a2bfd21db6",
+    "browser-private.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ticket.request": "b24d6d33736ecd5604a4b17bc9c6481039fac362bb7df044ef1c10a2bfd21db6",
+    "fixture-private.json": "bd36a8a95184b3f8e5da09e2c0167a90409ec214f9731cc4b389cbd71f120d32",
+    "03-admin-approved-refund.png": "09f249e50a182eb66f0af03830c1c86023695e408c004bdf2d2c2d3a2fb2d250",
+    "backend-binding.json": "9acec1466f140121f6c79b43d57dd0809d6daf1dc8dcb60b334269407e3d0b08",
+    "04-real-refund-audit.png": "b3502b495468013c2e30cb554f1550d278c776b5c3a951825460c650412023d8",
+    "financial-checks.json": "0fc9f01cabee8374af884d5b5fe46d7930277fafeb55b1fa6e146aab7009972b",
+    "rejected.request": "b24d6d33736ecd5604a4b17bc9c6481039fac362bb7df044ef1c10a2bfd21db6",
+    "rejection_checked.done": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+    "approval_checked.done": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+    "02-owner-persisted-ticket.png": "f326a1468432761486637a94e19e567ffca92291c54b8546da6d89ed4c60fe53",
+    "approved.request": "b24d6d33736ecd5604a4b17bc9c6481039fac362bb7df044ef1c10a2bfd21db6"
+  },
+  "private_receipt_sha256": "9661a1f77a3e422350043c87c350aa8024f34d6edf1a241da45189f5cea739b7",
+  "validation_scope": "Exact production source 31e72db plus only the two named acceptance tools; not acceptance of a later source commit."
+}

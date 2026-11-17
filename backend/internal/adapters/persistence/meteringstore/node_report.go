@@ -18,6 +18,9 @@ type NodeReports struct {
 }
 
 func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeReport) (metering.NodeReportResult, error) {
+	if e := EnsureIdentityFences(s.DB.WithContext(ctx), []uint{in.NodeID}); e != nil {
+		return metering.NodeReportResult{}, e
+	}
 	var sub model.Subscription
 	var record model.TrafficRecord
 	duplicate := false
@@ -45,10 +48,27 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			return metering.ErrProtocolEndpointUnavailable
 		}
 
-		err := tx.Where("node_id = ? AND report_id = ?", lockedNode.ID, in.ReportID).First(&record).Error
-		if err == nil {
+		receipts, err := readReportReceipts(tx, lockedNode.ID, []string{in.ReportID})
+		if err != nil {
+			return err
+		}
+		if len(receipts) > 0 {
+			record, err = recordForReceipt(tx, receipts[0], in.ReportID)
+			if err != nil {
+				return err
+			}
 			duplicate = true
 			return nil
+		}
+		if _, found, err := lookupColdIdentity(tx, lockedNode.ID, coldNonce, in.Nonce, false); err != nil {
+			return err
+		} else if found {
+			return metering.ErrNodeReportNonceReplayed
+		}
+		var retiredNonce model.MeteringNonceReceipt
+		err = tx.Where("node_id=? AND nonce=?", lockedNode.ID, in.Nonce).First(&retiredNonce).Error
+		if err == nil {
+			return metering.ErrNodeReportNonceReplayed
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -77,6 +97,28 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			return err
 		}
 
+		// This legacy signed API identifies a user and endpoint, not an immutable
+		// credential/period. It cannot distinguish delayed traffic after recovery
+		// or independent subscriptions sharing that endpoint. Reject attribution
+		// rather than select the latest entitlement and charge the wrong quota.
+		// A deleted service is intentionally absent from the live-subscription
+		// query. Its closed accounting identity must still prevent this legacy
+		// user-only API from charging delayed bytes to a newer service.
+		var historicalOwner struct{ LastEntitlementEnd *time.Time }
+		if e := tx.Table("account_subjects").Clauses(clause.Locking{Strength: "SHARE"}).Select("last_entitlement_end").Where("id=?", in.UserID).Take(&historicalOwner).Error; e != nil {
+			return e
+		}
+		if historicalOwner.LastEntitlementEnd != nil {
+			return metering.ErrNodeReportNeedsPrincipal
+		}
+		var owners []uint
+		if err := tx.Model(&model.Subscription{}).Select("subscriptions.id").Where("subscriptions.user_id = ?", in.UserID).
+			Where("EXISTS (SELECT 1 FROM node_group_endpoints e WHERE e.node_group_id = subscriptions.node_group_id AND e.protocol_endpoint_id = ?) OR EXISTS (SELECT 1 FROM protocol_credentials c WHERE c.subscription_id = subscriptions.id AND c.node_id = ? AND c.protocol_endpoint_id = ?)", endpoint.ID, lockedNode.ID, endpoint.ID).Limit(2).Pluck("subscriptions.id", &owners).Error; err != nil {
+			return err
+		}
+		if sub.EntitlementEpoch != 0 || len(owners) != 1 || owners[0] != sub.ID {
+			return metering.ErrNodeReportNeedsPrincipal
+		}
 		remaining := sub.FlowTotal - sub.FlowUsed
 		if remaining <= 0 {
 			quotaExhausted = true
@@ -102,6 +144,7 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			return err
 		}
 		record = model.TrafficRecord{
+			EntitlementEpoch:        sub.EntitlementEpoch,
 			UserID:                  in.UserID,
 			SubscriptionID:          sub.ID,
 			NodeID:                  lockedNode.ID,
@@ -115,7 +158,7 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 			ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 			UsedBytes:               used,
 			At:                      in.Timestamp,
-			Meta:                    in.Meta,
+			Meta:                    initialDiagnosticMetadata(in.Meta),
 		}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
@@ -123,7 +166,29 @@ func (s NodeReports) Record(ctx context.Context, in metering.AuthenticatedNodeRe
 		if err := RecordUsageProjections(tx, []model.TrafficRecord{record}); err != nil {
 			return err
 		}
-		return s.Expire(tx, in.UserID, now)
+		if err := s.Expire(tx, in.UserID, now); err != nil {
+			return err
+		}
+		// All financial, foreign-key parent and revocation intent writes precede
+		// the optional capture mutex. No new business locks may follow it.
+		metadata, captured, err := collectDiagnosticMaterial(tx, in.Meta)
+		if err != nil {
+			return err
+		}
+		if metadata != record.Meta {
+			changed := tx.Model(&model.TrafficRecord{}).Where("id = ?", record.ID).UpdateColumns(map[string]any{"meta": metadata, "updated_at": record.UpdatedAt})
+			if changed.Error != nil {
+				return changed.Error
+			}
+			if changed.RowsAffected != 1 {
+				return ErrDiagnosticMaterial
+			}
+			record.Meta = metadata
+		}
+		if captured {
+			return enqueueDiagnosticMaterial(tx, record, in.Meta, time.Now().UTC())
+		}
+		return nil
 	})
 	if err != nil {
 		return metering.NodeReportResult{}, err

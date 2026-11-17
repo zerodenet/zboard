@@ -1,0 +1,68 @@
+{
+  "source": "ae2aadb3d9d5fc50c2fd9706b25815e17578376a",
+  "checkout": "/workspace/zboard-observation-credential-final-verify",
+  "phase": "backend",
+  "started_utc": "2026-10-21T04:00:39.063065+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2",
+    "go": "1.26.8",
+    "execution": "original cloud; ordinary clean clone; root-only sequential Go, no concurrent SQL or load"
+  },
+  "checks": [
+    {
+      "name": "full-go",
+      "command": "go test -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 339.057,
+      "log": "private recovery-validation/full-go-ae2aadb-final.log",
+      "log_sha256": "807b318b46c9919fad111c7c8889a99b9477467cf00a552be5484195f4dc53ce",
+      "log_bytes": 4034
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 13.212,
+      "log": "private recovery-validation/vet-ae2aadb-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log_bytes": 0
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 1.946,
+      "log": "private recovery-validation/build-ae2aadb-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log_bytes": 0
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "environment_additions": {
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 39.185,
+      "log": "private recovery-validation/pure-go-sqlite-ae2aadb-final.log",
+      "log_sha256": "04a3a5070f5f17f13a213bf40031d4bbd72d7c7725aea8546568499bee617058",
+      "log_bytes": 68
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T04:07:12.464922+00:00",
+  "published_scope": "All four original backend checks on exact ae2; no previous CI substitutes. Actual MySQL/capacity tracked separately.",
+  "preserved_failures": [
+    "2026-10-21-node-observation-first-backend-failure.json",
+    "2026-10-21-node-observation-first-ci.json"
+  ],
+  "limits": [
+    "This is not actual-MySQL validation or capacity acceptance.",
+    "P2/P4/P6/P7 remaining work is not marked complete."
+  ]
+}

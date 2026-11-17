@@ -1,0 +1,202 @@
+{
+  "stage": "P4/P6 repaired hourly statistics comparison",
+  "source": "308689e38cff794865b633cde7193656ca2ecd4c",
+  "original_gates_passed": true,
+  "source_binding": {
+    "checkout_commit_unchanged": true,
+    "checkout_still_clean": true,
+    "source_before_after_equal": true,
+    "source-sha256.txt_matches_observer": true,
+    "source-after-build-sha256.txt_matches_observer": true,
+    "zboard_binary_before_after_equal": true,
+    "acceptance_binary_before_after_equal": true,
+    "acceptance-load.py_copy_matches_source": true,
+    "acceptance-report.py_copy_matches_source": true
+  },
+  "window": {
+    "started": "2026-10-20T17:59:16.550327+00:00",
+    "finished": "2026-10-20T18:00:48.904016+00:00"
+  },
+  "profile": {
+    "NODES": "2",
+    "SUBSCRIPTIONS": "20",
+    "HISTORY_RECORDS": "2000",
+    "DURATION_SECONDS": "60",
+    "EVENT_RATE": "20",
+    "READERS": "4",
+    "cpu": 1,
+    "memory_bytes": 1073741824,
+    "memory_swap_bytes": 1073741824,
+    "GOMAXPROCS": 1
+  },
+  "elapsed_seconds": 60.53678635000006,
+  "unique_events": 1201,
+  "events_http_count": 1274,
+  "business_http_count": 948,
+  "latencies": [
+    {
+      "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 157,
+      "errors": 0,
+      "p50_ms": 1,
+      "p95_ms": 5,
+      "p99_ms": 14,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/subscriptions/1",
+      "budget_ms": 250,
+      "count": 159,
+      "errors": 0,
+      "p50_ms": 2,
+      "p95_ms": 7,
+      "p99_ms": 10,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 2,
+      "p95_ms": 5,
+      "p99_ms": 10,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+      "budget_ms": 250,
+      "count": 159,
+      "errors": 0,
+      "p50_ms": 9,
+      "p95_ms": 14,
+      "p99_ms": 26,
+      "passed": true
+    },
+    {
+      "path": "/api/zero/events",
+      "budget_ms": 250,
+      "count": 1274,
+      "errors": 0,
+      "p50_ms": 12,
+      "p95_ms": 17,
+      "p99_ms": 24,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/trends",
+      "budget_ms": 1000,
+      "count": 158,
+      "errors": 0,
+      "p50_ms": 1,
+      "p95_ms": 5,
+      "p99_ms": 8,
+      "passed": true
+    },
+    {
+      "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+      "budget_ms": 1000,
+      "count": 157,
+      "errors": 0,
+      "p50_ms": 2,
+      "p95_ms": 5,
+      "p99_ms": 13,
+      "passed": true
+    }
+  ],
+  "accounting_and_statistics": {
+    "accounting_passed": true,
+    "expected_total": 9833472,
+    "ledger_total": 9833472,
+    "mismatches": null,
+    "passed": true,
+    "pending_usage_projections": 0,
+    "run_id": "bb606185-acb1-42b7-ac76-9bd787e44e74",
+    "statistics_passed": true,
+    "subscription_total": 9833472,
+    "verified_at": "2026-10-20T18:00:46.888061268Z"
+  },
+  "stopped_spool": {
+    "passed": true,
+    "pending_events": 0,
+    "pending_bytes": 0,
+    "storage_bytes": 564893,
+    "pressure_level": "normal"
+  },
+  "drain_seconds": 5,
+  "sampled_cpu_peak_percent": 14.82,
+  "sampled_peak_working_set_mib": 36.78,
+  "rss": {
+    "samples": 23,
+    "errors": [],
+    "available": true,
+    "first_rss_kib": 51124,
+    "last_rss_kib": 59924,
+    "sampled_peak_rss_kib": 62608
+  },
+  "stopped_sqlite": {
+    "available": true,
+    "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+    "page_size": 4096,
+    "page_count": 1476,
+    "freelist_pages": 0,
+    "allocated_bytes": 6045696,
+    "objects": {
+      "index": {
+        "bytes": 3973120,
+        "pages": 970
+      },
+      "internal": {
+        "bytes": 122880,
+        "pages": 30
+      },
+      "table": {
+        "bytes": 1949696,
+        "pages": 476
+      }
+    }
+  },
+  "runtime_diagnostics": {
+    "samples": 7,
+    "last_consumer": {
+      "batches": 32,
+      "processed_envelopes": 1250,
+      "projected_flow_samples": 754,
+      "coalesced_flow_updates": 496,
+      "failures": 0,
+      "processing_seconds": 0.843236233,
+      "missing_receive_time": 0,
+      "latency_samples": 1250,
+      "latency_bucket_ms": 100,
+      "p95_upper_ms": 2000,
+      "maximum_ms": 2041
+    },
+    "maximum_sampled_pending_events": 30,
+    "database_wait_deltas": {
+      "accounting_db": {
+        "wait_count": 130,
+        "wait_seconds": 0.29642236
+      },
+      "traffic_read_db": {
+        "wait_count": 0,
+        "wait_seconds": 0
+      }
+    }
+  },
+  "measurement_limitations": [
+    "Original client does not count pending versus complete trend bodies; ratios during load are unknown. HTTP200 is not complete statistics.",
+    "Runtime final sample does not include every final envelope.",
+    "No SQL execution latency/statements or bytes per batch measured. Pool wait and BlockIO are not substitutes.",
+    "No quota-to-stop/overuse, plugin busy, worker scaling, MySQL capacity, or long-duration boundary claim."
+  ],
+  "prior_failure": "4dfb6642c87d1900882afdc90d4467369e98fce1: 112/157 trends HTTP503, retained unchanged",
+  "preload_failure": "First repaired attempt had docker missing from PATH; no runner/load started. Second explicitly includes existing /usr/local/bin; original gates unchanged.",
+  "evidence_sha256": {
+    "source-sha256.txt": "a97614dc90fae2f4908eca65107434e445a549f1c25f968bf01299f8f9d8354d",
+    "acceptance-result.json": "2442cd4002bfd9b590e7deb7a7e24d1c898a2b2f1c52e140a8d0106dbef473be",
+    "data/load-result.json": "c230d5ed01935c6c50032cc7863ae873c580abb78b4e450f0e81d42755325bf6",
+    "data/verification.json": "80e3526d6c9c80ce7df2fd5c076061ee0d1a115ba1a8a966c04ee8431dd0026d",
+    "data/spool-verification.json": "fca2188cad96d87f2425156a254faebb507531af2eff457f301162796e17d7f9"
+  }
+}

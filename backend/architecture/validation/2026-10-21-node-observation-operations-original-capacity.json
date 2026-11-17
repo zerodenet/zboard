@@ -1,0 +1,380 @@
+{
+  "source": "1012bf56d78caf2e29420c8f56b5c3c72b5be585",
+  "scope": "One original cloud source-pinned 60s mixed capacity run. Three original runners, resources, offered load, thresholds and drain retained. No relaxed failures; previous 112/157 HTTP503 failure retained in historical receipts. Not a worker scaling or 24h capacity proof.",
+  "binding": {
+    "passed": true,
+    "expected_revision": "1012bf56d78caf2e29420c8f56b5c3c72b5be585",
+    "started_at": "2026-10-21T06:29:25.103734+00:00",
+    "finished_at": "2026-10-21T06:31:50.376674+00:00",
+    "parameters": {
+      "NODES": "2",
+      "SUBSCRIPTIONS": "20",
+      "HISTORY_RECORDS": "2000",
+      "DURATION_SECONDS": "60",
+      "EVENT_RATE": "20",
+      "READERS": "4"
+    },
+    "original_runner_exit": 0,
+    "original_acceptance_passed": true,
+    "hash_binding": {
+      "checkout_commit_unchanged": true,
+      "checkout_still_clean": true,
+      "source_before_after_equal": true,
+      "source-sha256.txt_matches_observer": true,
+      "source-after-build-sha256.txt_matches_observer": true,
+      "zboard_binary_before_after_equal": true,
+      "acceptance_binary_before_after_equal": true,
+      "acceptance-load.py_copy_matches_source": true,
+      "acceptance-report.py_copy_matches_source": true
+    },
+    "rss_observations": {
+      "container_id": "0a5748f3c3c1d59497133205a2bf95d639654d09f18be209384541338e8659f9",
+      "samples": 21,
+      "errors": [
+        "CalledProcessError"
+      ],
+      "available": true,
+      "first_rss_kib": 37392,
+      "last_rss_kib": 61068,
+      "sampled_peak_rss_kib": 63520
+    },
+    "sqlite_space": {
+      "available": true,
+      "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+      "page_size": 4096,
+      "page_count": 1894,
+      "freelist_pages": 0,
+      "allocated_bytes": 7757824,
+      "objects": {
+        "index": {
+          "bytes": 4468736,
+          "pages": 1091
+        },
+        "internal": {
+          "bytes": 126976,
+          "pages": 31
+        },
+        "table": {
+          "bytes": 3162112,
+          "pages": 772
+        }
+      }
+    },
+    "original_evidence_directory": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi",
+    "note": "Supplemental RSS/dbstat do not replace or relax any original gate. One short single-process run; no worker scaling or capacity ceiling claim."
+  },
+  "preflight": {
+    "commit": "1012bf56d78caf2e29420c8f56b5c3c72b5be585",
+    "expected_revision": "1012bf56d78caf2e29420c8f56b5c3c72b5be585",
+    "source_manifest_sha256": "56ff328d97dcbce010ad61938ea0c58eef11724d77356470b816c61ee08a590d",
+    "runner_sha256": {
+      "scripts/acceptance-mixed.sh": "e526b44d5a81e306f34a4b069e40fdd29b908c55f4bc45a070ef558722a259f6",
+      "scripts/acceptance-load.py": "3a8d946d14e96b3262f7ee831c4da0dcd96f31d31a1fe2ce2b8525a90e00af12",
+      "scripts/acceptance-report.py": "d8c9e0ab163a29a62fb296ddb30e5c22b6efe68cab3d1f94bfc7395082d06021"
+    },
+    "observer_sha256": "6da74fe7da34e01dcc26e50fa132602c633044c14c9ff272e2c8c72690df7f81",
+    "go_version": "go version go1.26.8 linux/amd64",
+    "execute": true
+  },
+  "original_result": {
+    "passed": true,
+    "failures": [],
+    "latencies": [
+      {
+        "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 26,
+        "p99_ms": 50,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 9,
+        "p95_ms": 25,
+        "p99_ms": 48,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/subscriptions/1",
+        "budget_ms": 250,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 25,
+        "p99_ms": 38,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+        "budget_ms": 250,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 23,
+        "p99_ms": 48,
+        "passed": true
+      },
+      {
+        "path": "/api/zero/events",
+        "budget_ms": 250,
+        "count": 1274,
+        "errors": 0,
+        "p50_ms": 12,
+        "p95_ms": 22,
+        "p99_ms": 43,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/trends",
+        "budget_ms": 1000,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 26,
+        "p99_ms": 47,
+        "passed": true
+      },
+      {
+        "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+        "budget_ms": 1000,
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 22,
+        "p99_ms": 48,
+        "passed": true
+      }
+    ],
+    "sampled_peak_working_set_mib": 39.04,
+    "resource_samples": 14,
+    "minimum_disk_free_bytes": 1907412992,
+    "spool_pressure_levels": [
+      "normal"
+    ],
+    "runtime_diagnostics": {
+      "samples": 7,
+      "last_consumer": {
+        "batches": 39,
+        "processed_envelopes": 1240,
+        "projected_flow_samples": 833,
+        "coalesced_flow_updates": 407,
+        "failures": 0,
+        "processing_seconds": 1.43671773,
+        "missing_receive_time": 0,
+        "latency_samples": 1240,
+        "latency_bucket_ms": 100,
+        "p95_upper_ms": 2000,
+        "maximum_ms": 2135
+      },
+      "maximum_sampled_pending_events": 33,
+      "database_wait_deltas": {
+        "accounting_db": {
+          "wait_count": 1552,
+          "wait_seconds": 2.6744187569999998
+        },
+        "traffic_read_db": {
+          "wait_count": 0,
+          "wait_seconds": 0
+        }
+      }
+    },
+    "drain_seconds": 0,
+    "note": "Client-observed HTTP latency includes Docker loopback transport; this short run does not prove 24h stability."
+  },
+  "load_result": {
+    "run_id": "57ce8072-7660-4e61-8807-6a0f52f34103",
+    "started_at": "2026-10-21T06:30:47.279246+00:00",
+    "elapsed_seconds": 60.53901706000033,
+    "offered_unique_events": 1201,
+    "generator_dropped": 0,
+    "max_schedule_lag_seconds": 0.004827581993595231,
+    "rate": 20.0,
+    "readers": 4,
+    "think_seconds": 0.25,
+    "undelivered_jobs": 0,
+    "metrics": {
+      "/api/v1/auth/login": {
+        "count": 1,
+        "errors": 0,
+        "p50_ms": 65,
+        "p95_ms": 65,
+        "p99_ms": 65
+      },
+      "/api/v1/admin/users?paged=true&limit=50&offset=0": {
+        "count": 157,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 26,
+        "p99_ms": 50
+      },
+      "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 9,
+        "p95_ms": 25,
+        "p99_ms": 48
+      },
+      "/api/v1/admin/subscriptions/1": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 25,
+        "p99_ms": 38
+      },
+      "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 23,
+        "p99_ms": 48
+      },
+      "/api/zero/events": {
+        "count": 1274,
+        "errors": 0,
+        "p50_ms": 12,
+        "p95_ms": 22,
+        "p99_ms": 43
+      },
+      "/api/v1/admin/traffic/trends": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 1,
+        "p95_ms": 26,
+        "p99_ms": 47
+      },
+      "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0": {
+        "count": 156,
+        "errors": 0,
+        "p50_ms": 3,
+        "p95_ms": 22,
+        "p99_ms": 48
+      }
+    },
+    "failures": [],
+    "diagnostic_metrics": {
+      "/api/v1/admin/system-info?include_runtime=true": {
+        "count": 7,
+        "errors": 0,
+        "p50_ms": 2,
+        "p95_ms": 14,
+        "p99_ms": 14
+      }
+    },
+    "diagnostic_failures": []
+  },
+  "verification": {
+    "accounting_passed": true,
+    "expected_total": 9833472,
+    "ledger_total": 9833472,
+    "mismatches": null,
+    "passed": true,
+    "pending_usage_projections": 0,
+    "run_id": "57ce8072-7660-4e61-8807-6a0f52f34103",
+    "statistics_passed": true,
+    "subscription_total": 9833472,
+    "verified_at": "2026-10-21T06:31:47.947191827Z"
+  },
+  "spool_verification": {
+    "passed": true,
+    "status": {
+      "driver": "file",
+      "pending_events": 0,
+      "pending_bytes": 0,
+      "segments": 1,
+      "storage_bytes": 666802,
+      "disk_free_bytes": 1725612032,
+      "storage_usage_ratio": 0.00012420155107975006,
+      "pressure_level": "normal",
+      "warning": false,
+      "compact": false,
+      "emergency": false,
+      "emergency_reserve_available": true,
+      "compression_algorithm": "none",
+      "compressed_segments": 0,
+      "compressed_original_bytes": 0,
+      "compressed_stored_bytes": 0,
+      "compression_ratio": 0,
+      "compression_savings_ratio": 0,
+      "compaction_runs": 0,
+      "compacted_segments": 0,
+      "compacted_events": 0,
+      "compacted_flow_updates": 0,
+      "compacted_node_stats": 0,
+      "compaction_bytes_saved": 0,
+      "compaction_unsafe_skipped": 0
+    },
+    "unconsumed_event_found": false,
+    "verified_at": "2026-10-21T06:31:49.367180807Z"
+  },
+  "sampled_peak_cpu_percent": 19.77,
+  "original_artifact_proofs": {
+    "source-sha256.txt": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/source-sha256.txt",
+      "bytes": 253067,
+      "sha256": "56ff328d97dcbce010ad61938ea0c58eef11724d77356470b816c61ee08a590d"
+    },
+    "source-after-build-sha256.txt": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/source-after-build-sha256.txt",
+      "bytes": 253067,
+      "sha256": "56ff328d97dcbce010ad61938ea0c58eef11724d77356470b816c61ee08a590d"
+    },
+    "environment.txt": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/environment.txt",
+      "bytes": 575,
+      "sha256": "8d85720141c643d006105684b7bccf0a063a95e6940fdb5d17916303ac2b242f"
+    },
+    "zboard": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/zboard",
+      "bytes": 52734768,
+      "sha256": "bf8d6ef3351ff6c5a793b630fc804f85363c27a137c345950178f797cb9fcca3"
+    },
+    "acceptance": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/acceptance",
+      "bytes": 37712818,
+      "sha256": "573a179d6c6dcd3c76056a30af3690b1acfdbc2d268b9cebfa90752e86119881"
+    },
+    "acceptance-load.py": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/acceptance-load.py",
+      "bytes": 11570,
+      "sha256": "3a8d946d14e96b3262f7ee831c4da0dcd96f31d31a1fe2ce2b8525a90e00af12"
+    },
+    "acceptance-report.py": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/acceptance-report.py",
+      "bytes": 5612,
+      "sha256": "d8c9e0ab163a29a62fb296ddb30e5c22b6efe68cab3d1f94bfc7395082d06021"
+    },
+    "data/verification.json": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/data/verification.json",
+      "bytes": 327,
+      "sha256": "86db1a50665675cc8c1d4a5447d4cf526ab69dcc5ed4c568dc980d6fafe4dcf0"
+    },
+    "data/spool-verification.json": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/data/spool-verification.json",
+      "bytes": 887,
+      "sha256": "9c9afe7628abcf6f0b7dc4c49238a9d069a1479198ab3348ca39293d30553ebc"
+    },
+    "container-stats.jsonl": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/container-stats.jsonl",
+      "bytes": 3551,
+      "sha256": "caf3c581fa1f8a332fb9a3085d832aa070df09d27a192f536c4c76b3bb0bf24d"
+    },
+    "storage.jsonl": {
+      "private_path": "/workspace/zboard-observation-operations-final-verify/.codex-local-artifacts/acceptance/mixed-20261021T062925Z-QQjcSi/storage.jsonl",
+      "bytes": 4075,
+      "sha256": "c592094a566a0fa9e9a3f2a1608969504790caa2f078f8bbeb6cad84d176269c"
+    }
+  },
+  "limitations": [
+    "RSS observer had one CalledProcessError near stopped container; 21 real RSS samples retained, never replaced by zero.",
+    "Database pool wait is not per-SQL latency.",
+    "Final usage/statistics totals and durable spool drained; runtime last sample predates final requests.",
+    "No source freshness, native Stats coverage or offline authorization proof from this flow-only fixture.",
+    "No long-duration growth/retention or independent-process throughput gain verified."
+  ]
+}

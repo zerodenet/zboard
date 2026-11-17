@@ -1,0 +1,224 @@
+{
+  "version": 1,
+  "phase": "P4 report receipt conflict correction",
+  "source_commit": "5a9614310ff2b1dcdf231fbfcf23f376837d8901",
+  "backend_manifest_sha256": "e67b5062a180d2ee9fab1e6150823d6e66940ac50512e0cbe4ec561348d1daa2",
+  "backend_files": 2205,
+  "local_checks": {
+    "race": {
+      "source_unchanged": true,
+      "commands": [
+        {
+          "name": "receipt-race",
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/adapters/persistence/meteringstore",
+            "./internal/handler",
+            "-run",
+            "MeteringReportReceipt|SQLiteCursorCohort|AccountingPreservesReportCollationIdempotency|ZeroWindowFallsBackForDatabaseEquivalentReportIDs",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 392.903,
+          "log_sha256": "ce6a8c6214d2c13125639bb4e893969c984ca0ee19ec4efd391a5ff3ec142db9",
+          "events": {
+            "pass": 66
+          },
+          "top_events": {
+            "pass": 45
+          },
+          "failures": []
+        }
+      ]
+    },
+    "backend": {
+      "source_unchanged": true,
+      "commands": [
+        {
+          "name": "full-go",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 636.678,
+          "log_sha256": "6b64089628b8b2dbfd22866a9ca1ba9e100b359937b1bef0b648be44cf2c4dd2",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "vet",
+          "command": [
+            "go",
+            "vet",
+            "-p",
+            "1",
+            "./..."
+          ],
+          "exit_code": 0,
+          "wall_seconds": 23.794,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "build",
+          "command": [
+            "go",
+            "build",
+            "./cmd/zboard"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 2.152,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "pure-sqlite",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "-run",
+            "SQLite",
+            "-count=1"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 70.168,
+          "log_sha256": "bb22d52fb54f3b9c9cc438302567d392d7dacc5e454c18a9a20f2f32078644c1",
+          "events": {},
+          "top_events": {},
+          "failures": [],
+          "environment": {
+            "CGO_ENABLED": "0"
+          }
+        }
+      ]
+    },
+    "full-mysql": {
+      "source_unchanged": true,
+      "commands": [
+        {
+          "name": "core",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/handler",
+            "./internal/adapters/persistence/networkstore",
+            "./internal/application",
+            "-run",
+            "MySQL",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 1127.451,
+          "log_sha256": "c24a9e26f0a4dade5168960f0172d5e59938d41f50c54614d93d201471ad3fcc",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "jobs",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/jobstore",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 141.468,
+          "log_sha256": "7f21817d2ce9b7594594b393edc2a5bc5b037d343325d7703b08c9e0606b3365",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        },
+        {
+          "name": "copy",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/platformstore",
+            "-run",
+            "MySQL",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 294.182,
+          "log_sha256": "90589e97c111cebbb7af6260c9837a76260c45291d9ccddc6354a1ebf298b72b",
+          "events": {},
+          "top_events": {},
+          "failures": []
+        }
+      ]
+    }
+  },
+  "ci": {
+    "run_id": 40314215563,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/40314215563",
+    "conclusion": "success",
+    "jobs": [
+      "backend",
+      "frontend",
+      "mysql",
+      "contract",
+      "compose",
+      "zrs-compiler"
+    ],
+    "mysql_package_seconds": {
+      "datastore": 220.217,
+      "handler": 620.657,
+      "networkstore": 162.197,
+      "application": 30.709,
+      "jobstore": 95.792,
+      "platformstore": 193.212
+    }
+  },
+  "preserved_failures": [
+    {
+      "source_commit": "5fc2e87f10ea9b2d4b273d644e90bbfbbe8e26f6",
+      "local_mysql": [
+        "TestMySQLAccountingPreservesReportCollationIdempotency",
+        "TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs"
+      ],
+      "ci_run_id": 40309030184,
+      "ci_handler_timeout_seconds": 900.018,
+      "timeout_root_cause_proven": false
+    }
+  ],
+  "not_complete": [
+    "P4 total storage growth, safe archive and complete bounded replay",
+    "P6 controlled local autoscaling and measured benefit",
+    "P7 complete failure, upgrade, capacity and external acceptance"
+  ],
+  "mysql_timeout_scope": "original 15m per-package timeout retained"
+}

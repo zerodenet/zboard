@@ -17,12 +17,18 @@ type zeroFlowPrincipal struct {
 	principal string
 }
 
+type zeroFlowUsageKey struct {
+	nodeID uint
+	flowID string
+}
+
 type zeroFlowReportKey struct {
 	nodeID   uint
 	reportID string
 }
 
 type zeroFlowCredentialRef struct {
+	EntitlementEpoch   uint64
 	ID                 uint
 	SubscriptionID     uint
 	ProtocolEndpointID uint
@@ -34,11 +40,19 @@ type zeroFlowCredentialRef struct {
 // Locked subscription pointers include every preceding charge in that batch.
 // No authentication or entitlement snapshot survives a commit or rollback.
 type flowBatch struct {
+	expectedQuota *QuotaIdentity
+	// SQLite owns the writer slot for this transaction. Cohorts are loaded only
+	// after ordinary ownership/credential locks; rows remain live in sample order.
+	usageCohorts       map[zeroFlowPrincipal][]metering.FlowSample
+	usageLoaded        map[zeroFlowPrincipal]bool
+	usages             map[zeroFlowUsageKey]model.FlowUsage
+	closed             map[entitlementQuotaKey]*model.ClosedEntitlement
+	dirtyClosed        map[entitlementQuotaKey]time.Time
 	batchReports       bool
 	credentials        map[zeroFlowPrincipal]zeroFlowCredentialRef
+	discoveryErrors    map[zeroFlowPrincipal]error
 	subscriptions      map[uint]*model.Subscription
 	endpoints          map[uint]model.ProtocolEndpoint
-	touched            map[uint]time.Time
 	dirtySubscriptions map[uint]time.Time
 	records            []model.TrafficRecord
 	usageRecords       []model.TrafficRecord
@@ -47,17 +61,27 @@ type flowBatch struct {
 
 func newFlowBatch(tx *gorm.DB) *flowBatch {
 	return &flowBatch{
+		closed:             make(map[entitlementQuotaKey]*model.ClosedEntitlement),
+		dirtyClosed:        make(map[entitlementQuotaKey]time.Time),
 		batchReports:       datastore.IsSQLite(tx),
+		usageCohorts:       make(map[zeroFlowPrincipal][]metering.FlowSample),
+		usageLoaded:        make(map[zeroFlowPrincipal]bool),
+		usages:             make(map[zeroFlowUsageKey]model.FlowUsage),
 		credentials:        make(map[zeroFlowPrincipal]zeroFlowCredentialRef),
 		subscriptions:      make(map[uint]*model.Subscription),
 		endpoints:          make(map[uint]model.ProtocolEndpoint),
-		touched:            make(map[uint]time.Time),
 		dirtySubscriptions: make(map[uint]time.Time),
 		recorded:           make(map[zeroFlowReportKey]uint),
 	}
 }
 
 func (s *flowBatch) loadReports(tx *gorm.DB, events []metering.FlowSample) error {
+	if s.batchReports {
+		for _, event := range events {
+			key := zeroFlowPrincipal{event.NodeID, event.PrincipalKey}
+			s.usageCohorts[key] = append(s.usageCohorts[key], event)
+		}
+	}
 	if !s.batchReports {
 		return nil
 	}
@@ -73,9 +97,8 @@ func (s *flowBatch) loadReports(tx *gorm.DB, events []metering.FlowSample) error
 	for _, nodeID := range nodes {
 		ids := byNode[nodeID]
 		for start := 0; start < len(ids); start += 200 {
-			var records []model.TrafficRecord
-			if err := tx.Select("node_id", "report_id", "protocol_endpoint_id").
-				Where("node_id = ? AND report_id IN ?", nodeID, ids[start:min(start+200, len(ids))]).Find(&records).Error; err != nil {
+			records, err := readReportReceipts(tx, nodeID, ids[start:min(start+200, len(ids))])
+			if err != nil {
 				return err
 			}
 			for _, record := range records {
@@ -95,17 +118,24 @@ func (s *flowBatch) recordedEndpoint(tx *gorm.DB, key zeroFlowReportKey) (uint, 
 	}
 	// MySQL report IDs follow the column collation (including case/accent and
 	// padding rules), not Go string equality. Let the database resolve identity.
-	var record model.TrafficRecord
-	read := tx.Select("protocol_endpoint_id").Where("node_id = ? AND report_id = ?", key.nodeID, key.reportID).Limit(1).Find(&record)
-	return record.ProtocolEndpointID, read.RowsAffected != 0, read.Error
+	records, err := readReportReceipts(tx, key.nodeID, []string{key.reportID})
+	if err != nil || len(records) == 0 {
+		return 0, false, err
+	}
+	return records[0].ProtocolEndpointID, true, nil
 }
 
-func (s *flowBatch) appendRecord(tx *gorm.DB, record model.TrafficRecord) error {
+func (s *flowBatch) appendRecord(tx *gorm.DB, record model.TrafficRecord, anchor time.Time) error {
 	if s.batchReports {
 		s.records = append(s.records, record)
 	} else {
 		// Preserve database-equivalent duplicates later in this same batch.
-		if err := tx.Create(&record).Error; err != nil {
+		if err := storeNativeSettlement(tx, &record, anchor); err != nil {
+			return err
+		}
+		// Database-equivalent IDs later in this MySQL batch must see the original
+		// report receipt even though the stored ledger row now represents a minute.
+		if err := persistReportReceipts(tx, []model.TrafficRecord{record}); err != nil {
 			return err
 		}
 	}
@@ -119,11 +149,14 @@ func (s *flowBatch) credential(cipher metering.CredentialDecryptor, tx *gorm.DB,
 	if ref, ok := s.credentials[key]; ok {
 		return ref, nil
 	}
+	if err := s.discoveryErrors[key]; err != nil {
+		return zeroFlowCredentialRef{}, err
+	}
 	credential, err := ResolveCompletionCredential(tx, cipher, nodeID, principal)
 	if err != nil {
 		return zeroFlowCredentialRef{}, err
 	}
-	ref := zeroFlowCredentialRef{credential.ID, credential.SubscriptionID, credential.ProtocolEndpointID, credential.PrincipalKey, credential.CredentialID}
+	ref := zeroFlowCredentialRef{credential.EntitlementEpoch, credential.ID, credential.SubscriptionID, credential.ProtocolEndpointID, credential.PrincipalKey, credential.CredentialID}
 	s.credentials[key] = ref
 	return ref, nil
 }
@@ -133,8 +166,16 @@ func (s *flowBatch) subscription(tx *gorm.DB, id uint) (*model.Subscription, err
 		return sub, nil
 	}
 	var sub model.Subscription
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, id).Error; err != nil {
-		return nil, err
+	read := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Limit(1).Find(&sub)
+	if read.Error != nil {
+		return nil, read.Error
+	}
+	if read.RowsAffected == 0 {
+		archived, e := deletedSubscriptionAttribution(tx, id)
+		if e != nil {
+			return nil, e
+		}
+		sub = archived
 	}
 	s.subscriptions[id] = &sub
 	return &sub, nil
@@ -145,7 +186,7 @@ func (s *flowBatch) endpoint(tx *gorm.DB, id uint) (model.ProtocolEndpoint, erro
 		return endpoint, nil
 	}
 	var endpoint model.ProtocolEndpoint
-	if err := tx.First(&endpoint, id).Error; err != nil {
+	if err := tx.Unscoped().First(&endpoint, id).Error; err != nil {
 		return endpoint, err
 	}
 	s.endpoints[id] = endpoint
@@ -156,12 +197,24 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 	// Ledger rows and the final balance commit together. Chunk inserts to keep
 	// SQL parameter counts bounded on both supported database engines.
 	if len(s.records) > 0 {
-		if err := tx.CreateInBatches(&s.records, 100).Error; err != nil {
+		anchors := make(map[uint]time.Time, len(s.subscriptions))
+		for id, sub := range s.subscriptions {
+			anchors[id] = sub.StartAt
+		}
+		if err := storeNativeSettlementBatch(tx, s.records, anchors); err != nil {
 			return err
 		}
+		// SQLite defers inserts to this boundary. Use the copies populated
+		// with real ledger IDs when persisting daily projection intents.
+		s.usageRecords = s.records
 	}
-	if err := RecordUsageProjections(tx, s.usageRecords); err != nil {
+	if err := EnqueueUsageProjections(tx, s.usageRecords); err != nil {
 		return err
+	}
+	if s.batchReports {
+		if err := persistReportReceipts(tx, s.usageRecords); err != nil {
+			return err
+		}
 	}
 	subscriptionIDs := make([]uint, 0, len(s.dirtySubscriptions))
 	for id := range s.dirtySubscriptions {
@@ -177,16 +230,75 @@ func (s *flowBatch) flush(tx *gorm.DB) error {
 			return err
 		}
 	}
-	ids := make([]uint, 0, len(s.touched))
-	for id := range s.touched {
-		ids = append(ids, id)
+	closedKeys := make([]entitlementQuotaKey, 0, len(s.dirtyClosed))
+	for key := range s.dirtyClosed {
+		closedKeys = append(closedKeys, key)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	for _, id := range ids {
-		if err := tx.Model(&model.ProtocolCredential{}).Where("id = ?", id).
-			Updates(map[string]interface{}{"last_used_at": s.touched[id], "updated_at": s.touched[id]}).Error; err != nil {
+	sort.Slice(closedKeys, func(i, j int) bool {
+		if closedKeys[i].SubscriptionID != closedKeys[j].SubscriptionID {
+			return closedKeys[i].SubscriptionID < closedKeys[j].SubscriptionID
+		}
+		return closedKeys[i].Epoch < closedKeys[j].Epoch
+	})
+	for _, key := range closedKeys {
+		row := s.closed[key]
+		if err := tx.Model(&model.ClosedEntitlement{}).Where("subscription_id = ? AND epoch = ?", key.SubscriptionID, key.Epoch).Updates(map[string]any{"flow_used": row.FlowUsed, "updated_at": s.dirtyClosed[key]}).Error; err != nil {
 			return err
 		}
 	}
+
 	return nil
+}
+
+// loadUsage follows the existing attribution and quota locks. Never enable this
+// map for MySQL: legacy keys and report identities follow database collation.
+func (s *flowBatch) loadUsage(tx *gorm.DB, in metering.FlowSample, credential uint, current metering.FlowCounters) (model.FlowUsage, bool, bool, error) {
+	if !s.batchReports {
+		return LoadFlowUsage(tx, in.NodeID, in.CoreInstanceID, in.FlowID, credential, in.Revision, current)
+	}
+	cohort := zeroFlowPrincipal{in.NodeID, in.PrincipalKey}
+	if !s.usageLoaded[cohort] {
+		keys := make([]string, 0, 2*len(s.usageCohorts[cohort]))
+		seen := make(map[string]bool)
+		for _, sample := range s.usageCohorts[cohort] {
+			for _, key := range []string{metering.FlowUsageKey(sample.CoreInstanceID, sample.FlowID), sample.FlowID} {
+				if !seen[key] {
+					seen[key] = true
+					keys = append(keys, key)
+				}
+			}
+		}
+		sort.Strings(keys)
+		for start := 0; start < len(keys); start += 200 {
+			rows, err := loadFlowUsageCandidates(tx, in.NodeID, keys[start:min(start+200, len(keys))])
+			if err != nil {
+				return model.FlowUsage{}, false, false, err
+			}
+			for _, row := range rows {
+				s.usages[zeroFlowUsageKey{row.NodeID, row.FlowID}] = row
+			}
+		}
+		s.usageLoaded[cohort] = true
+	}
+	key := metering.FlowUsageKey(in.CoreInstanceID, in.FlowID)
+	candidates := make([]model.FlowUsage, 0, 2)
+	if row, ok := s.usages[zeroFlowUsageKey{in.NodeID, key}]; ok {
+		candidates = append(candidates, row)
+	}
+	if key != in.FlowID {
+		if row, ok := s.usages[zeroFlowUsageKey{in.NodeID, in.FlowID}]; ok {
+			candidates = append(candidates, row)
+		}
+	}
+	return selectFlowUsage(candidates, key, in.FlowID, credential, in.Revision, current)
+}
+
+func (s *flowBatch) rememberUsage(previous string, row model.FlowUsage) {
+	if !s.batchReports {
+		return
+	}
+	if previous != "" && previous != row.FlowID {
+		delete(s.usages, zeroFlowUsageKey{row.NodeID, previous})
+	}
+	s.usages[zeroFlowUsageKey{row.NodeID, row.FlowID}] = row
 }

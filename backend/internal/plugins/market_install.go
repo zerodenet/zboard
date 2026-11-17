@@ -53,7 +53,7 @@ func (m *Manager) PreviewMarket(ctx context.Context, id, version string) (Import
 	_, _, preview, err := m.inspectMarketPackage(ctx, id, version)
 	return preview, err
 }
-func (m *Manager) InstallMarketConfirmed(ctx context.Context, id, version, digest, fingerprint, actor string) (Installation, error) {
+func (m *Manager) InstallMarketConfirmed(ctx context.Context, id, version, digest, fingerprint, actor string, migration ...string) (Installation, error) {
 	d, raw, preview, err := m.inspectMarketPackage(ctx, id, version)
 	if err != nil {
 		return Installation{}, err
@@ -66,7 +66,9 @@ func (m *Manager) InstallMarketConfirmed(ctx context.Context, id, version, diges
 		if err != nil {
 			return Installation{}, err
 		}
-		return m.importVerified(raw, actor, p, true)
+		// Market admission never substitutes for explicit publisher migration.
+		confirmed := preview.PublisherMigration == nil || fingerprint == preview.Fingerprint
+		return m.importVerified(raw, actor, p, confirmed, migration...)
 	}
-	return m.ImportConfirmed(raw, actor, d.publicKey, digest, fingerprint)
+	return m.ImportConfirmed(raw, actor, d.publicKey, digest, fingerprint, migration...)
 }

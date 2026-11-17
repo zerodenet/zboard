@@ -1,0 +1,76 @@
+{
+  "source": "01ebcde72befca5f491e96c9b4c8b03fe125118a",
+  "checkout": "/workspace/zboard-heartbeat-verify",
+  "phase": "mysql",
+  "started_utc": "2026-10-20T23:55:47.666893+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 1,
+      "wall_seconds": 901.564,
+      "log": "mysql-core-01ebcde-final.log"
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 131.56,
+      "log": "mysql-jobstore-01ebcde-final.log"
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 111.709,
+      "log": "mysql-copy-01ebcde-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T00:14:52.501535+00:00",
+  "status": "FAIL_handler_original_15m_timeout_independent_followups_PASS",
+  "raw_logs_sha256": {
+    "mysql-core-01ebcde-final.log": "dfd74b2d319ae01e1f3be8ad9b8e0e97a7a2a30da3d360f0affac0a635405982",
+    "mysql-jobstore-01ebcde-final.log": "5b158f290f1b254491ab89f4621788ad7303263962b77c11c078656b72ff3e13",
+    "mysql-copy-01ebcde-final.log": "37120afaa4e7a04e9f43d04feeafe63cd3c629479a63da88dca62dd652f4f4ee"
+  },
+  "package_results_seconds": {
+    "datastore": 156.828,
+    "handler_timeout": 900.019,
+    "networkstore": 103.014
+  },
+  "timeout_evidence": {
+    "active_test": "TestMySQLBufferedReceiptsDoNotWaitForLockedNode",
+    "active_duration_seconds": 1,
+    "stack": "newMySQLPublishHandlers:62 -> RunMigrations:178 -> runMigrations:450 -> database/sql Exec -> MySQL readPacket",
+    "interpretation": "Package cumulative original15m alarm while only1s into this fixture. No test-body assertion failure or causal assignment to the last test. Formal migration statement ID is unknown from this stack."
+  },
+  "separate_ci": {
+    "run_url": "https://github.com/zerodenet/zboard/actions/runs/39515537970",
+    "conclusion": "all_six_success",
+    "same_source": "01ebcde72befca5f491e96c9b4c8b03fe125118a",
+    "handler_seconds": 759.718,
+    "interpretation": "Exact source CI passes but does not erase this isolated local timeout. No stable margin or causal startup fix is proven."
+  },
+  "unchanged_gates": [
+    "original commands",
+    "15m timeout",
+    "existing exclusions",
+    "no cleared business/dedup state",
+    "no helper/schema template substitution",
+    "no concurrent local Go/SQL/load during this original three-command run"
+  ],
+  "limitations": [
+    "Local full MySQL regression remains failed; independent jobstore and copy commands did actually run and pass after the failure.",
+    "Published migration files and permissions unchanged. No production migration or release acceptance.",
+    "Prior31/e902 timeout evidence and unexecuted CI follow-ups remain separate."
+  ]
+}

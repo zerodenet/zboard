@@ -35,18 +35,31 @@ func maintenanceData(tx *gorm.DB, lock bool) (platform.MaintenanceData, error) {
 		return out, err
 	}
 	var taskID uint64
+	enabledPresent := false
 	for _, config := range configs {
 		out.Revisions[config.ConfigKey] = config.Revision
 		switch config.ConfigKey {
 		case "maintenance_enabled":
-			out.Enabled, _ = strconv.ParseBool(config.Value)
+			enabled, err := strconv.ParseBool(config.Value)
+			if err != nil {
+				return out, fmt.Errorf("maintenance_enabled contains an invalid boolean: %w", platform.ErrMaintenanceIncomplete)
+			}
+			out.Enabled = enabled
+			enabledPresent = true
 		case "maintenance_title":
 			out.Title = config.Value
 		case "maintenance_message":
 			out.Message = config.Value
 		case "maintenance_task_id":
-			taskID, _ = strconv.ParseUint(config.Value, 10, 64)
+			id, err := strconv.ParseUint(config.Value, 10, 64)
+			if err != nil {
+				return out, fmt.Errorf("maintenance_task_id contains an invalid unsigned integer: %w", platform.ErrMaintenanceIncomplete)
+			}
+			taskID = id
 		}
+	}
+	if !enabledPresent {
+		return out, fmt.Errorf("maintenance_enabled is missing: %w", platform.ErrMaintenanceIncomplete)
 	}
 	if taskID > 0 {
 		var task model.Task

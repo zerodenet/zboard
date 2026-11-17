@@ -2,7 +2,6 @@ package networkstore
 
 import (
 	"context"
-	"strings"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -12,18 +11,17 @@ import (
 // Page identities before decorating either kind. Large inventories never load
 // every forward entry merely to merge and paginate them in the browser.
 func (s Inventory) serviceQuery(ctx context.Context, input network.ProtocolEndpointInventoryQuery) *gorm.DB {
-	const identities = `(SELECT 'listener' AS service_kind, endpoint.id, endpoint.id AS endpoint_id, endpoint.node_id, endpoint.node_id AS landing_node_id, endpoint.name, endpoint.protocol, endpoint.address, endpoint.port, endpoint.public_port, endpoint.is_active, endpoint.multiplier_milli, endpoint.sort_order, endpoint.updated_at FROM protocol_endpoints AS endpoint
- UNION ALL SELECT 'forward' AS service_kind, entry.id, entry.endpoint_id, COALESCE(entry.node_id, endpoint.node_id) AS node_id, endpoint.node_id AS landing_node_id, entry.name, endpoint.protocol, entry.address, entry.port, entry.public_port, entry.enabled AS is_active, endpoint.multiplier_milli, COALESCE(entry.delivery_sort_order,endpoint.sort_order) AS sort_order, entry.updated_at
- FROM network_entries AS entry JOIN protocol_endpoints AS endpoint ON endpoint.id = entry.endpoint_id)`
-	identitySQL := identities
+	listenerMembership, forwardMembership := "", ""
 	var identityArgs []any
 	if input.GroupID != 0 {
-		// Push membership into each branch so SQLite can use the unique group
-		// indexes, rather than probing both membership tables per union row.
-		identitySQL = strings.Replace(identitySQL, "FROM protocol_endpoints AS endpoint", "FROM protocol_endpoints AS endpoint JOIN node_group_endpoints AS membership ON membership.protocol_endpoint_id = endpoint.id AND membership.node_group_id = ?", 1)
-		identitySQL = strings.TrimSuffix(identitySQL, ")") + " JOIN node_group_network_entries AS membership ON membership.network_entry_id = entry.id AND membership.node_group_id = ?)"
+		listenerMembership = " JOIN node_group_endpoints AS membership ON membership.protocol_endpoint_id = endpoint.id AND membership.node_group_id = ?"
+		forwardMembership = " JOIN node_group_network_entries AS membership ON membership.network_entry_id = entry.id AND membership.node_group_id = ?"
 		identityArgs = []any{input.GroupID, input.GroupID}
 	}
+	const liveEndpoint = "endpoint.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM nodes AS landing WHERE landing.id = endpoint.node_id AND landing.lifecycle_status = 'archived')"
+	identitySQL := `(SELECT 'listener' AS service_kind, endpoint.id, endpoint.id AS endpoint_id, endpoint.node_id, endpoint.node_id AS landing_node_id, endpoint.name, endpoint.protocol, endpoint.address, endpoint.port, endpoint.public_port, endpoint.is_active, endpoint.multiplier_milli, endpoint.sort_order, endpoint.updated_at FROM protocol_endpoints AS endpoint` + listenerMembership + ` WHERE ` + liveEndpoint + `
+ UNION ALL SELECT 'forward' AS service_kind, entry.id, entry.endpoint_id, COALESCE(entry.node_id, endpoint.node_id) AS node_id, endpoint.node_id AS landing_node_id, entry.name, endpoint.protocol, entry.address, entry.port, entry.public_port, entry.enabled AS is_active, endpoint.multiplier_milli, COALESCE(entry.delivery_sort_order,endpoint.sort_order) AS sort_order, entry.updated_at
+ FROM network_entries AS entry JOIN protocol_endpoints AS endpoint ON endpoint.id = entry.endpoint_id` + forwardMembership + ` WHERE ` + liveEndpoint + ` AND NOT EXISTS (SELECT 1 FROM nodes AS host WHERE host.id = entry.node_id AND host.lifecycle_status = 'archived'))`
 	q := s.DB.WithContext(ctx).Table(identitySQL+" AS service", identityArgs...)
 	if input.ServiceKind != "all" {
 		q = q.Where("service.service_kind = ?", input.ServiceKind)

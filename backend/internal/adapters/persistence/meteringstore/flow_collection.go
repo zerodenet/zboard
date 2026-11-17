@@ -3,9 +3,11 @@ package meteringstore
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strings"
 )
 
 type CredentialProjection struct {
@@ -19,6 +21,13 @@ type CredentialProjection struct {
 // including revoked credentials; current service eligibility is a separate concern.
 func ResolveCredential(tx *gorm.DB, node uint, principal string) (CredentialProjection, bool, error) {
 	var out CredentialProjection
+	if strings.HasPrefix(principal, "sp1:") {
+		row, err := (credentialstore.PrincipalIndex{DB: tx}).LookupPrepared(tx.Statement.Context, node, principal)
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, credentialstore.ErrPrincipalIndexPending) {
+			return out, false, nil
+		}
+		return CredentialProjection{ID: row.ID, UserID: row.UserID, SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID}, err == nil, err
+	}
 	err := tx.Table("protocol_credentials").Select("id, user_id, subscription_id, protocol_endpoint_id").Where("node_id = ? AND principal_key = ?", node, principal).Order("id DESC").Take(&out).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return CredentialProjection{}, false, nil
@@ -29,6 +38,9 @@ func ResolveCredential(tx *gorm.DB, node uint, principal string) (CredentialProj
 type FlowCollection struct{ DB *gorm.DB }
 
 func (s FlowCollection) Record(ctx context.Context, event metering.FlowStart) error {
+	if len(event.CoreInstanceID) > coverageRuntimeMaxBytes {
+		return errors.New("flow-start runtime identity exceeds existing event body bound")
+	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row := FlowStartRecord{NodeID: event.NodeID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, Sequence: event.Sequence, PrincipalKey: event.PrincipalKey, MappingState: "unmapped", OccurredAt: event.OccurredAt, ReceivedAt: event.ReceivedAt, CreatedAt: event.ReceivedAt}
 		if event.PrincipalKey != "" {
@@ -46,6 +58,9 @@ func (s FlowCollection) Record(ctx context.Context, event metering.FlowStart) er
 				}
 			}
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return err
+		}
+		return enqueueFlowStatistics(tx, event.NodeID, event.EventID)
 	})
 }

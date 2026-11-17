@@ -4,8 +4,8 @@ import "testing"
 
 func TestHistoryRetentionDefaultsAreBoundedAndPrivate(t *testing.T) {
 	defaults := historyRetentionDefaults()
-	if len(defaults) != 4 {
-		t.Fatalf("historyRetentionDefaults() returned %d configs, want 4", len(defaults))
+	if len(defaults) != 10 {
+		t.Fatalf("historyRetentionDefaults() returned %d configs, want 10", len(defaults))
 	}
 	values := map[string]string{}
 	for _, config := range defaults {
@@ -20,10 +20,10 @@ func TestHistoryRetentionDefaultsAreBoundedAndPrivate(t *testing.T) {
 		}
 		values[config.ConfigKey] = config.Value
 	}
-	if values[auditLogRetentionKey] != "180" {
-		t.Fatalf("audit retention = %q, want 180", values[auditLogRetentionKey])
+	if values[auditLogRetentionKey] != "30" {
+		t.Fatalf("audit retention = %q, want 30", values[auditLogRetentionKey])
 	}
-	if values[operationRetentionKey] != "90" || values[taskRetentionKey] != "90" {
-		t.Fatalf("operation/task retention = %q/%q, want 90/90", values[operationRetentionKey], values[taskRetentionKey])
+	if values[operationRetentionKey] != "14" || values[taskRetentionKey] != "7" {
+		t.Fatalf("operation/task retention = %q/%q, want 14/7", values[operationRetentionKey], values[taskRetentionKey])
 	}
 }

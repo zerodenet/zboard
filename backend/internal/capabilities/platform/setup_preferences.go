@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"strings"
 	"time"
 )
@@ -27,9 +28,9 @@ type SetupPreferences struct {
 func DefaultSetupPreferences() SetupPreferences {
 	return SetupPreferences{
 		SystemTimezone:           "UTC",
-		AuditLogRetentionDays:    180,
-		OperationRetentionDays:   90,
-		TaskHistoryRetentionDays: 90,
+		AuditLogRetentionDays:    observability.DefaultAuditRetentionDays,
+		OperationRetentionDays:   observability.DefaultOperationRetentionDays,
+		TaskHistoryRetentionDays: observability.DefaultTaskRetentionDays,
 	}
 }
 

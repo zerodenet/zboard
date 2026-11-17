@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="订单管理" description="为用户分配待付款订单，处理全站交易状态和人工收款。" eyebrow="Commerce">
+    <PageHeader title="订单管理">
       <template #actions><PageRefreshButton label="刷新订单" :loading="loading" @click="load" /><UiButton @click="openAssignment">分配订单</UiButton></template>
     </PageHeader>
 
@@ -18,22 +18,23 @@
           </template>
         </WorkbenchFilterBar>
       </template>
-      <template #actions><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/plans')">管理商品<UiIcon name="chevron" /></RouterLink></template>
+      <template #actions><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/plans')">管理套餐<UiIcon name="chevron" /></RouterLink></UiButton></template>
       <TableSkeleton v-if="loading && !orders.length" label="正在加载订单" :columns="7" />
-      <DataTable v-else-if="orders.length" caption="订单管理列表" :row-count="total" :min-width="980"><thead><tr><th class="table-primary-column">订单</th><th data-column-priority="3">用户</th><th data-column-priority="2">商品规格</th><th data-column-priority="1">应付金额</th><th>状态</th><th data-column-priority="2">创建时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="item in orders" :key="item.id"><td class="table-primary-column"><div class="cell-title"><strong>#{{ item.id }} · {{ orderTypeName(item.order_type) }}</strong><TableText :value="item.trade_no" /></div></td><td data-column-priority="3"><div class="cell-title cell-related"><RouterLink class="order-user-link" :title="item.user_email" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">{{ item.user_email || `用户 #${item.user_id}` }}</RouterLink><span class="mono">#{{ item.user_id }}</span></div></td><td data-column-priority="2"><div class="cell-title cell-related"><TableText :value="item.plan_name || `套餐 #${item.plan_id}`" /><TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" /></div></td><td class="value-cell" data-column-priority="1">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency || 'CNY') }}</td><td><StatusBadge :tone="statusTone(item.status)">{{ statusName(item.status) }}</StatusBadge></td><td data-column-priority="2"><TimeBadge :value="item.created_at" /></td><td class="table-action-column"><RowActions :label="`订单 #${item.id} 的操作`" :trigger-key="`order-${item.id}`"><UiButton variant="secondary" size="sm" type="button" :data-order-detail-trigger="item.id" @click="openDetail(item.id)">查看详情</UiButton><UiButton v-if="item.status === 'paid' && item.subscription_id && !item.subscription_ended_at" variant="ghost" size="sm" @click="accessOrderID = item.id">复制订阅地址</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id) })">用户订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">用户详情</RouterLink><UiButton v-if="item.status === 'pending'" variant="ghost" size="sm" type="button" @click="requestAction('cancel', item)">取消订单</UiButton><UiButton v-if="item.status === 'pending' || item.status === 'failed'" variant="ghost" size="sm" type="button" @click="requestAction('pay', item)">{{ item.status === 'failed' ? '重新确认收款' : '确认收款' }}</UiButton></RowActions></td></tr></tbody></DataTable>
-      <EmptyState v-else icon="billing" title="没有匹配订单" description="调整状态或用户筛选条件。" />
+      <DataTable v-else-if="orders.length" caption="订单管理列表" :row-count="total" :min-width="980"><thead><tr><th class="table-primary-column">订单</th><th data-column-priority="3">用户</th><th data-column-priority="2">商品规格</th><th data-column-priority="1">应付金额</th><th>状态</th><th data-column-priority="2">创建时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="item in orders" :key="item.id"><td class="table-primary-column"><div class="cell-title"><EntityDetailButton :data-order-detail-trigger="item.id" @click="openDetail(item.id)">{{ item.order_type === 'topup' ? '余额充值' : item.plan_name || orderTypeName(item.order_type) }}</EntityDetailButton><span>{{ orderReference(item) }} · {{ orderTypeName(item.order_type) }}</span></div></td><td data-column-priority="3"><div class="cell-title cell-related"><RouterLink class="order-user-link" v-overflow-title="item.user_email" :to="adminContextLink('/admin/users', { user: String(item.user_id) })">{{ item.user_email || `用户 #${item.user_id}` }}</RouterLink><span class="mono">#{{ item.user_id }}</span></div></td><td data-column-priority="2"><div class="cell-title cell-related"><template v-if="item.order_type !== 'topup'"><TableText :value="item.plan_name || `套餐 #${item.plan_id}`" /><TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" /></template><span v-else>—</span></div></td><td class="value-cell" data-column-priority="1">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency || 'CNY') }}</td><td><StatusBadge :tone="statusTone(item.status)">{{ statusName(item.status) }}</StatusBadge></td><td data-column-priority="2"><TimeBadge :value="item.created_at" /></td><td class="table-action-column"><RowActions :label="`订单 ${orderReference(item)} 的操作`" :trigger-key="`order-${item.id}`"><UiButton variant="secondary" size="sm" type="button" :data-order-detail-trigger="item.id" @click="openDetail(item.id)">查看详情</UiButton><UiButton v-if="item.status === 'paid' && item.subscription_id && !item.subscription_ended_at" variant="ghost" size="sm" @click="accessOrderID = item.id">复制订阅地址</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(item.user_id) })">用户订阅</RouterLink></UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/users', { user: String(item.user_id) })">用户详情</RouterLink></UiButton><UiButton v-if="item.status === 'pending'" variant="ghost" size="sm" type="button" @click="requestAction('cancel', item)">取消订单</UiButton><UiButton v-if="item.status === 'pending' || item.status === 'failed'" variant="ghost" size="sm" type="button" @click="requestAction('pay', item)">{{ item.status === 'failed' ? '重新确认收款' : '确认收款' }}</UiButton></RowActions></td></tr></tbody></DataTable>
+      <EmptyState v-else-if="!error" icon="billing" title="没有匹配订单" description="调整状态或用户筛选条件。" />
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
     <AdminOrderAssignmentDialog v-if="assignmentOpen" :open="assignmentOpen" :user-id="Number(route.query.user_id) || undefined" @close="closeAssignment" @assigned="onAssigned" />
 
-    <DetailDrawer :open="Boolean(detailID)" :title="selectedOrder ? `订单 #${selectedOrder.id}` : '订单详情'" eyebrow="Order" :description="selectedOrder?.trade_no || '正在加载交易与履约快照'" :return-focus-selector="detailID ? `[data-row-action-trigger='order-${detailID}']` : ''" @close="closeDetail">
+    <DetailDrawer :open="Boolean(detailID)" title="订单详情" :description="selectedOrder?.plan_name || ''" :return-focus-selector="detailID ? `[data-row-action-trigger='order-${detailID}']` : ''" @close="closeDetail">
       <PageAlert v-if="detailError" tone="danger" title="订单详情加载失败">{{ detailError }}</PageAlert>
       <div v-if="detailLoading" class="detail-loading" role="status">正在加载订单详情…</div>
       <main v-else-if="selectedOrder" class="business-detail stack">
         <section class="detail-status-strip" aria-label="订单状态">
+          <BusinessReference :value="orderReference(selectedOrder)" label="订单号" />
           <StatusBadge :tone="statusTone(selectedOrder.status)">{{ statusName(selectedOrder.status) }}</StatusBadge>
-          <StatusBadge tone="info">{{ orderTypeName(selectedOrder.order_type, selectedOrder.renewal_effect) }}</StatusBadge>
+          <span>{{ orderTypeName(selectedOrder.order_type, selectedOrder.renewal_effect) }}</span>
           <StatusBadge :tone="selectedOrder.fulfilled_at ? 'success' : 'neutral'">{{ selectedOrder.fulfilled_at ? '已履约' : '未履约' }}</StatusBadge>
         </section>
         <PageAlert v-if="selectedOrder.failure_reason" tone="danger" title="最近失败原因">{{ safeFailureReason(selectedOrder.failure_reason) }}</PageAlert>
@@ -45,7 +46,7 @@
           <div><strong>{{ formatCurrency(selectedOrder.refund_amount, selectedOrder.currency || 'CNY') }}</strong><span>退款金额</span></div>
         </section>
         <section class="detail-facts" aria-label="交易与权益快照">
-          <div><span>商品规格</span><strong>{{ selectedOrder.plan_name || `套餐 #${selectedOrder.plan_id}` }} / {{ selectedOrder.sku_name || `SKU #${selectedOrder.plan_sku_id}` }}</strong></div>
+          <div><span>商品规格</span><strong>{{ selectedOrder.order_type === 'topup' ? '余额充值' : `${selectedOrder.plan_name || `套餐 #${selectedOrder.plan_id}`} / ${selectedOrder.sku_name || `SKU #${selectedOrder.plan_sku_id}`}` }}</strong></div>
           <div><span>用户</span><strong class="mono">#{{ selectedOrder.user_id }}</strong></div>
           <div><span>支付渠道</span><strong>{{ selectedOrder.channel === 'admin_assignment' ? '管理员代建订单' : selectedOrder.channel || '未指定' }}</strong></div>
           <div v-if="selectedOrder.assigned_by"><span>分配人</span><strong>#{{ selectedOrder.assigned_by }}</strong></div>
@@ -64,6 +65,8 @@
           <div><span>履约时间</span><TimeBadge :value="selectedOrder.fulfilled_at" /></div>
           <div><span>更新时间</span><TimeBadge :value="selectedOrder.updated_at" /></div>
         </section>
+        <PaymentReceipts :order-id="selectedOrder.id" admin @changed="detailResource.load()" />
+        <AdminConsumptionRefund v-if="selectedOrder.status === 'paid' && selectedOrder.order_type !== 'topup'" :order="selectedOrder" @changed="onConsumptionRefunded" />
         <section class="payment-events stack" aria-label="支付事件时间线">
           <header class="detail-section-header"><div><h3>支付事件</h3><p>仅展示规范化事件摘要；回调原文不会进入前端。</p></div><span>{{ paymentEventTotal }}</span></header>
           <PageAlert v-if="paymentEventError" tone="danger" title="支付事件加载失败">{{ paymentEventError }}</PageAlert>
@@ -77,8 +80,8 @@
         </section>
         <div class="detail-action-row">
           <UiButton v-if="selectedOrder.status === 'paid' && selectedOrder.subscription_id && !selectedOrder.subscription_ended_at" variant="secondary" size="sm" @click="accessOrderID = selectedOrder.id">复制订阅地址</UiButton>
-          <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedOrder.user_id), ...(selectedOrder.subscription_id ? { subscription: String(selectedOrder.subscription_id) } : {}) })">查看用户订阅</RouterLink>
-          <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/users', { user: String(selectedOrder.user_id) })">查看用户详情</RouterLink>
+          <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedOrder.user_id), ...(selectedOrder.subscription_id ? { subscription: String(selectedOrder.subscription_id) } : {}) })">查看用户订阅</RouterLink></UiButton>
+          <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/users', { user: String(selectedOrder.user_id) })">查看用户详情</RouterLink></UiButton>
           <UiButton v-if="selectedOrder.status === 'pending'" variant="danger" size="sm" type="button" @click="requestAction('cancel', selectedOrder)">取消订单</UiButton>
           <UiButton v-if="selectedOrder.status === 'pending' || selectedOrder.status === 'failed'" size="sm" type="button" @click="requestAction('pay', selectedOrder)">{{ selectedOrder.status === 'failed' ? '重新确认收款' : '确认收款' }}</UiButton>
         </div>
@@ -91,6 +94,13 @@
 </template>
 
 <script setup lang="ts">
+import { orderReference } from '../utils/businessReference'
+import { vOverflowTitle } from '../directives/overflowTitle'
+import BusinessReference from '../components/BusinessReference.vue'
+import EntityDetailButton from '../components/EntityDetailButton.vue'
+import PaymentReceipts from '../components/PaymentReceipts.vue'
+import AdminConsumptionRefund from '../components/AdminConsumptionRefund.vue'
+import type { ConsumptionRefund } from '../api/consumptionRefunds'
 import AdminOrderAssignmentDialog from '../components/AdminOrderAssignmentDialog.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -128,9 +138,13 @@ const assignmentOpen = computed(() => route.query.assign === '1')
 async function openAssignment() { await router.push({ query: { ...route.query, assign: '1' } }) }
 async function closeAssignment() { const { assign: _assign, ...query } = route.query; await router.replace({ query }) }
 async function onAssigned(order: AdminOrderDetail) {
-  message.value = `已为用户 #${order.user_id} 创建待付款订单 #${order.id}。`
+  message.value = `已为用户 #${order.user_id} 创建待付款订单 ${orderReference(order)}。`
   await router.replace({ query: { ...preserveAdminReturnTo(route.query.return_to), user_id: String(order.user_id), order: String(order.id) } })
   await load()
+}
+async function onConsumptionRefunded(refund: ConsumptionRefund) {
+  message.value = `退款 #${refund.id} 已退入用户 #${refund.user_id} 的站内余额。`
+  await Promise.all([load(), ...(detailID.value === refund.order_id ? [detailResource.load()] : [])])
 }
 const queryFilter = ref(String(route.query.q || ''))
 const statusFilter = ref(String(route.query.status || ''))
@@ -195,7 +209,7 @@ const { items: paymentEvents, total: paymentEventTotal, loading: paymentEventLoa
 })
 function statusName(status: string) { return ({ pending: '待支付', paid: '已支付', failed: '失败', canceled: '已取消' } as Record<string, string>)[status] || formatUnknownValue('状态', status) }
 function statusTone(status: string): 'warning' | 'success' | 'danger' | 'neutral' { return status === 'paid' ? 'success' : status === 'pending' ? 'warning' : status === 'failed' ? 'danger' : 'neutral' }
-function orderTypeName(value: string, renewalEffect = '') { if (value === 'renewal' && renewalEffect === 'add_quota_only') return '补充额度'; return ({ new: '新购', renewal: '续费', upgrade: '切换套餐', traffic_pack: '流量包', traffic_reset: '重置流量' } as Record<string, string>)[value] || formatUnknownValue('订单类型', value) }
+function orderTypeName(value: string, renewalEffect = '') { if (value === 'renewal' && renewalEffect === 'add_quota_only') return '补充额度'; return ({ topup: '余额充值', new: '新购', renewal: '续费', upgrade: '切换套餐', traffic_pack: '流量包', traffic_reset: '重置流量' } as Record<string, string>)[value] || formatUnknownValue('订单类型', value) }
 function billingName(unit: string, value: number) { if (unit === 'once') return '永久有效'; const label = ({ day: '天', month: '个月', year: '年' } as Record<string, string>)[unit]; return label ? `${value || 0} ${label}` : formatUnknownValue('计费周期', `${value || 0} ${unit || ''}`.trim()) }
 function renewalEffectName(value: string) { return ({ none: '不适用', extend_only: '只延长有效期', extend_and_add_quota: '延长有效期并增加套餐流量', add_quota_only: '只补充套餐流量' } as Record<string, string>)[value] || formatUnknownValue('再次购买效果', value) }
 function safeFailureReason(value: string) { return truncateOutput(normalizeOutput(value), 360) || '未提供失败原因。' }
@@ -209,7 +223,7 @@ async function clearFilters() { queryFilter.value = ''; statusFilter.value = '';
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await load() }
 function requestAction(kind: 'pay' | 'cancel', item: OrderItem) { actionKind.value = kind; actionTarget.value = item; actionError.value = ''; confirmOpen.value = true }
 function closeActionDialog() { if (saving.value) return; confirmOpen.value = false; actionError.value = ''; actionTarget.value = null }
-async function executeAction() { if (!actionTarget.value) return; saving.value = true; actionError.value = ''; message.value = ''; try { if (actionKind.value === 'pay') await markOrderPaid(actionTarget.value.id); else await cancelOrder(actionTarget.value.id, true); message.value = actionKind.value === 'pay' ? `订单 #${actionTarget.value.id} 已确认收款。` : `订单 #${actionTarget.value.id} 已取消。`; confirmOpen.value = false; if (actionKind.value === 'pay') accessOrderID.value = actionTarget.value.id; await load(); if (detailID.value === actionTarget.value.id) { selectedOrder.value = null; await syncDetailFromRoute() } actionTarget.value = null } catch (cause: any) { actionError.value = commerceErrorMessage(cause, actionKind.value === 'pay' ? '无法确认收款，请检查订单当前状态。' : '无法取消订单，请检查订单当前状态。') } finally { saving.value = false } }
+async function executeAction() { if (!actionTarget.value) return; saving.value = true; actionError.value = ''; message.value = ''; try { if (actionKind.value === 'pay') await markOrderPaid(actionTarget.value.id); else await cancelOrder(actionTarget.value.id, true); message.value = actionKind.value === 'pay' ? `订单 ${orderReference(actionTarget.value)} 已确认收款。` : `订单 ${orderReference(actionTarget.value)} 已取消。`; confirmOpen.value = false; if (actionKind.value === 'pay') accessOrderID.value = actionTarget.value.id; await load(); if (detailID.value === actionTarget.value.id) { selectedOrder.value = null; await syncDetailFromRoute() } actionTarget.value = null } catch (cause: any) { actionError.value = commerceErrorMessage(cause, actionKind.value === 'pay' ? '无法确认收款，请检查订单当前状态。' : '无法取消订单，请检查订单当前状态。') } finally { saving.value = false } }
 async function openDetail(id: number) { const { event_page: _eventPage, event_limit: _eventLimit, ...query } = route.query; paymentEventOffset.value = 0; paymentEventLimit.value = 25; await router.push({ query: { ...query, order: String(id) } }) }
 async function closeDetail() { detailResource.reset(); resetPaymentEvents(); detailID.value = 0; const { order: _order, event_page: _eventPage, event_limit: _eventLimit, ...query } = route.query; await router.push({ query }) }
 async function changePaymentEventPage(value: { offset: number; limit: number }) { paymentEventOffset.value = value.offset; paymentEventLimit.value = value.limit; await syncURL(); await loadPaymentEvents() }
@@ -234,8 +248,8 @@ async function syncDetailFromRoute() {
   detailID.value = id
   await Promise.all([detailResource.load(), loadPaymentEvents()])
 }
-watch(() => route.fullPath, async () => { const nextQuery = String(route.query.q || ''), nextStatus = String(route.query.status || ''), nextOrderType = String(route.query.order_type || ''), nextUser = String(route.query.user_id || ''), nextCreatedFrom = String(route.query.created_from || ''), nextCreatedTo = String(route.query.created_to || ''); const rawLimit = Number(route.query.limit), nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 50, nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit; if (nextQuery !== queryFilter.value || nextStatus !== statusFilter.value || nextOrderType !== orderTypeFilter.value || nextUser !== userFilter.value || nextCreatedFrom !== createdFrom.value || nextCreatedTo !== createdTo.value || nextLimit !== limit.value || nextOffset !== offset.value) { queryFilter.value = nextQuery; statusFilter.value = nextStatus; orderTypeFilter.value = nextOrderType; userFilter.value = nextUser; createdFrom.value = nextCreatedFrom; createdTo.value = nextCreatedTo; limit.value = nextLimit; offset.value = nextOffset; await load() } await syncDetailFromRoute() })
-onMounted(async () => { await load(); await syncDetailFromRoute() })
+watch(() => route.fullPath, async () => { const nextQuery = String(route.query.q || ''), nextStatus = String(route.query.status || ''), nextOrderType = String(route.query.order_type || ''), nextUser = String(route.query.user_id || ''), nextCreatedFrom = String(route.query.created_from || ''), nextCreatedTo = String(route.query.created_to || ''); const rawLimit = Number(route.query.limit), nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 50, nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit; if (nextQuery !== queryFilter.value || nextStatus !== statusFilter.value || nextOrderType !== orderTypeFilter.value || nextUser !== userFilter.value || nextCreatedFrom !== createdFrom.value || nextCreatedTo !== createdTo.value || nextLimit !== limit.value || nextOffset !== offset.value) { queryFilter.value = nextQuery; statusFilter.value = nextStatus; orderTypeFilter.value = nextOrderType; userFilter.value = nextUser; createdFrom.value = nextCreatedFrom; createdTo.value = nextCreatedTo; limit.value = nextLimit; offset.value = nextOffset; void load() } await syncDetailFromRoute() })
+onMounted(() => { void load(); void syncDetailFromRoute() })
 </script>
 
 <style scoped>

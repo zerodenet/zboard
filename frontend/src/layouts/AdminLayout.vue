@@ -11,10 +11,10 @@
         <button class="sidebar-close nav-icon-button" type="button" aria-label="关闭导航" @click="navigationOpen = false"><UiIcon name="close" /></button>
       </div>
 
-      <p v-if="menus.error.value" role="alert" class="menu-error">{{ menus.error.value }} <button type="button" @click="menus.load()">重试</button></p>
+      <NavigationNotice v-if="menus.error.value && !menus.pageError.value" :message="menus.error.value" :loading="menus.loading.value" @retry="menus.load()" />
       <AdminNavigation @select-page="navigationOpen = false" />
 
-      <AdminVersionStatus :info="systemInfo" />
+      <AdminVersionStatus :info="systemInfo" :about="aboutPage" @navigate="navigationOpen = false" />
     </aside>
 
     <div class="app-workspace" :inert="drawerModal">
@@ -22,45 +22,48 @@
         <div class="topbar-leading">
           <button class="nav-icon-button menu-button" type="button" :aria-label="navigationOpen ? '关闭导航' : '打开导航'" :aria-expanded="navigationOpen" aria-controls="admin-navigation" @click="navigationOpen = !navigationOpen"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></button>
           <AdminQuickSearch />
-          <nav class="topbar-breadcrumb" aria-label="当前位置"><span class="topbar-context">{{ currentSection }}</span><span class="topbar-breadcrumb-separator" aria-hidden="true">/</span><strong>{{ currentTitle }}</strong></nav>
+          <nav class="topbar-breadcrumb" aria-label="当前位置"><span class="topbar-context">{{ currentSection }}</span><span class="topbar-breadcrumb-separator" aria-hidden="true">/</span><span v-if="workspaceTitle" class="topbar-workspace-crumb"><span class="topbar-workspace">{{ workspaceTitle }}</span><span class="topbar-breadcrumb-separator" aria-hidden="true">/</span></span><strong>{{ currentTitle }}</strong></nav>
         </div>
-        <DropdownMenuRoot>
+        <div class="topbar-actions"><AppearanceSwitch /><DropdownMenuRoot>
           <DropdownMenuTrigger as-child>
-            <button type="button" class="topbar-account-trigger" aria-label="账户菜单" :title="app.user.email || '账户菜单'">
+            <button type="button" class="topbar-account-trigger" aria-label="账户菜单">
               <span class="topbar-account-avatar" aria-hidden="true">{{ userInitial }}</span>
-              <span class="topbar-account-name">{{ app.user.email || '管理员' }}</span>
+              <span class="topbar-account-name" v-overflow-title="app.user.email">{{ app.user.email || '管理员' }}</span>
               <UiIcon name="chevron" class="topbar-account-chevron" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent class="ui-dropdown-content topbar-account-menu" align="end" :side-offset="8">
+            <DropdownMenuContent as-child align="end" :side-offset="8" :collision-padding="16"><div class="ui-dropdown-content topbar-account-menu">
               <div class="topbar-account-menu-heading">{{ app.user.email || '管理员' }}</div>
               <DropdownMenuSeparator class="topbar-account-menu-separator" />
               <DropdownMenuItem as-child class="ui-dropdown-item"><RouterLink to="/"><UiIcon name="dashboard" />查看站点</RouterLink></DropdownMenuItem>
               <DropdownMenuItem as-child class="ui-dropdown-item"><RouterLink to="/account"><UiIcon name="users" />个人中心</RouterLink></DropdownMenuItem>
               <DropdownMenuSeparator class="topbar-account-menu-separator" />
               <DropdownMenuItem class="ui-dropdown-item" @select="logout"><UiIcon name="logout" />退出登录</DropdownMenuItem>
-            </DropdownMenuContent>
+            </div></DropdownMenuContent>
           </DropdownMenuPortal>
-        </DropdownMenuRoot>
+        </DropdownMenuRoot></div>
       </header>
       <AdminPageNavigation v-if="mobile" class="mobile-section-navigation" />
       <nav v-if="returnTarget" class="context-return-bar" aria-label="跨资源返回">
         <RouterLink :to="returnTarget"><UiIcon name="chevron" />返回来源</RouterLink>
         <span>恢复上一个列表的筛选、页码和详情</span>
       </nav>
-      <main class="app-content admin-stripe-surface"><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
+      <main class="app-content admin-stripe-surface"><NavigationPage :available="menus.pageAvailable.value" :loading="menus.pageLoading.value" :error="menus.pageError.value" :failure="menus.failure.value" :retrying="menus.loading.value" @retry="menus.load()"><RouterView /></NavigationPage></main>
     </div>
     <div class="admin-task-layer" :inert="drawerModal"><TaskTray /></div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from 'reka-ui'
+import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import AdminNavigation from '../components/AdminNavigation.vue'
 import AdminPageNavigation from '../components/AdminPageNavigation.vue'
+import NavigationNotice from '../components/NavigationNotice.vue'
 import NavigationPage from '../components/NavigationPage.vue'
 import AdminQuickSearch from '../components/AdminQuickSearch.vue'
 import AdminVersionStatus from '../components/AdminVersionStatus.vue'
@@ -80,13 +83,26 @@ const route = useRoute()
 const router = useRouter()
 const sidebar = ref<HTMLElement | null>(null)
 const { open: navigationOpen, mobile, modal: drawerModal } = useAdminDrawer(sidebar)
-const currentTitle = computed(() => String(route.meta.title || '管理后台'))
+const currentNavigation = computed(() => resolveAdminNavigation(route.path, adminNavigation.value))
+const workspaceTitle = computed(() => {
+  const entry = currentNavigation.value
+  return entry?.section.workspace?.entry_path && entry.section.label !== entry.page.label ? entry.section.label : ''
+})
+const aboutPage = computed(() => {
+  const snapshot = menus.snapshot.value
+  const node = snapshot.nodes.find(node => snapshot.presentation?.footer_ids?.includes(node.id))
+  return node ? { to: node.path, label: node.label } : undefined
+})
+const currentTitle = computed(() => {
+  const page = resolveAdminNavigation(route.path, adminNavigation.value)?.page
+  return page?.to === route.path ? page.label : String(route.meta.title || '管理后台')
+})
 const currentSection = computed(() => resolveAdminNavigation(route.path, adminNavigation.value)?.domain.label || '管理控制台')
 const returnTarget = computed(() => normalizeAdminReturnTo(route.query.return_to))
 const userInitial = computed(() => (app.user.email || 'Z').slice(0, 1).toUpperCase())
 const systemInfo = ref<AdminSystemInfo | null>(null)
 onMounted(() => {
-  void app.loadMe()
+  void app.loadMe().catch(() => undefined)
   void fetchAdminSystemInfo().then(info => { systemInfo.value = info }).catch(() => { /* Version metadata is optional in local previews. */ })
 })
 watch(() => route.fullPath, () => { navigationOpen.value = false })
@@ -94,13 +110,14 @@ function logout() { app.clear(); router.push('/') }
 </script>
 
 <style scoped>
+.topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
 .admin-shell { grid-template-columns: 248px minmax(0, 1fr); background: var(--background); }
 .admin-sidebar { height: 100dvh; color: var(--foreground); background: var(--surface-subtle); border-right-color: var(--border); }
 .admin-sidebar .brand-block { min-height: 64px; padding: 11px 16px; border-color: var(--border); }
 .admin-brand-home { min-width: 0; display: flex; align-items: center; gap: 10px; text-decoration: none; }
 .admin-brand-home .brand-mark { width: 30px; height: 30px; border-radius: 7px; color: var(--foreground); background: var(--card); border: 1px solid var(--border); font-size: 15px; }
 .admin-brand-home strong { color: var(--foreground); font-size: 13px; font-weight: 600; }
-.admin-brand-home span:not(.brand-mark) { color: var(--muted-foreground); font-size: 10px; }
+.admin-brand-home span:not(.brand-mark) { color: var(--muted-foreground); font-size: 12px; }
 .nav-icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; color: var(--muted-foreground); background: transparent; cursor: pointer; font-size: 16px; }
 .nav-icon-button:hover { background: var(--muted-surface); color: var(--foreground); }
 .nav-icon-button:focus-visible, .admin-brand-home:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -109,6 +126,8 @@ function logout() { app.clear(); router.push('/') }
 .admin-shell .topbar-leading { min-width: 0; gap: 18px; }
 .topbar-breadcrumb { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .topbar-breadcrumb strong { overflow: hidden; color: var(--foreground); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-workspace-crumb { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.topbar-workspace { color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
 .topbar-context { color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
 .topbar-context::after { content: none; }
 .topbar-breadcrumb-separator { color: var(--input); font-size: 13px; }
@@ -133,6 +152,7 @@ function logout() { app.clear(); router.push('/') }
 @media (max-width: 1100px) and (min-width: 821px) { .admin-shell { grid-template-columns: 224px minmax(0, 1fr); } .admin-shell .topbar { padding-inline: 24px; } .admin-shell .app-content { padding-inline: 24px; } }
 @media (max-width: 1100px) { .topbar-account-name { display: none; } .topbar-account-trigger { padding-inline: 3px; } }
 @media (max-width: 820px) {
+  .topbar-workspace-crumb { display: none; }
   :deep(.page-header-navigation) { display: none; }
   .mobile-section-navigation { position: sticky; top: 64px; z-index: calc(var(--z-topbar) - 1); max-width: 100vw; padding: 0 18px; background: var(--card); scrollbar-width: thin; }
   .admin-sidebar { width: min(320px, 92vw); }

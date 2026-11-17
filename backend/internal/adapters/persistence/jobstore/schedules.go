@@ -10,13 +10,26 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Schedule reconciles one definition and atomically generates at most one
 // intent for a planned slot. The next slot advances from planned time, never
 // from completion time, so execution duration cannot drift the cadence.
 func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
-	if d.Resource == jobs.MaintenanceResource {
+	return s.schedule(ctx, d, nil)
+}
+
+func (s *Store) ScheduleDispatch(ctx context.Context, d jobs.Definition) (jobs.ScheduleDispatch, error) {
+	var result jobs.ScheduleDispatch
+	if err := s.schedule(ctx, d, &result); err != nil {
+		return jobs.ScheduleDispatch{}, err
+	}
+	return result, nil
+}
+
+func (s *Store) schedule(ctx context.Context, d jobs.Definition, result *jobs.ScheduleDispatch) error {
+	if d.Resource == jobs.MaintenanceResource || (d.CompactHistory && (d.Owner != "system" || !d.ReconcileAfterLoss || d.ExecutionGroup != "")) {
 		return jobs.ErrInvalid
 	}
 	if d.MaxAttempts == 0 {
@@ -48,6 +61,9 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 	}
 	if probe.RowsAffected == 1 && scheduleDefinitionMatches(current, d) {
 		if current.RunID == "" && (d.SuppressDispatch || current.NextAt.After(s.now())) {
+			if result != nil {
+				result.NextAt = current.NextAt
+			}
 			return nil
 		}
 		if current.RunID != "" {
@@ -56,6 +72,10 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 				return err
 			}
 			if r.State == string(jobs.Queued) || r.State == string(jobs.RetryWait) || r.State == string(jobs.Running) || r.State == string(jobs.CancelRequested) || (r.State == string(jobs.Unknown) && !d.ReconcileAfterLoss) {
+				if result != nil {
+					result.NextAt = current.NextAt
+					result.Runnable = !d.SuppressDispatch && !r.NotBefore.After(s.now()) && (r.State == string(jobs.Queued) || r.State == string(jobs.RetryWait))
+				}
 				return nil
 			}
 		}
@@ -66,7 +86,7 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 		}
 		now := s.now().UTC().Truncate(time.Millisecond)
 		var row Schedule
-		err := tx.First(&row, "id = ?", d.ID).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, "id = ?", d.ID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			next := firstPlannedAt(d, now)
 			row = Schedule{ID: d.ID, Owner: d.Owner, Name: d.Name, Handler: d.Handler, Resource: d.Resource, ExecutionGroup: d.ExecutionGroup, Revision: d.Revision, IntervalMS: d.Interval.Milliseconds(), TimeoutMS: d.Timeout.Milliseconds(), MaxAttempts: d.MaxAttempts, RetryBackoffMS: d.RetryBackoff.Milliseconds(), TimeZone: d.TimeZone, MisfirePolicy: string(d.MisfirePolicy), DispatchLane: d.DispatchLane, AnchorAt: timePointer(d.FirstPlannedAt), NextAt: next}
@@ -93,6 +113,10 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 				run.State = string(jobs.Interrupted)
 			}
 			if run.State == string(jobs.Running) || run.State == string(jobs.CancelRequested) || run.State == string(jobs.Queued) || run.State == string(jobs.RetryWait) || run.State == string(jobs.Unknown) {
+				if result != nil {
+					result.NextAt = row.NextAt
+					result.Runnable = !d.SuppressDispatch && !run.NotBefore.After(now) && (run.State == string(jobs.Queued) || run.State == string(jobs.RetryWait))
+				}
 				return nil
 			}
 			row.State = run.State
@@ -106,9 +130,11 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 		}
 		definitionChanged := !scheduleDefinitionMatches(row, d)
 		if definitionChanged {
+			row.CompactRunID = ""
 			row.Revision = d.Revision
 			row.NextAt = firstPlannedAt(d, now)
 		}
+		row.CompactHistory = d.CompactHistory
 		row.Name = d.Name
 		row.Handler = d.Handler
 		row.Resource = d.Resource
@@ -126,20 +152,36 @@ func (s *Store) Schedule(ctx context.Context, d jobs.Definition) error {
 			row.NextAt = nextAt
 			row.MissedRuns += missed
 			if !dispatch {
+				if result != nil {
+					result.NextAt = row.NextAt
+				}
 				return tx.Save(&row).Error
 			}
 			row.Sequence++
-			child := &Store{db: tx, now: s.now}
 			payload, _ := json.Marshal(map[string]string{"revision": d.Revision})
-			run, err := child.Submit(ctx, jobs.Submission{Timeout: d.Timeout, MaxAttempts: d.MaxAttempts, RetryBackoff: d.RetryBackoff, Owner: d.Owner, Key: fmt.Sprintf("schedule:%x:%s", sha256.Sum256([]byte(d.ID)), plannedAt.Format(time.RFC3339Nano)), Handler: d.Handler, Resource: d.Resource, ExecutionGroup: d.ExecutionGroup, DispatchLane: d.DispatchLane, Payload: string(payload)})
+			prepared, err := s.prepareSubmission(jobs.Submission{Timeout: d.Timeout, MaxAttempts: d.MaxAttempts, RetryBackoff: d.RetryBackoff, Owner: d.Owner, Key: fmt.Sprintf("schedule:%x:%s", sha256.Sum256([]byte(d.ID)), plannedAt.Format(time.RFC3339Nano)), Handler: d.Handler, Resource: d.Resource, ExecutionGroup: d.ExecutionGroup, DispatchLane: d.DispatchLane, Payload: string(payload)})
 			if err != nil {
 				return err
 			}
-			if err := tx.Model(&Record{}).Where("id = ?", run.ID).Updates(map[string]any{"schedule_id": d.ID, "planned_at": plannedAt}).Error; err != nil {
+			prepared.record.ScheduleID, prepared.record.PlannedAt = d.ID, &plannedAt
+			reused, err := s.reusePeriodicSuccess(tx, row, &prepared.record)
+			if err != nil {
 				return err
 			}
-			row.RunID = run.ID
+			if !reused {
+				if err := s.insertSubmissionLocked(tx, &prepared); err != nil {
+					return err
+				}
+			}
+			row.RunID = prepared.record.ID
+			if d.CompactHistory {
+				row.CompactRunID = row.RunID
+			}
 			row.State = string(jobs.Queued)
+		}
+		if result != nil {
+			result.NextAt = row.NextAt
+			result.Runnable = row.RunID != "" && row.State == string(jobs.Queued) && !d.SuppressDispatch
 		}
 		return tx.Save(&row).Error
 	})
@@ -156,13 +198,13 @@ func (s *Store) Schedules(ctx context.Context) ([]jobs.ScheduleView, error) {
 		if r.AnchorAt != nil {
 			first = *r.AnchorAt
 		}
-		out = append(out, jobs.ScheduleView{Definition: jobs.Definition{ID: r.ID, Owner: r.Owner, Name: r.Name, Handler: r.Handler, Resource: r.Resource, ExecutionGroup: r.ExecutionGroup, Revision: r.Revision, Interval: time.Duration(r.IntervalMS) * time.Millisecond, Timeout: time.Duration(r.TimeoutMS) * time.Millisecond, MaxAttempts: r.MaxAttempts, RetryBackoff: time.Duration(r.RetryBackoffMS) * time.Millisecond, TimeZone: r.TimeZone, MisfirePolicy: jobs.MisfirePolicy(r.MisfirePolicy), FirstPlannedAt: first, DispatchLane: r.DispatchLane}, NextAt: r.NextAt, Runs: r.Runs, Failures: r.Failures, MissedRuns: r.MissedRuns, State: jobs.State(r.State), LastState: jobs.State(r.LastState), LastStartedAt: r.LastStartedAt, LastFinishedAt: r.LastFinishedAt})
+		out = append(out, jobs.ScheduleView{Definition: jobs.Definition{ID: r.ID, Owner: r.Owner, Name: r.Name, Handler: r.Handler, Resource: r.Resource, ExecutionGroup: r.ExecutionGroup, Revision: r.Revision, Interval: time.Duration(r.IntervalMS) * time.Millisecond, Timeout: time.Duration(r.TimeoutMS) * time.Millisecond, MaxAttempts: r.MaxAttempts, RetryBackoff: time.Duration(r.RetryBackoffMS) * time.Millisecond, TimeZone: r.TimeZone, MisfirePolicy: jobs.MisfirePolicy(r.MisfirePolicy), FirstPlannedAt: first, DispatchLane: r.DispatchLane, CompactHistory: r.CompactHistory}, NextAt: r.NextAt, Runs: r.Runs, Failures: r.Failures, MissedRuns: r.MissedRuns, State: jobs.State(r.State), LastState: jobs.State(r.LastState), LastStartedAt: r.LastStartedAt, LastFinishedAt: r.LastFinishedAt})
 	}
 	return out, nil
 }
 
 func scheduleDefinitionMatches(row Schedule, d jobs.Definition) bool {
-	return row.Owner == d.Owner && row.Name == d.Name && row.Handler == d.Handler && row.Resource == d.Resource && row.ExecutionGroup == d.ExecutionGroup && row.Revision == d.Revision && row.IntervalMS == d.Interval.Milliseconds() && row.TimeoutMS == d.Timeout.Milliseconds() && row.MaxAttempts == d.MaxAttempts && row.RetryBackoffMS == d.RetryBackoff.Milliseconds() && row.TimeZone == d.TimeZone && row.MisfirePolicy == string(d.MisfirePolicy) && row.DispatchLane == d.DispatchLane && sameTime(row.AnchorAt, d.FirstPlannedAt)
+	return row.CompactHistory == d.CompactHistory && row.Owner == d.Owner && row.Name == d.Name && row.Handler == d.Handler && row.Resource == d.Resource && row.ExecutionGroup == d.ExecutionGroup && row.Revision == d.Revision && row.IntervalMS == d.Interval.Milliseconds() && row.TimeoutMS == d.Timeout.Milliseconds() && row.MaxAttempts == d.MaxAttempts && row.RetryBackoffMS == d.RetryBackoff.Milliseconds() && row.TimeZone == d.TimeZone && row.MisfirePolicy == string(d.MisfirePolicy) && row.DispatchLane == d.DispatchLane && sameTime(row.AnchorAt, d.FirstPlannedAt)
 }
 
 func sameTime(value *time.Time, expected time.Time) bool {

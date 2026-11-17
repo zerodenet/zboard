@@ -22,16 +22,16 @@
         @blur="handleBlur"
       />
       <span v-if="loading" class="ui-button-spinner" aria-label="搜索中" />
-      <button v-if="query || selectedValue" type="button" class="ui-autocomplete-clear" aria-label="清除选择" :disabled="disabled" @click="clear">×</button>
+      <button v-if="clearable && (query || selectedValue)" type="button" class="ui-autocomplete-clear" aria-label="清除选择" :disabled="disabled" @click="clear">×</button>
       <ComboboxTrigger v-if="dropdown" class="ui-autocomplete-trigger" aria-label="展开建议" :disabled="disabled"><UiIcon name="chevron" /></ComboboxTrigger>
     </ComboboxAnchor>
     <ComboboxPortal>
-      <ComboboxContent class="ui-autocomplete-content" position="popper" :side-offset="5">
+      <ComboboxContent class="ui-autocomplete-content" position="popper" :side-offset="5" :collision-padding="16">
         <ComboboxViewport>
           <ComboboxItem v-for="(option, index) in suggestions" :key="option.id ?? option.value ?? index" class="ui-autocomplete-option" :value="option">
             <slot name="option" :option="option">{{ displayValue(option) }}</slot>
           </ComboboxItem>
-          <div v-if="!suggestions.length && !loading" class="ui-autocomplete-empty">没有匹配结果</div>
+          <div v-if="!suggestions.length" class="ui-autocomplete-empty" :role="loading ? 'status' : undefined">{{ loading ? '正在加载选项…' : '没有匹配结果' }}</div>
         </ComboboxViewport>
         <div v-if="$slots.footer" class="ui-autocomplete-footer"><slot name="footer" /></div>
       </ComboboxContent>
@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, useAttrs, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useAttrs, watch } from 'vue'
 import {
   ComboboxAnchor, ComboboxContent, ComboboxInput, ComboboxItem,
   ComboboxPortal, ComboboxRoot, ComboboxTrigger, ComboboxViewport,
@@ -57,8 +57,9 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   forceSelection?: boolean
   dropdown?: boolean
+  clearable?: boolean
   fluid?: boolean
-}>(), { suggestions: () => [], optionLabel: 'label', disabled: false, loading: false, forceSelection: false, dropdown: false, fluid: true })
+}>(), { suggestions: () => [], optionLabel: 'label', disabled: false, loading: false, forceSelection: false, dropdown: false, clearable: true, fluid: true })
 const attrs = useAttrs()
 const inputAttrs = computed(() => {
   const { id: _id, ...rest } = attrs
@@ -68,9 +69,10 @@ const model = defineModel<any>()
 const selectedValue = computed(() => model.value && typeof model.value === 'object' ? model.value : undefined)
 const query = ref('')
 const emit = defineEmits<{
+  open: []
   complete: [event: { query: string }]
   'item-select': [event: { value: any }]
-  clear: []
+  clear: [reason?: 'explicit' | 'unselected']
 }>()
 function displayValue(value: any): string {
   if (value === null || value === undefined) return ''
@@ -96,7 +98,8 @@ function selectItem(value: any) {
   emit('item-select', { value })
 }
 async function handleOpenChange(open: boolean) {
-  if (open || !props.forceSelection) return
+  if (open) { emit('open'); return }
+  if (!props.forceSelection) return
   await nextTick()
   clearUnselected()
 }
@@ -104,17 +107,21 @@ function clearUnselected() {
   if (!props.forceSelection || typeof model.value !== 'string') return
   model.value = null
   query.value = ''
-  emit('clear')
+  emit('clear', 'unselected')
 }
+let blurTimer: ReturnType<typeof setTimeout> | undefined
 function handleBlur() {
-  window.setTimeout(() => {
+  clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => {
+    blurTimer = undefined
     if (document.activeElement?.closest('.ui-autocomplete-content, .ui-autocomplete-anchor')) return
     clearUnselected()
   }, 0)
 }
+onBeforeUnmount(() => clearTimeout(blurTimer))
 function clear() {
   query.value = ''
   model.value = null
-  emit('clear')
+  emit('clear', 'explicit')
 }
 </script>

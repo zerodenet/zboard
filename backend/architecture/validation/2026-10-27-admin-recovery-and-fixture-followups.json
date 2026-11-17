@@ -1,0 +1,141 @@
+{
+  "recorded_utc": "2026-10-27T08:54:04.792005+00:00",
+  "source_commits": {
+    "test_followups": "c3f7bca22f630fbb1f48cb8b9a89772223dceaa7",
+    "frontend": "6a32e3e93a5034b0ce7a153805f3a5f0db7bd68f",
+    "prepared_0067": "8ba43771d308d3f293dde74ee84c434d22545505"
+  },
+  "checks": [
+    {
+      "scope": "original frontend CI scope; exactly six original exclusions",
+      "receipt": "admin-recovery-frontend-ci-second",
+      "result": {
+        "status": "completed",
+        "started_utc": "2026-10-27T08:21:43.439387+00:00",
+        "source_before": "4cd2a9773bd9fbf453f6549c7462d1403eaad219f58ba35d99da068014944dd8",
+        "steps": [
+          {
+            "command": [
+              "pnpm",
+              "test",
+              "--no-file-parallelism",
+              "--exclude",
+              "src/theme/designTokens.test.ts",
+              "--exclude",
+              "src/views/commercePurchaseExperience.test.ts",
+              "--exclude",
+              "src/utils/adminRowActionsAudit.test.ts",
+              "--exclude",
+              "src/utils/catalogScalePolicy.test.ts",
+              "--exclude",
+              "src/utils/formPolicy.test.ts",
+              "--exclude",
+              "src/utils/frontendArchitecturePolicy.test.ts"
+            ],
+            "exit_code": 0,
+            "wall_seconds": 168.641,
+            "log": "admin-recovery-frontend-ci-second-0.log.gz",
+            "log_sha256": "fb81a54e1284e3ca4911fcc480edc98b2fe5befa738414b8e8b12a2807b05c21"
+          }
+        ],
+        "source_after": "4cd2a9773bd9fbf453f6549c7462d1403eaad219f58ba35d99da068014944dd8",
+        "finished_utc": "2026-10-27T08:24:32.124457+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "scope": "frontend production build",
+      "receipt": "admin-recovery-final-build",
+      "result": {
+        "status": "completed",
+        "started_utc": "2026-10-27T08:31:48.349262+00:00",
+        "source_before": "4cd2a9773bd9fbf453f6549c7462d1403eaad219f58ba35d99da068014944dd8",
+        "steps": [
+          {
+            "command": [
+              "pnpm",
+              "build"
+            ],
+            "exit_code": 0,
+            "wall_seconds": 33.574,
+            "log": "admin-recovery-final-build-0.log.gz",
+            "log_sha256": "19c652a176124ed852d48df420bbd4c0d2bdfe7e62d1d5d94f88e8fdd1b03cef"
+          }
+        ],
+        "source_after": "4cd2a9773bd9fbf453f6549c7462d1403eaad219f58ba35d99da068014944dd8",
+        "finished_utc": "2026-10-27T08:32:21.960617+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "scope": "capability inventory and architecture; not datastore compilation or SQL behavior",
+      "receipt": "inventory-eighth",
+      "result": {
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-p",
+          "1",
+          "./tools/capabilityinventory",
+          "./architecture",
+          "-count=1",
+          "-timeout",
+          "15m"
+        ],
+        "go_cache": "/tmp/zboard-oct27-build-cache",
+        "go_module_cache": "/tmp/zboard-oct27-module-cache",
+        "started_utc": "2026-10-27T08:48:25.122985+00:00",
+        "source_before": "94b3ab3610044c8861619336ba9e27efec5660b5e8ce9d85bf903e84e1f090da",
+        "source_scope": "all backend Go/SQL/module/ownership sources",
+        "status": "completed",
+        "exit_code": 0,
+        "wall_seconds": 1.235,
+        "source_after": "94b3ab3610044c8861619336ba9e27efec5660b5e8ce9d85bf903e84e1f090da",
+        "log_sha256": "8c5807bab4d9a433cb7c9655b9a249282e6a16151c5de866a1cd618d5bdcdb78",
+        "finished_utc": "2026-10-27T08:48:26.456087+00:00",
+        "source_unchanged": true,
+        "events": {
+          "pass": 75
+        },
+        "failures": [],
+        "build_failures": []
+      }
+    }
+  ],
+  "frontend_counts": {
+    "passed": 1359,
+    "existing_skipped": 8,
+    "passed_files": 222,
+    "existing_skipped_files": 2
+  },
+  "retained_failures": [
+    "CI40471848896: four backend failures on2974bb3; fixture followups require new runtime validation",
+    "first frontend full scope:1358 pass/1 recovery-message assertion fail/8 existing skip; final unchanged scope passed after wording correction",
+    "earlier targeted shallow button/title fixture failures retained"
+  ],
+  "not_executed": [
+    "new datastore/handler SQLite/MySQL behavior",
+    "new full backend four-command matrix",
+    "new full MySQL/core+extended and race/count3",
+    "new exact-head CI terminal state",
+    "real browser/OAuth and external provider/kernel acceptance",
+    "new manual autoscale/worker-benefit/capacity/upgrade runs"
+  ],
+  "blocks": [
+    {
+      "action": "download existing pinned Go dependencies",
+      "targets": [
+        "modernc.org/sqlite@v1.56.0",
+        "github.com/klauspost/compress@v1.18.7",
+        "github.com/pierrec/lz4/v4@v4.1.27"
+      ],
+      "result": "HTTP403; not retried through alternate sources"
+    },
+    {
+      "action": "read GitHub run logs/artifact via gh api",
+      "result": "Forbidden; no alternate access route used"
+    }
+  ],
+  "overall_complete": false
+}

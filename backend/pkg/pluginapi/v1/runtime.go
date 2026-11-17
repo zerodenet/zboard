@@ -18,14 +18,29 @@ type ControlPlugin struct {
 
 func (p *ControlPlugin) GRPCServer(_ *hcplugin.GRPCBroker, s *grpc.Server) error {
 	RegisterPluginControlServer(s, p.Impl)
+	if provider, ok := p.Impl.(CommerceQuoteProviderServer); ok {
+		RegisterCommerceQuoteProviderServer(s, provider)
+	}
+	if provider, ok := p.Impl.(CommerceRedemptionProviderServer); ok {
+		RegisterCommerceRedemptionProviderServer(s, provider)
+	}
 	return nil
 }
+
+type nativeControlClients struct {
+	PluginControlClient
+	CommerceQuoteProviderClient
+	CommerceRedemptionProviderClient
+}
+
 func (p *ControlPlugin) GRPCClient(_ context.Context, _ *hcplugin.GRPCBroker, c *grpc.ClientConn) (any, error) {
-	return NewPluginControlClient(c), nil
+	return nativeControlClients{PluginControlClient: NewPluginControlClient(c), CommerceQuoteProviderClient: NewCommerceQuoteProviderClient(c), CommerceRedemptionProviderClient: NewCommerceRedemptionProviderClient(c)}, nil
 }
 func ClientMap() map[string]hcplugin.Plugin {
 	return map[string]hcplugin.Plugin{"control": &ControlPlugin{}}
 }
 func Serve(impl PluginControlServer) {
-	hcplugin.Serve(&hcplugin.ServeConfig{HandshakeConfig: Handshake, Plugins: map[string]hcplugin.Plugin{"control": &ControlPlugin{Impl: impl}}, GRPCServer: hcplugin.DefaultGRPCServer})
+	hcplugin.Serve(&hcplugin.ServeConfig{HandshakeConfig: Handshake, Plugins: map[string]hcplugin.Plugin{"control": &ControlPlugin{Impl: impl}}, GRPCServer: func(options []grpc.ServerOption) *grpc.Server {
+		return hcplugin.DefaultGRPCServer(append(options, grpc.MaxRecvMsgSize(MaxControlMessageBytes), grpc.MaxSendMsgSize(MaxControlMessageBytes)))
+	}})
 }

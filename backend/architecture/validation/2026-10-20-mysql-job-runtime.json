@@ -1,0 +1,12 @@
+{
+  "source": "36901133e46c83aa1f0e3324ea5ad8d813f63815",
+  "environment": "Existing isolated MySQL8.4 container, random test databases; no other local builds/tests/load scheduled during sequential verification",
+  "checks": [
+    {"command": "GOMAXPROCS=2 go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m", "result": "pass", "package_seconds": 126.507, "wall_seconds": 128.774, "scope": "Entire package; generic fixtures choose real MySQL from ZBOARD_TEST_MYSQL_DSN; explicit SQLite cases retain SQLite"},
+    {"command": "GOMAXPROCS=2 go test -p 2 ./internal/handler -run '^TestMySQLSpoolStartupFailurePreservesOtherProcessTasks$' -count=3 -timeout 3m", "result": "pass", "wall_seconds": 24.703}
+  ],
+  "covered": ["Runtime drain preserves running and pending intent", "Another Store's durable cancellation interrupts Runtime with unknown-result classification", "Lease/attempt/completion/resource fences", "Shared admission, maintenance, fairness and existing dispatch latency guard", "Failed local file-spool startup preserves foreign running/queued tasks"],
+  "ci_change": "Add whole jobstore real-MySQL command between unchanged three-package15-minute command and unchanged sequential copy command; no exclusions or timeout changes",
+  "remaining_at_recording": ["Same-source original three-package15-minute core suite running", "Sequential same-source copy suite", "Whole final-source backend and current CI", "No independent-worker or autoscaling acceptance"],
+  "production_migration_executed": false
+}

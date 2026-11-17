@@ -109,14 +109,11 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.pluginManager.CheckSession(r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin)
 	if err != nil {
-		if errors.Is(err, plugins.ErrInvalidSession) {
-			Forbidden(w, "invalid plugin session")
-		} else {
-			pluginError(w, err)
-		}
+		pluginError(w, err)
 		return
 	}
 	var body struct {
+		OrderID    uint            `json:"order_id"`
 		Type       string          `json:"type"`
 		Operation  string          `json:"operation"`
 		Input      json.RawMessage `json:"input"`
@@ -202,6 +199,24 @@ func (h *handlers) PluginBridgeHandler(w http.ResponseWriter, r *http.Request) {
 		OK(w, result)
 		return
 	}
+	if body.Type == "checkout.context" {
+		result, err := h.pluginManager.CheckoutContext(r.Context(), r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, body.OrderID)
+		if err != nil {
+			pluginError(w, err)
+			return
+		}
+		OK(w, result)
+		return
+	}
+	if body.Type == "checkout.call" {
+		result, err := h.pluginManager.SessionCheckoutAction(r.Context(), r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, body.OrderID, body.Action, body.Payload)
+		if err != nil {
+			pluginError(w, err)
+			return
+		}
+		OK(w, result)
+		return
+	}
 	if body.Type == "page.call" {
 		result, err := h.pluginManager.SessionPageAction(r.Context(), r.Header.Get("X-Plugin-Session"), c.UserID, c.IsAdmin, body.Action, body.Payload)
 		if err != nil {
@@ -262,7 +277,9 @@ func (h *handlers) PluginAssetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' "+scope+"; style-src 'unsafe-inline' "+scope+"; img-src data: "+scope+"; font-src "+scope+"; connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'; frame-ancestors 'self'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "no-store")
+	// Signed plugin assets must retain their verified bytes through proxies.
+	// In particular, injected analytics cannot run inside this isolated frame.
+	w.Header().Set("Cache-Control", "no-store, no-transform")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	kind := mime.TypeByExtension(path.Ext(parts[1]))
 	if kind == "" {

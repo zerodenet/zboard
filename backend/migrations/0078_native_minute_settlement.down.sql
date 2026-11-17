@@ -1,0 +1,2 @@
+-- Minute settlement preserves exact amounts but coarsens event material.
+-- Keep additive columns and compatible writers; rollback cannot recover per-event bodies.

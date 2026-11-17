@@ -1,0 +1,64 @@
+{
+  "source": "a9aae1621ce04e303de248747903f3637c1c61b4",
+  "checkout": "/workspace/zboard-principal-final-verify",
+  "phase": "mysql",
+  "started_utc": "2026-10-21T00:45:39.277311+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 1,
+      "wall_seconds": 901.562,
+      "log": "mysql-core-a9aae16-final.log"
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 120.268,
+      "log": "mysql-jobstore-a9aae16-final.log"
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 108.349,
+      "log": "mysql-copy-a9aae16-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T01:04:29.456859+00:00",
+  "raw_logs_sha256": {
+    "mysql-core-a9aae16-final.log": "6f7fa0409b1f94168a71784e713712bc4a05b77bb178a4a6e3be6686284db294",
+    "mysql-jobstore-a9aae16-final.log": "9f5eb6e3d3afaf3111d5a3e626f7e2100a75e50f9515c5aa5976ddaf88a589e0",
+    "mysql-copy-a9aae16-final.log": "698319b9e211555a56024d582b63d7fe409911b55a1f591c69fa0195c9323354"
+  },
+  "packages": {
+    "datastore_seconds": 152.038,
+    "handler_timeout_seconds": 900.017,
+    "networkstore_seconds": 112.003,
+    "jobstore": "PASS",
+    "platformstore_copy": "PASS"
+  },
+  "alarm_context": {
+    "active_test": "TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock",
+    "active_seconds_displayed": 2,
+    "stack": "newMySQLOrderFixture -> newMySQLPublishHandlers:62 -> RunMigrations:178 -> runMigrations:450 formal Exec -> mysql driver packet wait",
+    "formal_statement_id": "unknown",
+    "interpretation": "Package cumulative alarm while the last test was still preparing a fresh fixture; no causal assignment to its business body."
+  },
+  "limits": [
+    "This exact local core command failed; no rerun, timeout extension, exclusions or source edits.",
+    "Independent original jobstore/copy actually ran and passed after the core failure.",
+    "Exact-source CI39522585804 all six jobs pass separately, not a replacement for this local failure.",
+    "No full-capacity or stable startup improvement claimed for a9aae16."
+  ]
+}

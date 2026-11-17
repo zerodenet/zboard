@@ -11,6 +11,7 @@ type PrincipalFlowObservation struct {
 	ID                      uint64    `gorm:"column:id;primaryKey"`
 	NodeID                  uint      `gorm:"column:node_id"`
 	CoreInstanceID          string    `gorm:"column:core_instance_id"`
+	CoreInstanceSHA256      string    `gorm:"column:core_instance_sha256"`
 	SessionRegistryRevision uint64    `gorm:"column:session_registry_revision"`
 	EventID                 string    `gorm:"column:event_id"`
 	Sequence                uint64    `gorm:"column:sequence"`

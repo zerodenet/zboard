@@ -96,6 +96,7 @@ func TestExpiredTaskOwnerCannotWriteItemResult(t *testing.T) {
 }
 func TestQueueRecoveryRespectsDraftsAndRequiresExplicitInterruptedRetry(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	past := time.Now().UTC().Add(-time.Hour)
 	draft := model.Task{Type: "quota", MaxAttempts: 3, IdempotencyKey: "draft"}
 	queued := model.Task{Type: "unsupported", ScheduledAt: &past, MaxAttempts: 3, IdempotencyKey: "queued"}
@@ -123,6 +124,7 @@ func TestQueueRecoveryRespectsDraftsAndRequiresExplicitInterruptedRetry(t *testi
 }
 func TestScheduledJobDoesNotOverlapAndStops(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	var active, max atomic.Int32
 	entered := make(chan struct{}, 1)
 	h.startScheduledJob("test", time.Millisecond, func(ctx context.Context) error {
@@ -164,8 +166,12 @@ func TestHistoryRetentionBatchesAndPreservesActiveTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := h.runHistoryRetention(time.Now().UTC())
-	if err != nil || result.AuditLogs != 1001 {
+	if err != nil || result.AuditLogs != 1000 {
 		t.Fatal(result, err)
+	}
+	next, err := h.runHistoryRetention(time.Now().UTC())
+	if err != nil || next.AuditLogs != 1 {
+		t.Fatal("bounded cleanup did not resume", next, err)
 	}
 	var count int64
 	h.db.Model(&model.Task{}).Where("id = ?", task.ID).Count(&count)

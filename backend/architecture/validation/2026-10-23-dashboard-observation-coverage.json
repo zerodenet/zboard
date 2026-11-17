@@ -1,0 +1,516 @@
+{
+  "recorded_utc": "2026-10-23T17:16:49.988598+00:00",
+  "base_head": "6bd9334669b6639ee0329f4399384f9423661c04",
+  "candidate_not_base_commit": true,
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "overall_complete": false,
+  "checks": [
+    {
+      "phase": "baseline",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T16:57:24.662342+00:00",
+      "finished_utc": "2026-10-23T16:59:09.078159+00:00",
+      "checks": [
+        {
+          "name": "old-failure",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestDashboardDoesNotPromotePrincipalSnapshotsToCompleteCoverage$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 104.28,
+          "log": "baseline-1-old-failure.log",
+          "log_sha256": "51201500b669b957ce33bc4e04e48d4fc8a16f09d67f9e0f037e89d85868c33e"
+        }
+      ],
+      "source_stable": true,
+      "name": "baseline-1",
+      "source_before_sha256": "176e346d1965f97250ba9c59ee7d399719c2dfb1699e15566ed47224000a4793",
+      "source_after_sha256": "176e346d1965f97250ba9c59ee7d399719c2dfb1699e15566ed47224000a4793",
+      "top_level": {
+        "pass": [],
+        "fail": [
+          "TestDashboardDoesNotPromotePrincipalSnapshotsToCompleteCoverage"
+        ],
+        "skip": []
+      },
+      "interpretation": "Old6bd code returned active_flows7/active_subscriptions2 and coverage=true for one current and one30-day-old persisted snapshot; actual failure104.280s."
+    },
+    {
+      "phase": "go",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T17:00:42.455048+00:00",
+      "finished_utc": "2026-10-23T17:02:27.170150+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observabilitystore",
+            "./internal/handler",
+            "-run",
+            "^Test(Dashboard.*|ResolveDashboard.*|BuildDashboard.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 104.584,
+          "log": "go-1-target.log",
+          "log_sha256": "9ff67a727aa5d03828cbacc227334df2774025a590a86a1f40e93dcca4cf0298"
+        }
+      ],
+      "source_stable": true,
+      "name": "go-1",
+      "source_before_sha256": "5c34aca0116f32ac941e4bc7cc68bcf2a8efff98cac5f5a854645bdaccb12905",
+      "source_after_sha256": "5c34aca0116f32ac941e4bc7cc68bcf2a8efff98cac5f5a854645bdaccb12905",
+      "top_level": {
+        "pass": [
+          "TestDashboardRankingsExactPartialHoursAndBoundedQueries",
+          "TestDashboardCurrentDoesNotWaitForReportingAndNeverWrites",
+          "TestDashboardProjectionPreservesFactsAndBoundedPendingChecks",
+          "TestDashboardCalendarMonthUsesSameLocalDateAndClampsShortPreviousMonth",
+          "TestResolveDashboardPeriodUsesExplicitUTCBoundaries",
+          "TestResolveDashboardPeriodRejectsUnknownRange",
+          "TestBuildDashboardTrendPointsFillsMissingBuckets",
+          "TestDashboardRankingsRequiresCurrentAdministratorAndUsesSystemTimezone",
+          "TestDashboardViewsRemainAdministratorReadsAndOmitUnrelatedFields",
+          "TestDashboardReadTimeoutIsExplicitAndDoesNotExposeDatabaseErrors",
+          "TestResolveDashboardPeriodInLocationUsesSystemMidnight",
+          "TestDashboardCalendarBucketsKeepRepeatedDSTHourDistinct"
+        ],
+        "fail": [
+          "TestDashboardDoesNotPromotePrincipalSnapshotsToCompleteCoverage"
+        ],
+        "skip": []
+      },
+      "interpretation": "New API/coverage assertions passed, then fixture compared equivalent UTC times by internal representation; one new test failed. Driver-decoded before/after snapshot comparison corrected, original values/read-only invariant retained."
+    },
+    {
+      "phase": "go",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T17:03:13.519022+00:00",
+      "finished_utc": "2026-10-23T17:04:59.398922+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/observabilitystore",
+            "./internal/handler",
+            "-run",
+            "^Test(Dashboard.*|ResolveDashboard.*|BuildDashboard.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 105.761,
+          "log": "go-2-target.log",
+          "log_sha256": "56e30e5f4760726fb0a8b8bb09c73ead873bd9f02821846ebf5b9d6cf181084c"
+        }
+      ],
+      "source_stable": true,
+      "name": "go-2",
+      "source_before_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "source_after_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "top_level": {
+        "pass": [
+          "TestDashboardRankingsExactPartialHoursAndBoundedQueries",
+          "TestDashboardCurrentDoesNotWaitForReportingAndNeverWrites",
+          "TestDashboardProjectionPreservesFactsAndBoundedPendingChecks",
+          "TestDashboardCalendarMonthUsesSameLocalDateAndClampsShortPreviousMonth",
+          "TestDashboardDoesNotPromotePrincipalSnapshotsToCompleteCoverage",
+          "TestResolveDashboardPeriodUsesExplicitUTCBoundaries",
+          "TestResolveDashboardPeriodRejectsUnknownRange",
+          "TestBuildDashboardTrendPointsFillsMissingBuckets",
+          "TestDashboardRankingsRequiresCurrentAdministratorAndUsesSystemTimezone",
+          "TestDashboardViewsRemainAdministratorReadsAndOmitUnrelatedFields",
+          "TestDashboardReadTimeoutIsExplicitAndDoesNotExposeDatabaseErrors",
+          "TestResolveDashboardPeriodInLocationUsesSystemMidnight",
+          "TestDashboardCalendarBucketsKeepRepeatedDSTHourDistinct"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "interpretation": "Final Go/API source passed; later only observed-subscription UI text and assertions changed."
+    },
+    {
+      "phase": "mysql",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T17:05:18.848397+00:00",
+      "finished_utc": "2026-10-23T17:05:26.345156+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestMySQLDashboardDoesNotPromotePrincipalSnapshotsToCompleteCoverage$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 7.362,
+          "log": "mysql-1-mysql.log",
+          "log_sha256": "6f78583c9a003efe271ded3b0d9580ba8a2e76a0e805bda819e60e4b3ee5fbbe"
+        }
+      ],
+      "source_stable": true,
+      "name": "mysql-1",
+      "source_before_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "source_after_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "top_level": {
+        "pass": [
+          "TestMySQLDashboardDoesNotPromotePrincipalSnapshotsToCompleteCoverage"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "interpretation": "Same final Go/API source, actual isolated MySQL8.4 path passed."
+    },
+    {
+      "phase": "frontend-target",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T17:06:13.728926+00:00",
+      "finished_utc": "2026-10-23T17:06:18.151121+00:00",
+      "checks": [
+        {
+          "name": "test",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "src/api/dashboard.test.ts",
+            "src/views/Dashboard.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 4.31,
+          "log": "frontend-target-1-test.log",
+          "log_sha256": "eb6e6549c19fceccf69b28d66222276bf6e969357ccf57c93db22360f6b723a4"
+        }
+      ],
+      "source_stable": true,
+      "name": "frontend-target-1",
+      "source_before_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "source_after_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "interpretation": "15 component/API tests passed before final subscription-label clarification."
+    },
+    {
+      "phase": "frontend-full",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T17:06:48.321533+00:00",
+      "finished_utc": "2026-10-23T17:10:00.611232+00:00",
+      "checks": [
+        {
+          "name": "install",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile",
+            "--package-import-method=copy"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.632,
+          "log": "frontend-full-1-install.log",
+          "log_sha256": "13fc69fe6f52a2b4b0f0200a0f07bfe617aaaba378aa2880fac8a0197bc9f465"
+        },
+        {
+          "name": "test",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "--exclude",
+            "src/theme/designTokens.test.ts",
+            "--exclude",
+            "src/views/commercePurchaseExperience.test.ts",
+            "--exclude",
+            "src/utils/adminRowActionsAudit.test.ts",
+            "--exclude",
+            "src/utils/catalogScalePolicy.test.ts",
+            "--exclude",
+            "src/utils/formPolicy.test.ts",
+            "--exclude",
+            "src/utils/frontendArchitecturePolicy.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 157.539,
+          "log": "frontend-full-1-test.log",
+          "log_sha256": "907466dcab819ddec57ad4956cd9deb9e6c58467b6b27bfeb21554770fa9e92a"
+        },
+        {
+          "name": "build",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "build"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 33.991,
+          "log": "frontend-full-1-build.log",
+          "log_sha256": "b2652555d136302d115b606e8c8e857aa2ff479a71e9f2ba915f19577ff53aeb"
+        }
+      ],
+      "source_stable": true,
+      "name": "frontend-full-1",
+      "source_before_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "source_after_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "interpretation": "First full original CI frontend range passed1176/8existing skip/build."
+    },
+    {
+      "phase": "contract",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T17:10:44.024971+00:00",
+      "finished_utc": "2026-10-23T17:10:56.460358+00:00",
+      "checks": [
+        {
+          "name": "lint",
+          "cwd": ".",
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "-v",
+            "/workspace/zboard/backend/api:/spec/backend/api:ro",
+            "-w",
+            "/spec",
+            "redocly/cli:1.34.3",
+            "lint",
+            "backend/api/openapi.yaml"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 12.319,
+          "log": "contract-1-lint.log",
+          "log_sha256": "b7b376fd919c1a067f4862254ce5e4a31516b189c9d656d0af61ae9ef3a60e60"
+        }
+      ],
+      "source_stable": true,
+      "name": "contract-1",
+      "source_before_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "source_after_sha256": "c56dddea178efbfe0d772cc6d3d4312f087f1fb4ca709565682f7ed79b142874",
+      "interpretation": "Exact OpenAPI bytes unchanged later; Redocly1.34.3 passed with282existing warnings, no network, spec mount read-only."
+    },
+    {
+      "phase": "frontend-full",
+      "head": "6bd9334669b6639ee0329f4399384f9423661c04",
+      "started_utc": "2026-10-23T17:11:49.947981+00:00",
+      "finished_utc": "2026-10-23T17:15:02.660601+00:00",
+      "checks": [
+        {
+          "name": "install",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile",
+            "--package-import-method=copy"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.737,
+          "log": "frontend-full-2-install.log",
+          "log_sha256": "56c3c0ce8f3d59d1f2d2890cf641654493d01b9ecb71134758856efac57a500a"
+        },
+        {
+          "name": "test",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "--exclude",
+            "src/theme/designTokens.test.ts",
+            "--exclude",
+            "src/views/commercePurchaseExperience.test.ts",
+            "--exclude",
+            "src/utils/adminRowActionsAudit.test.ts",
+            "--exclude",
+            "src/utils/catalogScalePolicy.test.ts",
+            "--exclude",
+            "src/utils/formPolicy.test.ts",
+            "--exclude",
+            "src/utils/frontendArchitecturePolicy.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 155.893,
+          "log": "frontend-full-2-test.log",
+          "log_sha256": "0e87eedd55915fac17d0ed136632ddbce4471e708985ac1caabb5fcc0bdb4837"
+        },
+        {
+          "name": "build",
+          "cwd": "frontend",
+          "command": [
+            "pnpm",
+            "build"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 35.94,
+          "log": "frontend-full-2-build.log",
+          "log_sha256": "37245a291345a32e3d4b5ac9799a80ac8f13f1b64f73ca580084f446b1033c2e"
+        }
+      ],
+      "source_stable": true,
+      "name": "frontend-full-2",
+      "source_before_sha256": "960ba39151f098be3cb54b2f8d5362515acdceda4a14b4f0b0830ab5adf7a598",
+      "source_after_sha256": "960ba39151f098be3cb54b2f8d5362515acdceda4a14b4f0b0830ab5adf7a598",
+      "interpretation": "Final observed-active-subscription label and assertions; full original CI range204files/1176pass,2existingfiles/8existingtestskip; frozen install and typecheck/build all pass."
+    }
+  ],
+  "final_source_sha256": "960ba39151f098be3cb54b2f8d5362515acdceda4a14b4f0b0830ab5adf7a598",
+  "source_scope": "All Go, frontend ts/vue, module manifests, OpenAPI and ownership JSON; prose/evidence and ignored artifacts excluded.",
+  "backend_and_api_binding": "Every backend source/API/ownership/module file unchanged across final Go, actual MySQL, OpenAPI and final frontend phases.",
+  "ui_changes_after_backend_checks": [
+    "frontend/src/views/Dashboard.test.ts",
+    "frontend/src/views/Dashboard.vue"
+  ],
+  "files": [
+    {
+      "path": "backend/api/openapi.yaml",
+      "original_sha256": "8ca1c5a6c7212ead48f4d68770ee676b3cf094aab9306c81fcc5b06b7aa582be",
+      "candidate_sha256": "62657c31b38e12abf8d4d7525e5491302d6f49b7bb753a005e7370b86b12a812"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/observabilitystore/dashboard.go",
+      "original_sha256": "d17792ef43a39287532e387ec2f74d2d300362edd0a7ab470ebb24e6c2e3b3d0",
+      "candidate_sha256": "8b75f9b0b76c2b14d9362a0a79d66d6d6971a44b46961eecc143f21722a6a8a4"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/observabilitystore/dashboard_test.go",
+      "original_sha256": "5f1926ddfef4c64207cad949795543f0abaca0454f4dbb5241266b8023e04f33",
+      "candidate_sha256": "0c958eb971326cb286336f47acb9a4723bc9283bbe722fc93719c8b762daf8a2"
+    },
+    {
+      "path": "backend/internal/capabilities/observability/dashboard.go",
+      "original_sha256": "fdd5bb65932a48272b5e4fbfae5cfce0fce441aa34fc79e8c3a2a53738ff03d1",
+      "candidate_sha256": "fbf5114252a30be778beba64183dda3bd78c2538b1102735cae21e13d991732a"
+    },
+    {
+      "path": "backend/internal/handler/dashboard_observation_coverage_test.go",
+      "original_sha256": null,
+      "candidate_sha256": "0828218745c86783707b2e35f58821c473bdfbc99dce20f6864927598f9a6e87"
+    },
+    {
+      "path": "backend/internal/handler/dashboard_overview.go",
+      "original_sha256": "60be768ed1a50f7c5b3eeecd299366fe75f079648ca7aba6217312c1221921ea",
+      "candidate_sha256": "8ff223f7387a2bdca2790ff5fe1a143af52c8d64c0593ac32599f6934fc937a6"
+    },
+    {
+      "path": "frontend/src/api/dashboard.ts",
+      "original_sha256": "03b21fc5a1f33bb3417a188e1a6fdccf725a0422fe94df3791533be237b4ec74",
+      "candidate_sha256": "7613accd3ac0a1148e1f802de5981b38ee72d494e1757b15f789e4e3a282c654"
+    },
+    {
+      "path": "frontend/src/views/Dashboard.test.ts",
+      "original_sha256": "2980418a0616b215bdb0ccf88042739f5de206e6491ef1a7fd740b224993c2f8",
+      "candidate_sha256": "32dd966cb041a3916688725e85c34396bba6814de3204a423683ebf79dd7feed"
+    },
+    {
+      "path": "frontend/src/views/Dashboard.vue",
+      "original_sha256": "19734868489417c00e6e23f1fdb33205f5194a2e79fb7dddea7ff7f157776970",
+      "candidate_sha256": "43fb47a428305b42ca5ffe81b6d05dc9b401dfde7e92d7966214856aae9f74a3"
+    }
+  ],
+  "preparation_correction": "Basename collision between capability and store dashboard.go candidates detected and corrected before any post-application build/test. Only the owned candidate write was replaced, original Git blob hash checked.",
+  "cache_actions": [
+    {
+      "utc": "2026-10-23T17:00:42.314937+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "process_scan_valid": true,
+      "ps_columns": [
+        "pid",
+        "state",
+        "comm",
+        "args"
+      ],
+      "workloads_before_env_probe": [],
+      "workloads_after_env_probe": [],
+      "free_before": 59265024,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 530112512
+    },
+    {
+      "utc": "2026-10-23T17:03:13.401310+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "process_scan_valid": true,
+      "ps_columns": [
+        "pid",
+        "state",
+        "comm",
+        "args"
+      ],
+      "workloads_before_env_probe": [],
+      "workloads_after_env_probe": [],
+      "free_before": 56598528,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 529346560
+    },
+    {
+      "utc": "2026-10-23T17:06:13.612831+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "process_scan_valid": true,
+      "ps_columns": [
+        "pid",
+        "state",
+        "comm",
+        "args"
+      ],
+      "workloads_before_env_probe": [],
+      "workloads_after_env_probe": [],
+      "free_before": 54558720,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 527441920
+    }
+  ],
+  "unverified": [
+    "New exact commit CI pending until pushed;6bd six success does not certify these changed files",
+    "Local full backend4/MySQL3/race3 not run under original storage limit; no prior result substituted",
+    "Complete runtime snapshot coverage/freshness not established; partial aggregates remain explicitly unknown",
+    "Only component/HTTP/isolatedDB checks here, no actual browser/Zero/external plugin/production acceptance",
+    "P6 prepared-check0061 dependency drift identified, fix not applied in this receipt; no worker/autoscaler or new capacity run"
+  ],
+  "migration": "No new SQL/schema, published157 assets unchanged. Rollback restores former misleading confidence; retains all source/authority/history, no data deletion or financial changes."
+}

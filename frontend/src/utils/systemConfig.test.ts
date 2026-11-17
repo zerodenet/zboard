@@ -54,6 +54,8 @@ describe('system config schema', () => {
     const logo = config({ config_key: 'site_logo_dark', input: { control: 'text', max_bytes: 100000 } })
     expect(resolveSystemConfigInput(logo).control).toBe('url')
     expect(normalizeSystemConfigDraft(logo, 'https://cdn.example.com/logo.svg')).toEqual({ value: 'https://cdn.example.com/logo.svg' })
+    const localImage = '/media/11111111-2222-3333-4444-555555555555'
+    expect(normalizeSystemConfigDraft(logo, localImage)).toEqual({ value: localImage })
     expect(normalizeSystemConfigDraft(logo, '/brand/logo.svg')).toEqual({
       error: '请输入不含账号、密码或片段的完整 HTTP 或 HTTPS 地址。',
     })

@@ -1,0 +1,46 @@
+{
+  "scope": "Isolated public Zero publisher crash/recovery only; no production or other repository changes",
+  "passed": true,
+  "driver_exit_code": 0,
+  "scenario": {
+    "crashed_component": "publisher_process",
+    "failed_attempts_persisted": 1,
+    "failed_generation_retained": 1,
+    "first_publisher_pid": 15,
+    "new_request_after_crash": false,
+    "old_credential_rejected_probes": 3,
+    "outage": "ssh_listener_only",
+    "passed": true,
+    "positive_control_passed": true,
+    "replacement_publisher_pid": 24,
+    "scenario": "recovery",
+    "ssh_restored_to_verified_revocation_ms": 16824.116757,
+    "stale_access_confirmed_before_recovery": true,
+    "verified_at": "2026-10-19T18:57:44.570705881Z"
+  },
+  "artifact": {
+    "release_url": "https://github.com/zerodenet/core/releases/tag/v0.0.3-dev.202610102233",
+    "source_commit": "71b3db1ff5b01dbb50576b36c6ba6d76922c67c7",
+    "archive_url": "https://github.com/zerodenet/core/releases/download/v0.0.3-dev.202610102233/zero-linux-x86_64-musl.tar.gz",
+    "archive_sha256": "bc25696355a09d9a1e9d96879689c8a8d01bf11372331bf51ba051d04389a1ea",
+    "archive_bytes": 22265565,
+    "binary_sha256": "1f75740f1f5c1fefb7cb3aae219c7cbfe3365bd2dce33f58216a1001dc47268b",
+    "tag_signature_verified": false
+  },
+  "toolchain": "Go 1.26.8, CGO_ENABLED=0, GOMAXPROCS=2, Docker 28.4.0",
+  "resources": {
+    "node_cpus": 1,
+    "node_memory_mib": 512,
+    "driver_cpus": 2,
+    "driver_memory_mib": 768,
+    "network": "Docker internal network, pinned test SSH host key"
+  },
+  "source_manifest_sha256": "58f8abde07e9b1bebcc47387da5712f887cd00e3b2108f34e6af75925f02c626",
+  "test_binary_sha256": "c13e1800b59cde6b8f2b942d9719db80a724bf17deaf82f2c53338ed5f433477",
+  "limits": [
+    "Recovery verifies new-connection rejection and an independent credential; it does not prove old established-flow termination.",
+    "Separate expiry scenario failed because an existing revoked connection still relayed 12 bytes.",
+    "Native flows.close exists in the same pinned source; ZBoard has not yet integrated it.",
+    "Does not validate production, external payments, cross-node capacity, quotas at scale or archived-event replay."
+  ]
+}

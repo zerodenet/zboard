@@ -1,5 +1,8 @@
-import { expireAuthSession } from './authSession'
 import { normalizeOutput } from './output'
+import { pluginManagementErrorMessage } from './pluginManagementErrors'
+import { readPluginActionFailure } from './pluginActionError'
+
+type ApiErrorScope = 'plugin-management'
 
 export interface NormalizedApiFormError {
   code: string
@@ -28,16 +31,20 @@ export function normalizeApiMessage(value: unknown, fallback: string) {
   return localizedApiMessage(value) || fallback
 }
 
-export function normalizeApiErrorPayload(payload: unknown): Record<string, any> {
+export function normalizeApiErrorPayload(payload: unknown, scope?: ApiErrorScope): Record<string, any> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { message: '' }
   const source = payload as Record<string, any>
+  const actionFailure = readPluginActionFailure(source)
+  if (source.error?.source === 'plugin' || source.error?.code === 'plugin_action_rejected') {
+    if (!actionFailure) return { message: '', error: { version: 1, code: 'unavailable', retryable: false } }
+    return { code: 422, message: actionFailure.message, error: { version: 1, code: actionFailure.code, source: actionFailure.source, plugin_code: actionFailure.plugin_code, retryable: actionFailure.retryable } }
+  }
   const normalized: Record<string, any> = {
     ...source,
-    message: localizedApiMessage(source.message),
+    message: actionFailure?.message || localizedApiMessage(source.message) || (scope === 'plugin-management' ? pluginManagementErrorMessage(normalizeApiText(source.message, 500)) : ''),
   }
 
   if (!source.error || typeof source.error !== 'object' || Array.isArray(source.error)) {
-    if (Number(source.code) === 401) expireAuthSession()
     return normalized
   }
 
@@ -57,12 +64,13 @@ export function normalizeApiErrorPayload(payload: unknown): Record<string, any> 
     code,
     fields,
   }
-  if (Number(source.code) === 401 || code === 'unauthenticated') expireAuthSession()
   return normalized
 }
 
-export function normalizeApiErrorMessage(cause: any, fallback: string) {
-  const response = normalizeApiErrorPayload(cause?.response?.data)
+export function normalizeApiErrorMessage(cause: any, fallback: string, scope?: ApiErrorScope) {
+  const actionFailure = readPluginActionFailure(cause?.response?.data)
+  if (actionFailure) return actionFailure.message
+  const response = normalizeApiErrorPayload(cause?.response?.data, scope)
   return normalizeApiMessage(response.message, fallback)
 }
 

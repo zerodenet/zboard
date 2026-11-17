@@ -1,17 +1,19 @@
 <template>
-  <section class="stack" aria-label="邮件执行历史">
-    <p>这里保留每次尝试的原始渠道结果。渠道接收不代表已到收件箱；后续人工核验不会覆盖这些记录。</p>
-    <PageAlert v-if="error" tone="danger" title="执行历史加载失败">{{ error }}</PageAlert>
+  <section class="stack" aria-label="邮件发送记录">
+    <p>已提交表示邮件服务器已接收。</p>
+    <PageAlert v-if="error" tone="danger" title="发送记录加载失败">{{ error }}</PageAlert>
     <UiButton variant="secondary" :loading="loading" @click="load">刷新</UiButton>
     <DataTable v-if="page?.items.length" caption="邮件逐次执行记录" :row-count="page.total" :min-width="560">
-      <thead><tr><th>尝试次数</th><th>渠道结果</th><th>开始时间</th><th>结果记录时间</th></tr></thead>
-      <tbody><tr v-for="row in page.items" :key="row.id"><td>{{ row.attempt }}</td><td>{{ labels[row.acceptance] || '结果未知' }}</td><td><TimeBadge :value="row.started_at" /></td><td><TimeBadge :value="row.finished_at" /></td></tr></tbody>
+      <thead><tr><th>尝试次数</th><th>提交结果</th><th>开始时间</th><th>结果记录时间</th></tr></thead>
+      <tbody><tr v-for="row in page.items" :key="row.id"><td>{{ row.attempt }}</td><td><StatusBadge :tone="mailSubmissionStatus(row.acceptance).tone" :icon="mailSubmissionStatus(row.acceptance).icon">{{ mailSubmissionStatus(row.acceptance).label }}</StatusBadge></td><td><TimeBadge :value="row.started_at" /></td><td><TimeBadge :value="row.finished_at" /></td></tr></tbody>
     </DataTable>
-    <p v-else-if="!loading && !error">暂无逐次执行记录，旧任务不会补造历史。</p>
+    <p v-else-if="!loading && !error">暂无发送记录</p>
     <TablePager v-if="page" :total="page.total" :offset="offset" :limit="25" :page-sizes="[25]" :loading="loading" @change="changePage" />
   </section>
 </template>
 <script setup lang="ts">
+import { mailSubmissionStatus } from '../utils/taskStatus'
+import StatusBadge from './StatusBadge.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { fetchMailDeliveryHistory } from '../api/client'
 import DataTable from './DataTable.vue'
@@ -19,7 +21,6 @@ import PageAlert from './PageAlert.vue'
 import TablePager from './TablePager.vue'
 import TimeBadge from './TimeBadge.vue'
 const props = defineProps<{ taskID: number; itemID: number }>()
-const labels = { accepted: '渠道已接收', not_accepted: '渠道未接收', unknown: '接收结果未知' }
 const page = ref<Awaited<ReturnType<typeof fetchMailDeliveryHistory>> | null>(null)
 const offset = ref(0), loading = ref(false), error = ref('')
 let request: AbortController | undefined

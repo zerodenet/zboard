@@ -13,10 +13,18 @@ var (
 	ErrNodeActivityInvalid     = errors.New("invalid node activity")
 )
 
+type NodeCounterWriter string
+
+const (
+	CounterWriterHeartbeat       NodeCounterWriter = "heartbeat"
+	CounterWriterLegacyConnector NodeCounterWriter = "legacy_connector"
+)
+
 type NodeActivityUpdate struct {
 	At            time.Time
 	Online        bool
 	ConnectorSeen bool
+	CounterWriter NodeCounterWriter
 	Version       *string
 	UptimeSeconds *uint64
 	ActiveFlows   *uint64
@@ -35,6 +43,9 @@ func (s NodeActivity) Record(ctx context.Context, nodeID uint, credential string
 		return ErrNodeActivityUnavailable
 	}
 	if nodeID == 0 || strings.TrimSpace(credential) == "" || update.At.IsZero() {
+		return ErrNodeActivityInvalid
+	}
+	if update.CounterWriter != "" && update.CounterWriter != CounterWriterHeartbeat && update.CounterWriter != CounterWriterLegacyConnector {
 		return ErrNodeActivityInvalid
 	}
 	if update.Version != nil {

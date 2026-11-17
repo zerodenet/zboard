@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN purchase_snapshot VARCHAR(2048) NOT NULL DEFAULT '';

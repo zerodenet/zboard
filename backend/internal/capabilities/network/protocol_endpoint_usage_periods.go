@@ -10,6 +10,7 @@ import (
 var (
 	ErrProtocolEndpointUsagePermission = errors.New("administrator access required")
 	ErrProtocolEndpointUsageNotFound   = errors.New("protocol endpoint not found")
+	ErrProtocolEndpointUsagePending    = errors.New("流量统计正在更新，请稍后重试重置；已结算流量不受影响。")
 )
 
 type ProtocolEndpointUsagePeriodValidation struct{ Message string }

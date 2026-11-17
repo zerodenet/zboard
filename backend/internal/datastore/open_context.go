@@ -84,6 +84,7 @@ func initializeContextDatabase(ctx context.Context, pool *sql.DB, driver string)
 	if err != nil {
 		return nil, err
 	}
+	db.Logger = readTimingLogger{db.Logger}
 	db.ConnPool = pool
 	db.Statement.ConnPool = pool
 	switch d := dialect.(type) {

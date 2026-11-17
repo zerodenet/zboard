@@ -23,6 +23,7 @@ import PageAlert from '../components/PageAlert.vue'
 import FormField from '../components/FormField.vue'
 import AuthLegalLinks from '../components/AuthLegalLinks.vue'
 import { useAppStore } from '../stores/app'
+import { consumeAuthReturnPath } from '../utils/authReturnPath'
 const route = useRoute(), router = useRouter(), store = useAppStore()
 const failed = ref(false), registering = ref(false), busy = ref(false), email = ref(''), code = ref(''), cooldown = ref(0)
 const formElement = ref<HTMLElement | null>(null), formErrors = useFormErrors()
@@ -33,9 +34,10 @@ async function accept(result: IdentityLoginResult) {
   if (result.registration_required) { registering.value = true; email.value = result.email || ''; statusText.value = '第三方未提供已验证邮箱。请在五分钟内完成邮箱验证，由 ZBoard 创建账户。'; return }
   if (result.linked) { await router.replace({path:'/account/security',query:{linked:'1'}}); return }
   if (!result.auth?.token || !result.user) throw new Error('missing login result')
-  store.setToken(result.auth.token); store.setUser(result.user)
+  await store.acceptAuthenticatedSession(result.auth.token)
   await store.loadSystemStatus(true).catch(() => undefined)
-  await router.replace(result.user.is_admin ? '/admin/dashboard' : '/account')
+  const requested = consumeAuthReturnPath(store.user.id, store.isAdmin)
+  await router.replace(requested || (store.isAdmin ? '/admin/dashboard' : '/account'))
 }
 const callbackErrors: Record<string, string> = {
   invalid_response: '授权服务返回的信息不完整，请重新发起登录。',

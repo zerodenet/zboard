@@ -38,12 +38,22 @@ func (h *handlers) orderPayCallbackHandler(w http.ResponseWriter, r *http.Reques
 	h.writeOrderSettlement(w, out, err, true)
 }
 func (h *handlers) writeOrderSettlement(w http.ResponseWriter, out commerce.SettlementResult, err error, callback bool) {
+	if writeDiscountReservationError(w, err) {
+		return
+	}
+	if writeResourceBusy(w, err) {
+		return
+	}
 	var invalid *commerce.ValidationError
 	switch {
+	case errors.Is(err, commerce.ErrSubscriptionEvidenceBudget):
+		writeCapabilityError(w, http.StatusConflict, "成交依据超出单次处理预算，未报价或扣款；请通过工单核对。", "subscription_evidence_budget")
 	case errors.Is(err, commerce.ErrNotFound):
 		BadRequest(w, "order not found")
 	case errors.Is(err, commerce.ErrOrderPermission):
 		Forbidden(w, "需要当前有效的管理员权限。")
+	case errors.Is(err, commerce.ErrFundingConflict):
+		writeJSON(w, http.StatusConflict, "资金分配已失效，请重新核对订单。", nil)
 	case errors.Is(err, commerce.ErrOrderTransition):
 		if callback {
 			BadRequest(w, errOrderTransitionRejected.Error())

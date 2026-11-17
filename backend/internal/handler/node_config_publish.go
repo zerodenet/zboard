@@ -73,32 +73,68 @@ func (h *handlers) publishNodeConfigForNode(ctx context.Context, nodeID, trigger
 }
 
 func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, triggerEndpointID, requestedBy uint, suppressMieruFallback bool, started time.Time) (model.ProtocolDeployment, time.Duration, error) {
+	return h.publishNodeConfigWithOwnerLocked(ctx, nodeID, triggerEndpointID, requestedBy, 0, suppressMieruFallback, started)
+}
+
+func (h *handlers) publishNodeConfigWithOwnerLocked(ctx context.Context, nodeID, triggerEndpointID, requestedBy, operationID uint, suppressMieruFallback bool, started time.Time) (model.ProtocolDeployment, time.Duration, error) {
 	node, err := h.loadNode(nodeID)
 	if err != nil {
 		return model.ProtocolDeployment{}, time.Since(started), err
 	}
-	if node.LifecycleStatus == resourceStatusDeleting {
+	if network.NodeManagementClosed(node.LifecycleStatus) {
 		return model.ProtocolDeployment{}, time.Since(started), errResourceDeleting
 	}
 	state := h.services.ConfigurationPublicationState()
-	publication, err := state.Begin(ctx, network.ConfigurationPublicationRequest{NodeID: node.ID, TriggerEndpointID: triggerEndpointID, RequestedBy: requestedBy})
+	publication, err := state.Begin(ctx, network.ConfigurationPublicationRequest{NodeID: node.ID, TriggerEndpointID: triggerEndpointID, RequestedBy: requestedBy, KernelOperationID: operationID})
 	if err != nil {
 		return model.ProtocolDeployment{}, time.Since(started), err
 	}
+	if publication.Deployment.Status == "reconciling" {
+		pending := publication.Deployment
+		check := zeroadapter.ConfigurationReconciliationRequest{DesiredSHA256: pending.DesiredConfigSHA256}
+		if publication.LaterCompleted != nil {
+			check.LaterCompletedSHA256 = publication.LaterCompleted.AppliedConfigSHA256
+		}
+		remote, reconcileErr := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: h, node: node}}).Reconcile(ctx, check)
+		finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), network.KernelDetectionFinalizeTimeout)
+		defer cancel()
+		if reconcileErr != nil {
+			reconcileErr = fmt.Errorf("核对发布 #%d：%w", pending.ID, reconcileErr)
+			retained, err := state.Uncertain(finalizeCtx, pending, reconcileErr, remote.Output)
+			return configurationDeploymentModel(retained), time.Since(started), err
+		}
+		if err := state.Resolve(finalizeCtx, pending, remote.Applied, remote.Output); err != nil {
+			return configurationDeploymentModel(pending), time.Since(started), err
+		}
+		// The old result is now conclusive. Re-read current intent and credentials.
+		return h.publishNodeConfigWithOwnerLocked(ctx, nodeID, triggerEndpointID, requestedBy, operationID, suppressMieruFallback, started)
+	}
+
 	deploymentState := publication.Deployment
 	deployment := configurationDeploymentModel(deploymentState)
 	mieruFallbackCount := publication.MieruFallbackCount
 	credentialActivated, remoteActivated := false, false
 	restoreCredential := func() error { return nil }
 	fail := func(cause error, output string) (model.ProtocolDeployment, time.Duration, error) {
+		if remoteActivated && !errors.Is(cause, network.ErrConfigurationOutcomeUnknown) {
+			cause = network.ConfigurationOutcomeUnknown(cause)
+		}
 		if credentialActivated && !remoteActivated {
 			if restoreErr := restoreCredential(); restoreErr != nil {
-				cause = errors.Join(cause, fmt.Errorf("restore generated connector credential: %w", restoreErr))
+				cause = errors.Join(cause, network.ErrConfigurationPublicationCommit, fmt.Errorf("restore generated connector credential: %w", restoreErr))
 			}
 		}
 		finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), network.KernelDetectionFinalizeTimeout)
 		defer cancel()
-		failed, failureErr := state.Fail(finalizeCtx, deploymentState, cause, output)
+		var failed network.ConfigurationDeployment
+		var failureErr error
+		if errors.Is(cause, network.ErrConfigurationOutcomeUnknown) {
+			failed, failureErr = state.Uncertain(finalizeCtx, deploymentState, cause, output)
+		} else if network.IsConfigurationCapabilityDeferral(cause) {
+			failed, failureErr = state.Defer(finalizeCtx, deploymentState, cause, output)
+		} else {
+			failed, failureErr = state.Fail(finalizeCtx, deploymentState, cause, output)
+		}
 		if failed.ID != 0 {
 			deploymentState = failed
 			deployment = configurationDeploymentModel(failed)
@@ -112,7 +148,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	if err != nil {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: %w", err), "")
 	}
-	if !probe.Installed || strings.TrimSpace(probe.Version) == "" {
+	if !probe.Installed {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: Zero is not installed"), "")
 	}
 	// Readiness commits only after the target accepts and activates this config.
@@ -143,11 +179,11 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	if err := h.services.NodeCredentialReconciliation(h.credentialCipher, true).ReconcileNode(ctx, node.ID); err != nil {
 		return fail(fmt.Errorf("reconcile node subscription credentials: %w", err), "")
 	}
-	runtimeConfig, configSHA, err := h.compileNodeRuntimeConfigWithOptionsContext(ctx, node, credential.Raw, probe.Version, suppressMieruFallback)
+	runtimeConfig, configSHA, targets, err := h.compileNodeRuntimeConfigWithCredentialTargets(ctx, node, credential.Raw, probe.Version, suppressMieruFallback)
 	if err != nil {
 		return fail(err, "")
 	}
-	deploymentState, err = state.SetDesired(ctx, deploymentState, configSHA)
+	deploymentState, err = state.SetDesiredWithTargets(ctx, deploymentState, configSHA, targets)
 	if err != nil {
 		return fail(err, "")
 	}
@@ -155,9 +191,12 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 
 	remote, err := (zeroadapter.ConfigurationPublisher{Dialer: zeroKernelRemoteDialer{h: h, node: node}}).Publish(ctx, zeroadapter.ConfigurationPublishRequest{
 		DeploymentID: deployment.ID, RuntimeConfig: runtimeConfig, ConfigSHA256: configSHA,
-		ConnectorKey: credential.Raw,
+		ConnectorKey: credential.Raw, RequireEventStateOwner: node.LastSeenAt == nil,
 	})
 	if err != nil {
+		// An SSH failure can lose the acknowledgement after config.apply commits.
+		// Keep the generated credential stable for durable recovery in that case.
+		remoteActivated = remote.Committed || remote.MayHaveApplied
 		return fail(err, remote.Output)
 	}
 	remoteActivated = true
@@ -179,7 +218,7 @@ func (h *handlers) publishNodeConfigForNodeLocked(ctx context.Context, nodeID, t
 	}
 	deployment = configurationDeploymentModel(deploymentState)
 	if mieruAccess && mieruFallbackCount > 0 && !suppressMieruFallback {
-		return h.publishNodeConfigForNodeLocked(ctx, node.ID, triggerEndpointID, requestedBy, true, started)
+		return h.publishNodeConfigWithOwnerLocked(ctx, node.ID, triggerEndpointID, requestedBy, operationID, true, started)
 	}
 	return deployment, time.Since(started), nil
 }

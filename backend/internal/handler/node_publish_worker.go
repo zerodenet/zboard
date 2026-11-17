@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/application"
 	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -21,14 +22,43 @@ func (h *handlers) StartNodePublishWorker() { h.startNodePublishWorker(h.publish
 
 func (h *handlers) publishQueuedNode(ctx context.Context, item model.NodeConfigPublish) error {
 	target, active, err := h.services.NodePublicationTargets().Resolve(ctx, publicationCapability(item))
-	if err != nil || !active {
+	if err != nil {
 		return err
 	}
-	_, _, err = h.publishNodeConfigForNode(ctx, target.NodeID, target.EndpointID, target.RequestedBy)
-	return err
+	if !active {
+		if item.Phase == "connections" {
+			return network.ErrConnectionRevocationPending
+		}
+		return nil
+	}
+	sha := item.AppliedConfigSHA256
+	if item.Phase != "connections" {
+		deployment, _, publishErr := h.publishNodeConfigForNode(ctx, target.NodeID, target.EndpointID, target.RequestedBy)
+		if publishErr != nil {
+			return publishErr
+		}
+		sha = deployment.AppliedConfigSHA256
+		advanced, advanceErr := h.services.MarkPublicationConfigurationApplied(ctx, publicationCapability(item), sha)
+		if advanceErr != nil {
+			return advanceErr
+		}
+		if !advanced {
+			return network.ErrKernelOperationRunning
+		}
+	}
+	return h.revokeNodeConnections(ctx, target.NodeID, sha)
 }
 
 func (h *handlers) startNodePublishWorker(publish func(context.Context, model.NodeConfigPublish) error) {
+	h.startPeriodicJob(application.PeriodicJob{
+		ID: "node_publication_recovery", Name: "未结束配置发布恢复", Interval: time.Minute,
+		Timeout: 15 * time.Second, Immediate: true, RetryFailures: true,
+		ReconcileAfterLoss: true, CompactHistory: true,
+		Run: func(ctx context.Context) error {
+			_, err := h.services.RecoverNodePublications(ctx, time.Now().UTC())
+			return err
+		},
+	})
 	for index := 0; index < nodeConfigPublishWorkerCount; index++ {
 		id := fmt.Sprintf("node_publish_%d", index)
 		h.startScheduledJob(id, nodePublishPollInterval, func(ctx context.Context) error {
@@ -48,21 +78,30 @@ func (h *handlers) startNodePublishWorker(publish func(context.Context, model.No
 	}
 }
 func (h *handlers) CloseNodePublishWorker() {
+	h.closeScheduledJob("node_publication_recovery")
 	for index := 0; index < nodeConfigPublishWorkerCount; index++ {
 		h.closeScheduledJob(fmt.Sprintf("node_publish_%d", index))
 	}
 }
 
-func (h *handlers) executeNodePublish(parent context.Context, item model.NodeConfigPublish, publish func(context.Context) error) error {
+func (h *handlers) executeNodePublish(parent context.Context, item model.NodeConfigPublish, publish func(context.Context) error) (failure error) {
 	finishObservation := h.observeJob("node_publish", "queue", nodePublishPollInterval, nodeConfigPublishWorkerCount)
+	returned := false
+	defer func() {
+		if !returned {
+			finishObservation(errors.New("job handler did not return; result requires verification"))
+			return
+		}
+		finishObservation(failure)
+	}()
 	executor := publicationExecutorFunc(func(ctx context.Context, _ network.Publication) error { return publish(ctx) })
-	failure := h.services.NodePublication(executor).Execute(parent, publicationCapability(item))
-	defer func() { finishObservation(failure) }()
+	failure = h.services.NodePublication(executor).Execute(parent, publicationCapability(item))
 	if errors.Is(failure, network.ErrPublicationLeaseLost) || errors.Is(failure, network.ErrPublicationFinalize) {
 		log.Printf("retain node publication for lease recovery: node_id=%d error=%v", item.NodeID, failure)
 	} else if failure != nil {
 		log.Printf("node publication scheduled for retry: node_id=%d error=%v", item.NodeID, failure)
 	}
+	returned = true
 	return failure
 }
 

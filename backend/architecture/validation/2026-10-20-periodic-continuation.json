@@ -1,0 +1,42 @@
+{
+  "base": "d6c40e7",
+  "scope": "Periodic application wrapper preserves cooperative continuation instead of wrapping it as a failed retry",
+  "production_change": "Exclude errors.Is(err, jobs.ErrContinue) from RetryFailures wrapping, including wrapped continuation. Genuine retry-safe errors and unknown-result handling unchanged.",
+  "regression_before": {
+    "command": "GOMAXPROCS=1 go test -p 1 -overlay ../.codex-local-artifacts/recovery-validation/periodic-continuation/before-overlay.json ./internal/handler -run '^TestSQLitePeriodicContinuationPreservesExecutionOutcome$' -count=1 -v",
+    "result": "expected failure",
+    "seconds": 0.323,
+    "detail": "Continue and wrapped Continue persisted retry_wait for run/attempt/schedule/last_state; failure and uncertain controls passed"
+  },
+  "checks": [
+    {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^TestSQLitePeriodicContinuationPreservesExecutionOutcome$' -count=1 -v",
+      "result": "pass",
+      "seconds": 0.328
+    },
+    {
+      "command": "GOMAXPROCS=1 go test -race -p 1 ./internal/handler -run '^TestSQLitePeriodicContinuationPreservesExecutionOutcome$' -count=3 -v",
+      "result": "pass",
+      "seconds": 17.063
+    },
+    {
+      "command": "GOMAXPROCS=1 ZBOARD_TEST_MYSQL_DSN=<isolated MySQL8.4> go test -p 1 ./internal/handler -run '^TestMySQLPeriodicContinuationPreservesExecutionOutcome$' -count=1 -timeout 1m",
+      "result": "pass",
+      "seconds": 13.421
+    }
+  ],
+  "coverage": [
+    "Actual Services.RegisterPeriodicJob -> Runtime -> persistent Store path",
+    "Drain timeout leaves admitted handler alive and due second intent unclaimed",
+    "Final Drain waits for durable Finish",
+    "Direct/wrapped continuation Yielded; real failure RetryWait; uncertain Unknown",
+    "Run, attempt, schedule, counters, completion, retry backoff and pending intent asserted"
+  ],
+  "migration": "None; no change to existing task/accounting identity or payment writers",
+  "rollback": "Source revert reintroduces continuation as failed retry; retain existing durable intents and recovery history",
+  "remaining": [
+    "Final-source whole backend and CI",
+    "Does not prove faster backlog drain or independent worker benefit",
+    "No production acceptance"
+  ]
+}

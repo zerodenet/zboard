@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
+import { parse } from 'vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
 
 const sourceRoots = [
@@ -23,7 +24,12 @@ function actionCellBodies(source: string): string[] {
 }
 
 function actionControlCount(source: string): number {
-  return Array.from(source.matchAll(/<(?:UiButton|RouterLink|button)\b/g)).length
+  // UiButton as-child + RouterLink is one focus target, not two actions.
+  function count(node: any): number {
+    if (node?.type === 1 && ['UiButton', 'RouterLink', 'button'].includes(node.tag)) return 1
+    return (node?.children || []).reduce((total: number, child: any) => total + count(child), 0)
+  }
+  return count(parse(`<template>${source}</template>`).descriptor.template?.ast)
 }
 
 describe('administration table row actions', () => {
@@ -49,7 +55,7 @@ describe('administration table row actions', () => {
   it('does not reintroduce wrapping page-local action groups', () => {
     const violations = files
       .filter(file => !file.endsWith('/RowActions.vue'))
-      .filter(file => /inline-actions|action-buttons|table-actions/.test(readFileSync(file, 'utf8')))
+      .filter(file => actionCellBodies(readFileSync(file, 'utf8')).some(body => /inline-actions|action-buttons|table-actions/.test(body)))
       .map(file => file.replace(`${process.cwd()}/`, ''))
 
     expect(violations).toEqual([])

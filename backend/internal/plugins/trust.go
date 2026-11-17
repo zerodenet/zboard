@@ -11,13 +11,14 @@ import (
 )
 
 type ImportPreview struct {
-	Manifest      Manifest      `json:"manifest"`
-	Digest        string        `json:"digest"`
-	Publisher     string        `json:"publisher"`
-	PublicKey     string        `json:"public_key"`
-	Fingerprint   string        `json:"fingerprint"`
-	Trusted       bool          `json:"trusted"`
-	Compatibility Compatibility `json:"compatibility"`
+	Manifest           Manifest            `json:"manifest"`
+	Digest             string              `json:"digest"`
+	Publisher          string              `json:"publisher"`
+	PublicKey          string              `json:"public_key"`
+	Fingerprint        string              `json:"fingerprint"`
+	Trusted            bool                `json:"trusted"`
+	Compatibility      Compatibility       `json:"compatibility"`
+	PublisherMigration *PublisherMigration `json:"publisher_migration,omitempty"`
 }
 
 func keyFingerprint(key string) string {
@@ -54,26 +55,30 @@ func (m *Manager) inspectPackage(data []byte, suppliedKey string) (*Package, err
 }
 
 // Once installed, even another trusted market cannot silently replace the key.
-func (m *Manager) packageTrusted(p *Package) (bool, error) {
+func (m *Manager) assessPackage(p *Package) (bool, model.PluginInstallation, error) {
 	var installed model.PluginInstallation
 	if err := m.db.Where("id = ?", p.Manifest.ID).Limit(1).Find(&installed).Error; err != nil {
-		return false, err
+		return false, installed, err
+	}
+	configured := m.options.TrustedPublishers[p.Publisher]
+	if configured != "" && configured != p.PublicKey {
+		return false, installed, errors.New("publisher key conflicts with host configuration")
 	}
 	if installed.ID != "" {
 		key := installed.SigningKey
 		if key == "" {
 			key = m.options.TrustedPublishers[installed.Publisher]
 		}
-		if installed.Publisher != p.Publisher || key == "" || key != p.PublicKey || (!installed.LocalTrust && m.options.TrustedPublishers[installed.Publisher] != key) {
-			return false, errors.New("插件发布者或签名密钥已变化，禁止覆盖现有安装")
+		oldConfigured := m.options.TrustedPublishers[installed.Publisher]
+		if key == "" || key != p.PublicKey || (oldConfigured != "" && oldConfigured != key) || (!installed.LocalTrust && oldConfigured != key) {
+			return false, installed, errors.New("插件签名密钥已变化或信任已撤销，禁止覆盖现有安装")
 		}
-		return true, nil
+		if installed.Publisher != p.Publisher && installed.SigningKey == "" {
+			return false, installed, errors.New("迁移发布者前必须存在已固定的插件签名密钥")
+		}
+		return true, installed, nil
 	}
-	configured := m.options.TrustedPublishers[p.Publisher]
-	if configured != "" && configured != p.PublicKey {
-		return false, errors.New("publisher key conflicts with host configuration")
-	}
-	return configured != "", nil
+	return configured != "", installed, nil
 }
 
 func (m *Manager) PreviewImport(data []byte, publicKey string) (ImportPreview, error) {
@@ -81,12 +86,12 @@ func (m *Manager) PreviewImport(data []byte, publicKey string) (ImportPreview, e
 	if err != nil {
 		return ImportPreview{}, err
 	}
-	trusted, err := m.packageTrusted(p)
+	trusted, installed, err := m.assessPackage(p)
 	if err != nil {
 		return ImportPreview{}, err
 	}
 	if p.Manifest.Surfaces == nil {
 		p.Manifest.Surfaces = []string{}
 	}
-	return ImportPreview{Manifest: p.Manifest, Digest: p.Digest, Publisher: p.Publisher, PublicKey: p.PublicKey, Fingerprint: keyFingerprint(p.PublicKey), Trusted: trusted, Compatibility: p.Manifest.Compatibility(m.host)}, nil
+	return ImportPreview{Manifest: p.Manifest, Digest: p.Digest, Publisher: p.Publisher, PublicKey: p.PublicKey, Fingerprint: keyFingerprint(p.PublicKey), Trusted: trusted, Compatibility: p.Manifest.Compatibility(m.host), PublisherMigration: publisherMigration(installed, p)}, nil
 }

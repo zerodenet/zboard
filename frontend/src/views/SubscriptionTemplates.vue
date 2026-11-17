@@ -1,14 +1,16 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="订阅模板" description="管理用户可选的订阅格式、规则集和输出配置；列表只读取摘要，编辑时再加载详细配置。" eyebrow="Delivery">
+    <template v-if="!editorOpen">
+    <PageHeader title="订阅模板">
       <template #actions>
         <PageRefreshButton label="刷新订阅模板" :loading="loading" @click="load" />
-        <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建模板</UiButton>
+        <UiButton type="button" data-template-create @click="openCreate"><UiIcon name="plus" />新建模板</UiButton>
       </template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="模板操作已完成" error-title="模板操作失败" />
 
+    <PageAlert v-if="templateDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ templateDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="templateDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(search || activeFilter)" @clear="resetFilters">
@@ -18,30 +20,38 @@
       </template>
 
       <TableSkeleton v-if="loading && !templates.length" label="正在加载订阅模板" :columns="7" />
-      <DataTable v-else-if="templates.length" caption="订阅模板列表；状态使用图标标签，排序直接显示数字，更新时间经过格式化并保留精确时间提示" :row-count="total" :min-width="980" table-class="template-table">
+      <DataTable v-else-if="templates.length" caption="订阅模板列表" :row-count="total" :min-width="980" table-class="template-table">
           <thead><tr><th class="table-primary-column">模板</th><th data-column-priority="2">链接参数</th><th data-column-priority="3">输出格式</th><th>状态</th><th class="numeric-column" data-column-priority="3">排序</th><th data-column-priority="2">更新时间</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
           <tbody><tr v-for="item in templates" :key="item.id">
-            <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.description || '暂无说明'" /></div></td>
+            <td class="table-primary-column"><div class="cell-title"><EntityDetailButton :data-template-return="item.id" :label="`编辑模板 ${item.name}`" @click="openEdit(item)">{{ item.name }}</EntityDetailButton><TableText v-if="item.description" :value="item.description" /></div></td>
             <td data-column-priority="2"><TableText class="mono" :value="`?template=${item.slug}`" /></td>
-            <td data-column-priority="3"><StatusBadge :tone="item.renderer === 'unsupported' ? 'warning' : 'info'" icon="audit" :title="item.content_type || undefined">{{ rendererLabel(item.renderer) }}</StatusBadge></td>
-            <td><StatusBadge :tone="item.is_active ? 'success' : 'neutral'" :icon="item.is_active ? 'check' : 'minus'">{{ item.is_active ? '用户可选' : '已停用' }}</StatusBadge></td>
+            <td data-column-priority="3"><TableText :value="rendererLabel(item.renderer)" /></td>
+            <td><UiSwitch :model-value="item.is_active" :aria-label="`启用模板 ${item.name}`" :aria-busy="statusChangingID === item.id || undefined" :title="item.renderer === 'unsupported' ? '请先选择支持的输出格式' : undefined" :disabled="Boolean(statusChangingID) || item.renderer === 'unsupported'" @update:model-value="value => toggleActive(item, value)" /></td>
             <td class="numeric-column" data-column-priority="3">{{ item.sort_order }}</td>
             <td data-column-priority="2"><TimeBadge :value="item.updated_at" /></td>
             <td class="table-action-column"><RowActions :label="`${item.name} 的操作`" :trigger-key="`template-${item.id}`">
               <UiButton variant="secondary" size="sm" type="button" :loading="editingID === item.id" :data-template-editor-trigger="item.id" @click="openEdit(item)"><UiIcon name="edit" />编辑</UiButton>
-              <UiButton variant="ghost" size="sm" type="button" :loading="statusChangingID === item.id" :disabled="item.renderer === 'unsupported'" @click="toggleActive(item)"><UiIcon :name="item.is_active ? 'minus' : 'check'" />{{ item.is_active ? '停用' : '启用' }}</UiButton>
               <UiButton variant="danger" size="sm" type="button" :loading="deletingID === item.id" @click="remove(item)">删除</UiButton>
             </RowActions></td>
           </tr></tbody>
       </DataTable>
-      <EmptyState v-else-if="!loading" icon="audit" :title="search || activeFilter ? '没有匹配模板' : '还没有订阅格式'" :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '尚未配置可供用户选择的订阅输出格式；请创建并选择一个系统支持的格式。'">
-        <template v-if="!search && !activeFilter" #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建模板</UiButton></template>
+      <EmptyState v-else-if="!loading && !error" icon="audit" :title="search || activeFilter ? '没有匹配模板' : '还没有订阅格式'" :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '尚未配置可供用户选择的订阅输出格式；请创建并选择一个系统支持的格式。'">
+        <template v-if="!search && !activeFilter" #actions><UiButton type="button" data-template-create @click="openCreate"><UiIcon name="plus" />新建模板</UiButton></template>
       </EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑订阅模板' : '新建订阅模板'" description="选择目标客户端格式；完整配置格式支持策略与规则定制，节点订阅格式只负责安全生成节点。" size="xl" :busy="saving || previewing" :return-focus-selector="form.id ? `[data-row-action-trigger='template-${form.id}']` : ''" @close="closeEditor">
+    </template>
+    <section v-else class="template-workspace">
+      <div class="template-workspace-heading">
+        <PageHeader :show-section-navigation="false" :title="form.id ? form.name || '编辑订阅模板' : '新建订阅模板'">
+          <template #actions><span v-if="editorState.dirty.value" class="muted">未保存</span><UiButton variant="secondary" :disabled="saving" @click="requestClose">返回列表</UiButton><UiButton form="subscription-template-form" type="submit" :loading="saving" :disabled="revisionConflict">校验并保存</UiButton></template>
+        </PageHeader>
+      </div>
+      <UiTabs v-model="workspaceTab" class="template-workspace-mobile-tabs" :items="[{ label: '编辑', value: 'edit' }, { label: '预览', value: 'preview' }]" label="模板工作区" />
+      <div class="template-editor-grid" :data-mobile-panel="workspaceTab">
       <form id="subscription-template-form" ref="formElement" class="template-editor" novalidate @submit.prevent="save">
+        <fieldset :disabled="saving" class="template-editor-fields">
         <div v-if="form.id" class="editor-meta">
           <StatusBadge tone="neutral" icon="history">版本 {{ form.revision }}</StatusBadge>
           <TimeBadge :value="form.updated_at" />
@@ -53,7 +63,7 @@
         <PageAlert v-if="editorErrors.formError.value" tone="danger" title="无法保存模板">{{ editorErrors.formError.value }}</PageAlert>
         <section class="editor-section" aria-labelledby="template-basic-title">
           <header class="editor-section-heading">
-            <div><strong id="template-basic-title">基本信息</strong><span>这些信息决定模板在用户端的名称和订阅链接。</span></div>
+            <div><strong id="template-basic-title">基本信息</strong></div>
           </header>
           <div class="form-grid">
             <FormField label="模板名称" name="template-name" :error="editorErrors.fields.name" required>
@@ -62,10 +72,10 @@
             <FormField label="链接标识" name="template-slug" :error="editorErrors.fields.slug" hint="仅小写字母、数字和单个连字符；会写入订阅 URL。" required>
               <template #default="{ controlAttrs }"><UiInput v-model.trim="form.slug" v-bind="controlAttrs" maxlength="80" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="例如：clash" /></template>
             </FormField>
-            <FormField label="说明" name="template-description" :error="editorErrors.fields.description" hint="向管理员说明适用客户端和用途。">
+            <FormField label="说明" name="template-description" :error="editorErrors.fields.description">
               <template #default="{ controlAttrs }"><UiInput v-model.trim="form.description" v-bind="controlAttrs" maxlength="255" placeholder="例如：适用于 Clash Meta 和 Mihomo" /></template>
             </FormField>
-            <FormField label="排序" name="template-sort-order" :error="editorErrors.fields.sort_order" hint="数字越小越靠前；不确定时保留 0。">
+            <FormField label="排序" name="template-sort-order" :error="editorErrors.fields.sort_order" hint="数字越小越靠前。">
               <template #default="{ controlAttrs }"><UiNumberInput v-model="form.sort_order" v-bind="controlAttrs" inputmode="numeric" /></template>
             </FormField>
             <label class="check-field field-full"><UiCheckbox v-model="form.is_active" /><span><strong>允许用户选择</strong><br /><small class="field-hint">停用后已有带此参数的链接会返回未找到。</small></span></label>
@@ -74,61 +84,52 @@
 
         <section class="editor-section" aria-labelledby="template-output-title">
           <header class="editor-section-heading">
-            <div><strong id="template-output-title">输出方式</strong><span>系统负责协议字段、动态节点和凭据注入，不需要编写模板代码。</span></div>
+            <div><strong id="template-output-title">输出方式</strong></div>
           </header>
           <TemplateOutputModePicker v-model="form.renderer" />
 
-          <div v-if="selectedOutput" class="standard-output-summary">
-            <span class="standard-output-icon"><UiIcon name="shield" /></span>
-            <div>
-              <strong>已绑定 {{ selectedOutput.label }} 渲染器</strong>
-              <span v-if="selectedOutput.mode === 'full'">协议和凭据由后端安全生成；策略组、规则集和客户端路由可以继续定制，响应类型固定为 {{ selectedOutput.contentType }}。</span>
-              <span v-else>协议和凭据由后端安全生成；该格式只输出客户端节点订阅，不隐式生成策略组或规则，响应类型固定为 {{ selectedOutput.contentType }}。</span>
-            </div>
-            <StatusBadge tone="success" icon="check">{{ selectedOutput.mode === 'full' ? '完整配置' : '节点订阅' }}</StatusBadge>
-          </div>
-          <PageAlert v-else tone="warning" title="旧模板已停用">该记录来自无法自动转换的旧技术模板。请选择一个系统支持的输出格式后才能重新启用。</PageAlert>
-          <SubscriptionTemplateCustomizer v-if="selectedOutput?.mode === 'full'" v-model="form.customization" :renderer="form.renderer" :error="editorErrors.fields['template-customization']" @raw-error="rawCustomizationError = $event" />
-          <PageAlert v-else-if="selectedOutput" tone="info" title="该标准订阅协议只承载节点">
-            {{ selectedOutput.label }} 模板只负责导出兼容节点与凭据。DNS、TUN、本地代理开关、运行模式、DIRECT、REJECT、策略组和规则集都属于客户端全局设置，无法写入这种节点订阅；界面不会保存后又静默丢弃这些字段。
-          </PageAlert>
+          <PageAlert v-if="!selectedOutput" tone="warning" title="模板不可用">请选择支持的输出格式。</PageAlert>
+          <SubscriptionTemplateCustomizer v-if="selectedOutput?.mode === 'full'" v-model="form.customization" :renderer="form.renderer" :error="editorErrors.fields['template-customization']" @raw-error="rawCustomizationError = $event" @select-group="focusedPreviewGroup = $event" />
+
         </section>
 
-        <section class="template-preview" aria-labelledby="template-preview-title">
-          <header><div><strong id="template-preview-title">示例输出</strong><span>使用当前输出格式生成，不会保存草稿。</span></div><UiButton variant="secondary" size="sm" type="button" :loading="previewing" @click="runPreview"><UiIcon name="search" />生成预览</UiButton></header>
-          <div v-if="previewResult" class="preview-meta">
-            <StatusBadge :tone="previewStale ? 'warning' : 'success'" :icon="previewStale ? 'edit' : 'check'">{{ previewStale ? '模板配置已修改，请重新生成' : '当前模板配置已验证' }}</StatusBadge>
-            <span>{{ previewResult.line_count }} 行</span><span>{{ previewResult.bytes.toLocaleString('zh-CN') }} 字节</span>
-          </div>
-          <PageAlert v-if="previewResult?.truncated" tone="warning" title="预览已截断">渲染结果超过 256 KiB；这里显示可安全传输的前段内容，保存仍按完整 2 MiB 上限校验。</PageAlert>
-          <OutputBlock v-if="previewResult" :value="previewResult.content" label="示例渲染结果" :max-length="262144" />
-          <div v-else class="preview-empty"><UiIcon name="audit" /><div><strong>尚未生成示例输出</strong><span>生成预览后可以确认客户端最终收到的内容。</span></div></div>
-        </section>
+        </fieldset>
       </form>
-      <template #footer="{ requestClose }">
-        <UiButton variant="secondary" type="button" :disabled="saving || previewing" @click="requestClose">取消</UiButton>
-        <UiButton form="subscription-template-form" type="submit" :loading="saving" :disabled="previewing || revisionConflict">校验并保存</UiButton>
-      </template>
-    </ModalDialog>
+      <aside class="template-preview-pane">
+        <div class="template-preview-source">
+          <FormField v-slot="{ controlAttrs }" label="预览样本" name="template-preview-source"><UiSelect v-model="sampleMode" v-bind="controlAttrs" :options="[{ label: '示例节点', value: 'example' }, { label: '实际订阅', value: 'subscription' }]" /></FormField>
+          <AdminOrderLookup v-if="sampleMode === 'subscription'" v-model="sampleSubscription" label="订阅样本" input-id="template-preview-subscription" placeholder="搜索用户邮箱或套餐" :disabled="!app.isAdmin" :fetch-page="fetchPreviewSubscriptions" />
+        </div>
+        <SubscriptionTemplatePreview :preview="previewResult" :loading="previewing" :stale="previewStale" :error="livePreview.error.value" :invalid="previewInvalid" :focus-group="focusedPreviewGroup" @retry="runPreview" />
+      </aside>
+      </div>
+    </section>
   </section>
 </template>
 
 <script setup lang="ts">
 import TableText from '../components/TableText.vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { createSubscriptionTemplate, deleteSubscriptionTemplate, fetchSubscriptionTemplate, fetchSubscriptionTemplatesPage, previewSubscriptionTemplate, updateSubscriptionTemplate, type SubscriptionRenderer, type SubscriptionTemplate, type SubscriptionTemplateCustomization, type SubscriptionTemplatePreview } from '../api/client'
+import { createSubscriptionTemplate, deleteSubscriptionTemplate, fetchSubscriptionTemplate, fetchSubscriptionTemplatesPage, fetchSubscriptionsPage, updateSubscriptionTemplate, type SubscriptionRenderer, type SubscriptionTemplate, type SubscriptionTemplateCustomization } from '../api/client'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FormField from '../components/FormField.vue'
-import ModalDialog from '../components/ModalDialog.vue'
-import OutputBlock from '../components/OutputBlock.vue'
+import SubscriptionTemplatePreview from '../components/SubscriptionTemplatePreview.vue'
+import AdminOrderLookup from '../components/AdminOrderLookup.vue'
+import UiTabs from '../components/UiTabs.vue'
+import UiSelect from '../components/UiSelect.vue'
+import { useAppStore } from '../stores/app'
+import { useSubscriptionTemplatePreview } from '../composables/useSubscriptionTemplatePreview'
+import type { AssignmentChoice } from '../utils/adminOrderAssignment'
 import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import RowActions from '../components/RowActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import UiSwitch from '../components/UiSwitch.vue'
+import EntityDetailButton from '../components/EntityDetailButton.vue'
 import SubscriptionTemplateCustomizer from '../components/SubscriptionTemplateCustomizer.vue'
 import TablePager from '../components/TablePager.vue'
 import TemplateOutputModePicker from '../components/TemplateOutputModePicker.vue'
@@ -147,6 +148,9 @@ import {
   defaultSubscriptionCustomization,
   normalizeSubscriptionCustomization,
   subscriptionPolicyGroupTypeOptions,
+  subscriptionPolicyGroupDefaultTarget,
+  subscriptionPolicyGroupIncludesDirect,
+  subscriptionPolicyGroupIncludesReject,
   subscriptionRendererSupportsPolicyConfig,
   subscriptionRendererSupportsRuntimeNetwork,
   subscriptionTemplateOutput,
@@ -154,6 +158,8 @@ import {
   type SupportedSubscriptionRenderer,
 } from '../utils/subscriptionTemplateEditor'
 import { collectFieldErrors, isHttpUrl, isIntegerInRange, isOneOf, isSlug, isUtf8LengthInRange } from '../utils/validation'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { templateRecoveryFields, templateRecoveryCustomization, restoreTemplateCustomization, templateURLReferenceOrigin, subscriptionTemplateRecoveryDraft, type TemplateRecoveryFields } from '../utils/subscriptionEditorRecovery'
 
 type EditableRenderer = SubscriptionRenderer | SupportedSubscriptionRenderer
 
@@ -168,14 +174,20 @@ const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.valu
 const search = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const activeFilter = ref(typeof route.query.active === 'string' ? route.query.active : '')
 const emptyForm = () => ({ id: 0, name: '', slug: '', description: '', renderer: 'clash' as EditableRenderer, customization: defaultSubscriptionCustomization('clash'), content_type: 'application/yaml' as SubscriptionTemplate['content_type'], is_active: true, sort_order: 0, revision: 0, created_at: '', updated_at: '' })
-const saving = ref(false), previewing = ref(false), editorOpen = ref(false)
+const saving = ref(false), editorOpen = ref(false)
+const app = useAppStore()
+const workspaceTab = ref('edit'), sampleMode = ref('example'), sampleSubscription = ref<AssignmentChoice | null>(null)
+const focusedPreviewGroup = ref('')
 const editingID = ref(0), deletingID = ref(0), statusChangingID = ref(0)
 const message = ref('')
 const editorRouteKey = ref(typeof route.query.template === 'string' ? route.query.template : '')
 const revisionConflict = ref(false)
 const rawCustomizationError = ref('')
-const previewResult = ref<SubscriptionTemplatePreview | null>(null)
-const previewSource = ref('')
+const templateRecoveryReady = ref(false)
+const templateRecoveryBaseline = ref<TemplateRecoveryFields | null>(null)
+let templateOriginalRenderer: EditableRenderer = 'clash'
+let templateOriginalCustomization = defaultSubscriptionCustomization('clash')
+const templateRetainedURLOrigins = new Map<EditableRenderer, SubscriptionTemplateCustomization>()
 const formElement = ref<HTMLElement | null>(null)
 const form = reactive(emptyForm())
 const rendererDrafts = new Map<EditableRenderer, SubscriptionTemplateCustomization>()
@@ -191,8 +203,26 @@ useUnsavedChangesGuard(
 )
 const editorErrors = useFormErrors()
 const templateFieldMap: Record<string, string> = { name: 'name', slug: 'slug', description: 'description', renderer: 'renderer', customization: 'template-customization', sort_order: 'sort_order' }
-const currentPreviewSource = computed(() => JSON.stringify({ renderer: form.renderer, customization: form.customization }))
-const previewStale = computed(() => Boolean(previewResult.value) && previewSource.value !== currentPreviewSource.value)
+const previewInvalid = computed(() => rawCustomizationError.value || (sampleMode.value === 'subscription' && !sampleSubscription.value ? '请选择订阅样本。' : validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)))
+const livePreview = useSubscriptionTemplatePreview({
+  enabled: computed(() => editorOpen.value && Boolean(app.isAdmin) && !app.reauthRequired),
+  identity: computed(() => `${app.user?.id || 0}:${app.sessionEpoch || 0}:${app.token || ''}:${Boolean(app.isAdmin)}`),
+  request: computed(() => ({ renderer: form.renderer as SubscriptionRenderer, customization: form.customization, live: true, full_content: true, ...(sampleMode.value === 'subscription' && sampleSubscription.value ? { subscription_id: sampleSubscription.value.id } : {}) })),
+  invalid: previewInvalid,
+})
+const previewResult = livePreview.result, previewing = livePreview.loading, previewStale = livePreview.stale
+watch([editorOpen, () => form.id], () => { sampleMode.value = 'example'; sampleSubscription.value = null; workspaceTab.value = 'edit'; focusedPreviewGroup.value = '' })
+watch(() => `${app.user?.id || 0}:${app.sessionEpoch || 0}:${Boolean(app.isAdmin)}`, () => { sampleMode.value = 'example'; sampleSubscription.value = null })
+watch(() => `${app.user?.id || 0}:${Boolean(app.isAdmin)}`, (_identity, previous) => {
+  if (!previous || !editorOpen.value) return
+  detailRequestSequence++
+  editorOpen.value = false; editorRouteKey.value = ''
+  Object.assign(form, emptyForm()); editorState.markClean()
+}, { flush: 'sync' })
+async function fetchPreviewSubscriptions(query: string, offset: number, signal: AbortSignal) {
+  const page = await fetchSubscriptionsPage({ q: query || undefined, status: 'active', quota: 'available', offset, limit: 25 }, { signal })
+  return { total: page.total, items: page.items.map(item => ({ id: item.id, label: `${item.user_email} · ${item.plan_name} · ${item.sku_name} #${item.id}` })) }
+}
 const selectedOutput = computed(() => subscriptionTemplateOutput(form.renderer))
 for (const field of Object.keys(templateFieldMap)) {
   if (field === 'customization') continue
@@ -200,12 +230,62 @@ for (const field of Object.keys(templateFieldMap)) {
 }
 watch(() => JSON.stringify(form.customization), () => editorErrors.clear('template-customization'))
 let detailRequestSequence = 0
-const { items: templates, total, loading, refreshing, error, load } = useRemoteTable<SubscriptionTemplate>({
+const { items: templates, total, loading, refreshing, error, load, hasLoaded: templateListLoaded } = useRemoteTable<SubscriptionTemplate>({
   offset,
   limit,
   fetchPage: ({ signal }) => fetchSubscriptionTemplatesPage({ q: search.value || undefined, active: activeFilter.value === '' ? undefined : activeFilter.value === 'true', offset: offset.value, limit: limit.value }, { signal }),
   errorMessage: (cause: any) => cause?.response?.data?.message || '订阅模板加载失败。',
   onOffsetCorrected: () => syncURL(true),
+})
+
+function originalForRenderer(renderer: EditableRenderer) {
+  return templateRetainedURLOrigins.get(renderer) || (renderer === templateOriginalRenderer ? templateOriginalCustomization : defaultSubscriptionCustomization(renderer))
+}
+function readTemplateRecoveryDraft() {
+  if (rawCustomizationError.value) return undefined
+  const fields = templateRecoveryFields(form, originalForRenderer(form.renderer as EditableRenderer), true)
+  const drafts = new Map(rendererDrafts)
+  drafts.set(form.renderer as EditableRenderer, form.customization)
+  const stored = [...drafts].map(([renderer, customization]) => ({ renderer, customization: templateRecoveryCustomization(customization, originalForRenderer(renderer), true) }))
+  if (!fields || stored.some(item => !item.customization) || (form.id && !templateRecoveryBaseline.value)) return undefined
+  return { id: form.id, revision: form.revision, fields, baseline: templateRecoveryBaseline.value, rendererDrafts: stored }
+}
+const templateDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.subscription-templates.editor', permission: 'admin', ready: () => templateRecoveryReady.value && templateListLoaded.value && !editingID.value,
+  // An unsafe open editor must fail capture, never look like an absent draft.
+  read: () => editorOpen.value ? readTemplateRecoveryDraft() || { blocked: true } : null,
+  sanitize: subscriptionTemplateRecoveryDraft,
+  restore: async (value, context) => {
+    const target = typeof route.query.template === 'string' ? route.query.template : ''
+    if (target && target !== (value.id ? String(value.id) : 'new')) return false
+    let fresh: SubscriptionTemplate | undefined
+    if (value.id) {
+      try { fresh = await fetchSubscriptionTemplate(value.id) }
+      catch (cause: any) { if (cause?.response?.status !== 404) throw cause }
+      if (!context.isCurrent()) return false
+    }
+    if (!context.isCurrent()) return false
+    const normalized = fresh ? normalizeSubscriptionCustomization(fresh.renderer, fresh.customization) : defaultSubscriptionCustomization(value.fields.renderer as EditableRenderer)
+    const current = fresh ? templateRecoveryFields({ ...fresh, customization: normalized }, normalized, true) : undefined
+    const conflict = value.id > 0 && (!fresh || fresh.id !== value.id || fresh.revision !== value.revision || JSON.stringify(current) !== JSON.stringify(value.baseline))
+    templateOriginalRenderer = (fresh?.renderer || value.fields.renderer) as EditableRenderer
+    templateOriginalCustomization = cloneCustomization(normalized)
+    templateRetainedURLOrigins.clear()
+    for (const entry of value.rendererDrafts) templateRetainedURLOrigins.set(entry.renderer as EditableRenderer, templateURLReferenceOrigin(entry.customization, originalForRenderer(entry.renderer as EditableRenderer)))
+    templateRetainedURLOrigins.set(value.fields.renderer as EditableRenderer, templateURLReferenceOrigin(value.fields.customization, originalForRenderer(value.fields.renderer as EditableRenderer)))
+    ++detailRequestSequence
+    suppressRendererDraftSwitch = true
+    Object.assign(form, { ...emptyForm(), ...fresh, ...value.fields, id: value.id, revision: value.revision,
+      customization: restoreTemplateCustomization(value.fields.customization, originalForRenderer(value.fields.renderer as EditableRenderer)) })
+    suppressRendererDraftSwitch = false
+    rendererDrafts.clear()
+    for (const entry of value.rendererDrafts) rendererDrafts.set(entry.renderer as EditableRenderer, restoreTemplateCustomization(entry.customization, originalForRenderer(entry.renderer as EditableRenderer)))
+    rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
+    templateRecoveryBaseline.value = value.baseline
+    rawCustomizationError.value = ''; editorErrors.clear(); revisionConflict.value = conflict
+
+    editorRouteKey.value = value.id ? String(value.id) : 'new'; editorOpen.value = true
+  },
 })
 
 async function syncURL(replace = false) {
@@ -217,8 +297,15 @@ async function syncURL(replace = false) {
 async function applyFilters() { offset.value = 0; await syncURL(); await load() }
 async function resetFilters() { search.value = ''; activeFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await load() }
-async function openCreate() { await router.push({ query: { ...route.query, template: 'new' } }) }
-async function openEdit(item: SubscriptionTemplate) { await router.push({ query: { ...route.query, template: String(item.id) } }) }
+let listScrollY = 0, returnTemplateID = 0
+async function restoreListFocus() {
+  await nextTick()
+  window.scrollTo({ top: listScrollY })
+  const target = document.querySelector<HTMLElement>(returnTemplateID ? `[data-template-return="${returnTemplateID}"]` : '[data-template-create]')
+  target?.focus({ preventScroll: true })
+}
+async function openCreate() { listScrollY = window.scrollY; returnTemplateID = 0; await router.push({ query: { ...route.query, template: 'new' } }) }
+async function openEdit(item: SubscriptionTemplate) { listScrollY = window.scrollY; returnTemplateID = item.id; await router.push({ query: { ...route.query, template: String(item.id) } }) }
 
 function rendererLabel(renderer: SubscriptionRenderer | string) {
   return subscriptionTemplateOutput(renderer as EditableRenderer)?.label || '旧格式（需转换）'
@@ -231,13 +318,17 @@ async function loadEditor(id: number) {
     const detail = await fetchSubscriptionTemplate(id)
     if (sequence !== detailRequestSequence) return
     suppressRendererDraftSwitch = true
-    Object.assign(form, detail, { customization: normalizeSubscriptionCustomization(detail.renderer, detail.customization) })
+    Object.assign(form, { ...detail, customization: normalizeSubscriptionCustomization(detail.renderer, detail.customization) })
     suppressRendererDraftSwitch = false
+    templateOriginalRenderer = form.renderer as EditableRenderer
+    templateOriginalCustomization = cloneCustomization(form.customization)
+    templateRetainedURLOrigins.clear()
+    templateRecoveryBaseline.value = form.id ? templateRecoveryFields(form, form.customization, true) || null : null
     rendererDrafts.clear()
     rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
     rawCustomizationError.value = ''
     editorState.markClean(); editorErrors.clear(); revisionConflict.value = false
-    previewResult.value = null; previewSource.value = ''; editorOpen.value = true
+    editorOpen.value = true
   } catch (e: any) {
     if (sequence === detailRequestSequence) error.value = e?.response?.data?.message || '订阅模板详情加载失败。'
   } finally {
@@ -258,11 +349,15 @@ async function syncEditorFromRoute() {
     suppressRendererDraftSwitch = true
     Object.assign(form, emptyForm())
     suppressRendererDraftSwitch = false
+    templateOriginalRenderer = form.renderer as EditableRenderer
+    templateOriginalCustomization = cloneCustomization(form.customization)
+    templateRetainedURLOrigins.clear()
+    templateRecoveryBaseline.value = form.id ? templateRecoveryFields(form, form.customization, true) || null : null
     rendererDrafts.clear()
     rendererDrafts.set(form.renderer as EditableRenderer, cloneCustomization(form.customization))
     rawCustomizationError.value = ''
     editorState.markClean(); editorErrors.clear()
-    revisionConflict.value = false; previewResult.value = null; previewSource.value = ''; editorOpen.value = true
+    revisionConflict.value = false; editorOpen.value = true
     return
   }
   const id = Number(target)
@@ -276,9 +371,9 @@ async function syncEditorFromRoute() {
 }
 
 async function closeEditor() {
-  if (saving.value || previewing.value) return
+  if (saving.value) return
   editorState.markClean(); editorOpen.value = false; editorRouteKey.value = ''
-  revisionConflict.value = false; await syncURL()
+  revisionConflict.value = false; await syncURL(); await restoreListFocus()
 }
 
 async function reloadEditor() {
@@ -286,25 +381,14 @@ async function reloadEditor() {
   await loadEditor(form.id)
 }
 
-async function runPreview() {
-  const customizationError = rawCustomizationError.value || validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
-  const valid = await editorErrors.applyValidation(collectFieldErrors({
-    renderer: !isOneOf(form.renderer, supportedRenderers) && '请选择系统支持的订阅输出格式。',
-    'template-customization': customizationError,
-  }), formElement, '请选择有效的输出格式后再生成预览。')
-  if (!valid) return
-  previewing.value = true
-  try {
-    previewResult.value = await previewSubscriptionTemplate({ renderer: form.renderer as SubscriptionRenderer, customization: form.customization })
-    previewSource.value = currentPreviewSource.value
-  } catch (e: any) {
-    await editorErrors.applyApiError(e, '示例输出生成失败，请检查所选格式。', formElement, templateFieldMap)
-  } finally {
-    previewing.value = false
-  }
+async function runPreview() { await livePreview.refresh() }
+async function requestClose() {
+  if (saving.value || !await editorState.confirmDiscard()) return
+  await closeEditor()
 }
 
 async function save() {
+  if (saving.value || revisionConflict.value) return
   form.name = form.name.trim()
   form.slug = form.slug.trim().toLowerCase()
   form.description = form.description.trim()
@@ -324,25 +408,32 @@ async function save() {
     }
   }
   const customizationError = rawCustomizationError.value || validateCustomizationDraft(form.renderer as EditableRenderer, form.customization)
-  const valid = await editorErrors.applyValidation(collectFieldErrors({
+  const fields = collectFieldErrors({
     name: !isUtf8LengthInRange(form.name, 1, 80, true) && '模板名称需包含 1 到 80 个 UTF-8 字节。',
     slug: !isSlug(form.slug, 80) && '链接标识只能包含小写字母、数字和单个连字符，且不能超过 80 个 UTF-8 字节。',
     description: !isUtf8LengthInRange(form.description, 0, 255) && '模板说明不能超过 255 个 UTF-8 字节。',
     renderer: !isOneOf(form.renderer, supportedRenderers) && '请选择系统支持的订阅输出格式。',
     'template-customization': customizationError,
     sort_order: !isIntegerInRange(form.sort_order, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER) && '排序必须为整数。',
-  }), formElement, '请更正标记字段后再校验模板。')
+  })
+  if (Object.keys(fields).length) { workspaceTab.value = 'edit'; await nextTick() }
+  const valid = await editorErrors.applyValidation(fields, formElement, '请更正标记字段后再校验模板。')
   if (!valid) return
   saving.value = true; message.value = ''
+  const sequence = detailRequestSequence, actor = `${app.user?.id || 0}:${app.token || ''}`
+  const sameEditor = () => editorOpen.value && sequence === detailRequestSequence && actor === `${app.user?.id || 0}:${app.token || ''}`
   try {
-    const payload = { name: form.name, slug: form.slug, description: form.description, renderer: form.renderer as SubscriptionRenderer, customization: form.customization, is_active: form.is_active, sort_order: Number(form.sort_order || 0), ...(form.id ? { expected_revision: form.revision } : {}) }
+    const payload = { name: form.name, slug: form.slug, description: form.description, renderer: form.renderer as SubscriptionRenderer, customization: cloneCustomization(form.customization), is_active: form.is_active, sort_order: Number(form.sort_order || 0), ...(form.id ? { expected_revision: form.revision } : {}) }
     if (form.id) await updateSubscriptionTemplate(form.id, payload); else await createSubscriptionTemplate(payload)
+    if (!sameEditor()) return
     editorState.markClean(); editorOpen.value = false; editorRouteKey.value = ''; revisionConflict.value = false
-    message.value = '订阅模板格式和输出配置已保存。'; await syncURL(true); await load()
+    message.value = '订阅模板格式和输出配置已保存。'; await syncURL(true); await load(); await restoreListFocus()
   } catch (e: any) {
+    if (!sameEditor()) return
     if (e?.response?.status === 409) {
       revisionConflict.value = true
     } else {
+      workspaceTab.value = 'edit'; await nextTick()
       await editorErrors.applyApiError(e, '订阅模板保存失败，请检查表单内容。', formElement, templateFieldMap)
     }
   }
@@ -357,12 +448,13 @@ async function remove(item: SubscriptionTemplate) {
   finally { deletingID.value = 0 }
 }
 
-async function toggleActive(item: SubscriptionTemplate) {
-  if (item.is_active && !await confirmAction({ title: '停用订阅模板', message: `停用“${item.name}”后，用户将不能再选择或使用 ?template=${item.slug}。`, confirmText: '确认停用', tone: 'danger' })) return
+async function toggleActive(item: SubscriptionTemplate, enabled: boolean) {
+  if (statusChangingID.value || item.renderer === 'unsupported' || item.is_active === enabled) return
   statusChangingID.value = item.id
   error.value = ''
   message.value = ''
   try {
+    if (!enabled && !await confirmAction({ title: '停用订阅模板', message: `停用“${item.name}”后，用户将不能再选择或使用 ?template=${item.slug}。`, confirmText: '确认停用', tone: 'danger' })) return
     const detail = await fetchSubscriptionTemplate(item.id)
     await updateSubscriptionTemplate(item.id, {
       name: detail.name,
@@ -370,11 +462,11 @@ async function toggleActive(item: SubscriptionTemplate) {
       description: detail.description,
       renderer: detail.renderer,
       customization: detail.customization,
-      is_active: !detail.is_active,
+      is_active: enabled,
       sort_order: detail.sort_order,
       expected_revision: detail.revision,
     })
-    message.value = detail.is_active ? '订阅模板已停用。' : '订阅模板已启用。'
+    message.value = enabled ? '订阅模板已启用。' : '订阅模板已停用。'
     await load()
   } catch (cause: any) {
     error.value = cause?.response?.data?.message || '订阅模板状态更新失败。'
@@ -402,8 +494,6 @@ watch(() => form.renderer, (next, previous) => {
   const nextDraft = rendererDrafts.get(next as EditableRenderer)
   form.customization = nextDraft ? cloneCustomization(nextDraft) : defaultSubscriptionCustomization(next as EditableRenderer)
   rawCustomizationError.value = ''
-  previewResult.value = null
-  previewSource.value = ''
 }, { flush: 'sync' })
 
 onBeforeRouteUpdate(async (to, from) => {
@@ -418,7 +508,7 @@ onBeforeRouteUpdate(async (to, from) => {
   })
 })
 
-onMounted(async () => { await load(); await syncEditorFromRoute() })
+onMounted(async () => { await load(); await syncEditorFromRoute(); templateRecoveryReady.value = true })
 
 function cloneCustomization(value: SubscriptionTemplateCustomization): SubscriptionTemplateCustomization {
   return JSON.parse(JSON.stringify(value))
@@ -462,7 +552,9 @@ function validateCustomizationDraft(renderer: EditableRenderer, customization: S
     const included = new Set(group.include_groups || [])
     if (included.has(group.id)) return `第 ${index + 1} 个策略组不能包含自身。`
     if ([...included].some(id => !groupIDs.has(id))) return `第 ${index + 1} 个策略组包含了不存在的策略组。`
-    if (group.default_group && (!included.has(group.default_group) || group.type !== 'select')) return `第 ${index + 1} 个策略组默认成员配置无效。`
+    const target = subscriptionPolicyGroupDefaultTarget(group)
+    if (group.default_group && group.default_target && group.default_target !== `group:${group.default_group}`) return `第 ${index + 1} 个策略组新旧默认配置冲突。`
+    if (target && (group.type !== 'select' || !(target === 'direct' ? subscriptionPolicyGroupIncludesDirect(group) : target === 'reject' ? renderer !== 'sing-box' && subscriptionPolicyGroupIncludesReject(group) : target.startsWith('group:') && included.has(target.slice(6))))) return `第 ${index + 1} 个策略组默认选中项必须在成员列表中。`
   }
   if (hasPolicyGroupCycle(customization)) return '策略组之间不能形成循环引用。'
   if (!isValidSubscriptionTarget(customization.final, groupIDs, false)) return '最终路由必须指向现有策略组或直连。'
@@ -552,6 +644,24 @@ function hasPolicyGroupCycle(customization: SubscriptionTemplateCustomization) {
 </script>
 
 <style scoped>
+.template-workspace { min-width: 0; }
+.template-workspace-heading { position: sticky; top: 64px; z-index: 20; padding: 8px 0 16px; background: var(--workspace-background); }
+.template-workspace-heading :deep(.page-header) { margin-bottom: 0; align-items: center; flex-wrap: wrap; }
+.template-workspace-heading :deep(.page-header > div:first-child) { min-width: 0; flex: 1; }
+.template-workspace-heading :deep(h1) { font-size: 24px; overflow-wrap: anywhere; }
+.template-workspace-heading :deep(.page-actions) { flex: none; flex-wrap: wrap; }
+.template-workspace-mobile-tabs { display: none; }
+.template-editor-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(360px, 1fr); align-items: start; gap: 24px; min-width: 0; }
+.template-editor-fields { margin: 0; padding: 20px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); display: grid; gap: 24px; }
+.template-preview-pane { position: sticky; top: 150px; max-height: calc(100dvh - 170px); overflow: auto; min-width: 0; display: grid; gap: 12px; }
+.template-preview-source { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); }
+@media(max-width:1100px) {
+  .template-workspace-mobile-tabs { display: block; margin-bottom: 16px; }
+  .template-editor-grid { display: block; }
+  .template-editor-grid[data-mobile-panel='edit'] > .template-preview-pane, .template-editor-grid[data-mobile-panel='preview'] > .template-editor { display: none; }
+  .template-preview-pane { position: static; max-height: none; overflow: visible; }
+  .template-editor-fields { padding: 16px; }
+}
 :deep(.template-table code){color:var(--code-text);background:var(--code-soft);padding:3px 6px;border-radius:5px}
 .template-editor{display:grid;gap:18px}
 .editor-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
@@ -561,19 +671,11 @@ function hasPolicyGroupCycle(customization: SubscriptionTemplateCustomization) {
 .editor-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:9px;border-bottom:1px solid var(--line)}
 .editor-section-heading>div{display:grid;gap:3px}
 .editor-section-heading strong{color:var(--text-strong);font-size:12px}
-.editor-section-heading span{color:var(--muted);font-size:10px;line-height:1.5}
-.standard-output-summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;padding:11px 12px;border:1px solid color-mix(in srgb,var(--success) 22%,var(--line));border-radius:9px;background:var(--success-soft)}
-.standard-output-icon{display:grid;width:30px;height:30px;place-items:center;border-radius:8px;color:var(--success);background:var(--surface)}
-.standard-output-summary>div{display:grid;gap:2px}.standard-output-summary strong{color:var(--text-strong);font-size:11px}.standard-output-summary span{color:var(--muted);font-size:9px;line-height:1.5}
-.template-preview{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.template-preview>header{min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px 9px 13px;border-bottom:1px solid var(--line)}
-.template-preview>header>div{display:grid;gap:2px}.template-preview>header strong{color:var(--text-strong);font-size:11px}.template-preview>header span{color:var(--muted);font-size:9px}
-.preview-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:9px}
-.template-preview>.page-alert{margin:10px}
-.template-preview :deep(.output-block){margin:0;border:0;border-radius:0}
-.template-preview :deep(.output-block pre){max-height:330px}
-.preview-empty{min-height:112px;display:flex;align-items:center;justify-content:center;gap:10px;padding:20px;color:var(--muted);text-align:left}
-.preview-empty>div{display:grid;gap:3px}.preview-empty .ui-icon{width:24px;height:24px;color:var(--primary)}.preview-empty strong{color:var(--text-strong);font-size:11px}.preview-empty span{font-size:9px;line-height:1.55}
+.editor-section-heading span{color:var(--muted);font-size:12px;line-height:1.5}
+@media(max-width:700px) {
+  .template-workspace-heading :deep(.page-header) { align-items: stretch; gap: 12px; }
+  .template-workspace-heading :deep(.page-header > div:first-child) { flex: auto; width: 100%; text-align: left; }
+  .template-workspace-heading :deep(.page-actions) { justify-content: flex-start; align-self: stretch; }
+}
 @media(max-width:900px){.editor-conflict{grid-template-columns:1fr;align-items:start}}
-@media(max-width:700px){.standard-output-summary{grid-template-columns:auto minmax(0,1fr)}.standard-output-summary>.status-badge{grid-column:2}}
 </style>

@@ -7,7 +7,7 @@ import (
 
 func RecordQuotaEvent(tx *gorm.DB, sub model.Subscription, eventType string, delta, before, after int64, referenceType, referenceID string) error {
 	return tx.Create(&model.QuotaEvent{
-		SubscriptionID: sub.ID, EventType: eventType, DeltaBytes: delta,
+		EntitlementEpoch: sub.EntitlementEpoch, SubscriptionID: sub.ID, EventType: eventType, DeltaBytes: delta,
 		BalanceBefore: before, BalanceAfter: after,
 		ReferenceType: referenceType, ReferenceID: referenceID, Detail: "{}",
 	}).Error

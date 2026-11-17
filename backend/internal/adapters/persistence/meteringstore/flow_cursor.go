@@ -4,7 +4,6 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func FlowCursor(row model.FlowUsage) metering.FlowCursor {
@@ -31,10 +30,14 @@ func LoadFlowUsage(tx *gorm.DB, node uint, instance, flow string, credential uin
 	if key != flow {
 		keys = append(keys, flow)
 	}
-	var candidates []model.FlowUsage
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", node, keys).Find(&candidates).Error; err != nil {
+	candidates, err := loadFlowUsageCandidates(tx, node, keys)
+	if err != nil {
 		return model.FlowUsage{}, false, false, err
 	}
+	return selectFlowUsage(candidates, key, flow, credential, revision, current)
+}
+
+func selectFlowUsage(candidates []model.FlowUsage, key, flow string, credential uint, revision uint64, current metering.FlowCounters) (model.FlowUsage, bool, bool, error) {
 	row, found, legacy := PickFlowUsage(candidates, key, flow)
 	if !found {
 		return model.FlowUsage{}, false, false, nil

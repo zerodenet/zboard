@@ -30,12 +30,13 @@ const MaxInputBytes = 64 * 1024
 type Credential struct{ Kind, Proof string }
 
 type Principal struct {
-	Kind         string
-	Subject      string
-	AccountID    uint
-	CredentialID uint
-	PluginID     string
-	Generation   uint64
+	Kind            string
+	Subject         string
+	AccountID       uint
+	CredentialID    uint
+	PluginID        string
+	PaymentProvider string
+	Generation      uint64
 }
 
 type Grant struct {
@@ -193,7 +194,7 @@ func validPrincipal(principal Principal) bool {
 	switch principal.Kind {
 	case "integration":
 		return principal.CredentialID > 0 && principal.PluginID == "" && principal.Generation == 0
-	case "plugin_session":
+	case "native_plugin", "plugin_session":
 		return principal.CredentialID == 0 && strings.TrimSpace(principal.PluginID) != "" && principal.Generation > 0
 	default:
 		return false

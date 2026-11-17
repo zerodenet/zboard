@@ -1,6 +1,7 @@
 <template>
   <Button
-    type="button"
+    :type="asChild ? undefined : 'button'"
+    :as-child="asChild"
     v-bind="attrs"
     :variant="variant === 'primary' ? 'default' : variant === 'danger' ? 'destructive' : variant"
     :size="icon ? 'icon' : size === 'md' ? 'default' : size"
@@ -19,8 +20,9 @@ withDefaults(defineProps<{
   variant?: 'primary' | 'default' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'destructive' | 'link'
   size?: 'sm' | 'md' | 'lg'
   icon?: boolean
+  asChild?: boolean
   loading?: boolean
   disabled?: boolean
-}>(), { variant: 'primary', size: 'md', icon: false, loading: false, disabled: false })
+}>(), { variant: 'primary', size: 'md', icon: false, asChild: false, loading: false, disabled: false })
 const attrs = useAttrs()
 </script>

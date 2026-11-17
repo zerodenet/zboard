@@ -25,16 +25,27 @@ type BatchItem struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
+
+// BatchItemView belongs to administrative reads only. Display projections must
+// never become persistence columns when the execution repository loads items.
+type BatchItemView struct {
+	BatchItem
+	TargetName        string `json:"target_name,omitempty"`
+	TargetDescription string `json:"target_description,omitempty"`
+	TargetMissing     bool   `json:"target_missing,omitempty"`
+}
 type BatchView struct {
 	BatchReceipt
-	PendingCount   int64 `json:"pending_count"`
-	RunningCount   int64 `json:"running_count"`
-	SucceededCount int64 `json:"succeeded_count"`
-	FailedCount    int64 `json:"failed_count"`
+	PendingCount     int64 `json:"pending_count"`
+	RunningCount     int64 `json:"running_count"`
+	SucceededCount   int64 `json:"succeeded_count"`
+	FailedCount      int64 `json:"failed_count"`
+	NeedsReviewCount int64 `json:"needs_review_count"`
+	SuppressedCount  int64 `json:"suppressed_count"`
 }
 type BatchDetail struct {
 	BatchView
-	Items []BatchItem `json:"items,omitempty"`
+	Items []BatchItemView `json:"items,omitempty"`
 }
 type BatchSummary struct {
 	Total            int64 `json:"total"`
@@ -61,10 +72,10 @@ type BatchPage struct {
 	Limit  int         `json:"limit"`
 }
 type BatchItemPage struct {
-	Items  []BatchItem `json:"items"`
-	Total  int64       `json:"total"`
-	Offset int         `json:"offset"`
-	Limit  int         `json:"limit"`
+	Items  []BatchItemView `json:"items"`
+	Total  int64           `json:"total"`
+	Offset int             `json:"offset"`
+	Limit  int             `json:"limit"`
 }
 type BatchQueryRepository interface {
 	List(context.Context, uint, BatchFilter) (BatchPage, error)

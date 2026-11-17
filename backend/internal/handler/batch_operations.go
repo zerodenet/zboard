@@ -75,11 +75,11 @@ func (h *handlers) NodeBatchOperationHandler(w http.ResponseWriter, r *http.Requ
 	case "maintenance":
 		taskType = taskTypeNodeLifecycle
 		content.LifecycleStatus = "maintenance"
-	case "retire":
+	case "disable", "retire":
 		taskType = taskTypeNodeLifecycle
 		content.LifecycleStatus = "retired"
 	default:
-		BadRequest(w, "action must be detect, reconcile, activate, maintenance or retire")
+		BadRequest(w, "action must be detect, reconcile, activate, maintenance or disable")
 		return
 	}
 	ids, scope, err := h.resolveNodeBatchScope(r.Context(), req)
@@ -278,6 +278,12 @@ func (h *handlers) detectBatchNode(ctx context.Context, action network.BatchReso
 }
 
 func (h *handlers) reconcileBatchNode(ctx context.Context, action network.BatchResourceAction) error {
+	lock := h.nodePublishLock(action.NodeID)
+	if err := lock.Lock(ctx); err != nil {
+		return err
+	}
+	defer lock.Unlock()
+
 	preparer := network.KernelReconciliationPreparer(h)
 	if action.KernelArtifactID != "" {
 		preparer = offlineKernelPreparer{h: h, id: action.KernelArtifactID}

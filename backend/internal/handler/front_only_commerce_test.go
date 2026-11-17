@@ -62,6 +62,7 @@ func TestFrontOnlyProductPaymentDeliversParentCredentialWithoutDirectRoute(t *te
 	if err := f.h.db.First(&publication, parent.NodeID).Error; err != nil {
 		t.Fatal("parent publication missing", err)
 	}
+	confirmTestCredentialConfiguration(t, f.h, parent.NodeID)
 	// Simulate the publication being applied. This verifies the local paid
 	// entitlement and delivery boundary, not a remote Zero connection.
 	if err := f.h.db.Where("node_id = ?", parent.NodeID).Delete(&model.NodeConfigPublish{}).Error; err != nil {

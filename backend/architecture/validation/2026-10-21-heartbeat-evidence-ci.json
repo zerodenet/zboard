@@ -1,0 +1,56 @@
+{
+  "source": "c61df99a623b5a63c80a545685bbbf2013c9cdd4",
+  "run_id": 39520446048,
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39520446048",
+  "conclusion": "failure",
+  "jobs": [
+    {
+      "id": 118962724871,
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118962725076,
+      "name": "mysql",
+      "conclusion": "failure"
+    },
+    {
+      "id": 118962725143,
+      "name": "zrs-compiler",
+      "conclusion": "success"
+    },
+    {
+      "id": 118962725151,
+      "name": "compose",
+      "conclusion": "success"
+    },
+    {
+      "id": 118962725178,
+      "name": "backend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118962725203,
+      "name": "contract",
+      "conclusion": "success"
+    }
+  ],
+  "mysql": {
+    "datastore_seconds": 177.951,
+    "handler_timeout_seconds": 900.017,
+    "networkstore_seconds": 121.119,
+    "jobstore": "not executed after failed core command",
+    "platformstore_copy": "not executed after failed core command",
+    "active_test": "TestMySQLWalletOnlyPaymentRollsBackAndRacesWithoutDoubleSpend",
+    "active_seconds_displayed": 0,
+    "stack": "newMySQLOrderFixture -> newMySQLPublishHandlers:62 -> RunMigrations:127 -> preflightAutomaticRecurringApprovalSchema:21 -> HasTable",
+    "cause": "No attribution to last test; it was still in fixture preflight under package cumulative alarm."
+  },
+  "raw_log_sha256": "944fee95f3a06460fd1ec49d849924e99b008c6a6946f43dc55e665e197c25c1",
+  "limits": [
+    "New c61 CI fails on exact metadata/source pin; prior01eb six-job success does not replace it.",
+    "This source does not contain the new principal recovery patch.",
+    "Original15m commands/exclusions unchanged; later CI commands were not executed and are not called passing.",
+    "No stable startup or CI improvement proven by earlier4DDL or new2DDL reductions."
+  ]
+}

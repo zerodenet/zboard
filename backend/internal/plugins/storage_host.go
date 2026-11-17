@@ -15,6 +15,7 @@ import (
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
+	"gorm.io/gorm"
 )
 
 var hostOperationPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,3}$`)
@@ -52,7 +53,7 @@ func (m *Manager) startAuthorizedProcess(ctx context.Context, v Installation) (*
 	}
 	token := randomToken()
 	var proc *process
-	server := &http.Server{ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: 3 * time.Second, MaxHeaderBytes: 4096}
+	server := &http.Server{ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: 35 * time.Second, MaxHeaderBytes: 4096}
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
@@ -131,19 +132,58 @@ func (m *Manager) handleHostTask(w http.ResponseWriter, r *http.Request, v Insta
 
 func (m *Manager) handleHostService(w http.ResponseWriter, r *http.Request, v Installation, proc *process, raw []byte) {
 	var request pluginv1.HostCallRequest
-	if DecodeStrict(raw, &request) != nil || !isHostServiceCapability(request.Capability) || !hostOperationPattern.MatchString(request.Operation) || len(request.Payload) == 0 || !json.Valid(request.Payload) {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	if DecodeStrict(raw, &request) != nil || !hostOperationPattern.MatchString(request.Operation) || len(request.Payload) == 0 || !json.Valid(request.Payload) {
+		nativeServiceError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if !isHostServiceCapability(request.Capability) {
+		nativeServiceError(w, http.StatusServiceUnavailable, "capability_unavailable")
+		return
+	}
+	if (request.Capability == CommerceOrdersReadCapability || request.Capability == CommercePaymentsWriteCapability) && len(request.Payload) > MaxPageActionBytes {
+		nativeServiceError(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	if !m.mu.TryLock() {
-		http.Error(w, "host busy; retry outside lifecycle callback", http.StatusServiceUnavailable)
+		nativeServiceError(w, http.StatusServiceUnavailable, "temporary_unavailable")
 		return
 	}
-	active := proc != nil && m.processes[v.ID] == proc && hasCapability(v, request.Capability)
+	current, loadErr := m.load(v.ID)
+	if loadErr != nil {
+		m.mu.Unlock()
+		if errors.Is(loadErr, gorm.ErrRecordNotFound) && current.ID == "" {
+			nativeServiceError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		nativeServiceError(w, http.StatusServiceUnavailable, "temporary_unavailable")
+		return
+	}
+	active := loadErr == nil && !m.lost.Load() && time.Now().UnixNano() < m.leaseUntil.Load() && current.Enabled && current.State == "active" && current.VersionID == v.VersionID && current.SigningKey == v.SigningKey && proc != nil && m.processes[v.ID] == proc && hasCapability(current, request.Capability)
+	commerceCall := request.Capability == CommerceOrdersReadCapability || request.Capability == CommercePaymentsWriteCapability
+	var admissionErr error
+	if active && commerceCall {
+		limit := 60
+		if request.Capability == CommercePaymentsWriteCapability {
+			limit = 120
+		}
+		admissionErr = m.admitPluginCall("native:"+paymentIdentity(current)+":"+request.Operation, limit)
+	}
 	services := m.services
-	m.mu.Unlock()
+	if !active || !commerceCall {
+		m.mu.Unlock()
+	} else {
+		defer m.mu.Unlock()
+	}
+	if admissionErr != nil {
+		code := "rate_limited"
+		if errors.Is(admissionErr, ErrUnavailable) {
+			code = "temporary_unavailable"
+		}
+		_ = json.NewEncoder(w).Encode(pluginv1.HostCallResponse{Error: &pluginv1.HostCallError{Code: code}})
+		return
+	}
 	if !active {
-		http.Error(w, "plugin process is not active", http.StatusForbidden)
+		nativeServiceError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	if request.Capability == HostDiscoveryCapability {
@@ -160,10 +200,15 @@ func (m *Manager) handleHostService(w http.ResponseWriter, r *http.Request, v In
 		return
 	}
 	if services == nil {
-		http.Error(w, "host services unavailable", http.StatusServiceUnavailable)
+		nativeServiceError(w, http.StatusServiceUnavailable, "capability_unavailable")
 		return
 	}
-	data, callErr := services.CallPluginHost(r.Context(), v.ID, request.Capability, request.Operation, request.Payload)
+	callCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if commerceCall {
+		callCtx = context.WithValue(callCtx, nativeIdentityKey{}, paymentIdentity(current))
+	}
+	data, callErr := services.CallPluginHost(callCtx, v.ID, request.Capability, request.Operation, request.Payload)
 	response := pluginv1.HostCallResponse{Data: data, Error: callErr}
 	if response.Data == nil && response.Error == nil {
 		response.Data = json.RawMessage(`{}`)
@@ -200,4 +245,10 @@ func (m *Manager) handleHostStorage(w http.ResponseWriter, r *http.Request, v In
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func nativeServiceError(w http.ResponseWriter, status int, code string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(pluginv1.HostCallResponse{Error: &pluginv1.HostCallError{Code: code}})
 }

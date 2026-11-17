@@ -55,8 +55,9 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 	checkpoint := s.checkpoint
 	s.mu.RUnlock()
 	batch := Batch{Next: checkpoint}
+	budget := eventReadBudget{remaining: 8 << 20, positions: &batch.Positions}
 	for _, segment := range segments {
-		if len(batch.Events) >= limit {
+		if len(batch.Events) >= limit || budget.remaining <= 0 {
 			break
 		}
 		if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
@@ -66,7 +67,7 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 		if segment.sequence == checkpoint.Segment {
 			start = checkpoint
 		}
-		events, next, err := s.readSegmentBatch(ctx, segment, start, limit-len(batch.Events))
+		events, next, err := s.readSegmentBatchBudget(ctx, segment, start, limit-len(batch.Events), &budget)
 		if err != nil {
 			return Batch{}, err
 		}
@@ -79,6 +80,10 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 	if len(batch.Events) > 0 && (!s.hasInflight || checkpointLess(s.inflightNext, batch.Next)) {
 		s.hasInflight = true
 		s.inflightNext = batch.Next
+	}
+	s.verifiedPrefixes = make(map[Checkpoint]struct{}, len(batch.Positions))
+	for _, position := range batch.Positions {
+		s.verifiedPrefixes[position] = struct{}{}
 	}
 	return batch, nil
 }
@@ -101,7 +106,23 @@ func readRawSegmentBatch(ctx context.Context, segment segmentFile, startRecord u
 	return readRawSegmentBatchAt(ctx, segment, startRecord, limit, 0, 0)
 }
 
+// A window is bounded by serialized bytes as well as count. One oversized
+// legacy record is still admitted so the queue cannot become permanently stuck.
+type eventReadBudget struct {
+	remaining int64
+	positions *[]Checkpoint
+}
+
+func (b *eventReadBudget) position(p Checkpoint) {
+	if b != nil && b.positions != nil {
+		*b.positions = append(*b.positions, p)
+	}
+}
+
 func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord uint64, limit int, index uint64, offset int64) ([]Envelope, uint64, error) {
+	return readRawSegmentBatchBudget(ctx, segment, startRecord, limit, index, offset, nil)
+}
+func readRawSegmentBatchBudget(ctx context.Context, segment segmentFile, startRecord uint64, limit int, index uint64, offset int64, budget *eventReadBudget) ([]Envelope, uint64, error) {
 	file, err := os.Open(segment.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -128,11 +149,11 @@ func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord
 		index++
 	}
 	events := make([]Envelope, 0, limit)
-	for len(events) < limit {
+	for len(events) < limit && (budget == nil || budget.remaining > 0) {
 		if err := ctx.Err(); err != nil {
 			return nil, index, err
 		}
-		event, _, err := readRecord(reader)
+		event, size, err := readRecord(reader)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				break
@@ -140,7 +161,11 @@ func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord
 			return nil, index, fmt.Errorf("read event record from %s: %w", filepath.Base(segment.path), err)
 		}
 		events = append(events, event)
+		if budget != nil {
+			budget.remaining -= size
+		}
 		index++
+		budget.position(Checkpoint{Segment: segment.sequence, Record: index})
 	}
 	return events, index, nil
 }
@@ -184,6 +209,7 @@ func (s *FileSpool) Commit(ctx context.Context, checkpoint Checkpoint) error {
 	if s.hasInflight && !checkpointLess(checkpoint, s.inflightNext) {
 		s.hasInflight = false
 		s.inflightNext = Checkpoint{}
+		s.verifiedPrefixes = nil
 	}
 	return s.cleanupCommittedSegments(checkpoint)
 }
@@ -204,6 +230,14 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 			continue
 		}
 		if segment.codec != CompressionNone {
+			// Only exact prefixes verified by this read window can use the fast
+			// check. Other callers retain full validation; cursor formats cannot be compared
+			// approximately when a raw segment becomes compressed.
+			_, verifiedPrefix := s.verifiedPrefixes[checkpoint]
+			if s.hasInflight && (checkpoint == s.inflightNext || verifiedPrefix) {
+				_, _, err := compressedCheckpointRecordOffset(segment.path, checkpoint)
+				return err
+			}
 			if _, _, err := s.inspectSegment(segment); err != nil {
 				return err
 			}
@@ -266,32 +300,46 @@ func (s *FileSpool) Status() Status {
 	if err == nil {
 		status.Segments = len(segments)
 		for _, segment := range segments {
+			committed := checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment
+			var records, consumed uint64
 			if segment.codec != CompressionNone {
 				status.CompressedSegments++
 				status.CompressedStoredBytes += segment.size
-				if original, originalErr := compressedSegmentOriginalBytes(segment.path); originalErr == nil {
-					status.CompressedOriginalBytes += original
+				var position *Checkpoint
+				if segment.sequence == checkpoint.Segment {
+					position = &checkpoint
 				}
-			}
-			if checkpoint.Segment != 0 && segment.sequence < checkpoint.Segment {
-				continue
-			}
-			records, _, inspectErr := s.inspectSegment(segment)
-			if inspectErr != nil {
-				continue
-			}
-			pending := records
-			if segment.sequence == checkpoint.Segment {
-				consumed, total, offsetErr := s.segmentCheckpointRecordOffset(segment, checkpoint)
-				if offsetErr != nil {
+				metadata, err := inspectCompressedMetadata(segment.path, position)
+				if err != nil {
+					if !committed {
+						status.PendingUnknown = true
+						status.ReadError = fmt.Sprintf("事件段 %d 元数据读取失败", segment.sequence)
+					}
 					continue
 				}
-				if consumed >= total {
-					pending = 0
-				} else {
-					pending = total - consumed
+				status.CompressedOriginalBytes += metadata.originalBytes
+				records, consumed = metadata.records, metadata.consumed
+			} else if !committed {
+				var err error
+				records, _, err = s.inspectSegment(segment)
+				if err != nil {
+					status.PendingUnknown = true
+					status.ReadError = fmt.Sprintf("事件段 %d 暂时无法读取", segment.sequence)
+					continue
+				}
+				if segment.sequence == checkpoint.Segment {
+					if checkpoint.Block != 0 || checkpoint.Record > records {
+						status.PendingUnknown = true
+						status.ReadError = "事件游标与活动段不一致"
+						continue
+					}
+					consumed = checkpoint.Record
 				}
 			}
+			if committed {
+				continue
+			}
+			pending := records - consumed
 			status.PendingEvents += int64(pending)
 			if pending > 0 {
 				status.PendingBytes += segment.size

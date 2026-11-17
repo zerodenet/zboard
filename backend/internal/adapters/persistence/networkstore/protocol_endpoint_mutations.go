@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"sort"
 	"strings"
 	"time"
@@ -103,16 +104,25 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 			if result.Error == nil {
 				row.SortOrder = last.SortOrder + 1
 			}
-			if err := tx.Create(&row).Error; err != nil {
+			// The capability already owns the creation default. Use a pointer for
+			// this explicitly supplied boolean so GORM cannot replace false with
+			// the model's legacy default:true before the INSERT and effect checks.
+			active := row.IsActive
+			insert := struct {
+				*model.ProtocolEndpoint `gorm:"embedded"`
+				Active                  *bool `gorm:"column:is_active"`
+			}{ProtocolEndpoint: &row, Active: &active}
+			if err := tx.Table("protocol_endpoints").Create(&insert).Error; err != nil {
 				return err
 			}
+			row.IsActive = active
 		} else {
 			row.ID, row.SortOrder, row.CreatedAt = previous.ID, previous.SortOrder, previous.CreatedAt
 			if err := validateAndMigrateProtocolEndpointCredentials(tx, previous, row); err != nil {
 				return err
 			}
 			update := tx.Model(&model.ProtocolEndpoint{}).Where("id = ?", previous.ID).
-				Select("node_id", "name", "runtime_key", "protocol", "address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "egress_protocol", "egress_config", "client_config", "optional_config", "tags", "is_active").
+				Select("node_id", "name", "runtime_key", "protocol", "address", "listen_address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "egress_protocol", "egress_config", "client_config", "optional_config", "tags", "is_active").
 				Updates(&row)
 			if update.Error != nil {
 				return update.Error
@@ -193,7 +203,7 @@ func protocolEndpointMutationSnapshot(row model.ProtocolEndpoint, certificateID 
 func protocolEndpointMutationRecord(row model.ProtocolEndpoint) network.ProtocolEndpointRecord {
 	return network.ProtocolEndpointRecord{
 		ID: row.ID, NodeID: row.NodeID, Name: row.Name, RuntimeKey: row.RuntimeKey,
-		Protocol: row.Protocol, Address: row.Address, Port: row.Port, PublicPort: row.PublicPort,
+		Protocol: row.Protocol, Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort,
 		Cipher: row.Cipher, ParentProtocolID: row.ParentProtocolID, MultiplierMilli: row.MultiplierMilli,
 		ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady,
 		ServerCiphertext: row.ServerConfig, EgressProtocol: row.EgressProtocol, EgressCiphertext: row.EgressConfig,
@@ -205,7 +215,7 @@ func protocolEndpointMutationRecord(row model.ProtocolEndpoint) network.Protocol
 func protocolEndpointMutationModel(row network.ProtocolEndpointRecord) model.ProtocolEndpoint {
 	return model.ProtocolEndpoint{
 		ID: row.ID, NodeID: row.NodeID, Name: row.Name, RuntimeKey: row.RuntimeKey,
-		Protocol: row.Protocol, Address: row.Address, Port: row.Port, PublicPort: row.PublicPort,
+		Protocol: row.Protocol, Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort,
 		Cipher: row.Cipher, ParentProtocolID: row.ParentProtocolID, MultiplierMilli: row.MultiplierMilli,
 		ManagedPrincipalReady: row.ManagedPrincipalReady, MieruPrincipalReady: row.MieruPrincipalReady,
 		ServerConfig: row.ServerCiphertext, EgressProtocol: row.EgressProtocol, EgressConfig: row.EgressCiphertext,
@@ -242,7 +252,7 @@ func lockAvailableProtocolEndpointNodes(tx *gorm.DB, ids []uint) error {
 		return &network.ProtocolEndpointMutationValidation{Message: "协议服务校验失败。", Fields: map[string]string{"node_id": "所选承载节点不存在。"}}
 	}
 	for _, node := range nodes {
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrProtocolEndpointResourceDeleting
 		}
 	}
@@ -337,6 +347,15 @@ func validateAndMigrateProtocolEndpointCredentials(tx *gorm.DB, previous, next m
 		return err
 	}
 	if len(credentials) == 0 {
+		if !strings.EqualFold(previous.Protocol, next.Protocol) {
+			var bindings int64
+			if err := credentialstore.Bindings(tx).Where("protocol_credentials.protocol_endpoint_id=? AND protocol_credentials.material_version=1", next.ID).Count(&bindings).Error; err != nil {
+				return err
+			}
+			if bindings > 0 {
+				return &network.ProtocolEndpointMutationValidation{Message: "协议服务校验失败。", Fields: map[string]string{"protocol": "该服务已有订阅身份；请创建新服务后迁移协议。"}}
+			}
+		}
 		return nil
 	}
 	if !strings.EqualFold(previous.Protocol, next.Protocol) {
@@ -349,7 +368,13 @@ func validateAndMigrateProtocolEndpointCredentials(tx *gorm.DB, previous, next m
 			}
 		}
 	}
-	return tx.Model(&model.ProtocolCredential{}).Where("protocol_endpoint_id = ?", next.ID).Updates(map[string]any{"node_id": next.NodeID, "listen_port": next.Port, "public_port": next.PublicPort}).Error
+	updates := map[string]any{"node_id": next.NodeID, "listen_port": next.Port, "public_port": next.PublicPort}
+	if previous.NodeID != next.NodeID {
+		updates["principal_lookup_version"] = 0
+		updates["principal_digest"] = ""
+		updates["secret_principal_digest"] = ""
+	}
+	return tx.Model(&model.ProtocolCredential{}).Where("protocol_endpoint_id = ?", next.ID).Updates(updates).Error
 }
 
 func removedProtocolEndpointMemberships(changes []network.ProtocolEndpointMembershipChange) map[uint]bool {

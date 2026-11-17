@@ -5,6 +5,16 @@ const originalWidth = window.innerWidth
 afterEach(() => Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }))
 
 describe('DataTable', () => {
+  it('keeps auxiliary columns at a 1280 desktop with 968 pixels of content', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    const wrapper = mount(DataTable, { props: { caption: '服务器' }, slots: { default: '<thead><tr><th>节点</th><th data-column-priority="3">SSH</th><th data-column-priority="3">最近心跳</th></tr></thead>' } })
+    Object.defineProperty(wrapper.get('.data-table-shell').element, 'clientWidth', { configurable: true, value: 968 })
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(wrapper.emitted('visibleColumnCount')?.at(-1)).toEqual([3])
+    expect(wrapper.find('.table-column-toggle').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('renders configured columns and rows with a per-cell override and an inline empty state', async () => {
     const wrapper = mount(DataTable, {
       props: {

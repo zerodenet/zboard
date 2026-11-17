@@ -11,7 +11,7 @@ var (
 	ErrNodeAdministrationUnavailable = errors.New("node administration unavailable")
 	ErrNodeAdministrationPermission  = errors.New("node administration requires current administrator")
 	ErrNodeAdministrationNotFound    = errors.New("node not found")
-	ErrNodeAdministrationDeleting    = errors.New("node is deleting")
+	ErrNodeAdministrationDeleting    = errors.New("node management is permanently closed")
 	ErrNodeCredentialNotFound        = errors.New("node credential not found")
 )
 
@@ -23,40 +23,42 @@ type NodeAdministrationValidation struct {
 func (e *NodeAdministrationValidation) Error() string { return e.Message }
 
 type NodeAdministrationRecord struct {
-	ID                      uint       `json:"id"`
-	Name                    string     `json:"name"`
-	Region                  string     `json:"region"`
-	Address                 string     `json:"address"`
-	NodeCredentialPrefix    string     `json:"node_credential_prefix,omitempty"`
-	NodeCredentialRevokedAt *time.Time `json:"node_credential_revoked_at,omitempty"`
-	CommunicationProtocol   int16      `json:"communication_protocol"`
-	Status                  int16      `json:"status"`
-	LifecycleStatus         string     `json:"lifecycle_status"`
-	Config                  string     `json:"config"`
-	IsEnabled               bool       `json:"is_enabled"`
-	Remark                  string     `json:"remark"`
-	IsOnline                bool       `json:"is_online"`
-	LastSeenAt              *time.Time `json:"last_seen_at"`
-	LastSyncAt              *time.Time `json:"last_sync_at"`
-	Version                 string     `json:"version"`
-	SSHHost                 string     `json:"ssh_host"`
-	SSHPort                 int        `json:"ssh_port"`
-	SSHUser                 string     `json:"ssh_user"`
-	SSHAuthMethod           string     `json:"ssh_auth_method"`
-	SSHPrivilegeMode        string     `json:"ssh_privilege_mode"`
-	SSHPrivilegeConfigured  bool       `json:"ssh_privilege_password_configured"`
-	SSHHostKeyFingerprint   string     `json:"ssh_host_key_fingerprint"`
-	SSHVerifiedAt           *time.Time `json:"ssh_verified_at,omitempty"`
-	ConnectorLastSeenAt     *time.Time `json:"connector_last_seen_at,omitempty"`
-	ConnectorOnline         bool       `json:"connector_online"`
-	UptimeSeconds           uint64     `json:"uptime_seconds"`
-	ActiveFlows             uint64     `json:"active_flows"`
-	BytesUp                 uint64     `json:"bytes_up"`
-	BytesDown               uint64     `json:"bytes_down"`
-	TrafficSecretPrefix     string     `json:"traffic_secret_prefix,omitempty"`
-	TrafficSecretRevokedAt  *time.Time `json:"traffic_secret_revoked_at,omitempty"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	ID                      uint            `json:"id"`
+	Name                    string          `json:"name"`
+	Region                  string          `json:"region"`
+	Address                 string          `json:"address"`
+	NodeCredentialPrefix    string          `json:"node_credential_prefix,omitempty"`
+	NodeCredentialRevokedAt *time.Time      `json:"node_credential_revoked_at,omitempty"`
+	CommunicationProtocol   int16           `json:"communication_protocol"`
+	Status                  int16           `json:"status"`
+	LifecycleStatus         string          `json:"lifecycle_status"`
+	ArchivedAt              *time.Time      `json:"archived_at,omitempty"`
+	Config                  string          `json:"config"`
+	IsEnabled               bool            `json:"is_enabled"`
+	Remark                  string          `json:"remark"`
+	IsOnline                bool            `json:"is_online"`
+	LastSeenAt              *time.Time      `json:"last_seen_at"`
+	LastSyncAt              *time.Time      `json:"last_sync_at"`
+	Version                 string          `json:"version"`
+	SSHHost                 string          `json:"ssh_host"`
+	SSHPort                 int             `json:"ssh_port"`
+	SSHUser                 string          `json:"ssh_user"`
+	SSHAuthMethod           string          `json:"ssh_auth_method"`
+	SSHPrivilegeMode        string          `json:"ssh_privilege_mode"`
+	SSHPrivilegeConfigured  bool            `json:"ssh_privilege_password_configured"`
+	SSHHostKeyFingerprint   string          `json:"ssh_host_key_fingerprint"`
+	SSHVerifiedAt           *time.Time      `json:"ssh_verified_at,omitempty"`
+	ConnectorLastSeenAt     *time.Time      `json:"connector_last_seen_at,omitempty"`
+	ConnectorOnline         bool            `json:"connector_online"`
+	UptimeSeconds           uint64          `json:"uptime_seconds"`
+	Observation             CounterEvidence `json:"observation"`
+	ActiveFlows             uint64          `json:"active_flows"`
+	BytesUp                 uint64          `json:"bytes_up"`
+	BytesDown               uint64          `json:"bytes_down"`
+	TrafficSecretPrefix     string          `json:"traffic_secret_prefix,omitempty"`
+	TrafficSecretRevokedAt  *time.Time      `json:"traffic_secret_revoked_at,omitempty"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
 }
 
 type NodeAdministrationSnapshot struct {
@@ -69,6 +71,7 @@ type NodeAdministrationSnapshot struct {
 }
 
 type NodeCreateChange struct {
+	ProxyPoolIDs             []uint
 	Name                     string
 	Region                   string
 	Address                  string
@@ -183,7 +186,7 @@ func (s NodeAdministration) Update(ctx context.Context, actor uint, request Node
 		}
 		request.LifecycleStatus = &value
 		if value != "active" && request.IsEnabled != nil && *request.IsEnabled {
-			return NodeAdministrationRecord{}, nodeAdministrationValidation("is_enabled", "维护或退役节点不能承载对外服务。")
+			return NodeAdministrationRecord{}, nodeAdministrationValidation("is_enabled", "维护或禁用的节点不能承载对外服务。")
 		}
 	}
 	if request.Name == nil && request.Region == nil && request.Address == nil && request.Remark == nil && request.LifecycleStatus == nil && request.IsEnabled == nil {

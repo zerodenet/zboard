@@ -1,0 +1,97 @@
+{
+  "tested_head_at_start": "7eee8e3f3efa1d9a42fccbe70893ad89ecee3c3f",
+  "source_scope": "all backend Go/SQL/module/ownership sources; YAML-only contract fix ff3b147 was independently linted",
+  "source_before": "6c512b22d99a51477d86d53fd287b72b0b50990b9311cd331a0ffa1819fb55a2",
+  "source_after": "6c512b22d99a51477d86d53fd287b72b0b50990b9311cd331a0ffa1819fb55a2",
+  "source_unchanged": true,
+  "passed": true,
+  "commands": [
+    {
+      "name": "test",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-p",
+        "1",
+        "./...",
+        "-count=1"
+      ],
+      "environment_overrides": {},
+      "started_utc": "2026-10-27T05:07:06.608012+00:00",
+      "exit_code": 0,
+      "wall_seconds": 518.151,
+      "finished_utc": "2026-10-27T05:15:44.758863+00:00",
+      "events": {
+        "pass": 3412,
+        "skip": 437
+      },
+      "failures": [],
+      "log_sha256": "f969d3990de0af5e46890a485c79639c19f4bedf7226295ed754bd293a21c6e9"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "-p",
+        "1",
+        "./..."
+      ],
+      "environment_overrides": {},
+      "started_utc": "2026-10-27T05:15:44.772120+00:00",
+      "exit_code": 0,
+      "wall_seconds": 21.23,
+      "finished_utc": "2026-10-27T05:16:06.002360+00:00",
+      "events": {},
+      "failures": [],
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "command": [
+        "go",
+        "build",
+        "-p",
+        "1",
+        "./cmd/zboard"
+      ],
+      "environment_overrides": {},
+      "started_utc": "2026-10-27T05:16:06.002864+00:00",
+      "exit_code": 0,
+      "wall_seconds": 2.024,
+      "finished_utc": "2026-10-27T05:16:08.027343+00:00",
+      "events": {},
+      "failures": [],
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pure-sqlite",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-p",
+        "1",
+        "./internal/datastore",
+        "-run",
+        "SQLite",
+        "-count=1"
+      ],
+      "environment_overrides": {
+        "CGO_ENABLED": "0"
+      },
+      "started_utc": "2026-10-27T05:16:08.027731+00:00",
+      "exit_code": 0,
+      "wall_seconds": 68.711,
+      "finished_utc": "2026-10-27T05:17:16.738714+00:00",
+      "events": {
+        "pass": 58
+      },
+      "failures": [],
+      "log_sha256": "a0b0d4162363142abb317d3ed5a55b56043065133dc8de26a98b41c601d0aca0"
+    }
+  ],
+  "finished_utc": "2026-10-27T05:17:16.739391+00:00",
+  "mysql_scope": "This backend run deliberately has no MySQL DSN. 437 environment skips are retained and do not count as real MySQL acceptance."
+}

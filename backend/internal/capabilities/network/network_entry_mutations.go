@@ -21,6 +21,7 @@ type NetworkEntryMutationValidation struct{ Message string }
 func (e *NetworkEntryMutationValidation) Error() string { return e.Message }
 
 type NetworkEntryRecord struct {
+	ListenAddress     string    `json:"listen_address"`
 	DeploymentMode    string    `json:"deployment_mode"`
 	ID                uint      `json:"id"`
 	ProxyPoolID       *uint     `json:"proxy_pool_id"`
@@ -57,6 +58,7 @@ type NetworkEntryMembershipChange struct {
 }
 
 type NetworkEntryMutationRequest struct {
+	ListenAddress       *string
 	DeploymentMode      string
 	ID                  uint
 	ExpectedRevision    uint64
@@ -150,6 +152,17 @@ func (s NetworkEntryMutations) Save(ctx context.Context, actor uint, request Net
 		}
 	}
 
+	listen := DefaultProtocolListenAddress
+	if before != nil && before.Entry.ListenAddress != "" {
+		listen = before.Entry.ListenAddress
+	}
+	if request.ListenAddress != nil {
+		listen = *request.ListenAddress
+	}
+	listen, listenErr := NormalizeProtocolListenAddress(listen)
+	if listenErr != nil {
+		return NetworkEntryMutationResult{}, &NetworkEntryMutationValidation{Message: "请输入有效的入口本地 IPv4 或 IPv6 监听地址。"}
+	}
 	poolID := request.ProxyPoolID
 	pathCiphertext := ""
 	if before != nil {
@@ -189,7 +202,7 @@ func (s NetworkEntryMutations) Save(ctx context.Context, actor uint, request Net
 	change := NetworkEntryMutationChange{
 		Entry: NetworkEntryRecord{
 			DeploymentMode: request.DeploymentMode, ID: request.ID, ProxyPoolID: poolID, Network: request.Network, Name: request.Name,
-			NodeID: request.NodeID, EndpointID: request.EndpointID, Address: request.Address,
+			NodeID: request.NodeID, EndpointID: request.EndpointID, Address: request.Address, ListenAddress: listen,
 			Port: request.Port, PublicPort: request.PublicPort, Enabled: request.Enabled,
 		},
 		PathCiphertext: pathCiphertext, MembershipChanges: append([]NetworkEntryMembershipChange(nil), request.MembershipChanges...),

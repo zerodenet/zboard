@@ -53,7 +53,7 @@ func TestAccountDirectoryUsesBoundedAggregateQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queries != 3 || detail.ActiveSubscriptionCount != 1 || detail.TotalSubscriptionCount != 2 || detail.PendingOrderCount != 1 || detail.TotalOrderCount != 2 {
+	if queries != 5 || detail.ActiveSubscriptionCount != 1 || detail.TotalSubscriptionCount != 2 || detail.PendingOrderCount != 1 || detail.TotalOrderCount != 2 {
 		t.Fatalf("detail queries=%d result=%+v", queries, detail)
 	}
 	queries = 0
@@ -61,7 +61,13 @@ func TestAccountDirectoryUsesBoundedAggregateQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queries != 4 || page.Total != 1 || len(page.Items) != 1 || page.Items[0].ActiveSubscriptionCount != 1 || page.Items[0].PendingOrderCount != 1 {
+	if queries != 6 || page.Total != 1 || len(page.Items) != 1 || page.Items[0].ActiveSubscriptionCount != 1 || page.Items[0].PendingOrderCount != 1 {
 		t.Fatalf("list queries=%d result=%+v", queries, page)
 	}
+	queries = 0
+	legacy, err := repository.List(context.Background(), identity.AccountDirectoryQuery{}, now)
+	if err != nil || queries != 1 || len(legacy.Items) != 1 || legacy.Items[0].WalletBalances != nil {
+		t.Fatalf("legacy picker loaded business overview: queries=%d result=%+v err=%v", queries, legacy, err)
+	}
+
 }

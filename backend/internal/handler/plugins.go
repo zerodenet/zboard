@@ -1,18 +1,27 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 
 	"github.com/zerodenet/zboard/backend/internal/plugins"
+	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 	"github.com/zeromicro/go-zero/rest/pathvar"
 	"gorm.io/gorm"
 )
 
 func (h *handlers) SetPluginManager(m *plugins.Manager) {
 	h.pluginManager = m
+	if m == nil {
+		h.services.ConfigureCommerceDiscountProvider(nil)
+		h.services.ConfigureCommerceDiscountChoices(nil)
+	} else {
+		h.services.ConfigureCommerceDiscountProvider(m)
+		h.services.ConfigureCommerceDiscountChoices(m)
+	}
 	h.identityProviders = nil
 	if m != nil {
 		h.identityProviders = m
@@ -22,17 +31,33 @@ func (h *handlers) SetPluginManager(m *plugins.Manager) {
 	}
 }
 func pluginError(w http.ResponseWriter, err error) {
+	var failure *pluginv1.ActionError
 	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		writeCapabilityError(w, http.StatusGatewayTimeout, "plugin request timed out", "deadline_exceeded")
+	case errors.Is(err, plugins.ErrRateLimited):
+		writeCapabilityError(w, http.StatusTooManyRequests, err.Error(), "rate_limited")
+	case errors.Is(err, plugins.ErrInvalidSession):
+		writeCapabilityError(w, http.StatusForbidden, err.Error(), "session_expired")
 	case errors.Is(err, plugins.ErrPermission):
-		Forbidden(w, err.Error())
+		writeCapabilityError(w, http.StatusForbidden, err.Error(), "permission_denied")
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		NotFound(w)
 	case errors.Is(err, plugins.ErrConflict):
-		writeJSON(w, http.StatusConflict, err.Error(), nil)
+		writeCapabilityError(w, http.StatusConflict, err.Error(), "conflict")
 	case errors.Is(err, plugins.ErrUnavailable):
-		writeJSON(w, http.StatusServiceUnavailable, err.Error(), nil)
+		writeCapabilityError(w, http.StatusServiceUnavailable, err.Error(), "unavailable")
+	case errors.As(err, &failure):
+		// Revalidate even local errors; only explicitly public, bounded values
+		// may leave the host. The plugin cannot select the HTTP/host error code.
+		value, ok := pluginv1.ParseActionError(failure)
+		if !ok {
+			writeCapabilityError(w, http.StatusServiceUnavailable, "plugin service unavailable", "unavailable")
+			return
+		}
+		writeJSONResponse(w, http.StatusUnprocessableEntity, value.Message, nil, &APIError{Version: 1, Code: "plugin_action_rejected", Source: "plugin", PluginCode: value.Code, Retryable: &value.Retryable})
 	default:
-		BadRequest(w, err.Error())
+		writeCapabilityError(w, http.StatusBadRequest, err.Error(), "invalid_argument")
 	}
 }
 func pluginBody(w http.ResponseWriter, r *http.Request, out any) bool {
@@ -41,7 +66,7 @@ func pluginBody(w http.ResponseWriter, r *http.Request, out any) bool {
 		err = plugins.DecodeStrict(raw, out)
 	}
 	if err != nil {
-		BadRequest(w, "invalid or oversized plugin request")
+		writeCapabilityError(w, http.StatusBadRequest, "invalid or oversized plugin request", "invalid_argument")
 		return false
 	}
 	return true
@@ -79,7 +104,7 @@ func (h *handlers) AdminPluginsHandler(w http.ResponseWriter, r *http.Request) {
 		OK(w, preview)
 		return
 	}
-	item, err := h.pluginManager.ImportConfirmed(raw, claims.Email, publicKey, r.Header.Get("X-Plugin-Digest"), r.Header.Get("X-Plugin-Trust-Fingerprint"))
+	item, err := h.pluginManager.ImportConfirmed(raw, claims.Email, publicKey, r.Header.Get("X-Plugin-Digest"), r.Header.Get("X-Plugin-Trust-Fingerprint"), r.Header.Get("X-Plugin-Publisher-Migration"))
 	if err != nil {
 		pluginError(w, err)
 		return

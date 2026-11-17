@@ -1,0 +1,21 @@
+CREATE TABLE order_fundings (
+ order_id bigint unsigned NOT NULL PRIMARY KEY,
+ user_id bigint unsigned NOT NULL,
+ currency varchar(16) NOT NULL,
+ use_balance tinyint(1) NOT NULL,
+ amount_minor bigint NOT NULL,
+ wallet_minor bigint NOT NULL,
+ cash_minor bigint NOT NULL,
+ state varchar(24) NOT NULL,
+ expires_at datetime(3) NOT NULL,
+ captured_at datetime(3) DEFAULT NULL,
+ released_at datetime(3) DEFAULT NULL,
+ release_reason varchar(64) NOT NULL DEFAULT '',
+ created_at datetime(3) NOT NULL,
+ updated_at datetime(3) NOT NULL,
+ KEY idx_order_fundings_user_id(user_id),
+ KEY idx_funding_expiry(state,expires_at),
+ CONSTRAINT ck_order_funding_amounts CHECK(amount_minor >= 0 AND wallet_minor >= 0 AND cash_minor >= 0 AND wallet_minor + cash_minor = amount_minor),
+ CONSTRAINT fk_order_fundings_order FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE RESTRICT,
+ CONSTRAINT fk_order_fundings_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

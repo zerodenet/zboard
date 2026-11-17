@@ -1,0 +1,71 @@
+{
+  "base": "c4a0fbfd326a96cface0b5beb022f8fd46f194d0",
+  "scope": "P5 persisted owner-scoped optional ticket references with actual order/wallet UI entry points and protected conversation drafts",
+  "tests": [
+    {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/datastore ./internal/handler -run '^TestSQLiteTicketReference' -count=1 -timeout 3m",
+      "result": "pass",
+      "datastore_seconds": 1.308,
+      "handler_seconds": 0.258
+    },
+    {
+      "command": "GOMAXPROCS=1 ZBOARD_TEST_MYSQL_DSN=<isolated MySQL8.4> go test -p 1 ./internal/datastore ./internal/handler -run '^TestMySQL(TicketReference|PeriodicContinuation)' -count=1 -timeout 3m",
+      "result": "pass",
+      "datastore_seconds": 8.871,
+      "handler_seconds": 23.666,
+      "qualification": "Combined handler time includes separate periodic continuation regression; not ticket-only latency"
+    },
+    {
+      "command": "GOMAXPROCS=1 ZBOARD_TEST_MYSQL_DSN=<isolated MySQL8.4> go test -p 1 -overlay ../.codex-local-artifacts/recovery-validation/ticket-reference-lock-before-overlay.json ./internal/handler -run '^TestMySQLTicketReferenceOrderWaitDoesNotHoldOwner$' -count=1 -timeout 1m",
+      "result": "expected failure",
+      "handler_seconds": 5.471,
+      "detail": "Actual MySQL NOWAIT3572: initial user-first draft retained owner SHARE while waiting for order"
+    },
+    {
+      "command": "pnpm test --no-file-parallelism src/components/TicketCenter.test.ts src/views/account/AccountOrderDetail.test.ts src/views/account/AccountWallet.test.ts src/api/files.test.ts",
+      "result": "pass after two preserved failed attempts",
+      "tests_passed": 33,
+      "seconds": 5.38,
+      "initial_failures": [
+        "Incomplete new feedback/component test mocks, corrected to mount real RouterView",
+        "Real new=1 route watcher cleared an existing reply conversation; production route context handling fixed and behavior regression added"
+      ]
+    },
+    {
+      "command": "pnpm test --no-file-parallelism --exclude src/theme/designTokens.test.ts --exclude src/views/commercePurchaseExperience.test.ts --exclude src/utils/adminRowActionsAudit.test.ts --exclude src/utils/catalogScalePolicy.test.ts --exclude src/utils/formPolicy.test.ts --exclude src/utils/frontendArchitecturePolicy.test.ts",
+      "result": "pass",
+      "files_passed": 201,
+      "files_skipped_unchanged": 2,
+      "tests_passed": 1108,
+      "tests_skipped_unchanged": 8,
+      "seconds": 157.66
+    },
+    {
+      "command": "pnpm build",
+      "result": "pass",
+      "scope": "vue-tsc and Vite",
+      "vite_seconds": 13.13
+    },
+    {
+      "command": "docker run --rm --network none --mount type=bind,source=<repo>/backend/api,target=/spec,readonly redocly/cli:1.34.3 lint /spec/openapi.yaml",
+      "result": "pass",
+      "warnings": 282
+    }
+  ],
+  "coverage": [
+    "New and upgraded SQLite/MySQL, formal migration assets, repeated migration, partial empty DDL, failed receipt, restoration required for lost context",
+    "Owner-only IDs including admin member-create, absent/foreign identical rejection, three mixed references, legacy no-context rows",
+    "First message failure rolls back Ticket and references; actual wallet/payment/subscription values unchanged",
+    "Order->owner lock order with actual MySQL deterministic inverse-lock control",
+    "Dirty create/reply preservation, explicit discard confirmation, no automatic create/write, invalid/duplicate/unsafe browser IDs, real order/wallet links"
+  ],
+  "migration": "0058 additive three nullable Ticket identifiers. Preflight before SQLite AutoMigrate refuses missing recorded fields and unrecorded partial fields containing existing evidence. Interrupted empty DDL can resume; no fake historical refs.",
+  "rollback": "No destructive down. Keep columns/history/0058 receipt; older strict inventories may refuse, so use compatible fix and isolated restoration validation rather than deleting receipt.",
+  "remaining": [
+    "Final committed-source full backend/vet/build/pure-Go SQLite and new CI",
+    "Independent subscription-list shortcut not added (form/query supports subscription ID)",
+    "Hardened recurring browser is a separate unvalidated batch",
+    "No production migration, deployment or full P5/P7 completion"
+  ],
+  "external_capabilities": "No new kernel/payment plugin requirements; external customer-service channels remain plugin work"
+}

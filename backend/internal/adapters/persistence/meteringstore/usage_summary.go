@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"time"
 )
@@ -25,25 +24,30 @@ func (s UsageSummary) Read(ctx context.Context, actor uint, q metering.UsageSumm
 		read = s.DB
 	}
 	err := read.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		scope := func(query *gorm.DB) *gorm.DB {
-			if q.UserID > 0 {
-				return query.Where("user_id = ?", q.UserID)
-			}
-			return query
-		}
-		if err := scope(tx.Model(&model.TrafficRecord{})).Select("COALESCE(SUM(used_bytes), 0)").Scan(&result.TotalUsedBytes).Error; err != nil {
+		now = tx.NowFunc().UTC()
+		result.AsOf = now.Format(time.RFC3339)
+		if err := EnsureHourlyUsageReadable(tx, TrafficScope{UserID: q.UserID}, time.Time{}, time.Time{}); err != nil {
 			return err
 		}
+		// A bounded pending overlay keeps current and historical reports exact
+		// without waiting for an empty queue or scanning financial history.
+		var usage struct{ TotalUsedBytes, UsedBytesToday int64 }
+		if err := TrafficAggregateSource(tx, time.Time{}, time.Time{}, TrafficScope{UserID: q.UserID}).Select(
+			"COALESCE(SUM(used_bytes), 0) AS total_used_bytes, COALESCE(SUM(CASE WHEN record_at >= ? THEN used_bytes ELSE 0 END), 0) AS used_bytes_today",
+			now.Truncate(24*time.Hour).Format("2006-01-02 15:04:05"),
+		).Scan(&usage).Error; err != nil {
+			return err
+		}
+		result.TotalUsedBytes, result.UsedBytesToday = usage.TotalUsedBytes, usage.UsedBytesToday
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := scope(tx.Model(&model.Subscription{})).Where("status = ? AND end_at > ? AND flow_used < flow_total", "active", now).Select("COALESCE(SUM(flow_total - flow_used), 0)").Scan(&result.RemainingBytes).Error; err != nil {
+		remaining, err := readRemainingQuota(ctx, tx, q.UserID, now)
+		if err != nil {
 			return err
 		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		return scope(tx.Model(&model.TrafficRecord{})).Where("record_at >= ?", now.Truncate(24*time.Hour)).Select("COALESCE(SUM(used_bytes), 0)").Scan(&result.UsedBytesToday).Error
+		result.RemainingBytes = remaining
+		return ctx.Err()
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return metering.UsageSummarySnapshot{}, err

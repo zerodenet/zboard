@@ -1,0 +1,2221 @@
+{
+  "overlay_base": "ae2aadb3d9d5fc50c2fd9706b25815e17578376a",
+  "integrated_parent": "90734ed5683c850f293a42a1435c269eceded27f",
+  "scope": "Only30 explicit top-level factory substitutions,6 direct handlers and24 order callers including3 factory arguments. Now70 business top-level cases create75 independent business schemas. Four contract tests create additional schemas;75 is not the total for the full command. Original40 source callsites and helper definitions are unchanged.",
+  "final_source_files": {
+    "backend/internal/handler/mysql_business_fixture_test.go": "3f5452fc8dc7729ebffd3b47b9c3e370746ddf7e52c385d5141aa9a7d2af3fb7",
+    "backend/internal/handler/mysql_business_fixture_contract_test.go": "a24b6239010bbd88e41e791ff33906fcf349d655734d31fd0a9052314b972780",
+    "backend/internal/handler/order_mysql_test.go": "38b717d9ade390d48c722519df25fbcf495d1fb62e6bb3908824d00b99cee21b",
+    "backend/internal/handler/zero_projection_lock_mysql_test.go": "1db9942364331285b19bc3ecfd9b388ff85045f7036c2c46e4de28612757e8b9",
+    "backend/internal/handler/usage_projection_mysql_test.go": "8876040bacf562273b11be8046b7854a7c823fb9ddad3c7acf211532aa25d493",
+    "backend/internal/handler/metering_user_lock_mysql_test.go": "febf5ff6e5c396ef45e2ae743682b9c88bcf1eeb8890cab4ede58d82f93ed2a9",
+    "backend/internal/handler/node_publish_target_mysql_test.go": "04df2be751c637328b4618fc9bf9e080db76529462c254e692223f95341fbb0f",
+    "backend/internal/handler/traffic_calendar_mysql_test.go": "7bb8b6a45593e744c86a5dd69e9fd2b1c06a4470ffad2e4c3baf2658966b66b1",
+    "backend/internal/handler/fair_use_observation_retention_mysql_test.go": "3647c082ec904ec3aeac43c6331d413d1ade15db9cf0dcd3e9e98036c8166043",
+    "backend/internal/handler/hourly_usage_projection_mysql_test.go": "798cad4fab5021a77d3d9c2f9701ebe0cc3a010f54edc0765aa6614346abd7e2",
+    "backend/internal/handler/commerce_recurring_discount_mysql_test.go": "9c40bb7059725ef85b691c5ac9913a5f94d2c4c6d3143ad772ecdf25d494ba7a",
+    "backend/internal/handler/zero_accounting_integration_test.go": "e8885474ebb7f72b990a3dfcd537c6b467a3f8f222496d90910d7ba1e2d89424",
+    "backend/internal/handler/zero_event_reduction_test.go": "8ffb07074869f7c1895b6da2213dee7e5f5e66e7fb3824c8cc5276d41ff742c8",
+    "backend/internal/handler/wallet_payments_test.go": "cba9c62f5525ccb2d015d96ac560d16c7c32095b9b95334be9ffa127ea82d0bf",
+    "backend/internal/handler/wallet_adjustments_test.go": "bbb72e96af6020a435b29016b8d229251e9ec5be947ee62170f150bf350dff48",
+    "backend/internal/handler/purchase_snapshot_test.go": "5ae006a8eb3865586fe882a69634acbe7853e9a5a7a89d72404f1526be5e9207",
+    "backend/internal/handler/renewal_price_lock_test.go": "7b2c0cc03a2921ca158f1b68ecce6e74940a49a978b5e3b1c4c829b53f8f44f5",
+    "backend/internal/handler/renewal_intent_test.go": "9e5c4b93691fccd5a6b98f0bc1de55145fea4b01bee683da30d2ccf424071683",
+    "backend/internal/handler/credential_delivery_test.go": "dd9b8f5b14224b3025a6a05d9e30368fd2731df9aa34d7f24e912f1835825909",
+    "backend/internal/handler/credential_reconciliation_snapshot_test.go": "6077f2664f052edf911d0710f50acded12df7560b595b4d64687c6ea6a0ac035",
+    "backend/internal/handler/entitlement_value_test.go": "1e180e083d58ca701bfac7c4deb44a486795b75ea5bb99486edc44be5f2067d6",
+    "backend/internal/handler/subscription_value_test.go": "64d622986e5b3f4e02a0dc9671f8016b8652b00ed92d3526b9cdcd2c050bd594",
+    "backend/internal/handler/node_connector_heartbeat_presence_test.go": "6e3492af42f4f3fb2523bd8ed8f3487355ad9cb6242193b940b67211435284fb",
+    "backend/internal/handler/node_observation_read_test.go": "aeb391faee3f77c57f499139089c5a797cb384086d0c3da6ecb9790c88868cdb",
+    "backend/internal/handler/automatic_renewal_isolation_test.go": "2ae7f8d80c63a3ff442abd4d753631ca857ffa05e1bcbf0c7bf0c430939a7427",
+    "backend/internal/handler/automatic_renewal_test.go": "5c3bb4c8a56943a0eb8f5a8d6396f128f31c8f40fbe1823ef1777d448b5a5537",
+    "backend/internal/handler/background_shutdown_test.go": "29921870f9d7b542f9a22b55847adf99141e3b5e11dd0e73a07486a3b77b4ac5",
+    "backend/internal/handler/external_forward_test.go": "dd9d0e32c5c555f0f6c8f12b42743db29da06f4d4db8fc2e93c5b7878e419680",
+    "backend/internal/handler/network_entry_delivery_test.go": "1e2911dcf0c5172a048787b682738f3d3fc178e1c5375f959398b9419899adaa",
+    "backend/internal/handler/plan_group_sync_test.go": "0ae9f092b1fd8f8343c3cd4406ec85943a2c1d1cd8a222374d0072f7bd2f0308",
+    "backend/internal/handler/plan_quota_sync_test.go": "327f5426ce3d9b770fa9b3f074ffe662620149d444da4b7d25fcd73bf7a9efef",
+    "backend/internal/handler/runtime_shutdown_test.go": "542ea2e5bbc040d1d6eee505e5655183e4afd6678cc33ce98197be3fe9f18014",
+    "backend/internal/handler/zero_connector_receipts_test.go": "8d8190885b766174607dd2b3550cc1ee55646b83b336670c4d72c25201af15ff"
+  },
+  "full_overlay_patch_sha256": "b69597e4ba04a63c6e3e34478d04bf376c4c9596f81e191822ecedbe79d3218b",
+  "incremental_patch_sha256": "4f2ba3a319aaf7a96ad2db8fc3de30601e77e3720b979ef5f843d40a32aa2569",
+  "business_scope": [
+    {
+      "file": "backend/internal/handler/order_mysql_test.go",
+      "test": "TestMySQLOrderSettlementPublicationAndExpiry",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": true,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 28
+    },
+    {
+      "file": "backend/internal/handler/order_mysql_test.go",
+      "test": "TestMySQLConcurrentSettlementRespectsPlanCapacity",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": true,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 124
+    },
+    {
+      "file": "backend/internal/handler/zero_projection_lock_mysql_test.go",
+      "test": "TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 16
+    },
+    {
+      "file": "backend/internal/handler/zero_projection_lock_mysql_test.go",
+      "test": "TestMySQLNodeStatsFailureRetainsSettlementAndRetriesProjection",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 87
+    },
+    {
+      "file": "backend/internal/handler/zero_projection_lock_mysql_test.go",
+      "test": "TestMySQLConsumerBoundsTransactionsAndDrainsBacklog",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 92
+    },
+    {
+      "file": "backend/internal/handler/usage_projection_mysql_test.go",
+      "test": "TestMySQLUsageProjectionCompetingWorkersAndCheckpointRecovery",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 16
+    },
+    {
+      "file": "backend/internal/handler/metering_user_lock_mysql_test.go",
+      "test": "TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 13
+    },
+    {
+      "file": "backend/internal/handler/node_publish_target_mysql_test.go",
+      "test": "TestMySQLPublicationCannotReplaceOrConfirmADifferentTarget",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 13
+    },
+    {
+      "file": "backend/internal/handler/traffic_calendar_mysql_test.go",
+      "test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 16
+    },
+    {
+      "file": "backend/internal/handler/fair_use_observation_retention_mysql_test.go",
+      "test": "TestMySQLObservationRetentionPointLocksAllowFreshReceiveAndSettlement",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 15
+    },
+    {
+      "file": "backend/internal/handler/hourly_usage_projection_mysql_test.go",
+      "test": "TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 18
+    },
+    {
+      "file": "backend/internal/handler/hourly_usage_projection_mysql_test.go",
+      "test": "TestMySQLSlowHourlyProjectionDoesNotHoldCoreIntentInsertGap",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 64
+    },
+    {
+      "file": "backend/internal/handler/commerce_recurring_discount_mysql_test.go",
+      "test": "TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 22
+    },
+    {
+      "file": "backend/internal/handler/zero_accounting_integration_test.go",
+      "test": "TestMySQLAccountingBatchReplayOutOfOrderAndExhaustion",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 17
+    },
+    {
+      "file": "backend/internal/handler/zero_accounting_integration_test.go",
+      "test": "TestMySQLAccountingPreservesReportCollationIdempotency",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 22
+    },
+    {
+      "file": "backend/internal/handler/zero_event_reduction_test.go",
+      "test": "TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 172
+    },
+    {
+      "file": "backend/internal/handler/zero_event_reduction_test.go",
+      "test": "TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 202
+    },
+    {
+      "file": "backend/internal/handler/wallet_payments_test.go",
+      "test": "TestMySQLWalletMixedPaymentMatchesFrozenCashAndCapturesOnce",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 50
+    },
+    {
+      "file": "backend/internal/handler/wallet_payments_test.go",
+      "test": "TestMySQLWalletOnlyPaymentRollsBackAndRacesWithoutDoubleSpend",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 190
+    },
+    {
+      "file": "backend/internal/handler/wallet_payments_test.go",
+      "test": "TestMySQLWalletReservationCompetitionCannotOverspend",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 306
+    },
+    {
+      "file": "backend/internal/handler/wallet_payments_test.go",
+      "test": "TestMySQLWalletPaymentCancellationRaceHasOneFinancialOutcome",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 353
+    },
+    {
+      "file": "backend/internal/handler/wallet_payments_test.go",
+      "test": "TestMySQLWalletFundingRetainsLegacyWholeCashWithoutCapturingBalance",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 398
+    },
+    {
+      "file": "backend/internal/handler/wallet_payments_test.go",
+      "test": "TestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 498
+    },
+    {
+      "file": "backend/internal/handler/wallet_payments_test.go",
+      "test": "TestMySQLWalletFundingNeverCombinesDifferentCurrencies",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 572
+    },
+    {
+      "file": "backend/internal/handler/wallet_adjustments_test.go",
+      "test": "TestMySQLControlledWalletAdjustmentRollback",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 125
+    },
+    {
+      "file": "backend/internal/handler/wallet_adjustments_test.go",
+      "test": "TestMySQLControlledWalletAdjustmentConcurrent",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 151
+    },
+    {
+      "file": "backend/internal/handler/purchase_snapshot_test.go",
+      "test": "TestMySQLPurchaseSnapshotSurvivesCatalogEditsAndEarlyRenewal",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 18
+    },
+    {
+      "file": "backend/internal/handler/renewal_price_lock_test.go",
+      "test": "TestMySQLRenewalUsesPurchasedBasePriceAndPreservesHistory",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 19
+    },
+    {
+      "file": "backend/internal/handler/renewal_price_lock_test.go",
+      "test": "TestMySQLRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 130
+    },
+    {
+      "file": "backend/internal/handler/renewal_intent_test.go",
+      "test": "TestMySQLRenewalIntentCannotConsumeTheSameTargetTwice",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 15
+    },
+    {
+      "file": "backend/internal/handler/credential_delivery_test.go",
+      "test": "TestCredentialDeliveryMySQLDoesNotExposeNewPurchaseBeforeItsConfirmation",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 16
+    },
+    {
+      "file": "backend/internal/handler/credential_reconciliation_snapshot_test.go",
+      "test": "TestCredentialReconciliationMySQLUsesCurrentSubscription",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 16
+    },
+    {
+      "file": "backend/internal/handler/credential_reconciliation_snapshot_test.go",
+      "test": "TestCredentialReconciliationMySQLPreservesRenewedExpiry",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 61
+    },
+    {
+      "file": "backend/internal/handler/credential_reconciliation_snapshot_test.go",
+      "test": "TestCredentialReconciliationMySQLPreservesChangedGroup",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 102
+    },
+    {
+      "file": "backend/internal/handler/entitlement_value_test.go",
+      "test": "TestMySQLEntitlementValueEvidenceFailureRollsBackPayment",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 115
+    },
+    {
+      "file": "backend/internal/handler/entitlement_value_test.go",
+      "test": "TestMySQLRenewalAndResetCaptureActualBeforeAndAfter",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 163
+    },
+    {
+      "file": "backend/internal/handler/subscription_value_test.go",
+      "test": "TestMySQLSubscriptionValueReadsVerifiedPaidFacts",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 23
+    },
+    {
+      "file": "backend/internal/handler/subscription_value_test.go",
+      "test": "TestMySQLSubscriptionTerminationSettlesOnceAndRevokesOnlyItsSubscription",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 120
+    },
+    {
+      "file": "backend/internal/handler/node_connector_heartbeat_presence_test.go",
+      "test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 25
+    },
+    {
+      "file": "backend/internal/handler/node_observation_read_test.go",
+      "test": "TestMySQLObservationHTTPReadsKeepCounterSource",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "already_selected": false,
+      "schema_count": 1,
+      "selected_in_freeze05": true,
+      "selected_factory_line": 23
+    },
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptsDoNotWaitForLockedNode",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 68,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 68
+    },
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 126,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 126
+    },
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 166,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 166
+    },
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptCannotUndoStopWithinSameMillisecond",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 259,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 259
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalDefaultOffAndSingleRecovery",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 41,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 41
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalShortenedWindowStopsWithoutCharging",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 82,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 82
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 140,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 140
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 282,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 282
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 327,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 327
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalVersusUnsubscribe",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 393,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 393
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 454,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 454
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_isolation_test.go",
+      "test": "TestMySQLAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 20,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 20
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_isolation_test.go",
+      "test": "TestMySQLAutomaticRenewalOverBoundWindowStillCloses",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 26,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 26
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_isolation_test.go",
+      "test": "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 33,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 33
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncBoundRejectsWholeChange",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 35,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 35
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 2,
+      "already_selected": false,
+      "original_factory_line": 77,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 77
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncPreservesSharedAndFencesOldDelivery",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 267,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 267
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncPublicationFailureRollsBackEverything",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 415,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 415
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncChangesRecoverableScopeWithoutRevivingTerminalSubscriptions",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 545,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 545
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncKeepsConfirmedSharedMembershipAddedAfterSnapshot",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 605,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 605
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup",
+      "original": "newMySQLOrderFixture",
+      "selected": "newMySQLBusinessOrderFixture",
+      "schema_count": 3,
+      "already_selected": false,
+      "original_factory_line": 470,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 470
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncPreservesUsageDatesAndFinancialHistory",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 118,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 118
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncRollsBackPlanQuotaAndPublicationTogether",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 211,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 211
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 341,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 341
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal",
+      "original": "newMySQLOrderFixture",
+      "selected": "newMySQLBusinessOrderFixture",
+      "schema_count": 2,
+      "already_selected": false,
+      "original_factory_line": 402,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 402
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering",
+      "original": "newMySQLOrderFixture",
+      "selected": "newMySQLBusinessOrderFixture",
+      "schema_count": 2,
+      "already_selected": false,
+      "original_factory_line": 498,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 498
+    },
+    {
+      "file": "backend/internal/handler/external_forward_test.go",
+      "test": "TestMySQLExternalForwardEntryGrantDeliveryAndRemoval",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 19,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 19
+    },
+    {
+      "file": "backend/internal/handler/network_entry_delivery_test.go",
+      "test": "TestMySQLNetworkEntryCredentialDeliveryRequiresBothNodes",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 20,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 20
+    },
+    {
+      "file": "backend/internal/handler/background_shutdown_test.go",
+      "test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 18,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 18
+    },
+    {
+      "file": "backend/internal/handler/runtime_shutdown_test.go",
+      "test": "TestMySQLSpoolStartupFailurePreservesOtherProcessTasks",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 149,
+      "selected_in_freeze05": false,
+      "selected_factory_line": 149
+    }
+  ],
+  "new30_scope": [
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptsDoNotWaitForLockedNode",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 68,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 126,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 166,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/zero_connector_receipts_test.go",
+      "test": "TestMySQLBufferedReceiptCannotUndoStopWithinSameMillisecond",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 259,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalDefaultOffAndSingleRecovery",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 41,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalShortenedWindowStopsWithoutCharging",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 82,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 140,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 282,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 327,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalVersusUnsubscribe",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 393,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_test.go",
+      "test": "TestMySQLAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 454,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_isolation_test.go",
+      "test": "TestMySQLAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 20,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_isolation_test.go",
+      "test": "TestMySQLAutomaticRenewalOverBoundWindowStillCloses",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 26,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/automatic_renewal_isolation_test.go",
+      "test": "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 33,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncBoundRejectsWholeChange",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 35,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 2,
+      "already_selected": false,
+      "original_factory_line": 77,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncPreservesSharedAndFencesOldDelivery",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 267,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncPublicationFailureRollsBackEverything",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 415,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncChangesRecoverableScopeWithoutRevivingTerminalSubscriptions",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 545,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncKeepsConfirmedSharedMembershipAddedAfterSnapshot",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 605,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_group_sync_test.go",
+      "test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup",
+      "original": "newMySQLOrderFixture",
+      "selected": "newMySQLBusinessOrderFixture",
+      "schema_count": 3,
+      "already_selected": false,
+      "original_factory_line": 470,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncPreservesUsageDatesAndFinancialHistory",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 118,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncRollsBackPlanQuotaAndPublicationTogether",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 211,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 341,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal",
+      "original": "newMySQLOrderFixture",
+      "selected": "newMySQLBusinessOrderFixture",
+      "schema_count": 2,
+      "already_selected": false,
+      "original_factory_line": 402,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/plan_quota_sync_test.go",
+      "test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering",
+      "original": "newMySQLOrderFixture",
+      "selected": "newMySQLBusinessOrderFixture",
+      "schema_count": 2,
+      "already_selected": false,
+      "original_factory_line": 498,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/external_forward_test.go",
+      "test": "TestMySQLExternalForwardEntryGrantDeliveryAndRemoval",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 19,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/network_entry_delivery_test.go",
+      "test": "TestMySQLNetworkEntryCredentialDeliveryRequiresBothNodes",
+      "original": "newMySQLPublishHandlers(t)",
+      "selected": "newMySQLBusinessHandlers(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 20,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/background_shutdown_test.go",
+      "test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 18,
+      "selected_in_freeze05": false
+    },
+    {
+      "file": "backend/internal/handler/runtime_shutdown_test.go",
+      "test": "TestMySQLSpoolStartupFailurePreservesOtherProcessTasks",
+      "original": "newMySQLOrderFixture(t)",
+      "selected": "newMySQLBusinessOrderFixture(t)",
+      "schema_count": 1,
+      "already_selected": false,
+      "original_factory_line": 149,
+      "selected_in_freeze05": false
+    }
+  ],
+  "static_checks": {
+    "gofmt": "passed_format_parse_only",
+    "diff_check": "passed",
+    "reverse_full_patch_apply_check": "passed",
+    "main_incremental_apply_check": "passed_check_only_not_applied",
+    "only_reviewed_factory_expressions_changed": true,
+    "existing154_sql_hashes_unchanged": true
+  },
+  "checks": [
+    {
+      "source": "ae2aadb3d9d5fc50c2fd9706b25815e17578376a",
+      "phase": "business",
+      "command": [
+        "go",
+        "test",
+        "-p",
+        "2",
+        "-json",
+        "./internal/handler",
+        "-run",
+        "^(TestMySQLOrderSettlementPublicationAndExpiry|TestMySQLConcurrentSettlementRespectsPlanCapacity|TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock|TestMySQLNodeStatsFailureRetainsSettlementAndRetriesProjection|TestMySQLConsumerBoundsTransactionsAndDrainsBacklog|TestMySQLUsageProjectionCompetingWorkersAndCheckpointRecovery|TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder|TestMySQLPublicationCannotReplaceOrConfirmADifferentTarget|TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries|TestMySQLObservationRetentionPointLocksAllowFreshReceiveAndSettlement|TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint|TestMySQLSlowHourlyProjectionDoesNotHoldCoreIntentInsertGap|TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote|TestMySQLAccountingBatchReplayOutOfOrderAndExhaustion|TestMySQLAccountingPreservesReportCollationIdempotency|TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay|TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs|TestMySQLWalletMixedPaymentMatchesFrozenCashAndCapturesOnce|TestMySQLWalletOnlyPaymentRollsBackAndRacesWithoutDoubleSpend|TestMySQLWalletReservationCompetitionCannotOverspend|TestMySQLWalletPaymentCancellationRaceHasOneFinancialOutcome|TestMySQLWalletFundingRetainsLegacyWholeCashWithoutCapturingBalance|TestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself|TestMySQLWalletFundingNeverCombinesDifferentCurrencies|TestMySQLControlledWalletAdjustmentRollback|TestMySQLControlledWalletAdjustmentConcurrent|TestMySQLPurchaseSnapshotSurvivesCatalogEditsAndEarlyRenewal|TestMySQLRenewalUsesPurchasedBasePriceAndPreservesHistory|TestMySQLRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements|TestMySQLRenewalIntentCannotConsumeTheSameTargetTwice|TestCredentialDeliveryMySQLDoesNotExposeNewPurchaseBeforeItsConfirmation|TestCredentialReconciliationMySQLUsesCurrentSubscription|TestCredentialReconciliationMySQLPreservesRenewedExpiry|TestCredentialReconciliationMySQLPreservesChangedGroup|TestMySQLEntitlementValueEvidenceFailureRollsBackPayment|TestMySQLRenewalAndResetCaptureActualBeforeAndAfter|TestMySQLSubscriptionValueReadsVerifiedPaidFacts|TestMySQLSubscriptionTerminationSettlesOnceAndRevokesOnlyItsSubscription|TestMySQLNodeConnectorHeartbeatPreservesMissingObservations|TestMySQLObservationHTTPReadsKeepCounterSource|TestMySQLBufferedReceiptsDoNotWaitForLockedNode|TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool|TestMySQLBufferedReceiptRevalidatesCredentialAfterContention|TestMySQLBufferedReceiptCannotUndoStopWithinSameMillisecond|TestMySQLAutomaticRenewalDefaultOffAndSingleRecovery|TestMySQLAutomaticRenewalShortenedWindowStopsWithoutCharging|TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry|TestMySQLAutomaticRenewalVersusManualVerifiedCash|TestMySQLAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms|TestMySQLAutomaticRenewalVersusUnsubscribe|TestMySQLAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory|TestMySQLAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable|TestMySQLAutomaticRenewalOverBoundWindowStillCloses|TestMySQLAutomaticRenewalConsentWithdrawalRace|TestMySQLPlanGroupSyncBoundRejectsWholeChange|TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait|TestMySQLPlanGroupSyncPreservesSharedAndFencesOldDelivery|TestMySQLPlanGroupSyncPublicationFailureRollsBackEverything|TestMySQLPlanGroupSyncChangesRecoverableScopeWithoutRevivingTerminalSubscriptions|TestMySQLPlanGroupSyncKeepsConfirmedSharedMembershipAddedAfterSnapshot|TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup|TestMySQLPlanQuotaSyncPreservesUsageDatesAndFinancialHistory|TestMySQLPlanQuotaSyncRollsBackPlanQuotaAndPublicationTogether|TestMySQLPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync|TestMySQLPlanQuotaSyncConcurrentWalletRenewal|TestMySQLPlanQuotaSyncConcurrentOriginalMetering|TestMySQLExternalForwardEntryGrantDeliveryAndRemoval|TestMySQLNetworkEntryCredentialDeliveryRequiresBothNodes|TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent|TestMySQLSpoolStartupFailurePreservesOtherProcessTasks|TestMySQLBusinessTemplate.*)$",
+        "-count=1",
+        "-timeout=15m"
+      ],
+      "started_utc": "2026-10-21T05:40:50.064584+00:00",
+      "source_before": {
+        "backend/internal/handler/mysql_business_fixture_test.go": "3f5452fc8dc7729ebffd3b47b9c3e370746ddf7e52c385d5141aa9a7d2af3fb7",
+        "backend/internal/handler/mysql_business_fixture_contract_test.go": "a24b6239010bbd88e41e791ff33906fcf349d655734d31fd0a9052314b972780",
+        "backend/internal/handler/order_mysql_test.go": "38b717d9ade390d48c722519df25fbcf495d1fb62e6bb3908824d00b99cee21b",
+        "backend/internal/handler/zero_projection_lock_mysql_test.go": "1db9942364331285b19bc3ecfd9b388ff85045f7036c2c46e4de28612757e8b9",
+        "backend/internal/handler/usage_projection_mysql_test.go": "8876040bacf562273b11be8046b7854a7c823fb9ddad3c7acf211532aa25d493",
+        "backend/internal/handler/metering_user_lock_mysql_test.go": "febf5ff6e5c396ef45e2ae743682b9c88bcf1eeb8890cab4ede58d82f93ed2a9",
+        "backend/internal/handler/node_publish_target_mysql_test.go": "04df2be751c637328b4618fc9bf9e080db76529462c254e692223f95341fbb0f",
+        "backend/internal/handler/traffic_calendar_mysql_test.go": "7bb8b6a45593e744c86a5dd69e9fd2b1c06a4470ffad2e4c3baf2658966b66b1",
+        "backend/internal/handler/fair_use_observation_retention_mysql_test.go": "3647c082ec904ec3aeac43c6331d413d1ade15db9cf0dcd3e9e98036c8166043",
+        "backend/internal/handler/hourly_usage_projection_mysql_test.go": "798cad4fab5021a77d3d9c2f9701ebe0cc3a010f54edc0765aa6614346abd7e2",
+        "backend/internal/handler/commerce_recurring_discount_mysql_test.go": "9c40bb7059725ef85b691c5ac9913a5f94d2c4c6d3143ad772ecdf25d494ba7a",
+        "backend/internal/handler/zero_accounting_integration_test.go": "e8885474ebb7f72b990a3dfcd537c6b467a3f8f222496d90910d7ba1e2d89424",
+        "backend/internal/handler/zero_event_reduction_test.go": "8ffb07074869f7c1895b6da2213dee7e5f5e66e7fb3824c8cc5276d41ff742c8",
+        "backend/internal/handler/wallet_payments_test.go": "cba9c62f5525ccb2d015d96ac560d16c7c32095b9b95334be9ffa127ea82d0bf",
+        "backend/internal/handler/wallet_adjustments_test.go": "bbb72e96af6020a435b29016b8d229251e9ec5be947ee62170f150bf350dff48",
+        "backend/internal/handler/purchase_snapshot_test.go": "5ae006a8eb3865586fe882a69634acbe7853e9a5a7a89d72404f1526be5e9207",
+        "backend/internal/handler/renewal_price_lock_test.go": "7b2c0cc03a2921ca158f1b68ecce6e74940a49a978b5e3b1c4c829b53f8f44f5",
+        "backend/internal/handler/renewal_intent_test.go": "9e5c4b93691fccd5a6b98f0bc1de55145fea4b01bee683da30d2ccf424071683",
+        "backend/internal/handler/credential_delivery_test.go": "dd9b8f5b14224b3025a6a05d9e30368fd2731df9aa34d7f24e912f1835825909",
+        "backend/internal/handler/credential_reconciliation_snapshot_test.go": "6077f2664f052edf911d0710f50acded12df7560b595b4d64687c6ea6a0ac035",
+        "backend/internal/handler/entitlement_value_test.go": "1e180e083d58ca701bfac7c4deb44a486795b75ea5bb99486edc44be5f2067d6",
+        "backend/internal/handler/subscription_value_test.go": "64d622986e5b3f4e02a0dc9671f8016b8652b00ed92d3526b9cdcd2c050bd594",
+        "backend/internal/handler/node_connector_heartbeat_presence_test.go": "6e3492af42f4f3fb2523bd8ed8f3487355ad9cb6242193b940b67211435284fb",
+        "backend/internal/handler/node_observation_read_test.go": "aeb391faee3f77c57f499139089c5a797cb384086d0c3da6ecb9790c88868cdb",
+        "backend/internal/handler/automatic_renewal_isolation_test.go": "2ae7f8d80c63a3ff442abd4d753631ca857ffa05e1bcbf0c7bf0c430939a7427",
+        "backend/internal/handler/automatic_renewal_test.go": "5c3bb4c8a56943a0eb8f5a8d6396f128f31c8f40fbe1823ef1777d448b5a5537",
+        "backend/internal/handler/background_shutdown_test.go": "29921870f9d7b542f9a22b55847adf99141e3b5e11dd0e73a07486a3b77b4ac5",
+        "backend/internal/handler/external_forward_test.go": "dd9d0e32c5c555f0f6c8f12b42743db29da06f4d4db8fc2e93c5b7878e419680",
+        "backend/internal/handler/network_entry_delivery_test.go": "1e2911dcf0c5172a048787b682738f3d3fc178e1c5375f959398b9419899adaa",
+        "backend/internal/handler/plan_group_sync_test.go": "0ae9f092b1fd8f8343c3cd4406ec85943a2c1d1cd8a222374d0072f7bd2f0308",
+        "backend/internal/handler/plan_quota_sync_test.go": "327f5426ce3d9b770fa9b3f074ffe662620149d444da4b7d25fcd73bf7a9efef",
+        "backend/internal/handler/runtime_shutdown_test.go": "542ea2e5bbc040d1d6eee505e5655183e4afd6678cc33ce98197be3fe9f18014",
+        "backend/internal/handler/zero_connector_receipts_test.go": "8d8190885b766174607dd2b3550cc1ee55646b83b336670c4d72c25201af15ff"
+      },
+      "actual_mysql": true,
+      "environment": {
+        "GOMAXPROCS": "2",
+        "parallel_packages": 2
+      },
+      "scope": "Private test-only candidate, no main-tree integration; original timeout/assertions/migration fixtures retained.",
+      "exit_code": 0,
+      "wall_seconds": 154.905,
+      "source_after": {
+        "backend/internal/handler/mysql_business_fixture_test.go": "3f5452fc8dc7729ebffd3b47b9c3e370746ddf7e52c385d5141aa9a7d2af3fb7",
+        "backend/internal/handler/mysql_business_fixture_contract_test.go": "a24b6239010bbd88e41e791ff33906fcf349d655734d31fd0a9052314b972780",
+        "backend/internal/handler/order_mysql_test.go": "38b717d9ade390d48c722519df25fbcf495d1fb62e6bb3908824d00b99cee21b",
+        "backend/internal/handler/zero_projection_lock_mysql_test.go": "1db9942364331285b19bc3ecfd9b388ff85045f7036c2c46e4de28612757e8b9",
+        "backend/internal/handler/usage_projection_mysql_test.go": "8876040bacf562273b11be8046b7854a7c823fb9ddad3c7acf211532aa25d493",
+        "backend/internal/handler/metering_user_lock_mysql_test.go": "febf5ff6e5c396ef45e2ae743682b9c88bcf1eeb8890cab4ede58d82f93ed2a9",
+        "backend/internal/handler/node_publish_target_mysql_test.go": "04df2be751c637328b4618fc9bf9e080db76529462c254e692223f95341fbb0f",
+        "backend/internal/handler/traffic_calendar_mysql_test.go": "7bb8b6a45593e744c86a5dd69e9fd2b1c06a4470ffad2e4c3baf2658966b66b1",
+        "backend/internal/handler/fair_use_observation_retention_mysql_test.go": "3647c082ec904ec3aeac43c6331d413d1ade15db9cf0dcd3e9e98036c8166043",
+        "backend/internal/handler/hourly_usage_projection_mysql_test.go": "798cad4fab5021a77d3d9c2f9701ebe0cc3a010f54edc0765aa6614346abd7e2",
+        "backend/internal/handler/commerce_recurring_discount_mysql_test.go": "9c40bb7059725ef85b691c5ac9913a5f94d2c4c6d3143ad772ecdf25d494ba7a",
+        "backend/internal/handler/zero_accounting_integration_test.go": "e8885474ebb7f72b990a3dfcd537c6b467a3f8f222496d90910d7ba1e2d89424",
+        "backend/internal/handler/zero_event_reduction_test.go": "8ffb07074869f7c1895b6da2213dee7e5f5e66e7fb3824c8cc5276d41ff742c8",
+        "backend/internal/handler/wallet_payments_test.go": "cba9c62f5525ccb2d015d96ac560d16c7c32095b9b95334be9ffa127ea82d0bf",
+        "backend/internal/handler/wallet_adjustments_test.go": "bbb72e96af6020a435b29016b8d229251e9ec5be947ee62170f150bf350dff48",
+        "backend/internal/handler/purchase_snapshot_test.go": "5ae006a8eb3865586fe882a69634acbe7853e9a5a7a89d72404f1526be5e9207",
+        "backend/internal/handler/renewal_price_lock_test.go": "7b2c0cc03a2921ca158f1b68ecce6e74940a49a978b5e3b1c4c829b53f8f44f5",
+        "backend/internal/handler/renewal_intent_test.go": "9e5c4b93691fccd5a6b98f0bc1de55145fea4b01bee683da30d2ccf424071683",
+        "backend/internal/handler/credential_delivery_test.go": "dd9b8f5b14224b3025a6a05d9e30368fd2731df9aa34d7f24e912f1835825909",
+        "backend/internal/handler/credential_reconciliation_snapshot_test.go": "6077f2664f052edf911d0710f50acded12df7560b595b4d64687c6ea6a0ac035",
+        "backend/internal/handler/entitlement_value_test.go": "1e180e083d58ca701bfac7c4deb44a486795b75ea5bb99486edc44be5f2067d6",
+        "backend/internal/handler/subscription_value_test.go": "64d622986e5b3f4e02a0dc9671f8016b8652b00ed92d3526b9cdcd2c050bd594",
+        "backend/internal/handler/node_connector_heartbeat_presence_test.go": "6e3492af42f4f3fb2523bd8ed8f3487355ad9cb6242193b940b67211435284fb",
+        "backend/internal/handler/node_observation_read_test.go": "aeb391faee3f77c57f499139089c5a797cb384086d0c3da6ecb9790c88868cdb",
+        "backend/internal/handler/automatic_renewal_isolation_test.go": "2ae7f8d80c63a3ff442abd4d753631ca857ffa05e1bcbf0c7bf0c430939a7427",
+        "backend/internal/handler/automatic_renewal_test.go": "5c3bb4c8a56943a0eb8f5a8d6396f128f31c8f40fbe1823ef1777d448b5a5537",
+        "backend/internal/handler/background_shutdown_test.go": "29921870f9d7b542f9a22b55847adf99141e3b5e11dd0e73a07486a3b77b4ac5",
+        "backend/internal/handler/external_forward_test.go": "dd9d0e32c5c555f0f6c8f12b42743db29da06f4d4db8fc2e93c5b7878e419680",
+        "backend/internal/handler/network_entry_delivery_test.go": "1e2911dcf0c5172a048787b682738f3d3fc178e1c5375f959398b9419899adaa",
+        "backend/internal/handler/plan_group_sync_test.go": "0ae9f092b1fd8f8343c3cd4406ec85943a2c1d1cd8a222374d0072f7bd2f0308",
+        "backend/internal/handler/plan_quota_sync_test.go": "327f5426ce3d9b770fa9b3f074ffe662620149d444da4b7d25fcd73bf7a9efef",
+        "backend/internal/handler/runtime_shutdown_test.go": "542ea2e5bbc040d1d6eee505e5655183e4afd6678cc33ce98197be3fe9f18014",
+        "backend/internal/handler/zero_connector_receipts_test.go": "8d8190885b766174607dd2b3550cc1ee55646b83b336670c4d72c25201af15ff"
+      },
+      "finished_utc": "2026-10-21T05:43:24.970692+00:00",
+      "raw_log_bytes": 1069499,
+      "raw_log_sha256": "1b8b91eaf9df3834d3c1c3737fe3a95e5cf17172870c347d8c2d4e3849240690",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable",
+          "Elapsed": 6.59
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalOverBoundWindowStillCloses",
+          "Elapsed": 2.19
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+          "Elapsed": 1.73
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalDefaultOffAndSingleRecovery",
+          "Elapsed": 1.66
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalShortenedWindowStopsWithoutCharging",
+          "Elapsed": 1.54
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry",
+          "Elapsed": 1.8
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+          "Elapsed": 1.66
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms",
+          "Elapsed": 1.7
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusUnsubscribe",
+          "Elapsed": 1.72
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory",
+          "Elapsed": 1.63
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent",
+          "Elapsed": 1.44
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote",
+          "Elapsed": 3.28
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialDeliveryMySQLDoesNotExposeNewPurchaseBeforeItsConfirmation",
+          "Elapsed": 1.57
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialReconciliationMySQLUsesCurrentSubscription",
+          "Elapsed": 1.95
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialReconciliationMySQLPreservesRenewedExpiry",
+          "Elapsed": 1.72
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestCredentialReconciliationMySQLPreservesChangedGroup",
+          "Elapsed": 1.78
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLEntitlementValueEvidenceFailureRollsBackPayment",
+          "Elapsed": 1.69
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalAndResetCaptureActualBeforeAndAfter",
+          "Elapsed": 1.56
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLExternalForwardEntryGrantDeliveryAndRemoval",
+          "Elapsed": 1.7
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationRetentionPointLocksAllowFreshReceiveAndSettlement",
+          "Elapsed": 1.54
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint",
+          "Elapsed": 1.46
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSlowHourlyProjectionDoesNotHoldCoreIntentInsertGap",
+          "Elapsed": 1.58
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingUserForeignKeyDoesNotInvertCommerceLockOrder",
+          "Elapsed": 1.59
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplatePreservesCompleteSchemaSeedsAndIsolation",
+          "Elapsed": 9.38
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks",
+          "Elapsed": 1.69
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplatePartialInstallDoesNotModifyOtherSchema",
+          "Elapsed": 1.64
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBusinessTemplateRejectsUnexpectedTrigger",
+          "Elapsed": 1.52
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNetworkEntryCredentialDeliveryRequiresBothNodes",
+          "Elapsed": 1.59
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/known_partial_null_mixed_and_explicit_zero_sequence",
+          "Elapsed": 0.03
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/uptime_seconds/missing",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/uptime_seconds/null",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/uptime_seconds/zero",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/active_flows/missing",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/active_flows/null",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/active_flows/zero",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bytes_up/missing",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bytes_up/null",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bytes_up/zero",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bytes_down/missing",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bytes_down/null",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bytes_down/zero",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/bad_token",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/missing_node",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/wrong_node",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/negative",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/fraction",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/overflow",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/wrong_type",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/malformed",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/trailing_object",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write/oversized",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/bad_token_and_invalid_bodies_do_not_write",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/rotated_credential_fences_already_authenticated_request",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations/storage_failure_remains_an_error_without_partial_observation",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeConnectorHeartbeatPreservesMissingObservations",
+          "Elapsed": 1.77
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLObservationHTTPReadsKeepCounterSource",
+          "Elapsed": 1.4
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPublicationCannotReplaceOrConfirmADifferentTarget",
+          "Elapsed": 1.38
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLOrderSettlementPublicationAndExpiry",
+          "Elapsed": 1.47
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConcurrentSettlementRespectsPlanCapacity",
+          "Elapsed": 1.56
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncBoundRejectsWholeChange",
+          "Elapsed": 1.84
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/direct",
+          "Elapsed": 1.6
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/forward",
+          "Elapsed": 1.64
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait",
+          "Elapsed": 3.24
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPreservesSharedAndFencesOldDelivery",
+          "Elapsed": 1.78
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPublicationFailureRollsBackEverything",
+          "Elapsed": 1.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup/new",
+          "Elapsed": 1.79
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup/renewal",
+          "Elapsed": 1.64
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup/upgrade",
+          "Elapsed": 1.57
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncPendingOrdersUseCurrentGroup",
+          "Elapsed": 5.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncChangesRecoverableScopeWithoutRevivingTerminalSubscriptions",
+          "Elapsed": 1.5
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupSyncKeepsConfirmedSharedMembershipAddedAfterSnapshot",
+          "Elapsed": 1.49
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncPreservesUsageDatesAndFinancialHistory",
+          "Elapsed": 1.65
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncRollsBackPlanQuotaAndPublicationTogether",
+          "Elapsed": 1.55
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncPreservesPaidAddonByRefusingAmbiguousSync",
+          "Elapsed": 1.68
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/sync_first",
+          "Elapsed": 1.72
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/renewal_first",
+          "Elapsed": 1.6
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal",
+          "Elapsed": 3.33
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/sync_first",
+          "Elapsed": 1.76
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/metering_first",
+          "Elapsed": 1.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering",
+          "Elapsed": 3.38
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPurchaseSnapshotSurvivesCatalogEditsAndEarlyRenewal",
+          "Elapsed": 1.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalIntentCannotConsumeTheSameTargetTwice",
+          "Elapsed": 1.5
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalUsesPurchasedBasePriceAndPreservesHistory",
+          "Elapsed": 1.6
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLRenewalNewPeriodRequiresAcceptanceAndKeepsBothAgreements",
+          "Elapsed": 1.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSpoolStartupFailurePreservesOtherProcessTasks",
+          "Elapsed": 1.39
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionValueReadsVerifiedPaidFacts",
+          "Elapsed": 1.59
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLSubscriptionTerminationSettlesOnceAndRevokesOnlyItsSubscription",
+          "Elapsed": 1.55
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries/UTC",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries/Asia/Shanghai",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries/Asia/Kathmandu",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries/Australia/Lord_Howe",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries/America/New_York",
+          "Elapsed": 0.01
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries",
+          "Elapsed": 1.58
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLUsageProjectionCompetingWorkersAndCheckpointRecovery",
+          "Elapsed": 1.52
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLControlledWalletAdjustmentRollback",
+          "Elapsed": 1.35
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLControlledWalletAdjustmentConcurrent",
+          "Elapsed": 1.5
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletMixedPaymentMatchesFrozenCashAndCapturesOnce",
+          "Elapsed": 1.44
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletOnlyPaymentRollsBackAndRacesWithoutDoubleSpend",
+          "Elapsed": 1.61
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletReservationCompetitionCannotOverspend",
+          "Elapsed": 1.39
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletPaymentCancellationRaceHasOneFinancialOutcome",
+          "Elapsed": 1.5
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingRetainsLegacyWholeCashWithoutCapturingBalance",
+          "Elapsed": 1.57
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingKeepsOwnerScopeAndCannotRechargeItself",
+          "Elapsed": 1.4
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLWalletFundingNeverCombinesDifferentCurrencies",
+          "Elapsed": 1.4
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingBatchReplayOutOfOrderAndExhaustion",
+          "Elapsed": 1.69
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingPreservesReportCollationIdempotency",
+          "Elapsed": 1.39
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptsDoNotWaitForLockedNode",
+          "Elapsed": 1.42
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool",
+          "Elapsed": 1.64
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention",
+          "Elapsed": 1.42
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptCannotUndoStopWithinSameMillisecond",
+          "Elapsed": 1.42
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay",
+          "Elapsed": 3.19
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLZeroWindowFallsBackForDatabaseEquivalentReportIDs",
+          "Elapsed": 1.58
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAccountingWaitDoesNotHoldNodeStatsWriteLock",
+          "Elapsed": 1.63
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLNodeStatsFailureRetainsSettlementAndRetriesProjection",
+          "Elapsed": 1.51
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLConsumerBoundsTransactionsAndDrainsBacklog",
+          "Elapsed": 3.58
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 144.218
+        }
+      ]
+    },
+    {
+      "source": "ae2aadb3d9d5fc50c2fd9706b25815e17578376a",
+      "phase": "race-added",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-p",
+        "2",
+        "-json",
+        "./internal/handler",
+        "-run",
+        "^TestMySQL(AutomaticRenewalVersusManualVerifiedCash|AutomaticRenewalVersusUnsubscribe|AutomaticRenewalConsentWithdrawalRace|PlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait|PlanQuotaSyncConcurrentWalletRenewal|PlanQuotaSyncConcurrentOriginalMetering|BufferedReceiptRevalidatesCredentialAfterContention)$",
+        "-count=3",
+        "-timeout=15m"
+      ],
+      "started_utc": "2026-10-21T05:43:25.033169+00:00",
+      "source_before": {
+        "backend/internal/handler/mysql_business_fixture_test.go": "3f5452fc8dc7729ebffd3b47b9c3e370746ddf7e52c385d5141aa9a7d2af3fb7",
+        "backend/internal/handler/mysql_business_fixture_contract_test.go": "a24b6239010bbd88e41e791ff33906fcf349d655734d31fd0a9052314b972780",
+        "backend/internal/handler/order_mysql_test.go": "38b717d9ade390d48c722519df25fbcf495d1fb62e6bb3908824d00b99cee21b",
+        "backend/internal/handler/zero_projection_lock_mysql_test.go": "1db9942364331285b19bc3ecfd9b388ff85045f7036c2c46e4de28612757e8b9",
+        "backend/internal/handler/usage_projection_mysql_test.go": "8876040bacf562273b11be8046b7854a7c823fb9ddad3c7acf211532aa25d493",
+        "backend/internal/handler/metering_user_lock_mysql_test.go": "febf5ff6e5c396ef45e2ae743682b9c88bcf1eeb8890cab4ede58d82f93ed2a9",
+        "backend/internal/handler/node_publish_target_mysql_test.go": "04df2be751c637328b4618fc9bf9e080db76529462c254e692223f95341fbb0f",
+        "backend/internal/handler/traffic_calendar_mysql_test.go": "7bb8b6a45593e744c86a5dd69e9fd2b1c06a4470ffad2e4c3baf2658966b66b1",
+        "backend/internal/handler/fair_use_observation_retention_mysql_test.go": "3647c082ec904ec3aeac43c6331d413d1ade15db9cf0dcd3e9e98036c8166043",
+        "backend/internal/handler/hourly_usage_projection_mysql_test.go": "798cad4fab5021a77d3d9c2f9701ebe0cc3a010f54edc0765aa6614346abd7e2",
+        "backend/internal/handler/commerce_recurring_discount_mysql_test.go": "9c40bb7059725ef85b691c5ac9913a5f94d2c4c6d3143ad772ecdf25d494ba7a",
+        "backend/internal/handler/zero_accounting_integration_test.go": "e8885474ebb7f72b990a3dfcd537c6b467a3f8f222496d90910d7ba1e2d89424",
+        "backend/internal/handler/zero_event_reduction_test.go": "8ffb07074869f7c1895b6da2213dee7e5f5e66e7fb3824c8cc5276d41ff742c8",
+        "backend/internal/handler/wallet_payments_test.go": "cba9c62f5525ccb2d015d96ac560d16c7c32095b9b95334be9ffa127ea82d0bf",
+        "backend/internal/handler/wallet_adjustments_test.go": "bbb72e96af6020a435b29016b8d229251e9ec5be947ee62170f150bf350dff48",
+        "backend/internal/handler/purchase_snapshot_test.go": "5ae006a8eb3865586fe882a69634acbe7853e9a5a7a89d72404f1526be5e9207",
+        "backend/internal/handler/renewal_price_lock_test.go": "7b2c0cc03a2921ca158f1b68ecce6e74940a49a978b5e3b1c4c829b53f8f44f5",
+        "backend/internal/handler/renewal_intent_test.go": "9e5c4b93691fccd5a6b98f0bc1de55145fea4b01bee683da30d2ccf424071683",
+        "backend/internal/handler/credential_delivery_test.go": "dd9b8f5b14224b3025a6a05d9e30368fd2731df9aa34d7f24e912f1835825909",
+        "backend/internal/handler/credential_reconciliation_snapshot_test.go": "6077f2664f052edf911d0710f50acded12df7560b595b4d64687c6ea6a0ac035",
+        "backend/internal/handler/entitlement_value_test.go": "1e180e083d58ca701bfac7c4deb44a486795b75ea5bb99486edc44be5f2067d6",
+        "backend/internal/handler/subscription_value_test.go": "64d622986e5b3f4e02a0dc9671f8016b8652b00ed92d3526b9cdcd2c050bd594",
+        "backend/internal/handler/node_connector_heartbeat_presence_test.go": "6e3492af42f4f3fb2523bd8ed8f3487355ad9cb6242193b940b67211435284fb",
+        "backend/internal/handler/node_observation_read_test.go": "aeb391faee3f77c57f499139089c5a797cb384086d0c3da6ecb9790c88868cdb",
+        "backend/internal/handler/automatic_renewal_isolation_test.go": "2ae7f8d80c63a3ff442abd4d753631ca857ffa05e1bcbf0c7bf0c430939a7427",
+        "backend/internal/handler/automatic_renewal_test.go": "5c3bb4c8a56943a0eb8f5a8d6396f128f31c8f40fbe1823ef1777d448b5a5537",
+        "backend/internal/handler/background_shutdown_test.go": "29921870f9d7b542f9a22b55847adf99141e3b5e11dd0e73a07486a3b77b4ac5",
+        "backend/internal/handler/external_forward_test.go": "dd9d0e32c5c555f0f6c8f12b42743db29da06f4d4db8fc2e93c5b7878e419680",
+        "backend/internal/handler/network_entry_delivery_test.go": "1e2911dcf0c5172a048787b682738f3d3fc178e1c5375f959398b9419899adaa",
+        "backend/internal/handler/plan_group_sync_test.go": "0ae9f092b1fd8f8343c3cd4406ec85943a2c1d1cd8a222374d0072f7bd2f0308",
+        "backend/internal/handler/plan_quota_sync_test.go": "327f5426ce3d9b770fa9b3f074ffe662620149d444da4b7d25fcd73bf7a9efef",
+        "backend/internal/handler/runtime_shutdown_test.go": "542ea2e5bbc040d1d6eee505e5655183e4afd6678cc33ce98197be3fe9f18014",
+        "backend/internal/handler/zero_connector_receipts_test.go": "8d8190885b766174607dd2b3550cc1ee55646b83b336670c4d72c25201af15ff"
+      },
+      "actual_mysql": true,
+      "environment": {
+        "GOMAXPROCS": "2",
+        "parallel_packages": 2
+      },
+      "scope": "Private test-only candidate, no main-tree integration; original timeout/assertions/migration fixtures retained.",
+      "exit_code": 0,
+      "wall_seconds": 71.105,
+      "source_after": {
+        "backend/internal/handler/mysql_business_fixture_test.go": "3f5452fc8dc7729ebffd3b47b9c3e370746ddf7e52c385d5141aa9a7d2af3fb7",
+        "backend/internal/handler/mysql_business_fixture_contract_test.go": "a24b6239010bbd88e41e791ff33906fcf349d655734d31fd0a9052314b972780",
+        "backend/internal/handler/order_mysql_test.go": "38b717d9ade390d48c722519df25fbcf495d1fb62e6bb3908824d00b99cee21b",
+        "backend/internal/handler/zero_projection_lock_mysql_test.go": "1db9942364331285b19bc3ecfd9b388ff85045f7036c2c46e4de28612757e8b9",
+        "backend/internal/handler/usage_projection_mysql_test.go": "8876040bacf562273b11be8046b7854a7c823fb9ddad3c7acf211532aa25d493",
+        "backend/internal/handler/metering_user_lock_mysql_test.go": "febf5ff6e5c396ef45e2ae743682b9c88bcf1eeb8890cab4ede58d82f93ed2a9",
+        "backend/internal/handler/node_publish_target_mysql_test.go": "04df2be751c637328b4618fc9bf9e080db76529462c254e692223f95341fbb0f",
+        "backend/internal/handler/traffic_calendar_mysql_test.go": "7bb8b6a45593e744c86a5dd69e9fd2b1c06a4470ffad2e4c3baf2658966b66b1",
+        "backend/internal/handler/fair_use_observation_retention_mysql_test.go": "3647c082ec904ec3aeac43c6331d413d1ade15db9cf0dcd3e9e98036c8166043",
+        "backend/internal/handler/hourly_usage_projection_mysql_test.go": "798cad4fab5021a77d3d9c2f9701ebe0cc3a010f54edc0765aa6614346abd7e2",
+        "backend/internal/handler/commerce_recurring_discount_mysql_test.go": "9c40bb7059725ef85b691c5ac9913a5f94d2c4c6d3143ad772ecdf25d494ba7a",
+        "backend/internal/handler/zero_accounting_integration_test.go": "e8885474ebb7f72b990a3dfcd537c6b467a3f8f222496d90910d7ba1e2d89424",
+        "backend/internal/handler/zero_event_reduction_test.go": "8ffb07074869f7c1895b6da2213dee7e5f5e66e7fb3824c8cc5276d41ff742c8",
+        "backend/internal/handler/wallet_payments_test.go": "cba9c62f5525ccb2d015d96ac560d16c7c32095b9b95334be9ffa127ea82d0bf",
+        "backend/internal/handler/wallet_adjustments_test.go": "bbb72e96af6020a435b29016b8d229251e9ec5be947ee62170f150bf350dff48",
+        "backend/internal/handler/purchase_snapshot_test.go": "5ae006a8eb3865586fe882a69634acbe7853e9a5a7a89d72404f1526be5e9207",
+        "backend/internal/handler/renewal_price_lock_test.go": "7b2c0cc03a2921ca158f1b68ecce6e74940a49a978b5e3b1c4c829b53f8f44f5",
+        "backend/internal/handler/renewal_intent_test.go": "9e5c4b93691fccd5a6b98f0bc1de55145fea4b01bee683da30d2ccf424071683",
+        "backend/internal/handler/credential_delivery_test.go": "dd9b8f5b14224b3025a6a05d9e30368fd2731df9aa34d7f24e912f1835825909",
+        "backend/internal/handler/credential_reconciliation_snapshot_test.go": "6077f2664f052edf911d0710f50acded12df7560b595b4d64687c6ea6a0ac035",
+        "backend/internal/handler/entitlement_value_test.go": "1e180e083d58ca701bfac7c4deb44a486795b75ea5bb99486edc44be5f2067d6",
+        "backend/internal/handler/subscription_value_test.go": "64d622986e5b3f4e02a0dc9671f8016b8652b00ed92d3526b9cdcd2c050bd594",
+        "backend/internal/handler/node_connector_heartbeat_presence_test.go": "6e3492af42f4f3fb2523bd8ed8f3487355ad9cb6242193b940b67211435284fb",
+        "backend/internal/handler/node_observation_read_test.go": "aeb391faee3f77c57f499139089c5a797cb384086d0c3da6ecb9790c88868cdb",
+        "backend/internal/handler/automatic_renewal_isolation_test.go": "2ae7f8d80c63a3ff442abd4d753631ca857ffa05e1bcbf0c7bf0c430939a7427",
+        "backend/internal/handler/automatic_renewal_test.go": "5c3bb4c8a56943a0eb8f5a8d6396f128f31c8f40fbe1823ef1777d448b5a5537",
+        "backend/internal/handler/background_shutdown_test.go": "29921870f9d7b542f9a22b55847adf99141e3b5e11dd0e73a07486a3b77b4ac5",
+        "backend/internal/handler/external_forward_test.go": "dd9d0e32c5c555f0f6c8f12b42743db29da06f4d4db8fc2e93c5b7878e419680",
+        "backend/internal/handler/network_entry_delivery_test.go": "1e2911dcf0c5172a048787b682738f3d3fc178e1c5375f959398b9419899adaa",
+        "backend/internal/handler/plan_group_sync_test.go": "0ae9f092b1fd8f8343c3cd4406ec85943a2c1d1cd8a222374d0072f7bd2f0308",
+        "backend/internal/handler/plan_quota_sync_test.go": "327f5426ce3d9b770fa9b3f074ffe662620149d444da4b7d25fcd73bf7a9efef",
+        "backend/internal/handler/runtime_shutdown_test.go": "542ea2e5bbc040d1d6eee505e5655183e4afd6678cc33ce98197be3fe9f18014",
+        "backend/internal/handler/zero_connector_receipts_test.go": "8d8190885b766174607dd2b3550cc1ee55646b83b336670c4d72c25201af15ff"
+      },
+      "finished_utc": "2026-10-21T05:44:36.140569+00:00",
+      "raw_log_bytes": 531224,
+      "raw_log_sha256": "fadab88e58f60179b0281091867c1851be694d277f1b53dae6707412156c893c",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+          "Elapsed": 5.6
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+          "Elapsed": 1.63
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusUnsubscribe",
+          "Elapsed": 1.59
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/direct",
+          "Elapsed": 1.6
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/forward",
+          "Elapsed": 1.66
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait",
+          "Elapsed": 3.26
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/sync_first",
+          "Elapsed": 1.66
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/renewal_first",
+          "Elapsed": 1.73
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal",
+          "Elapsed": 3.39
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/sync_first",
+          "Elapsed": 1.68
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/metering_first",
+          "Elapsed": 1.67
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering",
+          "Elapsed": 3.35
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention",
+          "Elapsed": 1.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+          "Elapsed": 1.69
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+          "Elapsed": 1.87
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusUnsubscribe",
+          "Elapsed": 1.59
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/direct",
+          "Elapsed": 1.63
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/forward",
+          "Elapsed": 1.55
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait",
+          "Elapsed": 3.18
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/sync_first",
+          "Elapsed": 1.64
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/renewal_first",
+          "Elapsed": 1.67
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal",
+          "Elapsed": 3.31
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/sync_first",
+          "Elapsed": 1.58
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/metering_first",
+          "Elapsed": 1.62
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering",
+          "Elapsed": 3.21
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention",
+          "Elapsed": 1.52
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+          "Elapsed": 1.72
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+          "Elapsed": 1.85
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLAutomaticRenewalVersusUnsubscribe",
+          "Elapsed": 1.8
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/direct",
+          "Elapsed": 1.95
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait/forward",
+          "Elapsed": 1.71
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanGroupPendingPaymentReadsMembershipCommittedAfterPlanWait",
+          "Elapsed": 3.66
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/sync_first",
+          "Elapsed": 1.98
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal/renewal_first",
+          "Elapsed": 1.87
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentWalletRenewal",
+          "Elapsed": 3.86
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/sync_first",
+          "Elapsed": 1.82
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering/metering_first",
+          "Elapsed": 1.79
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLPlanQuotaSyncConcurrentOriginalMetering",
+          "Elapsed": 3.61
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Test": "TestMySQLBufferedReceiptRevalidatesCredentialAfterContention",
+          "Elapsed": 1.55
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/zerodenet/zboard/backend/internal/handler",
+          "Elapsed": 55.908
+        }
+      ]
+    }
+  ],
+  "prior_full_source_acceptance": "90734ed local full backend and three original MySQL commands passed, but same-source CI39547192685 MySQLhandler900.021s timeout retained; jobstore/copy not executed in that CI. See separate exact-source receipts.",
+  "unverified": [
+    "Current integrated whole backend/original MySQL commands and exact-head CI not executed yet.",
+    "No new per-setup or whole-suite performance comparison inferred from74 selected tests; prior pairedn3 setup only belongs to earlier frozen source.",
+    "No production behavior, schema or migration change; no original assertion, lock probe, retry, timeout, exclusion or permission weakening."
+  ]
+}

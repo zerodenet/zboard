@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,6 +50,11 @@ type trafficReadFixture struct {
 func newTrafficReadFixture(t *testing.T) trafficReadFixture {
 	t.Helper()
 	h, token := newAnnouncementTestHandlers(t)
+	// Keep precision tests inside the finite minute-history window.
+	h.db.Config.NowFunc = func() time.Time { return time.Date(2026, 9, 1, 23, 59, 59, 0, time.UTC) }
+	if err := datastore.ReconcileTrafficReadSchema(h.db); err != nil {
+		t.Fatal(err)
+	}
 	user := model.User{ID: 99, Email: "traffic-admin@example.test", Password: "unused", Status: userStatusActive, IsAdmin: true}
 	if err := h.db.Create(&user).Error; err != nil {
 		t.Fatal(err)
@@ -111,6 +117,7 @@ func (f trafficReadFixture) seedReconciliation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	rebuildFixtureHourly(t, f.h.db)
 }
 
 type reconciliationTestPage struct {
@@ -208,7 +215,7 @@ func assertTrafficScopeIndexPlan(t *testing.T, f trafficReadFixture, query strin
 	usesIndex := false
 	for _, step := range plan {
 		t.Log(step.Detail)
-		if strings.Contains(step.Detail, "SEARCH traffic_records USING INDEX") {
+		if (strings.Contains(step.Detail, "SEARCH traffic_records USING INDEX") || strings.Contains(step.Detail, "SEARCH traffic_records USING COVERING INDEX")) && (strings.Contains(step.Detail, "subscription_id=?") || strings.Contains(step.Detail, "user_id=?") || strings.Contains(step.Detail, "node_id=?") || strings.Contains(step.Detail, "protocol_endpoint_id=?")) {
 			usesIndex = true
 		}
 	}

@@ -35,7 +35,7 @@ func (h *handlers) AdminUserCreateHandler(w http.ResponseWriter, r *http.Request
 		BadRequest(w, err.Error())
 		return
 	}
-	user, err := h.accountAdministration().Create(r.Context(), identity.Principal{ID: actor.UserID, Actor: actor.Email}, identity.NewAccount{Email: input.Email, Password: input.Password, Status: input.Status, IsAdmin: input.IsAdmin})
+	user, err := h.accountAdministration().Create(r.Context(), identity.Principal{ID: actor.UserID, Actor: actor.Email}, identity.NewAccount{Email: input.Email, Password: input.Password, Status: input.Status, IsAdmin: input.IsAdmin, AdminNote: input.AdminNote})
 	if err != nil {
 		writeAccountAdministrationError(w, err)
 		return
@@ -57,7 +57,7 @@ func (h *handlers) AdminUserUpdateHandler(w http.ResponseWriter, r *http.Request
 		BadRequest(w, err.Error())
 		return
 	}
-	user, err := h.accountAdministration().Update(r.Context(), identity.Principal{ID: actor.UserID, Actor: actor.Email}, id, identity.AccountChange{Status: input.Status, IsAdmin: input.IsAdmin, Password: input.Password})
+	user, err := h.accountAdministration().Update(r.Context(), identity.Principal{ID: actor.UserID, Actor: actor.Email}, id, identity.AccountChange{Status: input.Status, IsAdmin: input.IsAdmin, Password: input.Password, AdminNote: input.AdminNote})
 	if err != nil {
 		writeAccountAdministrationError(w, err)
 		return

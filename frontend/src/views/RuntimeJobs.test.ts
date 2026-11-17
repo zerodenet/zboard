@@ -2,6 +2,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import RuntimeJobs from './RuntimeJobs.vue'
+vi.mock('../api/systemMetrics', async importOriginal => ({ ...await importOriginal<typeof import('../api/systemMetrics')>(), fetchSystemMetrics: vi.fn().mockResolvedValue({ current: null, points: [], range_minutes: 60 }) }))
 const api = vi.hoisted(() => ({ jobs: vi.fn(), registered: vi.fn(), queue: vi.fn(), retry: vi.fn() }))
 vi.mock('../api/runtimeJobs', () => ({ fetchRuntimeJobs: api.jobs, fetchRegisteredJobs: api.registered, fetchRuntimeQueue: api.queue, retryNodePublication: api.retry }))
 vi.mock('../api/runtimeHistory', () => ({ fetchRunHistory: vi.fn().mockResolvedValue({ items: [], total: 0, offset: 0, limit: 25 }), resolveRun: vi.fn() }))
@@ -17,7 +18,7 @@ async function render(data: unknown = snapshot, path = '/') {
 it('shows periods, actual failure and unavailable services without inventing healthy states', async () => {
  const w = await render(); expect(w.text()).toContain('每 20 秒'); expect(w.text()).toContain('Asia/Shanghai · 错过合并一次'); expect(w.text()).toContain('跳过 2'); expect(w.text()).toContain('数据库暂不可用'); expect(w.text()).toContain('插件宿主不可用'); expect(w.text()).toContain('流量事件入账未启用')
  expect(w.get('section[aria-label="已注册任务"]').text()).toContain('订阅到期处理')
- expect(api.queue).toHaveBeenCalledWith('admin_tasks', 0, expect.any(AbortSignal))
+ expect(api.queue).not.toHaveBeenCalled()
 })
 it('opens the node publication queue from a protocol task link', async () => {
  const w = await render(snapshot, '/?queue=node_publish')
@@ -50,13 +51,13 @@ it('keeps long queue errors out of the table and opens the complete error on dem
  expect(table.text()).not.toContain(detail)
  expect(table.text()).toContain('查看错误')
  expect(table.findAll('th').map(header => header.text())).not.toContain('最近错误')
- await table.get('button.queue-error-trigger').trigger('click'); await flushPromises()
+ await table.get('button').trigger('click'); await flushPromises()
  expect(document.body.textContent).toContain(detail)
 })
 it('shows the registered catalog even if the summary request fails', async () => {
  const w = await render(new Error('summary offline'))
  expect(w.get('section[aria-label="已注册任务"]').text()).toContain('订阅到期处理')
- expect(w.text()).toContain('运行状态未更新')
+ expect(w.text()).toContain('执行状态未更新')
  expect(api.registered).toHaveBeenCalledTimes(1)
 })
 it('does not present an unavailable registry as zero registered tasks', async () => {
@@ -71,13 +72,13 @@ it('returns from focused queue to the full overview', async () => {
  await w.vm.$router.push('/'); await flushPromises()
  expect(w.text()).toContain('待处理队列')
  expect(w.text()).toContain('流量事件入账')
- expect(api.queue).toHaveBeenLastCalledWith('admin_tasks', 0, expect.any(AbortSignal))
+ expect(api.queue).toHaveBeenCalledTimes(1)
 })
 it('loads the overview when leaving the default queue focus', async () => {
  const w = await render(snapshot, '/?queue=admin_tasks')
  expect(api.jobs).not.toHaveBeenCalled()
  await w.vm.$router.push('/'); await flushPromises()
- expect(api.jobs).toHaveBeenCalledTimes(1)
+ expect(api.jobs).toHaveBeenCalledTimes(4)
  expect(w.text()).toContain('待处理队列')
 })
 it('shows a queue read failure without calling the queue empty and retries that queue', async () => {
@@ -94,23 +95,25 @@ it('shows a queue read failure without calling the queue empty and retries that 
 it('retains the last snapshot on refresh failure and cancels requests when leaving', async () => {
  const w = await render(); api.jobs.mockRejectedValue(new Error('offline'))
  await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
- expect(w.text()).toContain('运行状态未更新'); expect(w.text()).toContain('订阅到期处理')
+ expect(w.text()).toContain('执行状态未更新'); expect(w.text()).toContain('订阅到期处理')
  expect(w.text()).toContain('重试')
+ api.jobs.mockReturnValue(new Promise(() => {}))
+ await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
  const signal = api.jobs.mock.calls.at(-1)![0] as AbortSignal; w.unmount(); wrapper = undefined; expect(signal.aborted).toBe(true)
 })
 
 it('keeps usable sections visible when one runtime partition fails', async () => {
  const w = await render({ ...snapshot, jobs: [], execution_queue: undefined, issues: [{ section: 'execution', message: '任务执行状态读取失败' }] })
- expect(w.text()).toContain('1 项状态不可用')
+ expect(w.text()).toContain('运行状态：任务执行状态读取失败')
  expect(w.text()).toContain('任务执行状态读取失败')
  expect(w.text()).toContain('执行统计未取得')
  expect(w.get('section[aria-label="已注册任务"]').text()).toContain('订阅到期处理')
  expect(w.text()).toContain('运营任务')
  expect(w.text()).not.toContain('此实例尚无已注册的后台执行器')
- expect(api.queue).toHaveBeenCalledWith('admin_tasks', 0, expect.any(AbortSignal))
+ expect(api.queue).not.toHaveBeenCalled()
 })
 it('clears previous queue details on queue selection and bounds polling after unmount', async () => {
- vi.useFakeTimers(); const w = await render(); await w.findAll('button.queue-card')[1].trigger('click'); await flushPromises()
+ vi.useFakeTimers(); const w = await render(); await w.findAll('.queue-visual button')[1].trigger('click'); await flushPromises()
  expect(api.queue).toHaveBeenLastCalledWith('node_publish', 0, expect.any(AbortSignal))
  const calls = api.jobs.mock.calls.length; w.unmount(); wrapper = undefined; await vi.advanceTimersByTimeAsync(30000); expect(api.jobs).toHaveBeenCalledTimes(calls)
 })
@@ -136,7 +139,7 @@ it('shows exclusive maintenance admission and on-demand migration cadence', asyn
 it('shows registration backlog as events without node links or invented leases', async () => {
  const w = await render({ ...snapshot, queues: [...snapshot.queues, { id: 'registration_messages', name: '注册消息', pending: 1, running: 0, delayed: 0, stale: 0, drafts: 0, failed: 0, oldest_at: '2026-09-13T00:00:00Z' }] })
  api.queue.mockResolvedValue({ items: [{ id: 42, kind: 'registration_event', state: 'pending', created_at: '2026-09-13T00:00:00Z' }], total: 1, offset: 0, limit: 25 })
- await w.findAll('button.queue-card')[2].trigger('click'); await flushPromises()
+ await w.findAll('.queue-visual button')[2].trigger('click'); await flushPromises()
  expect(api.queue).toHaveBeenLastCalledWith('registration_messages', 0, expect.any(AbortSignal))
  const details = w.get('section[aria-label="队列明细"]')
  expect(w.text()).toContain('注册消息队列'); expect(details.text()).toContain('账户 #42 · 注册事件')
@@ -148,9 +151,54 @@ it('retries a delayed node publication and refreshes its persisted queue state',
   const w = await render()
   api.retry.mockResolvedValue(undefined)
   api.queue.mockResolvedValue({ items: [{ id: 42, kind: 'node', state: 'delayed', attempts: 2, created_at: '2026-09-12T00:00:00Z', next_attempt_at: '2026-09-12T02:00:00Z', lease_until: null, last_error: 'timeout' }], total: 1, offset: 0, limit: 25 })
-  await w.findAll('button.queue-card')[1].trigger('click'); await flushPromises()
+  await w.findAll('.queue-visual button')[1].trigger('click'); await flushPromises()
   await w.findAll('button').find(button => button.text() === '立即重试')!.trigger('click'); await flushPromises()
   expect(api.retry).toHaveBeenCalledWith(42)
-  expect(api.queue).toHaveBeenCalledTimes(3)
-  expect(api.jobs).toHaveBeenCalledTimes(1)
+  expect(api.queue).toHaveBeenCalledTimes(2)
+  expect(api.jobs).toHaveBeenCalledTimes(4)
+})
+
+it('opens queue details even when overview diagnostics never settle', async () => {
+ vi.useFakeTimers()
+ const pending = new Promise(() => {})
+ const w = await render(pending)
+ expect(w.find('section[aria-label="队列明细"]').exists()).toBe(false)
+ await w.vm.$router.push('/?queue=admin_tasks'); await flushPromises()
+ expect(w.get('section[aria-label="队列明细"]').text()).toContain('此队列暂无待处理任务')
+ expect(w.text()).toContain('运营任务队列')
+ await vi.advanceTimersByTimeAsync(15_001)
+ expect(api.queue.mock.calls.length).toBeGreaterThanOrEqual(2)
+})
+
+it('renders execution and queue counts while diagnostics and plugin reads never settle', async () => {
+ const w = await render()
+ api.jobs.mockImplementation((_signal, view) => ['runtime', 'plugins'].includes(view) ? new Promise(() => {}) : Promise.resolve(snapshot))
+ await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
+ expect(w.get('section[aria-label="已注册任务"]').text()).toContain('等待下轮')
+ expect(w.get('section[aria-label="业务待处理概览"]').text()).toContain('运营任务')
+ expect(w.get('section[aria-label="业务待处理概览"]').text()).toContain('7')
+ expect(api.jobs.mock.calls.slice(-4).map(call => call[1]).sort()).toEqual(['execution', 'plugins', 'queues', 'runtime'])
+})
+it('retains previous queue counts and marks only that partition stale after a failed read', async () => {
+ const w = await render()
+ api.jobs.mockImplementation((_signal, view) => view === 'queues' ? Promise.resolve({ issues: [{ section: 'queues', message: 'queue database unavailable' }] }) : Promise.resolve(snapshot))
+ await w.get('button[aria-label="刷新后台任务"]').trigger('click'); await flushPromises()
+ expect(w.text()).toContain('更新失败，显示上次结果')
+ expect(w.text()).toContain('queue database unavailable')
+ expect(w.get('section[aria-label="业务待处理概览"]').text()).toContain('7')
+ expect(w.get('section[aria-label="已注册任务"]').text()).toContain('等待下轮')
+})
+
+it('keeps a successful section timestamp and shows classified error details when execution fails', async () => {
+ const w = await render({ ...snapshot, issues: [{ section: 'execution', message: '任务执行状态读取失败', code: 'timeout', detail: '读取超过 5 秒，请检查数据库响应与任务历史查询' }] })
+ expect(w.text()).toContain('读取超过 5 秒')
+ expect(w.get('.runtime-meta time').attributes('datetime')).toBe(snapshot.as_of.replace('Z', '.000Z'))
+ expect(w.get('.worker-usage').text()).toContain('-')
+})
+
+it('does not load or poll queue details until an explicit drilldown', async () => {
+ vi.useFakeTimers(); const w = await render(); expect(api.queue).not.toHaveBeenCalled()
+ await vi.advanceTimersByTimeAsync(15001); await flushPromises(); expect(api.queue).not.toHaveBeenCalled()
+ await w.findAll('.queue-visual button')[0].trigger('click'); await flushPromises()
+ expect(api.queue).toHaveBeenCalledWith('admin_tasks', 0, expect.any(AbortSignal))
 })

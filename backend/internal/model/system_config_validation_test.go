@@ -17,6 +17,11 @@ func TestPolicyContentLimit(t *testing.T) {
 }
 
 func TestSitePublicURLValidation(t *testing.T) {
+	for _, key := range []string{"site_logo", "site_logo_dark", "site_favicon"} {
+		if err := validateSiteSystemConfig(key, "/media/11111111-2222-3333-4444-555555555555"); err != nil {
+			t.Fatal("local site image rejected", key, err)
+		}
+	}
 	for _, key := range []string{"site_logo_dark", "site_favicon", "site_support_url", "site_telegram_url"} {
 		if err := validateSiteSystemConfig(key, "https://example.com/value"); err != nil {
 			t.Fatalf("%s valid URL rejected: %v", key, err)

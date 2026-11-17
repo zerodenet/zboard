@@ -25,6 +25,6 @@ func (b UsageBucketSpec) SelectedFirstPageQuery(scoped, pageSource *gorm.DB, lim
 		Select(`p.id, p.user_id, p.subscription_id, p.node_id, p.protocol_multiplier_milli,
 COALESCE(SUM(t.raw_bytes), 0) AS raw_bytes, COALESCE(SUM(t.upload_bytes), 0) AS upload_bytes,
 COALESCE(SUM(t.download_bytes), 0) AS download_bytes, COALESCE(SUM(t.used_bytes), 0) AS used_bytes,
-p.record_at, COUNT(*) AS record_count`).Group("p.id")
+p.record_at, SUM(t.record_count) AS record_count`).Group("p.id")
 	return scoped.Session(&gorm.Session{NewDB: true}).Table("(?) AS traffic_usage_buckets", aggregated)
 }

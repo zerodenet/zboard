@@ -1,9 +1,9 @@
 <template>
   <section class="standard-page protocols-page">
-    <PageHeader title="节点协议" description="管理直连协议与前置入口；权限组决定订阅下发哪些线路，认证和流量计费统一由父协议承担。" eyebrow="Infrastructure">
+    <PageHeader title="节点协议">
       <template #actions>
         <PageRefreshButton label="刷新协议服务" :loading="loading" @click="refresh()" />
-        <UiButton variant="secondary" type="button" data-testid="protocol-delivery-order" :aria-pressed="orderingOpen" @click="orderingOpen ? closeOrdering() : openOrdering()"><UiIcon name="sort" />{{ orderingOpen ? '退出排序' : '调整展示顺序' }}</UiButton>
+        <UiButton variant="ghost" type="button" data-testid="protocol-delivery-order" :aria-pressed="orderingOpen" @click="orderingOpen ? closeOrdering() : openOrdering()"><UiIcon name="sort" />{{ orderingOpen ? '退出排序' : '调整展示顺序' }}</UiButton>
         <UiButton type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
@@ -32,24 +32,28 @@
     </ModalDialog>
     <NetworkEntries ref="forwardServices" embedded editor-only @saved="refresh()" />
     <ModalDialog :open="serviceTypeOpen" title="创建协议服务" @close="serviceTypeOpen=false">
-      <div class="stack"><p>选择服务接入方式。</p><UiButton @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton @click="createService('forward')">前置端口转发</UiButton><p>复用现有父协议，可登记外部转发地址，也可由面板托管入口服务器的 Zero 转发。</p></div>
+      <div class="stack"><p>选择服务接入方式。</p><UiButton variant="secondary" @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton variant="secondary" @click="createService('forward')">前置端口转发</UiButton><p>复用现有父协议，可登记外部转发地址，也可由面板托管入口服务器的 Zero 转发。</p></div>
     </ModalDialog>
     <div class="protocol-listener-content">
+    <PageAlert v-if="protocolDraftRecovery.message.value" tone="info" title="登录后草稿恢复">{{ protocolDraftRecovery.message.value }}</PageAlert>
+    <PageAlert v-if="protocolRecoveryConflict" tone="warning" title="草稿需要人工核对">协议服务或节点组版本已变化，普通字段草稿仍保留；不能直接覆盖服务器的新内容。请另存后重新打开编辑器。</PageAlert>
     <TransientFeedback :success="message" :error="error" success-title="协议操作已完成" error-title="协议操作失败" />
+    <PageAlert v-if="deferredMessage" tone="warning" title="新设置暂未生效">{{ deferredMessage }}<template #actions><UiButton variant="ghost" size="sm" @click="deferredMessage = ''">知道了</UiButton></template></PageAlert>
     <PageAlert v-if="mieruUnavailableReason" tone="warning" title="Mieru 暂不可用">
       {{ mieruUnavailableReason }} 已有 Mieru 记录会保留供查看和停用，但不会进入新订阅或节点发布。
     </PageAlert>
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing" :density="density" show-density @update:density="setDensity">
       <template #filters>
-        <WorkbenchFilterBar v-if="!orderingOpen" :active="Boolean(filters.q || filters.protocol || filters.active || filters.node || filters.group)" @clear="resetFilters">
+        <WorkbenchFilterBar v-if="!orderingOpen" :active="Boolean(filters.q || filters.protocol || filters.active || filters.node || filters.group || filters.deployment)" @clear="resetFilters">
           <WorkbenchFilterInput v-model="filters.q" label="搜索" placeholder="服务名称或对外地址" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.protocol" label="协议类型" :options="protocolFilterOptions" @apply="applyFilters" />
           <WorkbenchFilterLookup v-model="filters.node" kind="node" label="服务器" placeholder="搜索服务器" @apply="applyFilters" />
           <WorkbenchFilterLookup v-model="filters.group" kind="group" label="节点组" placeholder="搜索节点组" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="filters.active" label="服务状态" :options="activeFilterOptions" @apply="applyFilters" />
+          <WorkbenchFilterSelect v-model="filters.deployment" label="配置发布" :options="deploymentFilterOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <template #actions><UiButton v-if="!orderingOpen" :variant="groupedByNode ? 'secondary' : 'ghost'" size="sm" type="button" @click="setGroupedView(!groupedByNode)"><UiIcon name="nodes" />{{ groupedByNode ? '节点分组' : '按节点分组' }}</UiButton><RouterLink v-if="!orderingOpen" class="button button-ghost button-sm" :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看发布任务</RouterLink></template>
+      <template #actions><UiButton v-if="!orderingOpen" :variant="groupedByNode ? 'secondary' : 'ghost'" size="sm" type="button" @click="setGroupedView(!groupedByNode)"><UiIcon name="nodes" />{{ groupedByNode ? '节点分组' : '按节点分组' }}</UiButton><UiButton as-child variant="ghost" size="sm" v-if="!orderingOpen"><RouterLink :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看发布任务</RouterLink></UiButton></template>
       <template #selection>
         <div v-if="!orderingOpen && (selectedEndpointIDs.length || selectionAllMatching)" class="bulk-action-bar">
           <div><strong>已选择 {{ selectedEndpointCount }} 个直接协议</strong><span v-if="selectionAllMatching">范围：当前全部筛选结果</span><span v-else>范围：已勾选行</span><UiButton v-if="canSelectAllMatching" variant="ghost" size="sm" type="button" @click="selectAllMatching">选择全部 {{ total }} 条筛选结果</UiButton></div>
@@ -69,23 +73,23 @@
           </tr></thead>
           <tbody>
             <template v-for="(endpoint, index) in displayedEndpoints" :key="`${endpoint.service_kind || 'listener'}-${endpoint.id}`">
-            <tr v-if="groupedByNode && isFirstNodeGroup(index)" class="protocol-group-row"><td :colspan="visibleProtocolColumnCount"><div class="protocol-group-content"><UiIcon name="nodes" /><strong :title="endpoint.node_name || `VPS #${endpoint.node_id}`">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</strong><span>节点 #{{ endpoint.node_id }}</span></div></td></tr>
+            <tr v-if="groupedByNode && isFirstNodeGroup(index)" class="protocol-group-row"><td :colspan="visibleProtocolColumnCount"><div class="protocol-group-content"><UiIcon name="nodes" /><strong v-overflow-title="endpoint.node_name || `VPS #${endpoint.node_id}`">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</strong><span>节点 #{{ endpoint.node_id }}</span></div></td></tr>
             <tr :data-order-key="orderingOpen ? endpointOrderKey(endpoint) : undefined" :draggable="orderingOpen && !orderingLoading && !orderingSaving" :tabindex="orderingOpen ? 0 : undefined" :aria-label="orderingOpen ? `拖动整行排序 ${endpoint.name}，或按上下方向键` : undefined" :class="{ 'batch-selected': !orderingOpen && endpoint.service_kind !== 'forward' && isEndpointSelected(endpoint.id), 'protocol-order-row': orderingOpen, 'protocol-order-drop-target': orderingDropKey === endpointOrderKey(endpoint) }" @dragstart="orderingOpen && startOrderingDrag($event, endpoint)" @dragend="stopOrderingDrag" @dragover="orderingOpen && allowOrderingDrop($event, endpoint)" @dragleave="orderingDropKey === endpointOrderKey(endpoint) && (orderingDropKey = '')" @drop="orderingOpen && dropOrderingOn($event, endpoint)" @keydown="handleOrderingRowKeydown($event, endpoint)">
               <td class="selection-column"><span v-if="orderingOpen" class="protocol-order-row-number">{{ orderingPosition(endpoint) }}</span><UiCheckbox v-else :model-value="endpoint.service_kind !== 'forward' && isEndpointSelected(endpoint.id)" :disabled="selectionAllMatching || endpoint.service_kind === 'forward'" :aria-label="`选择协议服务 ${endpoint.name}`" @update:model-value="toggleEndpointSelection(endpoint.id, $event)" /></td>
-              <td class="table-primary-column"><div class="cell-title"><strong :title="endpoint.name">{{ endpoint.name }}</strong><span>{{ endpoint.service_kind === 'forward' ? '入口' : '协议' }} #{{ endpoint.id }}<template v-if="endpoint.service_kind === 'forward'"> → 协议 #{{ endpoint.parent_protocol_id }}</template> · {{ protocolLabel(endpoint.protocol) }}</span></div></td>
+              <td class="table-primary-column"><div class="cell-title"><EntityDetailButton :title="endpoint.name" :data-protocol-detail-trigger="endpoint.id" @click="endpoint.forward ? forwardServices?.edit(endpoint.forward) : openDetail(endpoint)">{{ endpoint.name }}</EntityDetailButton><span>{{ endpoint.service_kind === 'forward' ? '入口' : '协议' }} #{{ endpoint.id }}<template v-if="endpoint.service_kind === 'forward'"> → 协议 #{{ endpoint.parent_protocol_id }}</template> · {{ protocolLabel(endpoint.protocol) }}</span></div></td>
               <td class="protocol-node-column"><div class="cell-title"><RouterLink :to="adminContextLink('/admin/nodes', { node: String(endpoint.node_id) })">{{ endpoint.node_name || `VPS #${endpoint.node_id}` }}</RouterLink><span>{{ endpoint.service_kind === 'forward' ? (endpoint.forward?.deployment_mode === 'external' ? '外部转发 · 父服务器' : 'Zero 托管转发') : 'Zero 协议监听' }} · {{ endpoint.node_online ? '服务器在线' : endpoint.node_last_seen_at ? '服务器离线' : '未收到心跳' }}</span></div></td>
               <td><div class="cell-title"><EndpointAddress :address="endpoint.address" :port="endpoint.public_port || endpoint.port" /><span>{{ endpoint.forward?.deployment_mode === 'external' ? '外部维护转发' : `内部端口 ${endpoint.port}` }}</span></div></td>
-              <td><div class="protocol-status-control"><UiSwitch :model-value="endpoint.is_active" :disabled="isTogglePending(endpoint) || (!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported)" :title="!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported ? endpoint.kernel_unsupported_reason : undefined" :aria-label="`${endpoint.is_active ? '停用' : '启用'}协议服务 ${endpoint.name}`" @update:model-value="value => toggleEndpoint(endpoint, value)" /><div class="cell-title"><span>{{ toggleBusyKeys.has(`${endpoint.service_kind || 'listener'}:${endpoint.id}`) ? '正在提交' : isTogglePending(endpoint) ? '任务处理中' : endpoint.is_active ? '已启用' : '已停用' }}</span></div></div></td>
-              <td><div class="protocol-load" :title="endpoint.forward ? '父协议汇总，包含其他共享入口；无法按前置入口单独拆分' : '当前协议服务的活跃负载和今日流量'"><strong><span><UiIcon name="users" />{{ formatNumber(endpoint.usage?.active_users) }}</span><span><UiIcon name="link" />{{ formatNumber(endpoint.usage?.active_flows) }}</span></strong><span class="protocol-load-traffic"><UiIcon name="activity" />{{ formatCompactBytes(endpoint.usage?.used_bytes_today) }}</span></div></td>
+              <td><div class="protocol-status-control"><UiSwitch :model-value="endpoint.is_active" :disabled="isTogglePending(endpoint) || (!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported)" :title="!endpoint.forward && !endpoint.is_active && !endpoint.kernel_supported ? endpoint.kernel_unsupported_reason : undefined" :aria-label="`${endpoint.is_active ? '停用' : '启用'}协议服务 ${endpoint.name}`" @update:model-value="value => toggleEndpoint(endpoint, value)" /><div class="cell-title"><span v-if="isTogglePending(endpoint)" role="status">{{ toggleBusyKeys.has(`${endpoint.service_kind || 'listener'}:${endpoint.id}`) ? '正在提交' : isTogglePending(endpoint) ? '任务处理中' : '' }}</span><small v-if="endpoint.publication?.status === 'connections_pending'">配置已应用；旧连接撤权待核验</small></div></div></td>
+              <td><div class="protocol-load" :title="endpoint.usage?.traffic_projection_pending ? '流量统计正在更新，已结算流量不受影响' : endpoint.forward ? '父协议汇总，包含其他共享入口；无法按前置入口单独拆分' : '当前协议服务的活跃负载和今日流量'"><strong><span><UiIcon name="users" />{{ formatNumber(endpoint.usage?.active_users) }}</span><span><UiIcon name="link" />{{ formatNumber(endpoint.usage?.active_flows) }}</span></strong><span class="protocol-load-traffic"><UiIcon name="activity" />{{ endpoint.usage?.traffic_projection_pending ? '统计更新中' : formatCompactBytes(endpoint.usage?.used_bytes_today) }}</span></div></td>
               <td data-column-priority="3"><TableText :value="endpoint.forward ? endpoint.forward.node_group_names?.join('、') || '未分配' : endpoint.node_group_memberships?.map(group=>group.name).join('、') || '未分配'" /></td>
-              <td class="numeric-column" data-column-priority="3">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</td>
+              <td class="numeric-column" data-column-priority="3"><span v-if="endpoint.service_kind === 'forward'" class="protocol-multiplier-readonly">{{ formatMultiplierNumber(endpoint.multiplier_milli) }}</span><ProtocolMultiplierCell v-else :endpoint-id="endpoint.id" :multiplier-milli="endpoint.multiplier_milli" :name="endpoint.name" :disabled="orderingOpen" @saved="savedProtocolMultiplier" /></td>
               <td data-column-priority="3"><TimeBadge :value="endpoint.usage?.last_used_at" /></td>
-              <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><RouterLink v-if="endpoint.latest_deployment?.has_error" class="button button-ghost button-sm" :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" :loading="deletingID === endpoint.id" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
+              <td class="table-action-column"><RowActions v-if="endpoint.forward" :label="`${endpoint.name} 的操作`"><UiButton size="sm" variant="ghost" @click="forwardServices?.edit(endpoint.forward)">编辑</UiButton><UiButton size="sm" variant="danger" @click="forwardServices?.remove(endpoint.forward)">删除</UiButton></RowActions><RowActions v-else :label="`${endpoint.name} 的操作`" :trigger-key="`protocol-${endpoint.id}`"><UiButton variant="ghost" size="sm" type="button" :data-protocol-detail-trigger="endpoint.id" :loading="detailLoadingID === endpoint.id" :aria-label="`查看协议服务 ${endpoint.name}`" @click="openDetail(endpoint)"><UiIcon name="search" />查看</UiButton><UiButton variant="ghost" size="sm" type="button" :aria-label="`编辑协议服务 ${endpoint.name}`" @click="openEdit(endpoint)"><UiIcon name="edit" />编辑</UiButton><UiButton variant="ghost" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :aria-label="`复制协议服务 ${endpoint.name}`" @click="openCopy(endpoint)"><UiIcon name="copy" />复制</UiButton><UiButton as-child variant="ghost" size="sm" v-if="endpoint.latest_deployment?.has_error"><RouterLink :aria-label="`查看协议服务 ${endpoint.name} 的失败日志`" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', protocol_endpoint_id: String(endpoint.id) })"><UiIcon name="terminal" />日志</RouterLink></UiButton><UiButton variant="secondary" size="sm" type="button" :disabled="!endpoint.kernel_supported" :title="endpoint.kernel_unsupported_reason" :loading="deployingID === endpoint.id" :aria-label="`发布协议服务 ${endpoint.name}`" @click="deploy(endpoint)"><UiIcon name="play" />发布</UiButton><UiButton variant="danger" size="sm" type="button" @click="removeEndpoint(endpoint)"><UiIcon name="trash" />删除</UiButton></RowActions></td>
             </tr>
             </template>
           </tbody>
       </DataTable>
-      <EmptyState v-else-if="!initialLoading && !loading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.node || filters.group ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.node || filters.group ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.node && !filters.group"  type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!initialLoading && !loading" icon="activity" :title="filters.q || filters.protocol || filters.active || filters.node || filters.group || filters.deployment ? '没有匹配服务' : '还没有协议服务'" :description="filters.q || filters.protocol || filters.active || filters.node || filters.group || filters.deployment ? '调整或清除筛选条件后重试。' : '选择一台 VPS，填写连接参数后即可创建。'"><template #actions><UiButton v-if="!filters.q && !filters.protocol && !filters.active && !filters.node && !filters.group && !filters.deployment"  type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton></template></EmptyState>
       <template #footer><TablePager variant="stripe" :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
@@ -94,7 +98,7 @@
       <p>尚无有效订阅凭证时，服务配置可正常保存和发布，暂不启动监听；订阅开通后自动生成用户凭证并发布，最后一个有效凭证失效后停止监听。</p>
     </details>
 
-    <DetailDrawer :open="Boolean(selectedEndpointDetail)" :title="selectedEndpointDetail?.name || '协议服务详情'" eyebrow="Protocol endpoint" :description="selectedEndpointSummary ? `${selectedEndpointSummary.node_name || `VPS #${selectedEndpointSummary.node_id}`} · ${selectedEndpointSummary.address}:${selectedEndpointSummary.public_port || selectedEndpointSummary.port}` : ''" :return-focus-selector="selectedEndpointDetail ? `[data-row-action-trigger='protocol-${selectedEndpointDetail.id}']` : ''" @close="closeDetail">
+    <DetailDrawer :open="Boolean(selectedEndpointDetail)" :title="selectedEndpointDetail?.name || '协议服务详情'" :description="selectedEndpointSummary ? `${selectedEndpointSummary.node_name || `VPS #${selectedEndpointSummary.node_id}`} · ${selectedEndpointSummary.address}:${selectedEndpointSummary.public_port || selectedEndpointSummary.port}` : ''" :return-focus-selector="selectedEndpointDetail ? `[data-row-action-trigger='protocol-${selectedEndpointDetail.id}']` : ''" @close="closeDetail">
       <main v-if="selectedEndpointDetail" class="stack protocol-detail">
         <PageAlert v-if="!selectedEndpointDetail.kernel_supported" tone="warning" title="当前内核无法使用此协议">
           {{ selectedEndpointDetail.kernel_unsupported_reason }} 该记录仅保留供查看；如仍处于启用状态，请编辑并将其停用。
@@ -106,7 +110,7 @@
         <div v-if="selectedEndpointSummary" class="protocol-mobile-detail-actions" aria-label="协议服务操作">
           <UiButton variant="secondary" size="sm" type="button" @click="editSelectedEndpoint"><UiIcon name="edit" />编辑服务</UiButton>
           <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedEndpointDetail.kernel_supported" :title="selectedEndpointDetail.kernel_unsupported_reason" @click="copySelectedEndpoint"><UiIcon name="copy" />复制配置</UiButton>
-          <RouterLink v-if="selectedEndpointSummary.latest_deployment?.has_error" class="button button-ghost button-sm" :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', status: 'failed', protocol_endpoint_id: String(selectedEndpointSummary.id) })"><UiIcon name="terminal" />失败日志</RouterLink>
+          <UiButton as-child variant="ghost" size="sm" v-if="selectedEndpointSummary.latest_deployment?.has_error"><RouterLink :to="adminContextLink('/admin/operation-logs', { source: 'protocol_publish', protocol_endpoint_id: String(selectedEndpointSummary.id) })"><UiIcon name="terminal" />发布记录</RouterLink></UiButton>
           <UiButton variant="secondary" size="sm" type="button" :disabled="!selectedEndpointDetail.kernel_supported" :title="selectedEndpointDetail.kernel_unsupported_reason" :loading="deployingID === selectedEndpointSummary.id" @click="deploy(selectedEndpointSummary)"><UiIcon name="play" />发布配置</UiButton>
         </div>
         <section class="panel detail-facts">
@@ -118,14 +122,14 @@
           <div><span>活跃用户</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_users) }}</strong></div>
           <div><span>活跃连接</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_flows) }}</strong></div>
           <div><span>活跃凭证</span><strong>{{ formatNumber(selectedEndpointDetail.usage?.active_credentials) }}</strong></div>
-          <div><span>今日流量</span><strong>{{ formatBytes(selectedEndpointDetail.usage?.used_bytes_today) }}</strong></div>
-          <div><span>本期累计流量</span><strong>{{ formatBytes(selectedEndpointDetail.usage?.used_bytes_total) }}</strong></div>
+          <div><span>今日流量</span><strong>{{ selectedEndpointDetail.usage?.traffic_projection_pending ? '统计更新中' : formatBytes(selectedEndpointDetail.usage?.used_bytes_today) }}</strong></div>
+          <div><span>本期累计流量</span><strong>{{ selectedEndpointDetail.usage?.traffic_projection_pending ? '统计更新中' : formatBytes(selectedEndpointDetail.usage?.used_bytes_total) }}</strong></div>
           <div><span>统计起点</span><TimeBadge :value="selectedEndpointDetail.usage?.reset_at" /></div>
           <div><span>最近使用</span><TimeBadge :value="selectedEndpointDetail.usage?.last_used_at" /></div>
           <div><span>最后更新</span><TimeBadge :value="selectedEndpointDetail.updated_at" /></div>
         </section>
         <section class="panel deployment-history">
-          <header class="panel-header"><div><h2>流量统计周期</h2><p>重置后从零统计新周期；原始流量记录、订阅配额和计费保持不变。</p></div><UiButton variant="secondary" size="sm" type="button" @click="openUsageReset">重置统计</UiButton></header>
+          <header class="panel-header"><div><h2>流量统计周期</h2><p>{{ selectedEndpointDetail.usage?.traffic_projection_pending ? '流量统计正在更新，已结算流量不受影响；更新完成后可重置统计。' : '重置后从零统计新周期；原始流量记录、订阅配额和计费保持不变。' }}</p></div><UiButton variant="secondary" size="sm" type="button" :disabled="selectedEndpointDetail.usage?.traffic_projection_pending" @click="openUsageReset">重置统计</UiButton></header>
           <PageAlert v-if="usageResetsError" tone="danger" title="统计周期加载失败">{{ usageResetsError }}</PageAlert>
           <DataTable v-if="usageResets.length" caption="协议服务流量统计周期" :row-count="usageResets.length" :min-width="580">
             <thead><tr><th>重置时间</th><th>上期用量</th><th>原因</th></tr></thead>
@@ -134,7 +138,7 @@
           <p v-else-if="!usageResetsLoading && !usageResetsError" class="text-muted">尚未重置过统计，当前累计为创建以来的用量。</p>
         </section>
         <section class="panel deployment-history">
-          <header class="panel-header"><div><h2>发布任务记录</h2><p>仅供排查发布任务；记录可能被清理，不代表协议当前状态。</p></div><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看任务队列</RouterLink></header>
+          <header class="panel-header"><div><h2>发布任务记录</h2><p>仅供排查发布任务；记录可能被清理，不代表协议当前状态。</p></div><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/runtime-jobs', { queue: 'node_publish' })">查看任务队列</RouterLink></UiButton></header>
           <PageAlert v-if="deploymentError" tone="danger" title="发布历史加载失败">{{ deploymentError }}</PageAlert>
           <DataTable v-if="deployments.length" caption="协议服务发布历史" :row-count="deploymentTotal" :min-width="760">
             <thead>
@@ -191,6 +195,7 @@
             <FormField v-slot="{ controlAttrs }" label="协议类型" name="protocol-type" :hint="form.id ? '已创建服务不直接切换协议，避免破坏现有用户凭证；如需更换请创建新服务。' : ''" :error="editorErrors.fields.protocol" required><UiSelect v-model="form.protocol" v-bind="controlAttrs" :options="protocolOptions" :disabled="Boolean(form.id)" @change="handleProtocolChange" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="服务名称" name="protocol-name" :error="editorErrors.fields.name" required><UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="例如：香港 VLESS 01" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="对外地址" name="protocol-address" :hint="selectedNode?.address ? `已从 ${selectedNode.name} 自动带出，可按实际入口修改。` : '当前节点没有默认地址，请填写客户端可访问的域名或公网 IP。'" :error="editorErrors.fields.address" required full><div class="input-with-action"><UiInput v-model.trim="form.address" v-bind="controlAttrs" placeholder="域名或公网 IP" /><UiButton v-if="selectedNode?.address && form.address !== selectedNode.address" type="button" @click="useNodeAddress">使用节点地址</UiButton></div></FormField>
+            <FormField v-slot="{ controlAttrs }" label="监听地址" name="protocol-listen-address" hint="填写 VPS 本地 IP；0.0.0.0 监听 IPv4，:: 监听 IPv6。IPv6 通配是否同时接收 IPv4 取决于节点系统设置。" :error="editorErrors.fields.listen_address" required full><UiInput v-model.trim="form.listen_address" v-bind="controlAttrs" placeholder="0.0.0.0 或 ::" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="服务监听端口" name="protocol-port" hint="Zero 在 VPS 上实际监听的端口；保存后会同步凭证并发布节点配置。" :error="editorErrors.fields.port" required><PortInput v-model="form.port" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="客户端连接端口" name="protocol-public-port" hint="存在端口转发时可与监听端口不同；变更后用户需要更新订阅配置。" :error="editorErrors.fields.public_port" required><PortInput v-model="form.public_port" v-bind="controlAttrs" /></FormField>
           </div>
@@ -212,8 +217,9 @@
             <FormField v-if="supportsSelectableTransport && structured.transport === 'grpc'" v-slot="{ controlAttrs }" label="gRPC Service Name" name="protocol-grpc-service-name" :error="editorErrors.fields['structured.grpc_service_name']" required><UiInput v-model.trim="structured.grpc_service_name" v-bind="controlAttrs" placeholder="zboard" /></FormField>
             <template v-if="form.protocol === 'vless' && structured.security === 'reality'">
               <div class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>VLESS + Reality</strong><p>面板生成匹配的 X25519 密钥与 short ID；私钥仅进入加密保存的服务端配置，订阅只下发公钥。</p></div><UiButton variant="secondary" type="button" :loading="realityKeyBusy" @click="regenerateRealityKeys">重新生成密钥</UiButton></div>
-              <FormField v-slot="{ controlAttrs }" label="一键场景模板" hint="模板会一次填入推荐 SNI、客户端指纹、成对密钥和 Short ID；应用后仍可按实际网络调整。" full><div class="input-with-action"><UiSelect v-model="realityPreset" v-bind="controlAttrs" :options="realityPresetOptions" /><UiButton variant="secondary" type="button" :loading="realityTemplateBusy" @click="applyRealityTemplate">应用模板</UiButton></div></FormField>
-              <FormField v-slot="{ controlAttrs }" label="伪装域名（SNI）" name="protocol-reality-server-name" :error="editorErrors.fields['structured.reality_server_name']" required><UiInput v-model.trim="structured.reality_server_name" v-bind="controlAttrs" placeholder="www.microsoft.com" /></FormField>
+              <FormField v-slot="{ controlAttrs }" label="一键场景模板" hint="模板填入预设 SNI、客户端指纹及新密钥；域名是否适合当前 VPS，可用下方在线探测确认。" full><div class="input-with-action"><UiSelect v-model="realityPreset" v-bind="controlAttrs" :options="realityPresetOptions" /><UiButton variant="secondary" type="button" :loading="realityTemplateBusy" @click="applyRealityTemplate">应用模板</UiButton></div></FormField>
+              <FormField v-slot="{ controlAttrs }" label="伪装域名（SNI）" name="protocol-reality-server-name" :error="editorErrors.fields['structured.reality_server_name']" required><div class="input-with-action"><UiInput v-model.trim="structured.reality_server_name" v-bind="controlAttrs" placeholder="输入域名或从 VPS 探测选择" /><UiButton variant="secondary" :disabled="!form.node_id" @click="realityProbeOpen = !realityProbeOpen">探测伪装域名</UiButton></div></FormField>
+              <RealityDomainProbe v-if="realityProbeOpen" class="field-full" :node-id="form.node_id" :node-name="selectedNode?.name" @select="structured.reality_server_name = $event" @close="realityProbeOpen = false" />
               <FormField v-slot="{ controlAttrs }" label="Short ID" name="protocol-reality-short-id" hint="2–16 位偶数长度十六进制字符串。" :error="editorErrors.fields['structured.reality_short_id']" required><UiInput v-model.trim="structured.reality_short_id" v-bind="controlAttrs" class="mono" /></FormField>
               <FormField v-slot="{ controlAttrs }" label="客户端指纹"><UiSelect v-model="structured.reality_fingerprint" v-bind="controlAttrs" :options="realityFingerprintOptions" /></FormField>
               <FormField v-slot="{ controlAttrs }" label="Reality 公钥" full><UiInput v-model.trim="structured.reality_public_key" v-bind="controlAttrs" class="mono" readonly /></FormField>
@@ -228,7 +234,7 @@
             </template>
             <div class="generated-config-note field-full"><UiIcon name="check" /><div><strong>配置由系统生成</strong><p>系统会把服务参数转换为 Zero 配置，并在订阅开通、续费、到期时自动更新节点；原始 JSON 仅在最后一步的高级设置中提供。</p></div></div>
             <section class="endpoint-egress field-full">
-              <header><div><strong>出口配置（可选）</strong><small>不启用时，这个协议入口仍由节点直接访问目标；启用后只影响当前入口。</small></div><label class="check-field"><UiCheckbox v-model="egress.enabled" /><span>为此入口指定代理出口</span></label></header>
+              <header><div><strong>出口配置（可选）</strong><small>默认使用 Direct · auto；自定义设置只影响当前入口。</small></div><label class="check-field"><UiCheckbox v-model="egress.enabled" /><span>自定义此入口出口</span></label></header>
               <div v-if="egress.enabled" class="endpoint-egress-body">
                 <UiTabs v-model="egress.mode" :items="[{ value: 'manual', label: '逐项填写' }, { value: 'import', label: '解析分享链接' }]" label="出口配置方式" />
                 <template v-if="egress.mode === 'import'">
@@ -240,8 +246,13 @@
                 </template>
                 <div v-else class="guided-grid compact-grid">
                   <FormField v-slot="{ controlAttrs }" label="出口协议" required><UiSelect v-model="egress.protocol" v-bind="controlAttrs" :options="egressProtocolOptions" /></FormField>
-                  <FormField v-slot="{ controlAttrs }" label="出口服务器" name="protocol-egress-server" :error="editorErrors.fields['egress.server']" required><UiInput v-model.trim="egress.server" v-bind="controlAttrs" placeholder="proxy.example.com" /></FormField>
-                  <FormField v-slot="{ controlAttrs }" label="出口端口" name="protocol-egress-port" :error="editorErrors.fields['egress.port']" required><PortInput v-model="egress.port" v-bind="controlAttrs" /></FormField>
+                  <template v-if="egress.protocol === 'direct'">
+                    <FormField v-slot="{ controlAttrs }" label="出站地址族" hint="仅 IPv4 / IPv6 是硬约束，失败时不会回退到另一地址族。"><UiSelect v-model="egress.address_family" v-bind="controlAttrs" :options="[{ label: '自动（auto）', value: 'auto' }, { label: '仅 IPv4', value: 'only_ipv4' }, { label: '仅 IPv6', value: 'only_ipv6' }]" /></FormField>
+                    <FormField v-slot="{ controlAttrs }" label="出口网卡（可选）" hint="填写当前 VPS 的实际网卡名称；留空由系统选择。"><UiInput v-model.trim="egress.interface" v-bind="controlAttrs" placeholder="例如 eth0" /></FormField>
+                    <FormField v-slot="{ controlAttrs }" label="源 IP（可选）" hint="必须属于当前 VPS；指定网卡时还必须属于该网卡。"><UiInput v-model.trim="egress.source_ip" v-bind="controlAttrs" placeholder="本机 IPv4 或 IPv6 地址" /></FormField>
+                  </template>
+                  <FormField v-if="egress.protocol !== 'direct'" v-slot="{ controlAttrs }" label="出口服务器" name="protocol-egress-server" :error="editorErrors.fields['egress.server']" required><UiInput v-model.trim="egress.server" v-bind="controlAttrs" placeholder="proxy.example.com" /></FormField>
+                  <FormField v-if="egress.protocol !== 'direct'" v-slot="{ controlAttrs }" label="出口端口" name="protocol-egress-port" :error="editorErrors.fields['egress.port']" required><PortInput v-model="egress.port" v-bind="controlAttrs" /></FormField>
                   <FormField v-if="['socks5', 'mieru'].includes(egress.protocol)" v-slot="{ controlAttrs }" label="用户名（可选）"><UiInput v-model.trim="egress.username" v-bind="controlAttrs" autocomplete="off" /></FormField>
                   <FormField v-if="['shadowsocks', 'trojan', 'hysteria2', 'mieru'].includes(egress.protocol) || egress.protocol === 'socks5'" v-slot="{ controlAttrs }" :label="egress.protocol === 'socks5' ? '密码（可选）' : '密码'" name="protocol-egress-password" :error="editorErrors.fields['egress.password']" :required="egress.protocol !== 'socks5'"><UiInput v-model="egress.password" v-bind="controlAttrs" type="password" autocomplete="new-password" /></FormField>
                   <FormField v-if="egress.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="加密方式" required><UiSelect v-model="egress.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
@@ -249,7 +260,7 @@
                   <FormField v-if="egress.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="egress.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
                   <FormField v-if="['vless', 'vmess', 'trojan', 'hysteria2'].includes(egress.protocol)" v-slot="{ controlAttrs }" label="TLS / Reality 域名（可选）"><UiInput v-model.trim="egress.server_name" v-bind="controlAttrs" :placeholder="egress.server" /></FormField>
                   <FormField v-if="['vless', 'vmess', 'trojan', 'hysteria2'].includes(egress.protocol)" label="证书校验"><div class="check-field"><UiCheckbox v-model="egress.insecure" /><span>允许不安全证书</span></div></FormField>
-                  <PageAlert v-if="Object.keys(egress.base || {}).some(key => !['type', 'server', 'port', 'username', 'password', 'cipher', 'id', 'server_name', 'sni', 'insecure'].includes(key))" tone="info" title="已保留导入扩展参数">TLS、Reality、WebSocket、gRPC 等扩展字段会原样保留；上方修改只覆盖对应基础字段。</PageAlert>
+                  <PageAlert v-if="Object.keys(egress.base || {}).some(key => !['type', 'server', 'port', 'username', 'password', 'cipher', 'id', 'server_name', 'sni', 'insecure', 'dial'].includes(key))" tone="info" title="已保留导入扩展参数">TLS、Reality、WebSocket、gRPC 等扩展字段会原样保留；上方修改只覆盖对应基础字段。</PageAlert>
                 </div>
               </div>
             </section>
@@ -261,7 +272,7 @@
           <div class="review-grid">
             <article><span>承载节点</span><strong>{{ selectedNode?.name || '未选择' }}</strong><small>{{ selectedNode?.region || '未设置区域' }}</small></article>
             <article><span>协议服务</span><strong>{{ form.name }}</strong><small>{{ protocolLabel(form.protocol) }}</small></article>
-            <article><span>对外入口</span><strong class="mono">{{ form.address }}:{{ form.public_port }}</strong><small>VPS 监听 {{ form.port }}</small></article>
+            <article><span>对外入口</span><strong class="mono">{{ form.address }}:{{ form.public_port }}</strong><small>VPS 监听 {{ listenAddressPreview }}:{{ form.port }}</small></article>
             <article><span>流量出口</span><strong>{{ egress.enabled ? protocolLabel(egress.protocol) : 'Direct' }}</strong><small>{{ egress.enabled ? `${egress.server}:${egress.port}` : '节点直接访问目标' }}</small></article>
             <article><span>流量计费</span><strong>{{ formatMultiplier(form.multiplier_milli) }}</strong><small>前端自动换算，无需手动填写千分值</small></article>
           </div>
@@ -272,7 +283,7 @@
               当前草稿携带的节点组版本已过期。重新加载关联不会覆盖协议参数，但会以最新关联作为新的比较基线。
               <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="membershipReloading" @click="reloadNodeGroupMemberships"><UiIcon name="refresh" />重新加载关联</UiButton></template>
             </PageAlert>
-            <FormField v-slot="{ controlAttrs }" label="运行状态" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并发布该运行实例</span></div></FormField>
+            <FormField v-slot="{ controlAttrs }" label="业务启用" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并推进配置交付；实际执行结果需核验</span></div></FormField>
             <FormField label="关联节点组" name="protocol-node-groups" :error="editorErrors.fields.node_group_membership_changes" full>
               <NodeGroupMembershipEditor v-model="form.node_group_memberships" :can-add="Boolean(form.is_active)" />
             </FormField>
@@ -297,21 +308,26 @@
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="editorStep === 1 ? requestClose() : editorStep--">{{ editorStep === 1 ? '取消' : '上一步' }}</UiButton>
         <UiButton v-if="editorStep < 3" type="button" @click="nextStep">下一步</UiButton>
-        <UiButton v-else form="protocol-form" type="submit" :disabled="!canSaveSelectedProtocol || membershipRevisionConflict" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
+        <UiButton v-else form="protocol-form" type="submit" :disabled="protocolRecoveryConflict || !canSaveSelectedProtocol || membershipRevisionConflict" :title="!canSaveSelectedProtocol ? selectedProtocolCapability.reason : ''" :loading="saving">{{ copySourceID ? '保存为新服务' : '保存协议服务' }}</UiButton>
       </template>
     </ModalDialog>
     </div>
+    <ResourceDeletionDialog :target="deletionTarget" kind="protocol" @close="deletionTarget = null" @deleted="endpointDeleted" />
   </section>
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
+import ProtocolMultiplierCell from '../components/ProtocolMultiplierCell.vue'
+import EntityDetailButton from '../components/EntityDetailButton.vue'
+import ResourceDeletionDialog from '../components/ResourceDeletionDialog.vue'
 import NodeSetupGuide from '../components/NodeSetupGuide.vue'
 import TableText from '../components/TableText.vue'
 import NetworkEntries from './NetworkEntries.vue'
 import UiTabs from '../components/UiTabs.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProtocolBatchDeployment, createProtocolEndpoint, deleteProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, parseProtocolEndpointEgress, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointUsageReset, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
+import { createProtocolBatchDeployment, createProtocolEndpoint, deployProtocolEndpoint, fetchManagedCertificatesPage, fetchNodesPage, fetchProtocolDeployments, fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchSubscriptionDeliveryOrder, fetchProtocolEndpointsPage, generateRealityKeyPair, generateRealityTemplate, getVersion, parseProtocolEndpointEgress, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpoint, updateSubscriptionDeliveryOrder, updateProtocolEndpointsBatch, type AdminNodeListItem, type ManagedCertificate, type ProtocolEndpointListItem, type ProtocolEndpointNodeGroupMembership, type ProtocolEndpointUsageReset, type SubscriptionDeliveryOrderItem, type ProtocolKernelCapability } from '../api/client'
 import DataWorkbench from '../components/DataWorkbench.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
@@ -331,6 +347,7 @@ import SortableHeader from '../components/SortableHeader.vue'
 import TablePager from '../components/TablePager.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
+import RealityDomainProbe from '../components/RealityDomainProbe.vue'
 import UiStepNav from '../components/UiStepNav.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
@@ -338,10 +355,13 @@ import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import WorkbenchFilterLookup from '../components/WorkbenchFilterLookup.vue'
 import UiSwitch from '../components/UiSwitch.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { useAppStore } from '../stores/app'
+import { protocolAssetBaseline, protocolAssetRecovery, sameRecoveryBaseline } from '../utils/adminAssetRecovery'
 import { useRemoteTable } from '../composables/useRemoteTable'
 import { useSelectionScope } from '../composables/useSelectionScope'
 import { nextSortDirection, resolveSortDirection, resolveSortField, resolveTableDensity } from '../composables/tableState'
-import { confirmAction } from '../utils/feedback'
+import { confirmAction, notify } from '../utils/feedback'
 import EndpointAddress from '../components/EndpointAddress.vue'
 import { formatCompactBytes, formatBytes, formatNumber, formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
@@ -375,10 +395,13 @@ const protocolOptions = computed(() => protocols.map(value => ({
   disabled: !protocolCapabilities[value]?.supported,
 })))
 const protocolFilterOptions = [{ label: '全部协议', value: '' }, ...protocols.map(value => ({ label: protocolLabel(value), value }))]
+const deploymentFilterOptions = [{ label: '全部发布状态', value: '' }, { label: '发布失败', value: 'failed' }, { label: '发布中', value: 'running' }, { label: '等待发布', value: 'queued' }, { label: '发布成功', value: 'succeeded' }, { label: '尚未发布', value: 'never' }]
+function deploymentFilter(value: unknown) { return deploymentFilterOptions.some(option => option.value === value) ? String(value) : '' }
 const activeFilterOptions = [{ label: '全部服务状态', value: '' }, { label: '已启用', value: 'active' }, { label: '已停用', value: 'inactive' }]
 const vmessCipherOptions = [{ label: 'AES-128-GCM（推荐）', value: 'aes-128-gcm' }, { label: 'ChaCha20-Poly1305', value: 'chacha20-poly1305' }, { label: '不额外加密', value: 'none' }]
 const shadowsocksCipherOptions = [{ label: 'AES-128-GCM', value: 'aes-128-gcm' }, { label: 'AES-256-GCM', value: 'aes-256-gcm' }, { label: 'ChaCha20-Poly1305（推荐）', value: 'chacha20-ietf-poly1305' }]
 const egressProtocolOptions = [
+  { label: 'Direct（直接出站）', value: 'direct' },
   { label: 'SOCKS5', value: 'socks5' },
   { label: 'Shadowsocks', value: 'shadowsocks' },
   { label: 'VLESS', value: 'vless' },
@@ -412,6 +435,7 @@ const filters = reactive({
   q: typeof route.query.q === 'string' ? route.query.q : '',
   protocol: typeof route.query.protocol === 'string' ? route.query.protocol : '',
   active: typeof route.query.active === 'string' ? route.query.active : '',
+  deployment: deploymentFilter(route.query.deployment),
 })
 type ProtocolSortField = 'sort_order' | 'id' | 'name' | 'node_id' | 'protocol' | 'multiplier' | 'updated_at'
 const protocolSortFields = new Set<ProtocolSortField>(['sort_order', 'id', 'name', 'node_id', 'protocol', 'multiplier', 'updated_at'])
@@ -428,7 +452,9 @@ const usageResetsLoading = ref(false), usageResetsError = ref('')
 const usageResetOpen = ref(false), usageResetSaving = ref(false), usageResetReason = ref(''), usageResetError = ref('')
 const deploymentOffset = ref((Math.max(1, Number(route.query.deployment_page) || 1) - 1) * 25)
 const deploymentLimit = ref(allowedPageSizes.includes(Number(route.query.deployment_limit)) ? Number(route.query.deployment_limit) : 25)
-const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), egressParsing = ref(false), egressImportError = ref(''), deployingID = ref(0), deletingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+const realityProbeOpen = ref(false)
+const saving = ref(false), realityKeyBusy = ref(false), realityTemplateBusy = ref(false), realityPreset = ref('compatible'), egressParsing = ref(false), egressImportError = ref(''), deployingID = ref(0), detailLoadingID = ref(0), editorOpen = ref(false), editorStep = ref(1)
+watch(editorOpen, () => { realityProbeOpen.value = false })
 const orderingOpen = ref(false), orderingLoading = ref(false), orderingSaving = ref(false), orderingError = ref(''), orderingVersion = ref('')
 const orderingDialogOpen = ref(false), orderingDragKey = ref(''), orderingDropKey = ref('')
 let orderingReturnPath = ''
@@ -443,24 +469,85 @@ const membershipReloading = ref(false)
 const bulkBusy = ref<'' | 'deploy' | 'enable' | 'disable'>('')
 const toggleBusyKeys = reactive(new Set<string>())
 const toggleTaskIDs = reactive<Record<number, number>>({})
-const message = ref(''), editorError = ref('')
+const message = ref(''), editorError = ref(''), deferredMessage = ref('')
 const protocolUsageRefreshIntervalMS = 15_000
 let protocolUsageRefreshTimer: number | undefined
-const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
+const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', listen_address: '0.0.0.0', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
-const emptyEgress = () => ({ enabled: false, mode: 'manual', import_text: '', protocol: 'socks5', server: '', port: 1080, username: '', password: '', cipher: 'chacha20-ietf-poly1305', id: '', server_name: '', insecure: false, base: {} as Record<string, any> })
+const emptyEgress = () => ({ enabled: false, mode: 'manual', import_text: '', protocol: 'direct', address_family: 'auto', interface: '', source_ip: '', server: '', port: 1080, username: '', password: '', cipher: 'chacha20-ietf-poly1305', id: '', server_name: '', insecure: false, base: {} as Record<string, any> })
 const form = reactive<any>(emptyForm())
+const listenAddressPreview = computed(() => {
+  const address = form.listen_address.replace(/^\[(.*)\]$/, '$1')
+  return address.includes(':') ? `[${address}]` : address
+})
 const structured = reactive<any>(emptyStructured())
 const egress = reactive<any>(emptyEgress())
 const protocolFormElement = ref<HTMLElement | null>(null)
 const editorErrors = useFormErrors()
 const protocolFieldMap: Record<string, string> = {
-  node_id: 'node_id', name: 'name', protocol: 'protocol', address: 'address', port: 'port', public_port: 'public_port',
+  node_id: 'node_id', name: 'name', protocol: 'protocol', address: 'address', listen_address: 'listen_address', port: 'port', public_port: 'public_port',
   multiplier_milli: 'multiplier_milli', sort_order: 'sort_order', parent_protocol_id: 'parent_protocol_id', managed_certificate_id: 'managed_certificate_id',
   config: 'config', egress_config: 'egress_config', client_config: 'client_config', optional_config: 'optional_config', tags: 'tags', is_active: 'is_active',
   node_group_membership_changes: 'node_group_membership_changes',
 }
 const editorState = useDirtyForm(() => ({ form, structured, egress }))
+const protocolRecoveryApp = useAppStore()
+let protocolEditorGeneration = 0
+const protocolRecoveryConflict = ref(false), protocolRecovered = ref(false)
+let protocolRestoringDraft = false
+const protocolOriginal = ref<ReturnType<typeof protocolAssetBaseline>>()
+// Memory only: raw configuration, credentials and import text never leave this
+// page. Any change outside the explicit asset whitelist rejects whole capture.
+const protocolProtectedBaseline = ref('')
+function protocolProtectedState() {
+  return JSON.stringify({ protocol: form.protocol, parent_protocol_id: form.parent_protocol_id, managed_certificate_id: form.managed_certificate_id, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, is_active: form.is_active, config: form.config, client_config: form.client_config, egress_config: form.egress_config, optional_config: form.optional_config, tags: form.tags, structured, egress })
+}
+const protocolSensitiveChanged = computed(() => editorOpen.value && protocolProtectedBaseline.value !== protocolProtectedState())
+function recordProtocolRecoveryBase(detail?: any) {
+  protocolOriginal.value = detail ? protocolAssetBaseline(detail) : undefined
+  protocolProtectedBaseline.value = protocolProtectedState()
+}
+const protocolDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.protocols.asset', permission: 'admin', ready: () => !saving.value,
+  read: () => {
+    if (!editorOpen.value) return null
+    if (copySourceID.value || protocolSensitiveChanged.value) throw new Error('无法安全暂存连接配置，请留在原页完成认证。')
+    return { id: form.id, baseline: form.id ? protocolOriginal.value : null, fields: form }
+  },
+  sanitize: protocolAssetRecovery,
+  restore: async (draft, { isCurrent }) => {
+    const generation = protocolEditorGeneration
+    const [detail, nodes, certificates] = await Promise.all([
+      draft.id ? fetchProtocolEndpoint(draft.id) : Promise.resolve(null),
+      draft.fields.node_id ? fetchNodesPage({ nodeId: draft.fields.node_id, limit: 1 }) : Promise.resolve({ items: [] }),
+      draft.fields.node_id ? fetchManagedCertificatesPage({ nodeId: draft.fields.node_id, limit: 200 }) : Promise.resolve({ items: [] }),
+    ])
+    if (!isCurrent()) return false
+    if (generation !== protocolEditorGeneration || editorOpen.value || orderingOpen.value) throw new Error('已有新的本地编辑，原草稿保留待恢复。')
+    protocolRecoveryConflict.value = Boolean(detail && !sameRecoveryBaseline(draft.baseline, protocolAssetBaseline(detail)))
+    protocolRecovered.value = Boolean(detail)
+    copySourceID.value = 0
+    selectedNode.value = nodes.items[0] || null
+    managedCertificates.value = certificates.items
+    originalNodeID.value = detail?.node_id || 0
+    originalPort.value = detail?.port || 0; originalPublicPort.value = detail?.public_port || 0
+    originalNodeGroupMemberships.value = (draft.baseline?.node_group_memberships || []).map(item => ({ ...item }))
+    membershipRevisionConflict.value = false
+    Object.assign(form, emptyForm(), detail || {}, {
+      parent_protocol_id: detail?.parent_protocol_id || 0, managed_certificate_id: detail?.managed_certificate_id || 0,
+      config: detail?.config || '{}', client_config: detail?.client_config || '{}', egress_config: detail?.egress_config || '', optional_config: detail?.optional_config || '{}', tags: detail?.tags || '[]',
+      node_group_memberships: (detail?.node_group_memberships || []).map((item: ProtocolEndpointNodeGroupMembership) => ({ ...item })),
+    })
+    protocolRestoringDraft = true
+    Object.assign(structured, emptyStructured()); Object.assign(egress, emptyEgress())
+    if (detail) { readStructuredConfig(); readEgressConfig() }
+    editorState.markClean()
+    Object.assign(form, draft.fields, { node_group_memberships: draft.fields.node_group_memberships.map(item => ({ ...item })) })
+    recordProtocolRecoveryBase(); protocolOriginal.value = draft.baseline || undefined
+    editorErrors.clear(); editorError.value = ''; editorStep.value = 1; editorOpen.value = true
+    try { await nextTick() } finally { protocolRestoringDraft = false }
+  },
+})
 useUnsavedChangesGuard(
   () => (editorOpen.value && editorState.dirty.value) || (orderingOpen.value && orderingDirty.value),
   () => orderingOpen.value && orderingDirty.value
@@ -485,6 +572,7 @@ const { items: endpoints, total, loading, initialLoading, refreshing, error, loa
     q: filters.q || undefined,
     protocol: filters.protocol || undefined,
     active: filters.active ? filters.active === 'active' : undefined,
+    ...(filters.deployment ? { deploymentStatus: filters.deployment } : {}),
     serviceKind: serviceKind.value,
     nodeId: filters.node || undefined, groupId: filters.group || undefined,
     sort: groupedByNode.value ? 'node_id' : sortField.value,
@@ -517,7 +605,7 @@ const {
   togglePage: toggleCurrentEndpointPage,
   selectAllMatching,
   clear: clearSelection,
-} = useSelectionScope({ items: computed(()=>endpoints.value.filter(item=>item.service_kind!=='forward')), total: computed(()=>serviceKind.value === 'listener' && !filters.node && !filters.group ? total.value : endpoints.value.filter(item=>item.service_kind!=='forward').length), key: endpoint => endpoint.id })
+} = useSelectionScope({ items: computed(()=>endpoints.value.filter(item=>item.service_kind!=='forward')), total: computed(()=>serviceKind.value === 'listener' && !filters.node && !filters.group && !filters.deployment ? total.value : endpoints.value.filter(item=>item.service_kind!=='forward').length), key: endpoint => endpoint.id })
 const { items: deployments, total: deploymentTotal, loading: deploymentLoading, error: deploymentError, load: loadDeployments } = useRemoteTable<any>({
   offset: deploymentOffset,
   limit: deploymentLimit,
@@ -563,7 +651,7 @@ for (const [source, field] of [
   [() => structured.reality_server_name, 'structured.reality_server_name'], [() => structured.reality_short_id, 'structured.reality_short_id'],
 ] as Array<[() => unknown, string]>) watch(source, () => editorErrors.clear(field))
 watch(() => structured.security, value => {
-  if (form.protocol === 'vless' && value === 'reality') {
+  if (!protocolRestoringDraft && form.protocol === 'vless' && value === 'reality') {
     structured.transport = 'tcp'
     if (!structured.reality_private_key) void regenerateRealityKeys()
   }
@@ -573,9 +661,19 @@ const effectiveSortDirection = computed<'asc' | 'desc'>(() => groupedByNode.valu
 function protocolLabel(protocol: string) { return ({ socks5: 'SOCKS5', vmess: 'VMess', vless: 'VLESS', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria 2', mieru: 'Mieru' } as Record<string, string>)[protocol] || protocol }
 function formatMultiplier(value: number) { return `${Number(value || 1000) / 1000}×` }
 function formatMultiplierNumber(value: number) { return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(Number(value || 1000) / 1000) }
-function deploymentLabel(status?: string) { return status === 'succeeded' ? '成功' : status === 'failed' ? '失败' : status === 'running' ? '执行中' : status === 'queued' ? '等待执行' : formatUnknownValue('任务状态', status) }
-function deploymentTone(status?: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'succeeded' ? 'success' : status === 'failed' ? 'danger' : status === 'running' || status === 'queued' ? 'warning' : 'neutral' }
-function deploymentIcon(status?: string) { return status === 'succeeded' ? 'check' : status === 'failed' ? 'alert' : status === 'running' ? 'refresh' : status === 'queued' ? 'clock' : 'minus' }
+function multiplierEndpointID(endpoint: ProtocolEndpointListItem) {
+  return endpoint.service_kind === 'forward' ? Number(endpoint.parent_protocol_id || endpoint.forward?.endpoint_id) || 0 : endpoint.id
+}
+function savedProtocolMultiplier(value: { id: number; multiplier_milli: number }) {
+  endpoints.value = endpoints.value.map(endpoint => multiplierEndpointID(endpoint) === value.id ? { ...endpoint, multiplier_milli: value.multiplier_milli } : endpoint)
+  if (selectedEndpointDetail.value?.id === value.id) selectedEndpointDetail.value.multiplier_milli = value.multiplier_milli
+  if (selectedEndpointSummary.value?.id === value.id) selectedEndpointSummary.value = { ...selectedEndpointSummary.value, multiplier_milli: value.multiplier_milli }
+  notify('倍率已保存', '', 'success')
+  void loadEndpoints()
+}
+function deploymentLabel(status?: string) { return status === 'succeeded' ? '成功' : status === 'failed' ? '失败' : status === 'reconciling' ? '结果待核对' : status === 'suspended' ? '已暂停自动重试' : status === 'superseded' ? '已被后续配置接替' : status === 'deferred' ? '保持现状（待适配）' : status === 'running' ? '执行中' : status === 'queued' ? '等待执行' : formatUnknownValue('任务状态', status) }
+function deploymentTone(status?: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'succeeded' ? 'success' : status === 'failed' ? 'danger' : status === 'running' || status === 'queued' || status === 'deferred' || status === 'reconciling' || status === 'suspended' ? 'warning' : 'neutral' }
+function deploymentIcon(status?: string) { return status === 'succeeded' ? 'check' : status === 'failed' ? 'alert' : status === 'running' ? 'refresh' : status === 'queued' || status === 'deferred' || status === 'reconciling' || status === 'suspended' ? 'clock' : 'minus' }
 function deploymentSummary(item: any) { return truncateOutput(normalizeOutput(item.error || item.output), 360) }
 function isFirstNodeGroup(index: number) { return index === 0 || endpoints.value[index - 1]?.node_id !== endpoints.value[index]?.node_id }
 function protocolBatchScope() { return selectionAllMatching.value ? { all_matching: true, filters: { q: filters.q || undefined, protocol: filters.protocol || undefined, active: filters.active ? filters.active === 'active' : undefined } } : { protocol_endpoint_ids: selectedEndpointIDs.value } }
@@ -619,7 +717,7 @@ async function toggleEndpoint(endpoint: ProtocolEndpointListItem, enabled: boole
       await saveNetworkEntry(entry.id, {
         deployment_mode: entry.deployment_mode || 'managed', network: entry.network, name: entry.name,
         node_id: entry.node_id, parent_protocol_id: entry.endpoint_id, endpoint_id: entry.endpoint_id,
-        address: entry.address, port: entry.port, public_port: entry.public_port,
+        address: entry.address, listen_address: entry.listen_address, port: entry.port, public_port: entry.public_port,
         enabled, revision: entry.revision, node_group_membership_changes: [],
       })
       message.value = `${entry.name} 已${enabled ? '启用' : '停用'}；节点发布状态请以列表结果为准。`
@@ -641,7 +739,7 @@ function parseObject(value: string) { try { const parsed = JSON.parse(value || '
 function readEgressConfig() {
   const config: any = parseObject(form.egress_config)
   const protocol = String(config.type || '').toLowerCase()
-  if (!protocol || protocol === 'direct') {
+  if (!protocol) {
     Object.assign(egress, emptyEgress())
     return
   }
@@ -650,6 +748,9 @@ function readEgressConfig() {
   Object.assign(egress, emptyEgress(), {
     enabled: true,
     protocol,
+    address_family: config.dial?.address_family || 'auto',
+    interface: config.dial?.interface || '',
+    source_ip: config.dial?.source_ip || '',
     server: config.server || '',
     port: Number(config.port || (protocol === 'socks5' ? 1080 : 443)),
     username: config.username || '',
@@ -664,6 +765,13 @@ function readEgressConfig() {
 function buildEgressConfig() {
   if (!egress.enabled) {
     form.egress_config = ''
+    return
+  }
+  if (egress.protocol === 'direct') {
+    const dial: Record<string, string> = { address_family: egress.address_family || 'auto' }
+    if (String(egress.interface || '').trim()) dial.interface = String(egress.interface).trim()
+    if (String(egress.source_ip || '').trim()) dial.source_ip = String(egress.source_ip).trim()
+    form.egress_config = JSON.stringify({ type: 'direct', dial }, null, 2)
     return
   }
   const base = String(egress.base?.type || '').toLowerCase() === egress.protocol ? JSON.parse(JSON.stringify(egress.base)) : {}
@@ -736,6 +844,7 @@ async function syncURL(replace = false) {
     ...(filters.node ? {node:String(filters.node)} : {}), ...(filters.group ? {group:String(filters.group)} : {}),
     ...(filters.protocol ? { protocol: filters.protocol } : {}),
     ...(filters.active ? { active: filters.active } : {}),
+    ...(filters.deployment ? { deployment: filters.deployment } : {}),
     ...(groupedByNode.value ? { view: 'nodes' } : {}),
     ...(sortField.value !== 'sort_order' ? { sort: sortField.value } : {}),
     ...(sortField.value !== 'sort_order' || sortDirection.value !== 'asc' ? { direction: sortDirection.value } : {}),
@@ -749,7 +858,7 @@ async function syncURL(replace = false) {
   await (replace ? router.replace(location) : router.push(location))
 }
 async function applyFilters() { clearSelection(); offset.value = 0; await syncURL(); await refresh() }
-async function resetFilters() { Object.assign(filters, { q: '', protocol: '', active: '', node:0,group:0 }); await applyFilters() }
+async function resetFilters() { Object.assign(filters, { q: '', protocol: '', active: '', node:0,group:0, deployment:'' }); await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setGroupedView(grouped: boolean) { groupedByNode.value = grouped; offset.value = 0; clearSelection(); await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, protocolSortFields, 'sort_order'); const currentField = groupedByNode.value ? 'node_id' : sortField.value; const currentDirection = groupedByNode.value ? 'asc' : sortDirection.value; sortDirection.value = nextSortDirection(currentField, next, currentDirection, next === 'name' || next === 'protocol' || next === 'node_id' ? 'asc' : 'desc'); sortField.value = next; groupedByNode.value = false; offset.value = 0; clearSelection(); await syncURL(); await refresh() }
@@ -792,6 +901,10 @@ function openUsageReset() {
 async function saveUsageReset() {
   const endpointID = selectedEndpointDetail.value?.id
   if (!endpointID || !usageResetReason.value.trim()) return
+  if (selectedEndpointDetail.value?.usage?.traffic_projection_pending) {
+    usageResetError.value = '流量统计正在更新，请稍后重试。'
+    return
+  }
   usageResetSaving.value = true
   usageResetError.value = ''
   try {
@@ -815,7 +928,7 @@ function handleNodeSelect(node: AdminNodeListItem | null) {
   selectedNode.value = node
   if (previousNodeID && node?.id !== previousNodeID) { form.parent_protocol_id = 0; form.managed_certificate_id = 0 }
   void loadManagedCertificates(node?.id || 0)
-  if (!form.id && !copySourceID.value && node?.address) form.address = node.address
+  if (!form.id && !copySourceID.value && node?.address) { form.address = node.address; if (['', '0.0.0.0', '::'].includes(form.listen_address)) form.listen_address = node.address.includes(':') ? '::' : '0.0.0.0' }
   if (!form.id && !copySourceID.value) suggestName()
 }
 function useNodeAddress() { if (selectedNode.value?.address) form.address = selectedNode.value.address }
@@ -830,7 +943,6 @@ async function regenerateRealityKeys() {
     structured.reality_private_key = pair.private_key
     structured.reality_public_key = pair.public_key
     structured.reality_short_id = pair.short_id
-    if (!structured.reality_server_name) structured.reality_server_name = form.address || ''
   } catch (cause: any) {
     editorError.value = cause?.response?.data?.message || 'Reality 密钥生成失败。'
   } finally {
@@ -967,8 +1079,9 @@ async function saveOrdering() {
   }
 }
 
-function closeEditor() { if (!saving.value) editorOpen.value = false }
+function closeEditor() { if (!saving.value) { protocolEditorGeneration++; editorOpen.value = false } }
 async function openCreate() {
+  protocolEditorGeneration++; protocolRecoveryConflict.value = false; protocolRecovered.value = false
   copySourceID.value = 0
   originalNodeID.value = 0
   originalPort.value = 0
@@ -993,9 +1106,11 @@ async function openCreate() {
     editorError.value = '节点列表暂时无法加载；恢复连接后可在上方搜索并选择承载节点。'
   }
   editorState.markClean()
+  recordProtocolRecoveryBase()
   editorOpen.value = true
 }
 async function openEdit(endpoint: any) {
+  protocolEditorGeneration++; protocolRecoveryConflict.value = false; protocolRecovered.value = false
   copySourceID.value = 0
   membershipRevisionConflict.value = false
   error.value = ''
@@ -1013,6 +1128,7 @@ async function openEdit(endpoint: any) {
     Object.assign(form, emptyForm(), detail, {
       parent_protocol_id: detail.parent_protocol_id || 0,
       managed_certificate_id: detail.managed_certificate_id || 0,
+      listen_address: detail.listen_address || '0.0.0.0',
       config: detail.config || '{}',
       egress_config: detail.egress_config || '',
       client_config: detail.client_config || '{}',
@@ -1024,6 +1140,7 @@ async function openEdit(endpoint: any) {
     readStructuredConfig()
     readEgressConfig()
     editorState.markClean()
+    recordProtocolRecoveryBase(detail)
     editorStep.value = 1
     editorError.value = ''
     editorErrors.clear()
@@ -1034,6 +1151,7 @@ async function openEdit(endpoint: any) {
 }
 
 async function openCopy(endpoint: ProtocolEndpointListItem) {
+  protocolEditorGeneration++; protocolRecoveryConflict.value = false; protocolRecovered.value = false
   if (!endpoint.kernel_supported) {
     error.value = endpoint.kernel_unsupported_reason || '当前内核不支持复制此协议。'
     return
@@ -1057,6 +1175,7 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
       name: `${detail.name} 副本`,
       is_active: true,
       parent_protocol_id: detail.parent_protocol_id || 0,
+      listen_address: detail.listen_address || '0.0.0.0',
       config: detail.config || '{}',
       egress_config: detail.egress_config || '',
       client_config: detail.client_config || '{}',
@@ -1070,6 +1189,7 @@ async function openCopy(endpoint: ProtocolEndpointListItem) {
     editorError.value = ''
     editorErrors.clear()
     editorState.markClean()
+    recordProtocolRecoveryBase()
     editorOpen.value = true
   } catch (e: any) {
     copySourceID.value = 0
@@ -1110,7 +1230,7 @@ function readStructuredConfig() {
   structured.reality_private_key = server.reality?.private_key || ''
   structured.reality_public_key = client.reality?.public_key || ''
   structured.reality_short_id = client.reality?.short_id || server.reality?.short_ids?.[0] || ''
-  structured.reality_server_name = client.reality?.server_name || server.reality?.server_name || form.address || ''
+  structured.reality_server_name = client.reality?.server_name || server.reality?.server_name || ''
   structured.reality_fingerprint = client.reality?.client_fingerprint || 'chrome'
 }
 function buildGeneratedConfigs() {
@@ -1159,6 +1279,7 @@ async function validateStep(step: number) {
     if (!form.node_id) fields.node_id = '请选择承载 VPS。'
     if (!form.name.trim()) fields.name = '请输入服务名称。'
     if (!form.address.trim()) fields.address = '请输入客户端可访问的对外地址。'
+    if (!form.listen_address.trim()) fields.listen_address = '请输入 VPS 本地监听地址。'
     if (!isIntegerInRange(form.port, 1, 65535)) fields.port = '监听端口必须为 1–65535 之间的整数。'
     if (!isIntegerInRange(form.public_port, 1, 65535)) fields.public_port = '客户端连接端口必须为 1–65535 之间的整数。'
   }
@@ -1177,7 +1298,7 @@ async function validateStep(step: number) {
       if (!/^[0-9a-fA-F]{2,16}$/.test(structured.reality_short_id) || structured.reality_short_id.length % 2 !== 0) fields['structured.reality_short_id'] = 'Short ID 必须是 2–16 位偶数长度十六进制字符串。'
       if (!structured.reality_server_name.trim()) fields['structured.reality_server_name'] = '请输入 Reality 伪装域名。'
     }
-    if (egress.enabled) {
+    if (egress.enabled && egress.protocol !== 'direct') {
       if (!String(egress.server || '').trim()) fields['egress.server'] = '请输入出口服务器地址。'
       if (!isIntegerInRange(egress.port, 1, 65535)) fields['egress.port'] = '出口端口必须为 1–65535 之间的整数。'
       if (['shadowsocks', 'trojan', 'hysteria2', 'mieru'].includes(egress.protocol) && !String(egress.password || '')) fields['egress.password'] = '请输入出口密码。'
@@ -1202,6 +1323,15 @@ function validateJSONFields() {
   return fields
 }
 async function save() {
+  if (protocolRecoveryConflict.value) return
+  if (protocolRecovered.value) {
+    const generation = protocolEditorGeneration, actor = protocolRecoveryApp.user.id, token = protocolRecoveryApp.token
+    try {
+      const fresh = await fetchProtocolEndpoint(form.id)
+      if (generation !== protocolEditorGeneration || actor !== protocolRecoveryApp.user.id || token !== protocolRecoveryApp.token || protocolRecoveryApp.reauthRequired) return
+      if (!sameRecoveryBaseline(protocolOriginal.value, protocolAssetBaseline(fresh))) { protocolRecoveryConflict.value = true; return }
+    } catch { editorError.value = '无法核对原协议服务，保留草稿且未保存。'; return }
+  }
   if (!canSaveSelectedProtocol.value) {
     editorError.value = selectedProtocolCapability.value.reason || '当前内核不支持所选协议。'
     return
@@ -1248,7 +1378,7 @@ async function save() {
   const saveStartedAt = performance.now()
   try {
     const creatingCopy = Boolean(copySourceID.value)
-    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, egress_config: form.egress_config || '', client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
+    const payload = { node_id: form.node_id, name: form.name, protocol: form.protocol, address: form.address, listen_address: form.listen_address, port: form.port, public_port: form.public_port, multiplier_milli: form.multiplier_milli, sort_order: form.sort_order, parent_protocol_id: form.parent_protocol_id || null, managed_certificate_id: form.managed_certificate_id || null, is_active: Boolean(form.is_active), config: form.config, egress_config: form.egress_config || '', client_config: form.client_config, optional_config: form.optional_config || '{}', tags: form.tags || '[]', node_group_membership_changes: membershipChanges }
     const requestStartedAt = performance.now()
     const result = form.id ? await updateProtocolEndpoint(form.id, payload) : await createProtocolEndpoint(payload)
     const requestMS = performance.now() - requestStartedAt
@@ -1272,7 +1402,7 @@ async function save() {
     if (e?.response?.data) {
       const normalized = await editorErrors.applyApiError(e, '协议服务未能保存，请稍后重试；如持续失败，请检查服务端日志。', null, protocolFieldMap)
       const fields = Object.keys(normalized.fields)
-      if (fields.some(field => ['node_id', 'protocol', 'name', 'address', 'port', 'public_port'].includes(field))) editorStep.value = 1
+      if (fields.some(field => ['node_id', 'protocol', 'name', 'address', 'listen_address', 'port', 'public_port'].includes(field))) editorStep.value = 1
       else if (fields.includes('managed_certificate_id') || fields.includes('egress_config')) editorStep.value = 2
       else editorStep.value = 3
       await editorErrors.focusFirst(protocolFormElement)
@@ -1285,33 +1415,29 @@ async function deploy(endpoint: ProtocolEndpointListItem) {
     error.value = endpoint.kernel_unsupported_reason || '当前内核不支持发布此协议。'
     return
   }
-  deployingID.value = endpoint.id; error.value = ''; message.value = ''
-  try { const result = await deployProtocolEndpoint(endpoint.id); message.value = `${endpoint.name} 的完整配置已在 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 生效，耗时 ${result.latency_ms || 0}ms，并已通过 Zero 状态与心跳检查。`; await refresh() }
+  deployingID.value = endpoint.id; error.value = ''; message.value = ''; deferredMessage.value = ''
+  try {
+    const result = await deployProtocolEndpoint(endpoint.id)
+    if (result.deployment?.status === 'deferred') {
+      deferredMessage.value = `${endpoint.name} 的新设置暂未生效，节点保持当前配置。${result.deployment.error || '等待内核能力适配。'}`
+    } else {
+      message.value = `${endpoint.name} 的完整配置已在 ${endpoint.node_name || `VPS #${endpoint.node_id}`} 生效，耗时 ${result.latency_ms || 0}ms，并已通过 Zero 状态与心跳检查。`
+    }
+    await refresh()
+  }
   catch (e: any) { error.value = e?.response?.data?.message || '配置发布失败，节点已尝试回滚；请检查发布记录、SSH 和 Zero 状态。'; await refresh() }
   finally { deployingID.value = 0 }
 }
-async function removeEndpoint(endpoint: ProtocolEndpointListItem) {
-  const accepted = await confirmAction({
-    title: '删除协议服务？',
-    message: `将删除“${endpoint.name}”的面板记录、用户凭据、节点组关联及以它为落地的前置入口。节点运行配置撤除会排队重试，SSH 不可达不阻止删除；远端完成更新前可能仍保留旧配置。`,
-    confirmText: '确认删除',
-    tone: 'danger',
-  })
-  if (!accepted) return
-  deletingID.value = endpoint.id
-  error.value = ''
-  message.value = ''
-  try {
-    await deleteProtocolEndpoint(endpoint.id)
-    if (selectedEndpointDetail.value?.id === endpoint.id) await closeDetail()
-    message.value = `协议服务“${endpoint.name}”已删除。`
-    await refresh()
-  } catch (e: any) {
-    error.value = e?.response?.data?.message || '协议服务删除失败。'
-  } finally {
-    deletingID.value = 0
-  }
+const deletionTarget = ref<ProtocolEndpointListItem | null>(null)
+function removeEndpoint(endpoint: ProtocolEndpointListItem) { deletionTarget.value = endpoint }
+async function endpointDeleted() {
+  const target = deletionTarget.value
+  deletionTarget.value = null
+  if (selectedEndpointDetail.value?.id === target?.id) await closeDetail()
+  message.value = `协议服务“${target?.name || ''}”已删除，历史账本保留；运行配置撤除结果请查看发布任务。`
+  await refresh()
 }
+
 watch(() => route.fullPath, async () => {
   const nextLimit = Number(route.query.limit)
   const resolvedLimit = allowedPageSizes.includes(nextLimit) ? nextLimit : 50
@@ -1322,6 +1448,7 @@ watch(() => route.fullPath, async () => {
     group: Number(route.query.group) || 0,
     protocol: typeof route.query.protocol === 'string' ? route.query.protocol : '',
     active: typeof route.query.active === 'string' ? route.query.active : '',
+    deployment: deploymentFilter(route.query.deployment),
   }
   const nextGroupedByNode = route.query.view === 'nodes'
   const nextSortField = resolveSortField(route.query.sort, protocolSortFields, 'sort_order')
@@ -1360,48 +1487,45 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .protocol-listener-content { width: 100%; min-width: 0; }
-:deep(.protocol-table){table-layout:fixed}:deep(.protocol-table th),:deep(.protocol-table td){height:40px;padding:7px 10px}:deep(.protocol-table .sortable-header-button){padding-inline:10px}:deep(.protocol-table .cell-title){min-width:0;overflow-wrap:anywhere}:deep(.protocol-table .protocol-node-column a){display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}:deep(.protocol-table .table-action-column){min-width:0}:deep(.protocol-table .selection-column){padding-inline:10px}:deep(.protocol-table .mono){font-size:11px}:deep(.protocol-table a){color:var(--primary);font-weight:650;text-decoration:none}:deep(.protocol-table a:hover){text-decoration:underline}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}:deep(.protocol-table .cell-actions .button){min-height:30px}:deep(.protocol-table .time-badge){margin-left:auto}
-.protocol-group-row td{height:34px!important;padding:7px 12px!important;color:var(--text);background:var(--surface-soft)!important}.protocol-group-content{display:flex;align-items:center;gap:7px;min-width:0}.protocol-group-row .ui-icon{flex:0 0 auto;color:var(--primary)}.protocol-group-row strong{min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.protocol-group-row span{flex:0 0 auto;color:var(--muted);font-size:9px}
-.protocol-metrics{margin-bottom:16px}.protocol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.protocol-card{display:grid;overflow:hidden}.protocol-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.protocol-title{display:flex;gap:12px;min-width:0}.protocol-icon{width:40px;height:40px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:19px}.title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.title-line h2{margin:0;font-size:16px}.protocol-title p{margin:5px 0 0;color:var(--muted);font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere}.multiplier{color:var(--primary);font-size:18px}.protocol-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:14px 18px;border-block:1px solid var(--line);background:var(--surface-soft)}.protocol-meta div{display:grid;gap:4px}.protocol-meta dt{color:var(--muted);font-size:10px}.protocol-meta dd{margin:0;font-size:11px;font-weight:650}.usage-summary{display:flex;flex-wrap:wrap;gap:14px;padding:10px 18px;color:var(--muted);border-bottom:1px solid var(--line);font-size:9px}.deployment-error{margin:12px 18px 0;padding:9px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:11px;overflow-wrap:anywhere}.protocol-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px}
-.protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft);font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{font-size:12px;white-space:normal;overflow-wrap:anywhere}.protocol-order-content span{color:var(--muted);font-size:9px}.protocol-order-actions{display:flex;gap:3px}.protocol-order-actions :deep(.ui-button){width:30px;min-width:30px;padding:0}
+:deep(.protocol-table){table-layout:fixed}:deep(.protocol-table .cell-title){min-width:0;overflow-wrap:anywhere}:deep(.protocol-table .protocol-node-column a){display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}:deep(.protocol-table .table-action-column){min-width:0}:deep(.protocol-table .mono){font-size:11px}:deep(.protocol-table a){color:var(--foreground);font-weight:500;text-decoration:none}:deep(.protocol-table a:hover){text-decoration:underline}.numeric-column{text-align:right!important;font-variant-numeric:tabular-nums}:deep(.protocol-table .time-badge){margin-left:auto}
+.protocol-group-row td{height:34px!important;padding:7px 12px!important;color:var(--text);background:var(--surface-soft)!important}.protocol-group-content{display:flex;align-items:center;gap:7px;min-width:0}.protocol-group-row .ui-icon{flex:0 0 auto;color:var(--primary)}.protocol-group-row strong{min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.protocol-group-row span{flex:0 0 auto;color:var(--muted);font-size:12px}
+.protocol-metrics{margin-bottom:16px}.protocol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.protocol-card{display:grid;overflow:hidden}.protocol-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.protocol-title{display:flex;gap:12px;min-width:0}.protocol-icon{width:40px;height:40px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:19px}.title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.title-line h2{margin:0;font-size:16px}.protocol-title p{margin:5px 0 0;color:var(--muted);font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere}.multiplier{color:var(--primary);font-size:18px}.protocol-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:14px 18px;border-block:1px solid var(--line);background:var(--surface-soft)}.protocol-meta div{display:grid;gap:4px}.protocol-meta dt{color:var(--muted);font-size:12px}.protocol-meta dd{margin:0;font-size:11px;font-weight:600}.usage-summary{display:flex;flex-wrap:wrap;gap:14px;padding:10px 18px;color:var(--muted);border-bottom:1px solid var(--line);font-size:12px}.deployment-error{margin:12px 18px 0;padding:9px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:11px;overflow-wrap:anywhere}.protocol-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px}
+.protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:6px;color:var(--foreground);background:var(--muted-surface);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{font-size:12px;white-space:normal;overflow-wrap:anywhere}.protocol-order-content span{color:var(--muted);font-size:12px}.protocol-order-actions{display:flex;gap:3px}
 .protocol-editor{display:grid;gap:20px}
 .wizard-panel{display:grid;gap:20px}
 .wizard-heading{display:flex;align-items:flex-start;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line)}
 .wizard-heading>span{width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:18px}
 .wizard-heading h3{margin:1px 0 4px;font-size:15px}
-.wizard-heading p{margin:0;color:var(--muted);font-size:10px;line-height:1.6}
+.wizard-heading p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
 .guided-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .selected-node-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--primary-border);border-radius:10px;background:var(--surface-selected)}
 .selected-node-card strong{font-size:12px}
-.selected-node-card p{margin:3px 0 0;color:var(--muted);font-size:10px}
-.input-with-action{display:grid;grid-template-columns:minmax(0,1fr) auto}
-.input-with-action input{border-radius:8px 0 0 8px!important}
-.input-with-action button{padding:0 12px;border:1px solid var(--line-strong);border-left:0;border-radius:0 8px 8px 0;color:var(--primary);background:var(--surface-soft);font-size:10px;font-weight:700;white-space:nowrap;cursor:pointer}
-.input-with-action button:hover{background:var(--primary-soft)}
+.selected-node-card p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.input-with-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px}
 .generated-config-note{display:flex;align-items:flex-start;gap:10px;padding:13px;border:1px solid var(--success-border);border-radius:10px;color:var(--success);background:var(--success-soft)}
 .generated-config-note>.ui-icon{margin-top:1px}
 .generated-config-note strong{font-size:11px}
-.generated-config-note p{margin:3px 0 0;font-size:9px;line-height:1.6}
+.generated-config-note p{margin:3px 0 0;font-size:12px;line-height:1.6}
 .endpoint-egress{display:grid;gap:14px;padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
-.endpoint-egress>header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.endpoint-egress>header strong,.endpoint-egress>header small{display:block}.endpoint-egress>header strong{font-size:12px}.endpoint-egress>header small{margin-top:4px;color:var(--muted);font-size:9px;line-height:1.6}.endpoint-egress-body{display:grid;gap:14px;padding-top:14px;border-top:1px solid var(--line)}.endpoint-egress-actions{display:flex;justify-content:flex-end}
+.endpoint-egress>header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 16px}.endpoint-egress>header>div{flex:1 1 240px;min-width:0}.endpoint-egress>header .check-field{align-items:center;flex:none}.endpoint-egress>header .ui-checkbox{margin-top:0}.endpoint-egress>header strong,.endpoint-egress>header small{display:block}.endpoint-egress>header strong{font-size:12px}.endpoint-egress>header small{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.6}.endpoint-egress-body{display:grid;gap:14px;padding-top:14px;border-top:1px solid var(--line)}.endpoint-egress-actions{display:flex;justify-content:flex-end}
 .review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .review-grid article{display:grid;gap:4px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
-.review-grid span,.review-grid small{color:var(--muted);font-size:9px}
+.review-grid span,.review-grid small{color:var(--muted);font-size:12px}
 .review-grid strong{font-size:12px}
 .membership-section{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
-.membership-section>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.membership-section>header strong,.membership-section>header small{display:block}.membership-section>header strong{font-size:12px}.membership-section>header small{max-width:680px;margin-top:3px;color:var(--muted);font-size:9px;line-height:1.6}
+.membership-section>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.membership-section>header strong,.membership-section>header small{display:block}.membership-section>header strong{font-size:12px}.membership-section>header small{max-width:680px;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.6}
 .advanced-settings{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .advanced-settings summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;list-style:none}
 .advanced-settings summary::-webkit-details-marker{display:none}
 .advanced-settings summary>span{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft)}
 .advanced-settings summary strong,.advanced-settings summary small{display:block}
 .advanced-settings summary strong{font-size:11px}
-.advanced-settings summary small{margin-top:2px;color:var(--muted);font-size:9px}
+.advanced-settings summary small{margin-top:2px;color:var(--muted);font-size:12px}
 .advanced-settings[open] summary>.ui-icon{transform:rotate(90deg)}
 .advanced-body{display:grid;gap:16px;padding:16px;border-top:1px solid var(--line);background:var(--surface-soft)}
 .compact-grid{max-width:520px}
 .config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.config-grid textarea{font-family:var(--font-mono);font-size:10px}
+.config-grid textarea{font-family:var(--font-mono);font-size:12px}
 @media(min-width:721px) and (max-width:1100px){
   :deep(.protocol-table[data-show-secondary='false']){min-width:850px!important}
   :deep(.protocol-table[data-show-secondary='false'] col:nth-child(2)){width:180px!important}
@@ -1411,11 +1535,11 @@ onBeforeUnmount(() => {
   :deep(.protocol-table[data-show-secondary='false'] col:nth-child(6)){width:192px!important}
 }
 @media(max-width:720px){:deep(.protocol-table[data-show-secondary='false']){min-width:520px!important}}
-@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}.input-with-action input{border-radius:8px!important}.input-with-action button{min-height:36px;border:1px solid var(--line-strong);border-top:0;border-radius:0 0 8px 8px}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
-.protocol-editor .ui-select{min-height:var(--control-height)}
+@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
+
 .protocol-grid{grid-template-columns:1fr;gap:0;border-block:1px solid var(--line)}.protocol-card{border:0;border-radius:0}.protocol-card+.protocol-card{border-top:1px solid var(--line)}
 .selected-node-card{border-color:var(--primary-border);background:var(--primary-soft)}
-.protocol-detail{min-width:0}.detail-status-strip{display:flex;flex-wrap:wrap;gap:8px}.detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden}.detail-facts>div{display:grid;gap:5px;padding:14px 16px;border-bottom:1px solid var(--line)}.detail-facts>div:nth-child(odd){border-right:1px solid var(--line)}.detail-facts span{color:var(--muted);font-size:10px}.detail-facts strong,.detail-facts a{font-size:12px;overflow-wrap:anywhere}.detail-facts a{color:var(--primary);font-weight:650;text-decoration:none}.numeric-summary{color:var(--primary);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums}.deployment-history{overflow:hidden}.deployment-history>.page-alert{margin:12px}.deployment-history :deep(.data-table-shell){border:0;border-radius:0}.deployment-output{max-width:360px;margin:0;color:var(--muted);font-family:var(--font-mono);font-size:10px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:560px){.detail-facts{grid-template-columns:1fr}.detail-facts>div:nth-child(odd){border-right:0}}
+.protocol-detail{min-width:0}.detail-status-strip{display:flex;flex-wrap:wrap;gap:8px}.detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden}.detail-facts>div{display:grid;gap:5px;padding:14px 16px;border-bottom:1px solid var(--line)}.detail-facts>div:nth-child(odd){border-right:1px solid var(--line)}.detail-facts span{color:var(--muted);font-size:12px}.detail-facts strong,.detail-facts a{font-size:12px;overflow-wrap:anywhere}.detail-facts a{color:var(--foreground);font-weight:500;text-decoration:none}.numeric-summary{color:var(--foreground);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}.deployment-history{overflow:hidden}.deployment-history>.page-alert{margin:12px}.deployment-history :deep(.data-table-shell){border:0;border-radius:0}.deployment-output{max-width:360px;margin:0;color:var(--muted);font-family:var(--font-mono);font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:560px){.detail-facts{grid-template-columns:1fr}.detail-facts>div:nth-child(odd){border-right:0}}
 .protocol-guidance { margin: 10px 0 8px; color: var(--muted-foreground); font-size: 12px; }
 .protocol-guidance summary { width: fit-content; display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer; list-style: none; }
 .protocol-guidance summary::-webkit-details-marker { display: none; }
@@ -1424,7 +1548,7 @@ onBeforeUnmount(() => {
 .protocol-guidance summary:hover { color: var(--foreground); }
 .protocol-guidance summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .protocol-guidance p { max-width: 900px; margin: 5px 0 9px; line-height: 1.55; }
-:deep(.protocol-table th), :deep(.protocol-table td) { height: 48px; padding-block: 10px; font-size: 12px; }
-:deep(.protocol-table .cell-title strong) { font-size: 12px; font-weight: 600; }
-.protocol-status-control{display:flex;align-items:center;gap:9px}.protocol-status-control .cell-title{min-width:0}.protocol-load{display:grid;gap:4px;min-width:0;font-variant-numeric:tabular-nums}.protocol-load strong,.protocol-load strong span,.protocol-load-traffic{display:flex;align-items:center;gap:5px;white-space:nowrap}.protocol-load strong{gap:14px;font-size:12px}.protocol-load .ui-icon{width:12px;height:12px;color:var(--muted)}.protocol-load-traffic{color:var(--muted);font-size:11px}.protocol-order-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:12px 0;padding:12px 14px;border:1px solid var(--primary-border);border-radius:10px;background:var(--primary-soft)}.protocol-order-toolbar>div:first-child{display:grid;gap:3px}.protocol-order-toolbar strong{font-size:12px}.protocol-order-toolbar span{color:var(--muted);font-size:10px}.protocol-order-toolbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.protocol-order-toolbar :deep(.page-alert){flex-basis:100%}.protocol-order-row{cursor:grab}.protocol-order-row:active{cursor:grabbing}.protocol-order-row:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}.protocol-order-row-number{display:inline-grid;min-width:24px;height:24px;place-items:center;border-radius:6px;color:var(--primary);background:var(--primary-soft);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}.protocol-order-drop-target>td{background:var(--primary-soft)!important}.protocol-order-drop-target>td:first-child{box-shadow:inset 3px 0 var(--primary)}
+
+
+.protocol-status-control{display:flex;align-items:center;gap:9px}.protocol-status-control .cell-title{min-width:0}.protocol-load{display:grid;gap:4px;min-width:0;font-variant-numeric:tabular-nums}.protocol-load strong,.protocol-load strong span,.protocol-load-traffic{display:flex;align-items:center;gap:5px;white-space:nowrap}.protocol-load strong{gap:14px;font-size:12px}.protocol-load .ui-icon{width:12px;height:12px;color:var(--muted)}.protocol-load-traffic{color:var(--muted);font-size:11px}.protocol-order-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:12px 0;padding:12px 14px;border:1px solid var(--primary-border);border-radius:10px;background:var(--primary-soft)}.protocol-order-toolbar>div:first-child{display:grid;gap:3px}.protocol-order-toolbar strong{font-size:12px}.protocol-order-toolbar span{color:var(--muted);font-size:12px}.protocol-order-toolbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.protocol-order-toolbar :deep(.page-alert){flex-basis:100%}.protocol-order-row{cursor:grab}.protocol-order-row:active{cursor:grabbing}.protocol-order-row:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}.protocol-order-row-number{display:inline-grid;min-width:24px;height:24px;place-items:center;border-radius:6px;color:var(--primary);background:var(--primary-soft);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}.protocol-order-drop-target>td{background:var(--primary-soft)!important}.protocol-order-drop-target>td:first-child{box-shadow:inset 3px 0 var(--primary)}
 </style>

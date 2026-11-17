@@ -11,13 +11,17 @@ import (
 const protocolActivityWindow = 2 * time.Minute
 
 type accountProtocolLoadItem struct {
-	ProtocolEndpointID uint       `json:"protocol_endpoint_id"`
-	Name               string     `json:"name"`
-	Region             string     `json:"region"`
-	Protocol           string     `json:"protocol"`
-	ActiveUsers        int64      `json:"active_users"`
-	ActiveFlows        int64      `json:"active_flows"`
-	LastActivityAt     *time.Time `json:"last_activity_at,omitempty"`
+	ConnectorOnline     bool       `json:"connector_online"`
+	ConnectorLastSeenAt *time.Time `json:"connector_last_seen_at,omitempty"`
+	LoadFresh           bool       `json:"load_fresh"`
+	LoadObservedAt      *time.Time `json:"load_observed_at,omitempty"`
+	ProtocolEndpointID  uint       `json:"protocol_endpoint_id"`
+	Name                string     `json:"name"`
+	Region              string     `json:"region"`
+	Protocol            string     `json:"protocol"`
+	ActiveUsers         int64      `json:"active_users"`
+	ActiveFlows         int64      `json:"active_flows"`
+	LastActivityAt      *time.Time `json:"last_activity_at,omitempty"`
 }
 
 type accountProtocolLoadResponse struct {
@@ -63,13 +67,17 @@ func (h *handlers) AccountProtocolLoadHandler(w http.ResponseWriter, r *http.Req
 		}
 		usage := usageByEndpoint[endpoint.ID]
 		items = append(items, accountProtocolLoadItem{
-			ProtocolEndpointID: endpoint.ID,
-			Name:               endpoint.Name,
-			Region:             strings.TrimSpace(node.Region),
-			Protocol:           endpoint.Protocol,
-			ActiveUsers:        usage.ActiveUsers,
-			ActiveFlows:        usage.ActiveFlows,
-			LastActivityAt:     usage.LastUsedAt,
+			ProtocolEndpointID:  endpoint.ID,
+			ConnectorOnline:     node.ConnectorLastSeenAt != nil && !node.ConnectorLastSeenAt.Before(now.Add(-protocolActivityWindow)),
+			ConnectorLastSeenAt: node.ConnectorLastSeenAt,
+			LoadFresh:           usage.ObservedAt != nil && !usage.ObservedAt.Before(now.Add(-protocolActivityWindow)),
+			LoadObservedAt:      usage.ObservedAt,
+			Name:                endpoint.Name,
+			Region:              strings.TrimSpace(node.Region),
+			Protocol:            endpoint.Protocol,
+			ActiveUsers:         usage.ActiveUsers,
+			ActiveFlows:         usage.ActiveFlows,
+			LastActivityAt:      usage.LastUsedAt,
 		})
 	}
 	OK(w, accountProtocolLoadResponse{

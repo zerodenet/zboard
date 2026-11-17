@@ -1,0 +1,443 @@
+{
+  "recorded_utc": "2026-10-23T14:14:43.747476+00:00",
+  "candidate_parent": "bc6ff19c44a291aaae2508c19612addf63348e8e",
+  "scope": "Legacy administrator status.cancel uses canonical whole termination with zero refund. No new permission or financial authority.",
+  "candidate_source_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+  "attempts": [
+    {
+      "attempt": "go-first1",
+      "parent": "bc6ff19c44a291aaae2508c19612addf63348e8e",
+      "started_utc": "2026-10-23T14:05:26.971676+00:00",
+      "finished_utc": "2026-10-23T14:05:59.865869+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/capabilities/entitlements",
+            "./internal/adapters/persistence/entitlementstore",
+            "./internal/handler",
+            "./tools/capabilityinventory",
+            "-run",
+            "^(TestLegacy.*|TestSubscriptionMutationsValidateAdminReplayAndAtomicCredentialEffects|TestPluginBusinessCatalogUsesDomainOwnershipAndSeparateWriteGrant|TestRepositoryContractInventoryIsComplete)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 32.737,
+          "log": "go-first1-target.log",
+          "log_sha256": "47ea09d6749ed179a46c5db6fa373718d944321ddb7121f3a31a285986eb7709"
+        }
+      ],
+      "source_before_sha256": "c16342533bd2ecd55dd7a105e143456df46978355992c010c355b1fa946b49bb",
+      "source_after_sha256": "c16342533bd2ecd55dd7a105e143456df46978355992c010c355b1fa946b49bb",
+      "source_stable": true,
+      "top_level_pass": [
+        "TestLegacyMutationFingerprintKeepsPublishedIdentity",
+        "TestSubscriptionMutationsValidateAdminReplayAndAtomicCredentialEffects",
+        "TestLegacyPendingPlanChangeQuoteAndPaymentUseRemainingPaidValue",
+        "TestLegacyPendingPlanChangeRejectsChangedQuoteAndReusedSource",
+        "TestLegacyPendingPlanChangeCarriesOnlyPaidAndTransferredValue",
+        "TestLegacyPendingExhaustedPlanChangeCandidatesAndSettlementUseSameEligibility",
+        "TestLegacyPendingPlanChangeAdministratorOverrideTransfersOnlyAppliedCredit",
+        "TestLegacyPendingPlanChangeWaitingForPaymentLocksTimeButRechecksConsumedAndRefundedValue",
+        "TestLegacyCancellationPreservesHistoricalReceipt",
+        "TestLegacyTrafficReportCannotMixIndependentSubscriptions",
+        "TestLegacyOfflineImportUsesPreviewConfirmationWithoutHostConfiguration",
+        "TestLegacyArtifactModeDoesNotRepublishReadyMieruAtStartup",
+        "TestLegacyUnboundRenewalCannotPickAnotherSubscription",
+        "TestLegacyPendingRenewalKeepsItsUnversionedAgreement",
+        "TestLegacyErrorWriterKeepsMessageAndAddsGenericDetail",
+        "TestLegacyPolicyKeysMapToNewContentKeys",
+        "TestLegacyExhaustedSubscriptionIsVisibleBeforeAnyMutation",
+        "TestLegacyExhaustedFixedServiceDisappearsBeforeCleanupAndHealthyServiceRemains",
+        "TestLegacyPendingPlanChangeRevokesOldGroupAndPublishesBothNodes",
+        "TestLegacyPendingPlanChangeRevocationFailurePreservesOriginalEntitlement",
+        "TestLegacyPendingPlanChangeRetainsEndpointSharedByBothGroups",
+        "TestRepositoryContractInventoryIsComplete"
+      ],
+      "skips": [],
+      "failed": [
+        "TestLegacyCancellationUsesWholeTerminationWithoutRefund/false",
+        "TestLegacyCancellationUsesWholeTerminationWithoutRefund/true",
+        "TestLegacyCancellationUsesWholeTerminationWithoutRefund",
+        "TestPluginBusinessCatalogUsesDomainOwnershipAndSeparateWriteGrant"
+      ]
+    },
+    {
+      "attempt": "go-fixedkey2",
+      "parent": "bc6ff19c44a291aaae2508c19612addf63348e8e",
+      "started_utc": "2026-10-23T14:07:37.584708+00:00",
+      "finished_utc": "2026-10-23T14:08:00.439445+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/capabilities/entitlements",
+            "./internal/adapters/persistence/entitlementstore",
+            "./internal/handler",
+            "./tools/capabilityinventory",
+            "-run",
+            "^(TestLegacy.*|TestSubscriptionMutationsValidateAdminReplayAndAtomicCredentialEffects|TestPluginBusinessCatalogUsesDomainOwnershipAndSeparateWriteGrant|TestRepositoryContractInventoryIsComplete)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 22.723,
+          "log": "go-fixedkey2-target.log",
+          "log_sha256": "d8da7748cfaf2a04d6a890d499f415c32fe446d48c3c38958c3e3e9368476cac"
+        }
+      ],
+      "source_before_sha256": "76143efff426f07e66945897f80f5b9cb5747785f2a5c625057e3ac5775d971f",
+      "source_after_sha256": "76143efff426f07e66945897f80f5b9cb5747785f2a5c625057e3ac5775d971f",
+      "source_stable": true,
+      "top_level_pass": [
+        "TestLegacyMutationFingerprintKeepsPublishedIdentity",
+        "TestSubscriptionMutationsValidateAdminReplayAndAtomicCredentialEffects",
+        "TestLegacyPendingPlanChangeQuoteAndPaymentUseRemainingPaidValue",
+        "TestLegacyPendingPlanChangeRejectsChangedQuoteAndReusedSource",
+        "TestLegacyPendingPlanChangeCarriesOnlyPaidAndTransferredValue",
+        "TestLegacyPendingExhaustedPlanChangeCandidatesAndSettlementUseSameEligibility",
+        "TestLegacyPendingPlanChangeAdministratorOverrideTransfersOnlyAppliedCredit",
+        "TestLegacyPendingPlanChangeWaitingForPaymentLocksTimeButRechecksConsumedAndRefundedValue",
+        "TestLegacyCancellationPreservesHistoricalReceipt",
+        "TestLegacyCancellationUsesWholeTerminationWithoutRefund",
+        "TestLegacyTrafficReportCannotMixIndependentSubscriptions",
+        "TestPluginBusinessCatalogUsesDomainOwnershipAndSeparateWriteGrant",
+        "TestLegacyOfflineImportUsesPreviewConfirmationWithoutHostConfiguration",
+        "TestLegacyArtifactModeDoesNotRepublishReadyMieruAtStartup",
+        "TestLegacyUnboundRenewalCannotPickAnotherSubscription",
+        "TestLegacyPendingRenewalKeepsItsUnversionedAgreement",
+        "TestLegacyErrorWriterKeepsMessageAndAddsGenericDetail",
+        "TestLegacyPolicyKeysMapToNewContentKeys",
+        "TestLegacyExhaustedSubscriptionIsVisibleBeforeAnyMutation",
+        "TestLegacyExhaustedFixedServiceDisappearsBeforeCleanupAndHealthyServiceRemains",
+        "TestLegacyPendingPlanChangeRevokesOldGroupAndPublishesBothNodes",
+        "TestLegacyPendingPlanChangeRevocationFailurePreservesOriginalEntitlement",
+        "TestLegacyPendingPlanChangeRetainsEndpointSharedByBothGroups",
+        "TestRepositoryContractInventoryIsComplete"
+      ],
+      "skips": [],
+      "failed": []
+    },
+    {
+      "attempt": "mysql-first1",
+      "parent": "bc6ff19c44a291aaae2508c19612addf63348e8e",
+      "started_utc": "2026-10-23T14:08:27.017294+00:00",
+      "finished_utc": "2026-10-23T14:08:39.165645+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestMySQLLegacyCancellation",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 12.015,
+          "log": "mysql-first1-mysql.log",
+          "log_sha256": "74239e305edf0e7cfef6526b8a3dce54d2b34e6c9b14079011fa6c1e0e42ffff"
+        }
+      ],
+      "source_before_sha256": "76143efff426f07e66945897f80f5b9cb5747785f2a5c625057e3ac5775d971f",
+      "source_after_sha256": "76143efff426f07e66945897f80f5b9cb5747785f2a5c625057e3ac5775d971f",
+      "source_stable": true,
+      "top_level_pass": [
+        "TestMySQLLegacyCancellationPreservesHistoricalReceipt"
+      ],
+      "skips": [],
+      "failed": [
+        "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund/false",
+        "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund/true",
+        "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund"
+      ]
+    },
+    {
+      "attempt": "mysql-fixtureprefix2",
+      "parent": "bc6ff19c44a291aaae2508c19612addf63348e8e",
+      "started_utc": "2026-10-23T14:09:30.434819+00:00",
+      "finished_utc": "2026-10-23T14:09:56.304443+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestMySQLLegacyCancellation",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 25.727,
+          "log": "mysql-fixtureprefix2-mysql.log",
+          "log_sha256": "8a9fcfce734e69850cb774f630c2da6fec4192ec1c51d4c417fceb7e47d4a7c8"
+        }
+      ],
+      "source_before_sha256": "6931f01d72d53650be13cf1c1fe490810f75b658b2afdb6643e70ac163d2928a",
+      "source_after_sha256": "6931f01d72d53650be13cf1c1fe490810f75b658b2afdb6643e70ac163d2928a",
+      "source_stable": true,
+      "top_level_pass": [
+        "TestMySQLLegacyCancellationPreservesHistoricalReceipt",
+        "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund"
+      ],
+      "skips": [],
+      "failed": []
+    },
+    {
+      "attempt": "go-latecash3",
+      "parent": "bc6ff19c44a291aaae2508c19612addf63348e8e",
+      "started_utc": "2026-10-23T14:11:19.092163+00:00",
+      "finished_utc": "2026-10-23T14:11:41.495138+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/capabilities/entitlements",
+            "./internal/adapters/persistence/entitlementstore",
+            "./internal/handler",
+            "./tools/capabilityinventory",
+            "-run",
+            "^(TestLegacy.*|TestSubscriptionMutationsValidateAdminReplayAndAtomicCredentialEffects|TestPluginBusinessCatalogUsesDomainOwnershipAndSeparateWriteGrant|TestRepositoryContractInventoryIsComplete)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 22.284,
+          "log": "go-latecash3-target.log",
+          "log_sha256": "670b5137226d24132207a447a093546a48cd4d9f74898a669a94062a00335771"
+        }
+      ],
+      "source_before_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_after_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_stable": true,
+      "top_level_pass": [
+        "TestLegacyMutationFingerprintKeepsPublishedIdentity",
+        "TestSubscriptionMutationsValidateAdminReplayAndAtomicCredentialEffects",
+        "TestLegacyPendingPlanChangeQuoteAndPaymentUseRemainingPaidValue",
+        "TestLegacyPendingPlanChangeRejectsChangedQuoteAndReusedSource",
+        "TestLegacyPendingPlanChangeCarriesOnlyPaidAndTransferredValue",
+        "TestLegacyPendingExhaustedPlanChangeCandidatesAndSettlementUseSameEligibility",
+        "TestLegacyPendingPlanChangeAdministratorOverrideTransfersOnlyAppliedCredit",
+        "TestLegacyPendingPlanChangeWaitingForPaymentLocksTimeButRechecksConsumedAndRefundedValue",
+        "TestLegacyCancellationPreservesHistoricalReceipt",
+        "TestLegacyCancellationRetainsLateMixedCashWithoutRevival",
+        "TestLegacyCancellationUsesWholeTerminationWithoutRefund",
+        "TestLegacyTrafficReportCannotMixIndependentSubscriptions",
+        "TestPluginBusinessCatalogUsesDomainOwnershipAndSeparateWriteGrant",
+        "TestLegacyOfflineImportUsesPreviewConfirmationWithoutHostConfiguration",
+        "TestLegacyArtifactModeDoesNotRepublishReadyMieruAtStartup",
+        "TestLegacyUnboundRenewalCannotPickAnotherSubscription",
+        "TestLegacyPendingRenewalKeepsItsUnversionedAgreement",
+        "TestLegacyErrorWriterKeepsMessageAndAddsGenericDetail",
+        "TestLegacyPolicyKeysMapToNewContentKeys",
+        "TestLegacyExhaustedSubscriptionIsVisibleBeforeAnyMutation",
+        "TestLegacyExhaustedFixedServiceDisappearsBeforeCleanupAndHealthyServiceRemains",
+        "TestLegacyPendingPlanChangeRevokesOldGroupAndPublishesBothNodes",
+        "TestLegacyPendingPlanChangeRevocationFailurePreservesOriginalEntitlement",
+        "TestLegacyPendingPlanChangeRetainsEndpointSharedByBothGroups",
+        "TestRepositoryContractInventoryIsComplete"
+      ],
+      "skips": [],
+      "failed": []
+    },
+    {
+      "attempt": "mysql-latecash3",
+      "parent": "bc6ff19c44a291aaae2508c19612addf63348e8e",
+      "started_utc": "2026-10-23T14:11:56.576538+00:00",
+      "finished_utc": "2026-10-23T14:12:09.494745+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestMySQLLegacyCancellation",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 12.795,
+          "log": "mysql-latecash3-mysql.log",
+          "log_sha256": "953b2c0719664d13c5652688008375cd54f59794e8fdd631925b68b4a8587d56"
+        }
+      ],
+      "source_before_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_after_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_stable": true,
+      "top_level_pass": [
+        "TestMySQLLegacyCancellationPreservesHistoricalReceipt",
+        "TestMySQLLegacyCancellationRetainsLateMixedCashWithoutRevival",
+        "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund"
+      ],
+      "skips": [],
+      "failed": []
+    }
+  ],
+  "failure_resolution": {
+    "go-first1": "Internal generated bridge request contained a colon rejected by existing creation-key pattern; changed internal prefix only, preserving original plugin key/hash and validator.",
+    "mysql-first1": "Test token prefix exceeded the unchanged actual MySQL field length; shortened test fixture, did not alter schema."
+  },
+  "current_pass": {
+    "go_top_level": 25,
+    "go_skip": [],
+    "mysql_top_level": 3,
+    "mysql_skip": [],
+    "mysql_real": "Existing isolated MySQL8.4, fresh randomized database per fixture; three top-level functions include two valuation subcases."
+  },
+  "pending": [
+    "New exact commit full backend4, original full MySQL3 and own CI not run yet.",
+    "Actual external plugin, kernel, browser, OS crash and production acceptance not performed."
+  ],
+  "migration": "No schema or SQL migration; old kind receipts remain read-only history, new cancel_without_refund requires retained unsubscribe evidence.",
+  "remaining": [
+    "Historical status-only records not silently repaired.",
+    "Existing1000 source order bound remains.",
+    "P4 safe total retention/growth, P6 capacity and P7 comprehensive external acceptance incomplete."
+  ],
+  "race": [
+    {
+      "attempt": "race-first1",
+      "checks": [
+        {
+          "name": "race",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-race",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "./internal/handler",
+            "-run",
+            "^Test(LegacyCancellation|OperationDiscount|ValueProjectionTimedAddition)",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 325.2,
+          "log": "race-first1-race.log",
+          "log_sha256": "0410de5b6712e2691b55e87d3433269e666905711949f22ab953a5858304f40c"
+        }
+      ],
+      "source_before_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_after_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_stable": true,
+      "started_utc": "2026-10-23T14:13:35.164854+00:00",
+      "finished_utc": "2026-10-23T14:19:00.490115+00:00",
+      "top_level_pass_counts": {
+        "TestOperationDiscountReaderBindsTargetMoneyAndLockedBase": 3,
+        "TestOperationDiscountReaderSupportsResetAndPackWithoutRecurringConsent": 3,
+        "TestValueProjectionTimedAdditionPreservesConsumedAndFutureMoney": 3,
+        "TestValueProjectionTimedAdditionRejectsUnprovenOrChangedTerms": 3,
+        "TestValueProjectionTimedAdditionSharedYearAndFreeQuota": 3,
+        "TestLegacyCancellationPreservesHistoricalReceipt": 3,
+        "TestLegacyCancellationRetainsLateMixedCashWithoutRevival": 3,
+        "TestLegacyCancellationUsesWholeTerminationWithoutRefund": 3,
+        "TestOperationDiscountNativeHTTPCheckoutAndWallet": 3,
+        "TestOperationDiscountCompatibleReaderPreservesActualValueAndRenewalBase": 3
+      },
+      "skips": [],
+      "note": "SQLite integration and pure commerce value projection; each named top-level executed3times."
+    },
+    {
+      "attempt": "mysqlrace-first1",
+      "checks": [
+        {
+          "name": "race",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-race",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "./internal/handler",
+            "-run",
+            "^TestMySQL(LegacyCancellation|OperationDiscount)",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 95.531,
+          "log": "mysqlrace-first1-race.log",
+          "log_sha256": "f555aa6c23b293e3a6c9c5adc72690100d1043d77081fffae4d49fd7f1045540"
+        }
+      ],
+      "source_before_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_after_sha256": "e2eee5adf72db3860aca501dcd7306c639237bcb7a0ae09c735a00505857f2a3",
+      "source_stable": true,
+      "started_utc": "2026-10-23T14:19:40.741768+00:00",
+      "finished_utc": "2026-10-23T14:21:16.402677+00:00",
+      "top_level_pass_counts": {
+        "TestMySQLLegacyCancellationPreservesHistoricalReceipt": 3,
+        "TestMySQLLegacyCancellationRetainsLateMixedCashWithoutRevival": 3,
+        "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund": 3,
+        "TestMySQLOperationDiscountNativeHTTPCheckoutAndWallet": 3,
+        "TestMySQLOperationDiscountCompatibleReaderPreservesActualValueAndRenewalBase": 3
+      },
+      "skips": [],
+      "note": "MySQL phase commerce package has no matching tests; actual real-MySQL coverage is the named handler functions."
+    }
+  ],
+  "cache_clean": {
+    "utc": "2026-10-23T14:13:35.013419+00:00",
+    "target": "/workspace/toolchains/cache/go-build",
+    "resolved": "/workspace/toolchains/cache/go-build",
+    "symlinks": false,
+    "workloads": [],
+    "free_before": 149655552,
+    "command": "go clean -cache",
+    "exit_code": 0,
+    "output": "",
+    "free_after": 897032192
+  }
+}

@@ -10,6 +10,27 @@ import (
 	"gorm.io/gorm"
 )
 
+// Hold the host lease row until cleanup finishes. If ownership has moved, the
+// successor's normal startup/periodic cleanup owns the abandoned candidate.
+func (m *Manager) removeFailedCandidate(digest string) error {
+	if !digestPattern.MatchString(digest) {
+		return errors.New("invalid candidate digest")
+	}
+	return m.db.Transaction(func(tx *gorm.DB) error {
+		if err := m.guard(tx); err != nil {
+			return err
+		}
+		var committed int64
+		if err := tx.Model(&model.PluginInstallation{}).Where("version_id = ? AND state <> ?", digest, "uninstalled").Count(&committed).Error; err != nil {
+			return err
+		}
+		if committed > 0 {
+			return nil
+		}
+		return os.RemoveAll(filepath.Join(m.options.Directory, "versions", digest))
+	})
+}
+
 // Caller holds m.mu. Only the lease owner may remove package files. Metadata
 // for an uninstalled plugin remains available for configuration and data purge,
 // but its archive is no longer needed to run the plugin.

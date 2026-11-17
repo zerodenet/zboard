@@ -1,5 +1,5 @@
 <template>
-  <ModalDialog :open="Boolean(orderId)" :title="`订单 #${orderId} 的订阅地址`" description="仅对应此订单履约的订阅，可交付给该客户使用。" @close="$emit('close')">
+  <ModalDialog :open="Boolean(orderId)" :title="`订单 ${orderReference(orderId)} 的订阅地址`" description="仅对应此订单履约的订阅，可交付给该客户使用。" @close="$emit('close')">
     <p v-if="loading" role="status">正在读取订阅地址…</p>
     <PageAlert v-else-if="error" tone="danger" role="alert">{{ error }}<template #actions><UiButton variant="secondary" @click="load">重试</UiButton></template></PageAlert>
     <template v-else-if="url">
@@ -16,6 +16,7 @@
 </template>
 
 <script setup lang="ts">
+import { orderReference } from '../utils/businessReference'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import ModalDialog from './ModalDialog.vue'
 import PageAlert from './PageAlert.vue'
@@ -31,7 +32,7 @@ const error = ref(''), feedback = ref(''), loading = ref(false), copying = ref(f
 let generation = 0, controller: AbortController | undefined
 const url = computed(() => {
   const path = access.value?.configured ? access.value.subscription_url : ''
-  return path?.startsWith('/api/v1/client/subscription/') ? new URL(path, window.location.origin).toString() : ''
+  return path ? new URL(path, window.location.origin).toString() : ''
 })
 async function load() {
   const request = ++generation

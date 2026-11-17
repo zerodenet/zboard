@@ -1,0 +1,181 @@
+{
+  "baseline": "e4ab60a0ed4712aadfdce8b2fd6cd0e7ad082c3e",
+  "branch": "codex/core-convergence",
+  "pr": 78,
+  "created_utc": "2026-10-23T03:03:22.532852+00:00",
+  "sources": {
+    "backend/api/openapi.yaml": "12301948a5015a21f9ed2fe0ef3d8466b852503f4bfee332d7e6aa4ccde5bcd9",
+    "backend/architecture/capability-ownership.json": "00909fbad178131ee207f726dbdb0d188fa98db5a60408104315be2fd72ad20b",
+    "backend/internal/adapters/persistence/commercestore/subscription_termination.go": "4ed963cc276775baa5f67f0d9dec05d9b3bd1ffbfd04a1d1115bdd11a87bfe31",
+    "backend/internal/capabilities/commerce/subscription_termination.go": "51bb9414e907d6bf322b9e0e6f0a5b76903f79b969b79db515f72c4564b7e204",
+    "backend/internal/capabilities/commerce/subscription_value.go": "2838292039278852ab49f537c1958a34065a11f9d661abe3f682ece631c958e1",
+    "backend/internal/handler/consumption_refunds.go": "211f484cdb9507fe62cb44b64da406205fa87c856f255bb67cb712d30c1cacca",
+    "backend/internal/handler/subscription_value.go": "fdfe6e7db97f3d1450635776647b70724683432c60b5fe71dcc68ff7996a3a25",
+    "backend/internal/server/router.go": "338f67c6d71c4d8e3e9e733d23316e1f8eff05cfff56216b696e62918d470ed1",
+    "backend/tools/capabilityinventory/main.go": "a3e1896b4ece18cfdb6ad425487339a429d624b3c21b31af7f791665baac234e",
+    "frontend/src/api/subscriptionValue.ts": "ebbc72c09743e7d81bf9f79d8d06f422ff77896ea220428cac2b7c507a42d49d",
+    "frontend/src/components/AdminConsumptionRefund.test.ts": "9f9f84ce1da0b7acb351dc1a87aafeb0b4607ad05dd87471e1f8beed42a93b91",
+    "frontend/src/components/AdminConsumptionRefund.vue": "3a6c31eabe6a7a8ccd2f2711c45cd7aa43add2c09e5e10862dead31a43a71a65",
+    "frontend/src/components/SubscriptionTermination.test.ts": "33cf2620f7ae67002a7e6f39813540367882c3b4f3fc1e8e286c360c66e62697",
+    "frontend/src/components/SubscriptionTermination.vue": "430316d6a184b7df084fdf4a12610b1674a6424b68c2008925a40e5877fef53e",
+    "frontend/src/views/Subscriptions.vue": "2f12be802895b3210068226dc1720f1bfa9298b04816fabab9a21fded805a20e",
+    "backend/internal/adapters/persistence/commercestore/administrative_termination.go": "63635ef438a94145010ec95e45606f41acefd308b787d8ae55a562f063822fca",
+    "backend/internal/capabilities/commerce/administrative_refund.go": "b69e7f8dec1c5f8d666f439198c369d487057483c61544614a86cfc30d0a69c9",
+    "backend/internal/capabilities/commerce/administrative_refund_test.go": "92daa2adb0e8d7c47b9b7f098d4a8ec2a9da74aa9117ef2be7a77e8ba8860079",
+    "backend/internal/handler/administrative_termination_test.go": "e85453bf2716c0e6efb92e0e595e1267d26cb5a8af572d6d58480238bf025f11"
+  },
+  "checks": {
+    "sqlite": {
+      "phase": "sqlite",
+      "started_utc": "2026-10-23T02:49:32.271230+00:00",
+      "command": "go test -p 2 ./internal/capabilities/commerce ./internal/capabilities/entitlements ./internal/handler -run AdministrativeRefund|AdministrativeWholeTermination|AdministrativeTerminationHTTP|TestPerpetualFIFOFunded -count=1 -v -timeout 5m",
+      "exit_code": 0,
+      "wall_seconds": 14.348,
+      "sources": {
+        "backend/internal/adapters/persistence/commercestore/subscription_termination.go": "4ed963cc276775baa5f67f0d9dec05d9b3bd1ffbfd04a1d1115bdd11a87bfe31",
+        "backend/internal/capabilities/commerce/subscription_termination.go": "51bb9414e907d6bf322b9e0e6f0a5b76903f79b969b79db515f72c4564b7e204",
+        "backend/internal/capabilities/commerce/subscription_value.go": "2838292039278852ab49f537c1958a34065a11f9d661abe3f682ece631c958e1",
+        "backend/internal/handler/consumption_refunds.go": "211f484cdb9507fe62cb44b64da406205fa87c856f255bb67cb712d30c1cacca",
+        "backend/internal/handler/subscription_value.go": "fdfe6e7db97f3d1450635776647b70724683432c60b5fe71dcc68ff7996a3a25",
+        "backend/internal/server/router.go": "338f67c6d71c4d8e3e9e733d23316e1f8eff05cfff56216b696e62918d470ed1",
+        "frontend/src/api/subscriptionValue.ts": "ebbc72c09743e7d81bf9f79d8d06f422ff77896ea220428cac2b7c507a42d49d",
+        "frontend/src/components/AdminConsumptionRefund.test.ts": "9f9f84ce1da0b7acb351dc1a87aafeb0b4607ad05dd87471e1f8beed42a93b91",
+        "frontend/src/components/AdminConsumptionRefund.vue": "3a6c31eabe6a7a8ccd2f2711c45cd7aa43add2c09e5e10862dead31a43a71a65",
+        "frontend/src/components/SubscriptionTermination.test.ts": "b878b989868e05496075384163b752f93e6837e98721ab24bdbd2f44aa9aa427",
+        "frontend/src/components/SubscriptionTermination.vue": "2b0dc3ab124ce8af410cf4ca023e47011f366fc75dfc19b13150c8df8f9b8e00",
+        "frontend/src/views/Subscriptions.vue": "2f12be802895b3210068226dc1720f1bfa9298b04816fabab9a21fded805a20e",
+        "backend/internal/adapters/persistence/commercestore/administrative_termination.go": "63635ef438a94145010ec95e45606f41acefd308b787d8ae55a562f063822fca",
+        "backend/internal/capabilities/commerce/administrative_refund.go": "b69e7f8dec1c5f8d666f439198c369d487057483c61544614a86cfc30d0a69c9",
+        "backend/internal/capabilities/commerce/administrative_refund_test.go": "92daa2adb0e8d7c47b9b7f098d4a8ec2a9da74aa9117ef2be7a77e8ba8860079",
+        "backend/internal/handler/administrative_termination_test.go": "e85453bf2716c0e6efb92e0e595e1267d26cb5a8af572d6d58480238bf025f11"
+      },
+      "source_unchanged": true
+    },
+    "mysql": {
+      "phase": "mysql",
+      "started_utc": "2026-10-23T02:49:46.668269+00:00",
+      "command": "go test -p 2 ./internal/handler -run ^TestMySQL(AdministrativeWholeTermination|PerpetualFIFO) -count=1 -v -timeout 5m",
+      "exit_code": 0,
+      "wall_seconds": 18.791,
+      "sources": {
+        "backend/internal/adapters/persistence/commercestore/subscription_termination.go": "4ed963cc276775baa5f67f0d9dec05d9b3bd1ffbfd04a1d1115bdd11a87bfe31",
+        "backend/internal/capabilities/commerce/subscription_termination.go": "51bb9414e907d6bf322b9e0e6f0a5b76903f79b969b79db515f72c4564b7e204",
+        "backend/internal/capabilities/commerce/subscription_value.go": "2838292039278852ab49f537c1958a34065a11f9d661abe3f682ece631c958e1",
+        "backend/internal/handler/consumption_refunds.go": "211f484cdb9507fe62cb44b64da406205fa87c856f255bb67cb712d30c1cacca",
+        "backend/internal/handler/subscription_value.go": "fdfe6e7db97f3d1450635776647b70724683432c60b5fe71dcc68ff7996a3a25",
+        "backend/internal/server/router.go": "338f67c6d71c4d8e3e9e733d23316e1f8eff05cfff56216b696e62918d470ed1",
+        "frontend/src/api/subscriptionValue.ts": "ebbc72c09743e7d81bf9f79d8d06f422ff77896ea220428cac2b7c507a42d49d",
+        "frontend/src/components/AdminConsumptionRefund.test.ts": "9f9f84ce1da0b7acb351dc1a87aafeb0b4607ad05dd87471e1f8beed42a93b91",
+        "frontend/src/components/AdminConsumptionRefund.vue": "3a6c31eabe6a7a8ccd2f2711c45cd7aa43add2c09e5e10862dead31a43a71a65",
+        "frontend/src/components/SubscriptionTermination.test.ts": "b878b989868e05496075384163b752f93e6837e98721ab24bdbd2f44aa9aa427",
+        "frontend/src/components/SubscriptionTermination.vue": "2b0dc3ab124ce8af410cf4ca023e47011f366fc75dfc19b13150c8df8f9b8e00",
+        "frontend/src/views/Subscriptions.vue": "2f12be802895b3210068226dc1720f1bfa9298b04816fabab9a21fded805a20e",
+        "backend/internal/adapters/persistence/commercestore/administrative_termination.go": "63635ef438a94145010ec95e45606f41acefd308b787d8ae55a562f063822fca",
+        "backend/internal/capabilities/commerce/administrative_refund.go": "b69e7f8dec1c5f8d666f439198c369d487057483c61544614a86cfc30d0a69c9",
+        "backend/internal/capabilities/commerce/administrative_refund_test.go": "92daa2adb0e8d7c47b9b7f098d4a8ec2a9da74aa9117ef2be7a77e8ba8860079",
+        "backend/internal/handler/administrative_termination_test.go": "e85453bf2716c0e6efb92e0e595e1267d26cb5a8af572d6d58480238bf025f11"
+      },
+      "source_unchanged": true
+    },
+    "frontend-whole": {
+      "phase": "frontend",
+      "baseline": "e4ab60a0ed4712aadfdce8b2fd6cd0e7ad082c3e",
+      "sources": {
+        "backend/internal/adapters/persistence/commercestore/subscription_termination.go": "4ed963cc276775baa5f67f0d9dec05d9b3bd1ffbfd04a1d1115bdd11a87bfe31",
+        "backend/internal/capabilities/commerce/subscription_termination.go": "51bb9414e907d6bf322b9e0e6f0a5b76903f79b969b79db515f72c4564b7e204",
+        "backend/internal/capabilities/commerce/subscription_value.go": "2838292039278852ab49f537c1958a34065a11f9d661abe3f682ece631c958e1",
+        "backend/internal/handler/consumption_refunds.go": "211f484cdb9507fe62cb44b64da406205fa87c856f255bb67cb712d30c1cacca",
+        "backend/internal/handler/subscription_value.go": "fdfe6e7db97f3d1450635776647b70724683432c60b5fe71dcc68ff7996a3a25",
+        "backend/internal/server/router.go": "338f67c6d71c4d8e3e9e733d23316e1f8eff05cfff56216b696e62918d470ed1",
+        "frontend/src/api/subscriptionValue.ts": "ebbc72c09743e7d81bf9f79d8d06f422ff77896ea220428cac2b7c507a42d49d",
+        "frontend/src/components/AdminConsumptionRefund.test.ts": "9f9f84ce1da0b7acb351dc1a87aafeb0b4607ad05dd87471e1f8beed42a93b91",
+        "frontend/src/components/AdminConsumptionRefund.vue": "3a6c31eabe6a7a8ccd2f2711c45cd7aa43add2c09e5e10862dead31a43a71a65",
+        "frontend/src/components/SubscriptionTermination.test.ts": "33cf2620f7ae67002a7e6f39813540367882c3b4f3fc1e8e286c360c66e62697",
+        "frontend/src/components/SubscriptionTermination.vue": "430316d6a184b7df084fdf4a12610b1674a6424b68c2008925a40e5877fef53e",
+        "frontend/src/views/Subscriptions.vue": "2f12be802895b3210068226dc1720f1bfa9298b04816fabab9a21fded805a20e",
+        "backend/internal/adapters/persistence/commercestore/administrative_termination.go": "63635ef438a94145010ec95e45606f41acefd308b787d8ae55a562f063822fca",
+        "backend/internal/capabilities/commerce/administrative_refund.go": "b69e7f8dec1c5f8d666f439198c369d487057483c61544614a86cfc30d0a69c9",
+        "backend/internal/capabilities/commerce/administrative_refund_test.go": "92daa2adb0e8d7c47b9b7f098d4a8ec2a9da74aa9117ef2be7a77e8ba8860079",
+        "backend/internal/handler/administrative_termination_test.go": "e85453bf2716c0e6efb92e0e595e1267d26cb5a8af572d6d58480238bf025f11"
+      },
+      "started_utc": "2026-10-23T02:56:53.844099+00:00",
+      "checks": [
+        {
+          "name": "install",
+          "command": "pnpm install --frozen-lockfile --package-import-method=copy",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 0.675,
+          "log": "install-whole.log"
+        },
+        {
+          "name": "frontend",
+          "command": "pnpm test --no-file-parallelism --exclude src/theme/designTokens.test.ts --exclude src/views/commercePurchaseExperience.test.ts --exclude src/utils/adminRowActionsAudit.test.ts --exclude src/utils/catalogScalePolicy.test.ts --exclude src/utils/formPolicy.test.ts --exclude src/utils/frontendArchitecturePolicy.test.ts",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 147.465,
+          "log": "frontend-whole.log"
+        },
+        {
+          "name": "frontend-build",
+          "command": "pnpm build",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 30.269,
+          "log": "frontend-build-whole.log"
+        }
+      ],
+      "pending": [],
+      "source_unchanged": true,
+      "finished_utc": "2026-10-23T02:59:52.254628+00:00"
+    }
+  },
+  "logs_sha256": {
+    "mysql-previous-1792723560748714237.log": "c9b1d8d58ef296136bd25b252f3f152a07c6a154510d7f72a96e7d7805c6a66b",
+    "frontend-whole.log": "dfc792f78c3cd96d070fc3c4c825a7c5b47ceafbce176726e3cc58e44d165560",
+    "initial-regression.log": "bb4ee556a22d14299a938354068cfd45c6c52ba4397d2cf55f89d4df5991beb3",
+    "mysql-previous-1792723786668414257.log": "77329ad055b7fa7ab43d0b5a9c12418d36b58a4708cc1acf38a53718a4264eb0",
+    "mysql.log": "9ed986ce62664df8a8a0ed876b59794bebc2da3078346318de3e1543f33e364c",
+    "sqlite-previous-1792723488783979539.log": "4c931fc926f65f9411d2e975b0811decad209e60018bdd5c58d293121bbe7329",
+    "sqlite-previous-1792723772271387589.log": "e371535b3626c93edfa1acabb529a294984acea0c4a2ccc8d6154ebe29a224e5",
+    "sqlite.log": "280d548868a1e8617229b9d000a5812e25ae5485e43849aeba76faa71fa5dd14",
+    "frontend-targeted-1.log": "fd1d7bebb4577011152167c284b7c6de9e5d890343f0c35ccb623ab8b6a0c8c7",
+    "frontend-build-whole.log": "351d6c9a4fc574651668045812f202233dddce4cf54c4daf2556e7145006dd53",
+    "install-whole.log": "15939b5735b69fb3585215573d1698c425d6245724b7307c5bb4faceeb4fb5b3",
+    "before-normalized-role-fix/frontend-whole.log": "c0a3a897fc49f93d43829996a62ecbe169ff9145257000b425c9f7b794ed7572",
+    "before-normalized-role-fix/frontend-build-whole.log": "1953bee8c03f4c97bc5d699a6c8b5f4492ccb0d0a4566f377177d0f25d2dda9c",
+    "before-normalized-role-fix/install-whole.log": "e3866863e6d1e60822e1c00f2df7c3cb0dffcc68df462615ba6c0e3465e3ac94"
+  },
+  "sql_assets_unchanged": 154,
+  "capacity_runners_unchanged_sha256": {
+    "scripts/acceptance-mixed.sh": "e526b44d5a81e306f34a4b069e40fdd29b908c55f4bc45a070ef558722a259f6",
+    "scripts/acceptance-load.py": "3a8d946d14e96b3262f7ee831c4da0dcd96f31d31a1fe2ce2b8525a90e00af12",
+    "scripts/acceptance-report.py": "d8c9e0ab163a29a62fb296ddb30e5c22b6efe68cab3d1f94bfc7395082d06021"
+  },
+  "original_capacity_free_disk_gate_bytes": 1677721600,
+  "host_free_bytes": 25976832,
+  "cleanup": {
+    "target": "/workspace/toolchains/cache/go-build",
+    "action": "go clean -cache after workloads stop",
+    "status": "user input pending; not executed",
+    "impact": "regenerable compiled artifacts only; source/database/spool/evidence retained"
+  },
+  "not_executed_current_source": [
+    "local whole backend test/vet/build/pure SQLite",
+    "local whole MySQL three commands",
+    "local handler race/count3",
+    "local capability inventory execution",
+    "current capacity load/worker/scaling",
+    "external cash provider/native kernel/production"
+  ],
+  "historical_failure": {
+    "path": "before-normalized-role-fix/frontend-build-whole.log",
+    "exit_code": 2,
+    "reason": "new component used raw is_admin instead of normalized app user.isAdmin; fixed component and fixture, reran complete frontend/build"
+  },
+  "limitations": [
+    "Administrator zero still requires a valid value quote; unavailable historical evidence, >1000 sources or pending quota reset do not yet support independent zero termination",
+    "No new SQL/schema or secondary financial writer",
+    "Commit own CI to be verified independently; prior e4 CI not assigned to this source"
+  ]
+}

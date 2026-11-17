@@ -38,7 +38,8 @@ describe('operations usability regressions', () => {
   it('makes template ordering and availability direct administration actions', () => {
     expect(customizer).toContain('@click="movePolicyGroup(index, -1)"')
     expect(customizer).toContain('@click="movePolicyGroup(index, 1)"')
-    expect(templates).toContain('@click="toggleActive(item)"')
+    expect(templates).toContain('<UiSwitch')
+    expect(templates).toContain('@update:model-value="value => toggleActive(item, value)"')
     expect(templates).toContain('expected_revision: detail.revision')
   })
 

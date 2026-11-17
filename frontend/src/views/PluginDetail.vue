@@ -1,23 +1,15 @@
 <template>
-  <div class="plugins-page">
+  <div class="standard-page plugins-page">
     <nav class="plugin-breadcrumb" aria-label="面包屑"><RouterLink to="/admin/plugins">插件管理</RouterLink><span>/</span><span>{{ plugin?.name || '插件详情' }}</span></nav>
     <PageAlert v-if="error" tone="danger">{{ error }}<template #actions><UiButton variant="secondary" @click="load">重试</UiButton></template></PageAlert>
     <p v-if="loading && !plugin" role="status">正在读取插件…</p>
     <section v-else-if="!plugin && !error" class="plugins-empty"><h1>未找到插件</h1><p>插件可能已移除，请返回列表检查。</p></section>
     <template v-if="plugin">
-      <header class="plugins-heading">
-        <div><p class="eyebrow">插件详情</p><h1>{{ plugin.name }}</h1><p>{{ plugin.id }} · v{{ plugin.version }} <span class="plugin-status" :class="plugin.state">{{ pluginStateLabel(plugin.state) }}</span></p></div>
-        <div class="plugins-actions">
-          <RouterLink class="button button-secondary" :to="`/admin/plugin-market/${encodeURIComponent(plugin.id)}`">切换发布版本</RouterLink>
-          <UiButton v-if="plugin.enabled" variant="secondary" :disabled="busy" @click="act(plugin, 'disable')">停用插件</UiButton>
-          <UiButton v-else-if="plugin.state !== 'uninstalled'" variant="secondary" :disabled="busy || !plugin.compatibility.compatible || !canPluginRun(plugin)" @click="act(plugin, 'enable')">启用插件</UiButton>
-          <RouterLink v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" class="button" :to="`${pluginDetailPath(plugin.id)}/configuration`">配置插件</RouterLink>
-        </div>
-      </header>
+      <PageHeader :title="plugin.name" :description="`${plugin.id} · v${plugin.version} · ${pluginStateLabel(plugin.state)}`" :show-section-navigation="false"><template #actions><UiButton as-child variant="secondary"><RouterLink :to="`/admin/plugin-market/${encodeURIComponent(plugin.id)}`">切换发布版本</RouterLink></UiButton><UiButton v-if="plugin.enabled" variant="secondary" :loading="busy" @click="act(plugin, 'disable')">停用插件</UiButton><UiButton v-else-if="plugin.state !== 'uninstalled'" variant="secondary" :loading="busy" :disabled="!plugin.compatibility.compatible || !canPluginRun(plugin)" @click="act(plugin, 'enable')">启用插件</UiButton><UiButton v-if="hasPluginConfig(plugin) && plugin.compatibility.compatible" as-child><RouterLink :to="`${pluginDetailPath(plugin.id)}/configuration`">配置插件</RouterLink></UiButton></template></PageHeader>
       <AdminPageNavigation />
       <TransientFeedback :success="message" />
       <PageAlert v-if="!plugin.admission?.accepted" tone="warning">插件尚未通过宿主校验，无法运行。请查看操作记录。</PageAlert>
-      <PageAlert v-if="route.query.imported === '1' && !plugin.enabled" tone="success">插件已安装，系统已完成能力校验和数据准备。完成配置后即可启用。</PageAlert>
+      <PageAlert v-if="route.query.imported === '1' && !plugin.enabled" tone="info">插件已安装，请完成配置后启用。</PageAlert>
       <PageAlert v-if="actionError || plugin.last_error" tone="danger">{{ actionError || plugin.last_error }}</PageAlert>
       <nav class="plugin-tabs" aria-label="插件详情栏目">
         <RouterLink v-for="item in tabs" :key="item.id" :to="{ path: pluginDetailPath(plugin.id), query: item.id === 'overview' ? {} : { tab: item.id } }" :class="{ selected: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined">{{ item.label }}</RouterLink>
@@ -41,12 +33,11 @@
         </div>
       </section>
       <section v-else-if="tab === 'versions'" class="plugin-detail">
-        <h2>版本管理</h2><p>选择发布者提供的 stable、rc 或 dev 版本，请使用“切换发布版本”。下方列出本机保留的历史版本。</p><p>安装和升级时由系统自动完成数据迁移。恢复旧版本前请先停用；系统会校验数据与配置，失败时保留当前版本。</p>
+        <h2>版本管理</h2><p>选择发布者提供的 stable、rc 或 dev 版本，请使用“切换发布版本”。下方列出本机保留的历史版本。</p><p>安装和升级时由系统自动完成数据迁移，并校验配置和数据兼容性。</p>
         <p v-if="!plugin.versions.length">暂无保留的版本。</p>
         <div v-for="version in plugin.versions" :key="version.id" class="plugin-history">
           <span><strong>v{{ version.version }}</strong><small>{{ formatDateTime(version.created_at) }}</small><small>{{ version.digest }}</small></span>
           <span v-if="version.id === plugin.version_id" class="plugin-status">当前版本</span>
-          <UiButton v-else variant="secondary" :disabled="busy || plugin.enabled || plugin.state === 'uninstalled'" @click="act(plugin, 'rollback', version.id)">恢复此版本</UiButton>
         </div>
         <PluginDataPanel :plugin="plugin" />
       </section>
@@ -54,7 +45,7 @@
         <header><h2>最近操作</h2><UiButton variant="secondary" :disabled="opsLoading" @click="loadOperations">刷新记录</UiButton></header>
         <PageAlert v-if="opsError" tone="danger">{{ opsError }}</PageAlert>
         <p v-if="opsLoading" role="status">正在读取操作记录…</p><p v-else-if="!operations.length && !opsError">暂无操作记录。</p>
-        <div v-for="op in visibleOperations" :key="op.id" class="plugin-history"><span><strong>{{ actionLabels[op.action] || op.action }}</strong> · {{ operationStateLabels[op.state] || op.state }}<small>{{ op.actor }} · {{ formatDateTime(op.created_at) }}</small></span><span>{{ op.message }}</span></div>
+        <div v-for="op in visibleOperations" :key="op.id" class="plugin-history"><span><strong>{{ actionLabels[op.action] || op.action }}</strong> · {{ operationStateLabels[op.state] || op.state }}<small>{{ op.actor }} · {{ formatDateTime(op.created_at) }}</small></span><span><span v-if="op.previous_publisher" class="plugin-operation-identity">{{ op.previous_publisher }} → {{ op.publisher }}<small>签名指纹：{{ op.signing_key_fingerprint }}</small><small>安装包摘要：{{ op.package_digest }}</small></span>{{ op.message }}</span></div>
         <div v-if="operations.length > 10" class="plugins-actions plugin-operation-paging">
           <span>最近 {{ operations.length }} 条 · 第 {{ operationPage }} / {{ operationPages }} 页</span>
           <UiButton variant="secondary" :disabled="operationPage <= 1" @click="operationPage--">上一页</UiButton>
@@ -65,6 +56,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { computed, ref, watch } from 'vue'
 import { formatDateTime } from '../utils/format'
 import { useRoute } from 'vue-router'

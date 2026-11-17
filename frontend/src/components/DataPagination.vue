@@ -14,9 +14,9 @@
         <UiSelect :model-value="limit" :options="pageSizeOptions" :aria-label="mode === 'cursor' ? '每次加载条数' : '每页条数'" :disabled="loading" @update:model-value="changeLimit" />
       </label>
       <slot name="navigation" :previous="previous" :next="next" :page="page" :page-count="pageCount">
-        <button class="table-pager-nav table-pager-previous" :class="{ 'cursor-pager-nav cursor-pager-newer': mode === 'cursor' }" type="button" :disabled="previousDisabled" :aria-label="mode === 'cursor' ? '较新记录' : '上一页'" :title="mode === 'cursor' ? '较新记录' : '上一页'" @click="previous"><UiIcon v-if="variant === 'stripe' || mode === 'cursor'" name="chevron" /><template v-else>上一页</template></button>
+        <button class="table-pager-nav table-pager-previous" :class="{ 'cursor-pager-nav cursor-pager-newer': mode === 'cursor' }" type="button" :disabled="previousDisabled" :aria-label="mode === 'cursor' ? '较新记录' : '上一页'" :title="mode === 'cursor' ? '较新记录' : variant === 'stripe' ? '上一页' : undefined" @click="previous"><UiIcon v-if="variant === 'stripe' || mode === 'cursor'" name="chevron" /><template v-else>上一页</template></button>
         <span v-if="mode === 'offset'" class="table-pager-page">{{ page }} / {{ pageCount }}</span>
-        <button class="table-pager-nav table-pager-next" :class="{ 'cursor-pager-nav cursor-pager-older': mode === 'cursor' }" type="button" :disabled="nextDisabled" :aria-label="mode === 'cursor' ? '较旧记录' : '下一页'" :title="mode === 'cursor' ? '较旧记录' : '下一页'" @click="next"><UiIcon v-if="variant === 'stripe' || mode === 'cursor'" name="chevron" /><template v-else>下一页</template></button>
+        <button class="table-pager-nav table-pager-next" :class="{ 'cursor-pager-nav cursor-pager-older': mode === 'cursor' }" type="button" :disabled="nextDisabled" :aria-label="mode === 'cursor' ? '较旧记录' : '下一页'" :title="mode === 'cursor' ? '较旧记录' : variant === 'stripe' ? '下一页' : undefined" @click="next"><UiIcon v-if="variant === 'stripe' || mode === 'cursor'" name="chevron" /><template v-else>下一页</template></button>
       </slot>
       <slot name="after-controls" />
     </div>

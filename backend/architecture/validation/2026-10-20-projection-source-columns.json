@@ -1,0 +1,207 @@
+{
+  "scope": "Only select the 11 source columns required by usage projection; no transaction/isolation/limit/write/rounding/scheduling changes.",
+  "files": {
+    "internal/adapters/persistence/meteringstore/usage_projection_pending.go": "0a3623250d6ef000446e11044a75cbbe7607993b969e5497535a6890f06bb0ed",
+    "internal/adapters/persistence/meteringstore/usage_projection_columns_test.go": "d41ff189230d57ac2ff1e07ca333275a2eeea79c3f3895662253abf52fd2240c",
+    "internal/adapters/persistence/meteringstore/usage_projection_large_meta_benchmark_test.go": "2472f7b3298923f1b662da9d391db8a4be64308e72ef7d5dd86057cd4244a80e"
+  },
+  "old_source_sha256": "503b5514614f4e41096b56979903bb7d7e620d448e2a51e63224a71f1a737a79",
+  "environment": {
+    "go": "1.26.8",
+    "GOMAXPROCS": "1",
+    "package_parallelism": "-p 1",
+    "database": "local SQLite temporary file per sample",
+    "ZBOARD_TEST_MYSQL_DSN": "unset",
+    "quiet_window": "parent reported no other live Go/MySQL/Chromium/capacity load; agent ran sequentially",
+    "host_cgroup": {
+      "cpu_quota": "400000/100000 (4 CPUs)",
+      "memory_max_bytes": 17179869184
+    }
+  },
+  "checks": [
+    {
+      "command": "go test -p 1 -overlay ../.codex-local-artifacts/recovery-validation/usage-projection-columns/before-overlay.json ./internal/adapters/persistence/meteringstore -run ^TestUsageProjection(ReadsOnlyRequiredColumnsAndPreservesMetadata|NarrowColumnsStillRejectChangedSourceEvidence)$ -count=1 -v",
+      "result": "expected FAIL",
+      "seconds": 0.041,
+      "log": "before-behavior.log",
+      "actual_failure": "source read meta=true and columns=[]; all five changed-evidence controls passed"
+    },
+    {
+      "command": "go test -p 1 ./internal/adapters/persistence/meteringstore -run ^TestUsageProjection -count=1 -v",
+      "result": "PASS",
+      "seconds": 0.091,
+      "log": "fixed-behavior.log"
+    },
+    {
+      "command": "go test -race -p 1 ./internal/adapters/persistence/meteringstore -run ^TestUsageProjection -count=1 -v",
+      "result": "PASS",
+      "seconds": 1.852,
+      "log": "fixed-race.log"
+    },
+    {
+      "command": "ZBOARD_BENCH_USAGE_PROJECTION_LARGE_META=1 go test -p 1 [-overlay before-overlay.json for old source only] ./internal/adapters/persistence/meteringstore -run ^$ -bench ^BenchmarkUsageProjectionLargeMeta200$ -benchtime=1x -count=5 -benchmem",
+      "result": "PASS old and fixed",
+      "logs": [
+        "before-benchmark.log",
+        "fixed-benchmark.log"
+      ]
+    },
+    {
+      "result": "PASS",
+      "scope": "git diff --check on three delivered files"
+    },
+    {
+      "command": "GOMAXPROCS=1 ZBOARD_TEST_MYSQL_DSN=<isolated MySQL8.4> go test -p 1 ./internal/handler -run '^TestMySQL(UsageProjectionCompetingWorkersAndCheckpointRecovery|HourlyProjectionFailureAndRebuildPreservePendingCheckpoint|SlowHourlyProjectionDoesNotHoldCoreIntentInsertGap|HourlyProjectionCalendarGuardMatchesHalfQuarterHourEdges)$' -count=1 -timeout 3m",
+      "result": "pass",
+      "seconds": 22.616,
+      "scope": "Actual MySQL competing workers/checkpoint rollback, hourly failure/rebuild, slow projection permits core intent insert, calendar boundaries"
+    }
+  ],
+  "benchmark": {
+    "fixture": "200 immutable facts, 8 endpoint buckets, 2 UTC hours, each source Meta exactly 32768 ASCII bytes; source creation and hourly/daily+original Meta verification excluded from timer",
+    "samples": {
+      "before": {
+        "raw": [
+          {
+            "ns_per_op": 15162492,
+            "bytes_per_op": 7383080,
+            "allocs_per_op": 16391,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 11737993,
+            "bytes_per_op": 7380432,
+            "allocs_per_op": 16338,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 12742638,
+            "bytes_per_op": 7380256,
+            "allocs_per_op": 16336,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 15345906,
+            "bytes_per_op": 7380256,
+            "allocs_per_op": 16335,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 13375218,
+            "bytes_per_op": 7380512,
+            "allocs_per_op": 16337,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          }
+        ],
+        "summary": {
+          "ns_per_op": {
+            "min": 11737993,
+            "median": 13375218,
+            "max": 15345906
+          },
+          "bytes_per_op": {
+            "min": 7380256,
+            "median": 7380432,
+            "max": 7383080
+          },
+          "allocs_per_op": {
+            "min": 16335,
+            "median": 16337,
+            "max": 16391
+          },
+          "sql_per_batch": {
+            "min": 5,
+            "median": 5,
+            "max": 5
+          }
+        }
+      },
+      "fixed": {
+        "raw": [
+          {
+            "ns_per_op": 3321139,
+            "bytes_per_op": 689088,
+            "allocs_per_op": 10705,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 3052247,
+            "bytes_per_op": 681360,
+            "allocs_per_op": 10663,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 3133498,
+            "bytes_per_op": 681472,
+            "allocs_per_op": 10667,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 2767130,
+            "bytes_per_op": 681360,
+            "allocs_per_op": 10663,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          },
+          {
+            "ns_per_op": 3818333,
+            "bytes_per_op": 681360,
+            "allocs_per_op": 10663,
+            "sql_per_batch": 5,
+            "facts_per_batch": 200,
+            "fixture_meta_bytes_per_batch": 6553600
+          }
+        ],
+        "summary": {
+          "ns_per_op": {
+            "min": 2767130,
+            "median": 3133498,
+            "max": 3818333
+          },
+          "bytes_per_op": {
+            "min": 681360,
+            "median": 681360,
+            "max": 689088
+          },
+          "allocs_per_op": {
+            "min": 10663,
+            "median": 10663,
+            "max": 10705
+          },
+          "sql_per_batch": {
+            "min": 5,
+            "median": 5,
+            "max": 5
+          }
+        }
+      }
+    }
+  },
+  "behavior": "Query callback proves exact 11 selected columns and no loaded Meta; all original facts/Meta and settled deltas preserved, hourly/daily totals exact. Endpoint identity/user/subscription/node/time mismatches still fail with count=0 and no checkpoint/projection changes, repair permits recovery. Existing projection checkpoint/competition/late lower ID/rollback tests also passed.",
+  "limitations": [
+    "Five single-batch samples per source, old group then fixed group; no claim of statistical confidence or arbitrary workload improvement.",
+    "No scheduling/worker topology change or capacity/HTTP throughput claim.",
+    "This is a projection source-load measurement, not a financial/payment authorization acceptance test.",
+    "Full final-source backend/MySQL/CI remains required; actual MySQL narrow tests do not replace full validation."
+  ],
+  "base": "08fcf929005eddc9c86b8663d5e6873b0b7f1280",
+  "migration": "None. SELECT source columns only; original metadata, settled facts, aggregation, transaction and checkpoint boundaries remain.",
+  "rollback": "Source revert reloads variable-size Meta; no data is deleted or rewritten."
+}

@@ -57,3 +57,9 @@ func (s RegistrationWelcome) ProcessRegistrationEvents(ctx context.Context, limi
 	}
 	return processed, nil
 }
+
+func (s RegistrationWelcome) PendingRegistrationEvents(ctx context.Context) (bool, error) {
+	var event model.AccountRegistrationEvent
+	r := s.DB.WithContext(ctx).Select("account_id").Where("processed_at IS NULL").Limit(1).Find(&event)
+	return r.RowsAffected > 0, r.Error
+}

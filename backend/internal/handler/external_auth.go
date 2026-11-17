@@ -74,6 +74,12 @@ func authNoStore(w http.ResponseWriter) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 }
 func (h *handlers) beginExternalAuth(w http.ResponseWriter, r *http.Request, bind bool, providerID, password string) (int, string, string) {
+	return h.beginExternalAuthExpected(w, r, bind, providerID, password, nil)
+}
+
+type identityPresentationFence struct{ Generation, Revision uint64 }
+
+func (h *handlers) beginExternalAuthExpected(w http.ResponseWriter, r *http.Request, bind bool, providerID, password string, expected *identityPresentationFence) (int, string, string) {
 	if h.identityProviders == nil {
 		return http.StatusServiceUnavailable, "identity provider unavailable", ""
 	}
@@ -101,6 +107,9 @@ func (h *handlers) beginExternalAuth(w http.ResponseWriter, r *http.Request, bin
 	provider, err := h.identityProviders.IdentityProvider(r.Context(), providerID)
 	if err != nil {
 		return http.StatusBadRequest, "identity provider is unavailable; review its configuration", ""
+	}
+	if expected != nil && (provider.Generation != expected.Generation || provider.Revision != expected.Revision) {
+		return http.StatusConflict, "登录方式配置已更新，请刷新后重试。", ""
 	}
 	flow.Provider = provider
 	flow.RedirectURI = origin + externalAuthPath + "/callback"

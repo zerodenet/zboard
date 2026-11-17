@@ -102,6 +102,29 @@ func TestNativePluginStorageUsesScopedHostSDKAndClosesWithProcess(t *testing.T) 
 	if err != nil || !strings.Contains(string(obj["background"]), "native-plugin") {
 		t.Fatal("upgrade discarded data", err)
 	}
+	// Candidate runtime validation also applies to publisher migration. Failure
+	// must leave the existing authenticated process and its private data intact.
+	badPublisher := withPublisher(t, replacement("2.0.0", "bad migrated runtime"), "formal.publisher")
+	migrationPreview, err := m.PreviewImport(badPublisher, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ImportConfirmed(badPublisher, "admin", "", migrationPreview.Digest, migrationPreview.Fingerprint, migrationPreview.PublisherMigration.Confirmation); err == nil {
+		t.Fatal("migrated runtime mismatch accepted")
+	}
+	current, _ = m.load(v.ID)
+	if p.client.Exited() || m.processes[v.ID] != p || current.Generation != v.Generation || current.Publisher != v.Publisher {
+		t.Fatal("failed publisher migration replaced working runtime")
+	}
+	migratedRaw := withPublisher(t, replacement("1.0.0", "migrated runtime"), "formal.publisher")
+	beforeData, _ := m.readData(v.ID)
+	identity := paymentIdentity(v)
+	v = confirmImport(t, m, migratedRaw)
+	afterData, _ := m.readData(v.ID)
+	if !p.client.Exited() || m.processes[v.ID] == p || !v.Enabled || v.Publisher != "formal.publisher" || paymentIdentity(v) != identity || beforeData.Ciphertext != afterData.Ciphertext || beforeData.Revision != afterData.Revision {
+		t.Fatal("publisher migration did not atomically preserve runtime identity and storage")
+	}
+	p = m.processes[v.ID]
 	if _, err = m.Action(context.Background(), v.ID, "uninstall", "admin", v.Generation, false, ""); err != nil {
 		t.Fatal(err)
 	}

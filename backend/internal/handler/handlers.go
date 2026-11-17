@@ -14,12 +14,14 @@ import (
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	sshadapter "github.com/zerodenet/zboard/backend/internal/adapters/ssh"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	networkcap "github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/platform"
+	"github.com/zerodenet/zboard/backend/internal/readtiming"
 	"io"
 	"net/http"
 	"net/url"
@@ -106,6 +108,8 @@ type userPublic struct {
 
 type adminUserListItem struct {
 	userPublic
+	identity.AccountOverview
+	AdminNote               string    `json:"admin_note"`
 	ActiveSubscriptionCount int64     `json:"active_subscription_count"`
 	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
 	PendingOrderCount       int64     `json:"pending_order_count"`
@@ -120,6 +124,7 @@ func effectiveSubscriptionStatus(sub model.Subscription, now time.Time) string {
 }
 
 type nodeCreateReq struct {
+	ProxyPoolIDs            []uint `json:"proxy_pool_ids"`
 	Name                    string `json:"name"`
 	Region                  string `json:"region"`
 	Address                 string `json:"address"`
@@ -212,18 +217,20 @@ type authenticatedNodeReport struct {
 }
 
 type nodeConnectorHeartbeat struct {
-	NodeID        string `json:"node_id"`
-	BuildID       string `json:"build_id"`
-	UptimeSeconds uint64 `json:"uptime_seconds"`
-	ActiveFlows   uint64 `json:"active_flows"`
-	BytesUp       uint64 `json:"bytes_up"`
-	BytesDown     uint64 `json:"bytes_down"`
+	NodeID        string  `json:"node_id"`
+	BuildID       string  `json:"build_id"`
+	UptimeSeconds *uint64 `json:"uptime_seconds"`
+	ActiveFlows   *uint64 `json:"active_flows"`
+	BytesUp       *uint64 `json:"bytes_up"`
+	BytesDown     *uint64 `json:"bytes_down"`
 }
 
 type trafficReconciliationItem = metering.ReconciliationItem
 type trafficReconciliationAggregates = metering.ReconciliationAggregates
 
 type trafficRecordListItem struct {
+	IsAggregate             bool      `json:"is_aggregate,omitempty"`
+	RecordCount             int64     `json:"record_count,omitempty"`
 	ID                      uint      `json:"id"`
 	UserID                  uint      `json:"user_id"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty"`
@@ -260,6 +267,7 @@ type protocolEndpointWriteReq struct {
 	Name                       string                                      `json:"name"`
 	Protocol                   string                                      `json:"protocol"`
 	Address                    string                                      `json:"address"`
+	ListenAddress              *string                                     `json:"listen_address"`
 	Port                       int                                         `json:"port"`
 	PublicPort                 int                                         `json:"public_port"`
 	Cipher                     int16                                       `json:"cipher"`
@@ -283,6 +291,7 @@ type protocolEndpointSelectionSnapshot struct {
 }
 
 type subscriptionManifestNode struct {
+	DeliveryStatus      string          `json:"delivery_status,omitempty"`
 	NetworkEntryID      uint            `json:"network_entry_id,omitempty"`
 	NetworkEntryNetwork string          `json:"network_entry_network,omitempty"`
 	ID                  uint            `json:"id"`
@@ -300,16 +309,18 @@ type subscriptionManifestNode struct {
 }
 
 type adminUserCreateReq struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	IsAdmin  bool   `json:"is_admin"`
-	Status   string `json:"status"`
+	AdminNote string `json:"admin_note"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	IsAdmin   bool   `json:"is_admin"`
+	Status    string `json:"status"`
 }
 
 type adminUserUpdateReq struct {
-	Status   *string `json:"status"`
-	IsAdmin  *bool   `json:"is_admin"`
-	Password *string `json:"password"`
+	AdminNote *string `json:"admin_note"`
+	Status    *string `json:"status"`
+	IsAdmin   *bool   `json:"is_admin"`
+	Password  *string `json:"password"`
 }
 
 type setupRequest struct {
@@ -337,6 +348,7 @@ type handlers struct {
 	jwtSecret               string
 	credentialCipher        *security.CredentialCipher
 	zeroArtifactDir         string
+	fileUploadSlots         chan struct{}
 	zeroNativeAccess        bool
 	zeroMieruAccess         bool
 	zeroLocalVersion        string
@@ -347,6 +359,7 @@ type handlers struct {
 	trafficStatisticsCache  trafficSnapshotCache[trafficUsageStatistics]
 	trafficIncrementalStats *meteringstore.IncrementalCache
 	trafficTrendsCache      trafficSnapshotCache[trafficTrendSnapshot]
+	trafficBreakdownCache   trafficSnapshotCache[metering.BreakdownSnapshot]
 	expiryReconcileMu       sync.Mutex
 	lastExpiryReconcile     time.Time
 	deletionMu              sync.Mutex
@@ -371,6 +384,7 @@ func NewHandlers(services *application.Services, db *gorm.DB, jwtSecret string, 
 		jwtSecret:        jwtSecret,
 		credentialCipher: credentialCipher,
 		zeroArtifactDir:  strings.TrimSpace(zeroArtifactDir),
+		fileUploadSlots:  make(chan struct{}, 4),
 		zeroNativeAccess: nativeContract,
 		zeroMieruAccess:  nativeContract,
 		zeroLocalVersion: localVersion,
@@ -633,7 +647,7 @@ func (h *handlers) AdminUsersListHandler(w http.ResponseWriter, r *http.Request)
 	if query.Paged {
 		items := make([]adminUserListItem, 0, len(result.Items))
 		for _, item := range result.Items {
-			items = append(items, adminUserListItem{userPublic: userPublic(item.PublicAccount), ActiveSubscriptionCount: item.ActiveSubscriptionCount, TotalSubscriptionCount: item.TotalSubscriptionCount, PendingOrderCount: item.PendingOrderCount, TotalOrderCount: item.TotalOrderCount, CreatedAt: item.CreatedAt})
+			items = append(items, adminUserListItem{userPublic: userPublic(item.PublicAccount), AccountOverview: item.AccountOverview, AdminNote: item.AdminNote, ActiveSubscriptionCount: item.ActiveSubscriptionCount, TotalSubscriptionCount: item.TotalSubscriptionCount, PendingOrderCount: item.PendingOrderCount, TotalOrderCount: item.TotalOrderCount, CreatedAt: item.CreatedAt})
 		}
 		OK(w, pagedData(items, result.Total, offset, limit))
 		return
@@ -696,9 +710,10 @@ func (h *handlers) NodeListHandler(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	nodes := make([]model.Node, 0, len(page.Items))
+	nodes := make([]nodeLegacyListItem, 0, len(page.Items))
 	for _, item := range page.Items {
-		nodes = append(nodes, nodeInventoryModel(item))
+		node := nodeInventoryModel(item)
+		nodes = append(nodes, nodeLegacyListItem{Node: node, Observation: nodeObservationEvidence(node)})
 	}
 	for index := range nodes {
 		nodes[index].IsOnline = nodes[index].LastSeenAt != nil && nodes[index].LastSeenAt.After(cutoff)
@@ -709,21 +724,23 @@ func (h *handlers) NodeListHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type nodeListItem struct {
-	ID                   uint                   `json:"id"`
-	Name                 string                 `json:"name"`
-	Region               string                 `json:"region"`
-	Address              string                 `json:"address"`
-	Status               int16                  `json:"status"`
-	LifecycleStatus      string                 `json:"lifecycle_status"`
-	IsEnabled            bool                   `json:"is_enabled"`
-	ConnectorLastSeenAt  *time.Time             `json:"connector_last_seen_at,omitempty"`
-	ConnectorOnline      bool                   `json:"connector_online"`
-	SSHConfigured        bool                   `json:"ssh_configured"`
-	SSHVerifiedAt        *time.Time             `json:"ssh_verified_at,omitempty"`
-	KernelState          *model.NodeKernelState `json:"kernel_state,omitempty"`
-	EnabledProtocolCount int64                  `json:"enabled_protocol_count"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	ID                   uint                       `json:"id"`
+	Name                 string                     `json:"name"`
+	Region               string                     `json:"region"`
+	Address              string                     `json:"address"`
+	Status               int16                      `json:"status"`
+	LifecycleStatus      string                     `json:"lifecycle_status"`
+	ArchivedAt           *time.Time                 `json:"archived_at,omitempty"`
+	IsEnabled            bool                       `json:"is_enabled"`
+	ConnectorLastSeenAt  *time.Time                 `json:"connector_last_seen_at,omitempty"`
+	ConnectorOnline      bool                       `json:"connector_online"`
+	SSHConfigured        bool                       `json:"ssh_configured"`
+	SSHVerifiedAt        *time.Time                 `json:"ssh_verified_at,omitempty"`
+	KernelState          *model.NodeKernelState     `json:"kernel_state,omitempty"`
+	Observation          networkcap.CounterEvidence `json:"observation"`
+	EnabledProtocolCount int64                      `json:"enabled_protocol_count"`
+	CreatedAt            time.Time                  `json:"created_at"`
+	UpdatedAt            time.Time                  `json:"updated_at"`
 }
 
 type nodeDetailItem struct {
@@ -752,12 +769,13 @@ type nodeDetailItem struct {
 func newNodeListItem(node model.Node, enabledProtocolCount int64, cutoff time.Time) nodeListItem {
 	return nodeListItem{
 		ID: node.ID, Name: node.Name, Region: node.Region, Address: node.Address, Status: node.Status,
-		LifecycleStatus: node.LifecycleStatus, IsEnabled: node.IsEnabled,
+		LifecycleStatus: node.LifecycleStatus, ArchivedAt: node.ArchivedAt, IsEnabled: node.IsEnabled,
 		ConnectorLastSeenAt:  node.ConnectorLastSeenAt,
 		ConnectorOnline:      node.ConnectorLastSeenAt != nil && node.ConnectorLastSeenAt.After(cutoff),
 		SSHConfigured:        node.SSHHost != "" && node.SSHUser != "",
 		SSHVerifiedAt:        node.SSHVerifiedAt,
 		KernelState:          node.KernelState,
+		Observation:          nodeObservationEvidence(node),
 		EnabledProtocolCount: enabledProtocolCount,
 		CreatedAt:            node.CreatedAt, UpdatedAt: node.UpdatedAt,
 	}
@@ -799,7 +817,7 @@ func (h *handlers) nodePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if lifecycle := strings.TrimSpace(r.URL.Query().Get("lifecycle_status")); lifecycle != "" {
 		switch lifecycle {
-		case "active", "maintenance", "retired", resourceStatusDeleting:
+		case "active", "maintenance", "retired", "archived", resourceStatusDeleting:
 			query.LifecycleStatus = lifecycle
 		default:
 			BadRequest(w, "invalid lifecycle_status")
@@ -871,7 +889,18 @@ func (h *handlers) NodeDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 func nodeInventoryModel(item networkcap.NodeInventoryItem) model.Node {
 	r := item.Node
-	node := model.Node{ID: r.ID, Name: r.Name, Region: r.Region, Address: r.Address, NodeCredentialPrefix: r.NodeCredentialPrefix, NodeCredentialRevokedAt: r.NodeCredentialRevokedAt, CommunicationProtocol: r.CommunicationProtocol, Status: r.Status, LifecycleStatus: r.LifecycleStatus, Config: r.Config, IsEnabled: r.IsEnabled, Remark: r.Remark, IsOnline: r.IsOnline, LastSeenAt: r.LastSeenAt, LastSyncAt: r.LastSyncAt, Version: r.Version, SSHHost: r.SSHHost, SSHPort: r.SSHPort, SSHUser: r.SSHUser, SSHAuthMethod: r.SSHAuthMethod, SSHPrivilegeMode: r.SSHPrivilegeMode, SSHPrivilegeConfigured: r.SSHPrivilegeConfigured, SSHHostKeyFingerprint: r.SSHHostKeyFingerprint, SSHVerifiedAt: r.SSHVerifiedAt, ConnectorLastSeenAt: r.ConnectorLastSeenAt, ConnectorOnline: r.ConnectorOnline, UptimeSeconds: r.UptimeSeconds, ActiveFlows: r.ActiveFlows, BytesUp: r.BytesUp, BytesDown: r.BytesDown, TrafficSecretPrefix: r.TrafficSecretPrefix, TrafficSecretRevokedAt: r.TrafficSecretRevokedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	node := model.Node{ID: r.ID, Name: r.Name, Region: r.Region, Address: r.Address, NodeCredentialPrefix: r.NodeCredentialPrefix, NodeCredentialRevokedAt: r.NodeCredentialRevokedAt, CommunicationProtocol: r.CommunicationProtocol, Status: r.Status, LifecycleStatus: r.LifecycleStatus, ArchivedAt: r.ArchivedAt, Config: r.Config, IsEnabled: r.IsEnabled, Remark: r.Remark, IsOnline: r.IsOnline, LastSeenAt: r.LastSeenAt, LastSyncAt: r.LastSyncAt, Version: r.Version, SSHHost: r.SSHHost, SSHPort: r.SSHPort, SSHUser: r.SSHUser, SSHAuthMethod: r.SSHAuthMethod, SSHPrivilegeMode: r.SSHPrivilegeMode, SSHPrivilegeConfigured: r.SSHPrivilegeConfigured, SSHHostKeyFingerprint: r.SSHHostKeyFingerprint, SSHVerifiedAt: r.SSHVerifiedAt, ConnectorLastSeenAt: r.ConnectorLastSeenAt, ConnectorOnline: r.ConnectorOnline, UptimeSeconds: r.UptimeSeconds, ActiveFlows: r.ActiveFlows, BytesUp: r.BytesUp, BytesDown: r.BytesDown, TrafficSecretPrefix: r.TrafficSecretPrefix, TrafficSecretRevokedAt: r.TrafficSecretRevokedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	node.ObservationKnown = r.Observation.Known
+	node.ObservationSource = r.Observation.Source
+	node.ObservationLatestSourceKnown = r.Observation.LatestSourceKnown
+	node.ObservationStatsSourceKnown = r.Observation.StatsSourceKnown
+	node.ObservationLatestReference = r.Observation.LatestReference
+	node.ObservationStatsReference = r.Observation.StatsReference
+	node.ObservationCounterReceivedAt = r.Observation.CounterReceivedAt
+	node.ObservationLatestOccurredAt = r.Observation.LatestOccurredAt
+	node.ObservationLatestReceivedAt = r.Observation.LatestReceivedAt
+	node.ObservationStatsOccurredAt = r.Observation.StatsOccurredAt
+	node.ObservationStatsReceivedAt = r.Observation.StatsReceivedAt
 	if item.KernelState != nil {
 		k := item.KernelState
 		node.KernelState = &model.NodeKernelState{NodeID: k.NodeID, Status: k.Status, Phase: k.Phase, RecommendedAction: k.RecommendedAction, PlatformOS: k.PlatformOS, Architecture: k.Architecture, Libc: k.Libc, DesiredVersion: k.DesiredVersion, InstalledVersion: k.InstalledVersion, DesiredSHA256: k.DesiredSHA256, InstalledSHA256: k.InstalledSHA256, DesiredConfigSHA256: k.DesiredConfigSHA256, AppliedConfigSHA256: k.AppliedConfigSHA256, ServiceStatus: k.ServiceStatus, ControlStatus: k.ControlStatus, LastError: k.LastError, ActiveOperationID: k.ActiveOperationID, LastDetectedAt: k.LastDetectedAt, LastHealthyAt: k.LastHealthyAt, CreatedAt: k.CreatedAt, UpdatedAt: k.UpdatedAt}
@@ -966,7 +995,7 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 		nodeCredentialPrefix = req.NodeCredential[:12]
 	}
 	node, err := h.services.NodeAdministration.Create(r.Context(), claims.UserID, networkcap.NodeCreateChange{
-		Name: req.Name, Region: req.Region, Address: req.Address,
+		Name: req.Name, Region: req.Region, Address: req.Address, ProxyPoolIDs: req.ProxyPoolIDs,
 		NodeCredentialCiphertext: encryptedNodeCredential, NodeCredentialPrefix: nodeCredentialPrefix,
 		CommunicationProtocol: req.CommunicationProtocol, Config: normalizeOptionalJSON(req.Config, "{}"),
 		IsEnabled: isEnabled, Remark: req.Remark, SSHHost: req.SSHHost, SSHPort: req.SSHPort,
@@ -1308,8 +1337,9 @@ func (h *handlers) NodeConnectorHeartbeatHandler(w http.ResponseWriter, r *http.
 	}
 	now := time.Now().UTC()
 	activity := networkcap.NodeActivityUpdate{
-		At: now, Online: true, ConnectorSeen: true, UptimeSeconds: &heartbeat.UptimeSeconds,
-		ActiveFlows: &heartbeat.ActiveFlows, BytesUp: &heartbeat.BytesUp, BytesDown: &heartbeat.BytesDown,
+		At: now, Online: true, ConnectorSeen: true, UptimeSeconds: heartbeat.UptimeSeconds,
+		CounterWriter: networkcap.CounterWriterHeartbeat,
+		ActiveFlows:   heartbeat.ActiveFlows, BytesUp: heartbeat.BytesUp, BytesDown: heartbeat.BytesDown,
 	}
 	if heartbeat.BuildID != "" {
 		activity.Version = &heartbeat.BuildID
@@ -1429,12 +1459,21 @@ func (h *handlers) ProtocolEndpointDeleteHandler(w http.ResponseWriter, r *http.
 		Forbidden(w, "administrator access required")
 		return
 	}
+	if errors.Is(err, networkcap.ErrResourcesBusy) {
+		writeJSON(w, http.StatusConflict, "相关资源正在更新，请重新检查删除依赖后重试。", nil)
+		return
+	}
+	var blocked *networkcap.DeletionBlocked
+	if errors.As(err, &blocked) {
+		writeJSON(w, http.StatusConflict, blocked.Error(), blocked.Check)
+		return
+	}
 	if errors.Is(err, networkcap.ErrProtocolEndpointRemovalConflict) {
 		writeJSON(w, http.StatusConflict, "该协议服务仍有发布任务运行，请等待任务结束后再删除。", nil)
 		return
 	}
 	if errors.Is(err, networkcap.ErrProtocolEndpointResourceDeleting) {
-		writeJSON(w, http.StatusConflict, err.Error(), nil)
+		writeJSON(w, http.StatusConflict, "所属服务器正在删除，请等待删除任务结束。", nil)
 		return
 	}
 	if err != nil {
@@ -1580,7 +1619,7 @@ func (h *handlers) saveProtocolEndpoint(w http.ResponseWriter, r *http.Request, 
 		capabilityMembershipChanges = append(capabilityMembershipChanges, networkcap.ProtocolEndpointMembershipChange{NodeGroupID: change.NodeGroupID, ExpectedRevision: change.ExpectedRevision, Member: change.Member})
 	}
 	result, transactionErr := endpointMutations.Save(r.Context(), claims.UserID, existingMutationSnapshot, networkcap.ProtocolEndpointMutationRequest{
-		ID: endpointID, NodeID: req.NodeID, Name: req.Name, Protocol: protocol, Address: req.Address,
+		ID: endpointID, NodeID: req.NodeID, Name: req.Name, Protocol: protocol, Address: req.Address, ListenAddress: req.ListenAddress,
 		Port: req.Port, PublicPort: req.PublicPort, Cipher: req.Cipher, ParentProtocolID: req.ParentProtocolID,
 		ManagedCertificateID: req.ManagedCertificateID, MultiplierMilli: req.MultiplierMilli, IsActive: req.IsActive,
 		ServerConfig: req.Config, EgressConfig: req.EgressConfig, ClientConfig: req.ClientConfig, OptionalConfig: req.OptionalConfig, Tags: req.Tags,
@@ -1646,7 +1685,7 @@ func (h *handlers) ProtocolEndpointDeployHandler(w http.ResponseWriter, r *http.
 	ctx, cancel := context.WithTimeout(context.Background(), nodeConfigPublishTimeout)
 	defer cancel()
 	deployment, elapsed, err := h.publishNodeConfig(ctx, endpointID, claims.UserID)
-	if err != nil {
+	if err != nil && !networkcap.IsConfigurationCapabilityDeferral(err) {
 		BadRequest(w, "protocol publish failed: "+err.Error())
 		return
 	}
@@ -1667,13 +1706,15 @@ type protocolEndpointAdminDetail struct {
 }
 
 type protocolEndpointUsage struct {
-	ActiveFlows       int64      `json:"active_flows"`
-	ActiveUsers       int64      `json:"active_users"`
-	ActiveCredentials int64      `json:"active_credentials"`
-	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
-	UsedBytesToday    int64      `json:"used_bytes_today"`
-	UsedBytesTotal    int64      `json:"used_bytes_total"`
-	ResetAt           *time.Time `json:"reset_at,omitempty"`
+	ObservedAt               *time.Time `json:"observed_at,omitempty"`
+	ActiveFlows              int64      `json:"active_flows"`
+	ActiveUsers              int64      `json:"active_users"`
+	ActiveCredentials        int64      `json:"active_credentials"`
+	LastUsedAt               *time.Time `json:"last_used_at,omitempty"`
+	UsedBytesToday           int64      `json:"used_bytes_today"`
+	UsedBytesTotal           int64      `json:"used_bytes_total"`
+	TrafficProjectionPending bool       `json:"traffic_projection_pending,omitempty"`
+	ResetAt                  *time.Time `json:"reset_at,omitempty"`
 }
 
 type protocolDeploymentListItem struct {
@@ -1699,6 +1740,7 @@ type protocolEndpointListItem struct {
 	Protocol                string                                  `json:"protocol"`
 	EgressProtocol          string                                  `json:"egress_protocol,omitempty"`
 	Address                 string                                  `json:"address"`
+	ListenAddress           string                                  `json:"listen_address"`
 	Port                    int                                     `json:"port"`
 	PublicPort              int                                     `json:"public_port"`
 	ParentProtocolID        *uint                                   `json:"parent_protocol_id,omitempty"`
@@ -1720,7 +1762,7 @@ type protocolEndpointListItem struct {
 func newProtocolEndpointListItem(endpoint model.ProtocolEndpoint, nodeName string, managedCertificateID *uint, deployment *model.ProtocolDeployment, usage protocolEndpointUsage, kernelSupported bool, kernelUnsupportedReason string) protocolEndpointListItem {
 	item := protocolEndpointListItem{
 		ID: endpoint.ID, NodeID: endpoint.NodeID, NodeName: nodeName, Name: endpoint.Name,
-		Protocol: endpoint.Protocol, EgressProtocol: endpoint.EgressProtocol, Address: endpoint.Address, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
+		Protocol: endpoint.Protocol, EgressProtocol: endpoint.EgressProtocol, Address: endpoint.Address, ListenAddress: endpoint.ListenAddress, Port: endpoint.Port, PublicPort: endpoint.PublicPort,
 		ParentProtocolID: endpoint.ParentProtocolID, ManagedCertificateID: managedCertificateID, MultiplierMilli: endpoint.MultiplierMilli,
 		ManagedPrincipalReady: endpoint.ManagedPrincipalReady, MieruPrincipalReady: endpoint.MieruPrincipalReady, IsActive: endpoint.IsActive, SortOrder: endpoint.SortOrder, Usage: usage,
 		KernelSupported: kernelSupported, KernelUnsupportedReason: kernelUnsupportedReason,
@@ -1895,7 +1937,7 @@ func (h *handlers) applyProtocolEndpointFilters(values url.Values) (networkcap.P
 		query.Active = &active
 	}
 	if deploymentStatus := strings.TrimSpace(values.Get("deployment_status")); deploymentStatus != "" {
-		if deploymentStatus != "queued" && deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" {
+		if deploymentStatus != "queued" && deploymentStatus != "running" && deploymentStatus != "succeeded" && deploymentStatus != "failed" && deploymentStatus != "never" && deploymentStatus != "deferred" && deploymentStatus != "reconciling" && deploymentStatus != "suspended" && deploymentStatus != "connections_pending" {
 			return networkcap.ProtocolEndpointInventoryQuery{}, validationError("节点筛选条件校验失败。", map[string]string{"deployment_status": "invalid deployment_status"})
 		}
 		query.DeploymentStatus = deploymentStatus
@@ -2122,13 +2164,13 @@ func (h *handlers) loadProtocolEndpointNodes(endpoints []model.ProtocolEndpoint)
 }
 
 func protocolEndpointRecordModel(r networkcap.ProtocolEndpointRecord) model.ProtocolEndpoint {
-	return model.ProtocolEndpoint{ID: r.ID, NodeID: r.NodeID, Name: r.Name, RuntimeKey: r.RuntimeKey, Protocol: r.Protocol, Address: r.Address, Port: r.Port, PublicPort: r.PublicPort, Cipher: r.Cipher, ParentProtocolID: r.ParentProtocolID, MultiplierMilli: r.MultiplierMilli, ManagedPrincipalReady: r.ManagedPrincipalReady, MieruPrincipalReady: r.MieruPrincipalReady, ServerConfig: r.ServerCiphertext, EgressProtocol: r.EgressProtocol, EgressConfig: r.EgressCiphertext, ClientConfig: r.ClientConfig, OptionalConfig: r.OptionalConfig, Tags: r.Tags, IsActive: r.IsActive, SortOrder: r.SortOrder, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	return model.ProtocolEndpoint{ID: r.ID, NodeID: r.NodeID, Name: r.Name, RuntimeKey: r.RuntimeKey, Protocol: r.Protocol, Address: r.Address, ListenAddress: r.ListenAddress, Port: r.Port, PublicPort: r.PublicPort, Cipher: r.Cipher, ParentProtocolID: r.ParentProtocolID, MultiplierMilli: r.MultiplierMilli, ManagedPrincipalReady: r.ManagedPrincipalReady, MieruPrincipalReady: r.MieruPrincipalReady, ServerConfig: r.ServerCiphertext, EgressProtocol: r.EgressProtocol, EgressConfig: r.EgressCiphertext, ClientConfig: r.ClientConfig, OptionalConfig: r.OptionalConfig, Tags: r.Tags, IsActive: r.IsActive, SortOrder: r.SortOrder, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 func protocolDeploymentModel(r networkcap.ProtocolDeploymentRecord) model.ProtocolDeployment {
 	return model.ProtocolDeployment{ID: r.ID, NodeID: r.NodeID, ProtocolEndpointID: r.ProtocolEndpointID, ConfigRevision: r.ConfigRevision, DesiredConfigSHA256: r.DesiredConfigSHA256, AppliedConfigSHA256: r.AppliedConfigSHA256, Status: r.Status, RequestedBy: r.RequestedBy, Error: r.Error, Output: r.Output, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 func protocolUsageModel(r networkcap.ProtocolUsageRecord) protocolEndpointUsage {
-	return protocolEndpointUsage{ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal, ResetAt: r.ResetAt}
+	return protocolEndpointUsage{ObservedAt: r.ObservedAt, ActiveFlows: r.ActiveFlows, ActiveUsers: r.ActiveUsers, ActiveCredentials: r.ActiveCredentials, LastUsedAt: r.LastUsedAt, UsedBytesToday: r.UsedBytesToday, UsedBytesTotal: r.UsedBytesTotal, TrafficProjectionPending: r.TrafficProjectionPending, ResetAt: r.ResetAt}
 }
 func nodeAdministrationModel(r networkcap.NodeAdministrationRecord) model.Node {
 	return nodeInventoryModel(networkcap.NodeInventoryItem{Node: r})
@@ -2456,6 +2498,20 @@ func (h *handlers) TrafficSummaryHandler(w http.ResponseWriter, r *http.Request)
 			userFilter = 0
 		}
 	}
+	switch r.URL.Query().Get("view") {
+	case "quota":
+		result, err := h.services.UsageQuota().Read(r.Context(), claims.UserID, metering.UsageSummaryQuery{Administrative: adminScope, UserID: userFilter})
+		if err != nil {
+			writePrincipalTrendError(w, err)
+			return
+		}
+		OK(w, result)
+		return
+	case "":
+	default:
+		BadRequest(w, "invalid traffic summary view")
+		return
+	}
 	result, err := h.services.UsageSummary().Read(r.Context(), claims.UserID, metering.UsageSummaryQuery{Administrative: adminScope, UserID: userFilter})
 	if err != nil {
 		writePrincipalTrendError(w, err)
@@ -2611,22 +2667,25 @@ func (h *handlers) trafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 			q.Cursor = &metering.RecordCursor{At: cursor.At, ID: cursor.ID, Direction: cursor.Direction}
 		}
 	}
-	result, err := h.services.Records().Read(r.Context(), claims.UserID, q)
+	if !paged {
+		result, err := h.services.Records().Read(r.Context(), claims.UserID, q)
+		if err != nil {
+			writePrincipalTrendError(w, err)
+			return
+		}
+		OK(w, result.Records)
+		return
+	}
+	result, err := h.services.Records().ReadSummaryPage(r.Context(), claims.UserID, q)
 	if err != nil {
 		writePrincipalTrendError(w, err)
 		return
 	}
-	if !paged {
-		OK(w, result.Records)
-		return
-	}
-	records := make([]model.TrafficRecord, 0, len(result.Records))
-	for _, record := range result.Records {
-		records = append(records, model.TrafficRecord(record))
-	}
+	records := result.Records
 	if cursor == nil && q.Offset > 0 {
-		data := pagedData(trafficRecordSummaries(records), result.Total, q.Offset, q.Limit)
+		data := pagedData(records, result.Total, q.Offset, q.Limit)
 		data["aggregates"] = result.Aggregates
+		data["history"] = result.History
 		OK(w, data)
 		return
 	}
@@ -2638,8 +2697,9 @@ func (h *handlers) trafficRecordsHandler(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	data := cursorPagedData(trafficRecordSummaries(records), result.Total, q.Limit, nextCursor, previousCursor)
+	data := cursorPagedData(records, result.Total, q.Limit, nextCursor, previousCursor)
 	data["aggregates"] = result.Aggregates
+	data["history"] = result.History
 	OK(w, data)
 }
 
@@ -2647,6 +2707,7 @@ func trafficRecordSummaries(records []model.TrafficRecord) []trafficRecordListIt
 	items := make([]trafficRecordListItem, 0, len(records))
 	for _, record := range records {
 		items = append(items, trafficRecordListItem{
+			IsAggregate: record.IsAggregate, RecordCount: record.RecordCount,
 			ID:                      record.ID,
 			UserID:                  record.UserID,
 			SubscriptionID:          record.SubscriptionID,
@@ -2732,6 +2793,9 @@ func (h *handlers) TrafficReportHandler(w http.ResponseWriter, r *http.Request) 
 		switch {
 		case errors.Is(err, errNodeReportCredentialChanged):
 			Unauthorized(w, "invalid node report authentication")
+		case errors.Is(err, metering.ErrNodeReportNeedsPrincipal):
+			writeJSON(w, http.StatusConflict, err.Error(), nil)
+			return
 		case errors.Is(err, errNodeReportNonceReplayed):
 			BadRequest(w, "report nonce was already used")
 		case errors.Is(err, errSubscriptionNotFound):
@@ -2929,6 +2993,7 @@ func nodeReportSignature(secret, nodeID, timestamp, nonce string, body []byte) [
 }
 
 func (h *handlers) requireAdmin(w http.ResponseWriter, r *http.Request) (authClaims, error) {
+	defer readtiming.Start(r.Context(), "admin_auth")()
 	claims, err := h.authFromRequest(r)
 	if err != nil {
 		Unauthorized(w, err.Error())
@@ -3413,6 +3478,19 @@ func parsePathID(path string, prefix string) (uint, error) {
 		return 0, errors.New("missing id")
 	}
 
+	kind := byte(0)
+	if strings.HasSuffix(normalizedPrefix, "/orders") {
+		kind = 'O'
+	}
+	if strings.HasSuffix(normalizedPrefix, "/tickets") {
+		kind = 'T'
+	}
+	if kind != 0 {
+		if id, ok := businessref.Parse(value, kind); ok {
+			return id, nil
+		}
+		return 0, errors.New("invalid business reference")
+	}
 	parsed, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
 		return 0, errors.New("invalid id")

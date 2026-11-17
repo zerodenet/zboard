@@ -52,21 +52,30 @@ func TestPickZeroFlowUsageTreatsEmptyCandidatesAsNormalMiss(t *testing.T) {
 }
 
 func TestAggregateZeroFlowEventsKeepsLatestPerRuntimeFlow(t *testing.T) {
-	base := time.Date(2026, 8, 10, 6, 0, 0, 0, time.UTC)
+	base := time.Date(2026, 8, 10, 6, 0, 30, 0, time.UTC)
 	events := []zeroevent.Envelope{
 		{ID: "a-1", NodeID: 9, Type: "flow.updated", CoreInstanceID: "core-a", FlowID: "flow-1", Sequence: 10, OccurredAt: base},
-		{ID: "a-2", NodeID: 9, Type: "flow.updated", CoreInstanceID: "core-a", FlowID: "flow-1", Sequence: 12, OccurredAt: base.Add(-time.Minute)},
+		{ID: "a-2", NodeID: 9, Type: "flow.updated", CoreInstanceID: "core-a", FlowID: "flow-1", Sequence: 12, OccurredAt: base.Add(-10 * time.Second)},
 		{ID: "b-1", NodeID: 9, Type: "flow.updated", CoreInstanceID: "core-b", FlowID: "flow-1", Sequence: 1, OccurredAt: base.Add(time.Second)},
 		{ID: "stats", NodeID: 9, Type: "stats.sampled", CoreInstanceID: "core-a", Sequence: 13, OccurredAt: base.Add(2 * time.Second)},
 	}
 
-	got := aggregateZeroFlowEvents(events)
+	for i := range events {
+		if events[i].Type == "flow.updated" {
+			events[i].PrincipalKey = "p"
+			events[i].Payload = []byte(`{"flow_id":"flow-1","traffic":{"bytes_up":1,"bytes_down":2}}`)
+		}
+	}
+	got, err := zeroFlowSamples(events)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 2 {
 		t.Fatalf("flow projection count = %d, want 2 runtime generations", len(got))
 	}
 	ids := map[string]bool{}
 	for _, event := range got {
-		ids[event.ID] = true
+		ids[event.EventID] = true
 	}
 	if !ids["a-2"] || !ids["b-1"] || ids["a-1"] {
 		t.Fatalf("unexpected coalesced flow events: %+v", got)

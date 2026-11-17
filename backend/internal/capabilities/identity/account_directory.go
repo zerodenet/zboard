@@ -19,6 +19,8 @@ type AccountDirectoryQuery struct {
 
 type AccountDirectoryItem struct {
 	PublicAccount
+	AccountOverview
+	AdminNote               string    `json:"admin_note"`
 	ActiveSubscriptionCount int64     `json:"active_subscription_count"`
 	TotalSubscriptionCount  int64     `json:"total_subscription_count"`
 	PendingOrderCount       int64     `json:"pending_order_count"`
@@ -27,8 +29,10 @@ type AccountDirectoryItem struct {
 }
 
 type AccountBusinessDetail struct {
+	AccountOverview
 	ID                      uint       `json:"id"`
 	AccountName             string     `json:"account_name"`
+	AdminNote               string     `json:"admin_note"`
 	Email                   string     `json:"email"`
 	EmailVerifiedAt         *time.Time `json:"email_verified_at"`
 	LastLoginAt             *time.Time `json:"last_login_at"`
@@ -40,6 +44,27 @@ type AccountBusinessDetail struct {
 	TotalOrderCount         int64      `json:"total_order_count"`
 	CreatedAt               time.Time  `json:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at"`
+}
+
+// Read-only, current business state. Dates are eligibility estimates, not a
+// reservation for deletion: the worker rechecks policy and funds when it runs.
+type AccountCleanupStatus struct {
+	Enabled      bool       `json:"enabled"`
+	InactiveDays int        `json:"inactive_days"`
+	State        string     `json:"state"`
+	EligibleAt   *time.Time `json:"eligible_at"`
+	Reason       string     `json:"reason"`
+}
+
+type AccountWalletBalance struct {
+	Currency      string `json:"currency"`
+	BalanceMinor  string `json:"balance_minor"`
+	ReservedMinor string `json:"reserved_minor"`
+}
+
+type AccountOverview struct {
+	WalletBalances []AccountWalletBalance `json:"wallet_balances"`
+	Cleanup        AccountCleanupStatus   `json:"cleanup"`
 }
 
 type AccountDirectoryPage struct {

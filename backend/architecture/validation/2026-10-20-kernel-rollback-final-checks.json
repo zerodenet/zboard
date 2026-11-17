@@ -1,0 +1,61 @@
+{
+  "source": "cabce7c67feb4cd76b20b456f65e907fc087968b",
+  "checkout": "/workspace/zboard-observation-verify",
+  "phase": "backend",
+  "started_utc": "2026-10-20T22:29:09.772164+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "full-go",
+      "command": "go test -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 299.75,
+      "log": "full-go-cabce7c-final.log"
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 3.723,
+      "log": "vet-cabce7c-final.log"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 2.009,
+      "log": "build-cabce7c-final.log"
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "environment_additions": {
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 21.544,
+      "log": "pure-go-sqlite-cabce7c-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-20T22:34:36.799566+00:00",
+  "private_receipt_sha256": "c4d62f60c51553a52b593d38d2974342884a4001d84377e56d3f601581f9b89c",
+  "log_sha256": {
+    "full-go-cabce7c-final.log": "ca8feb43346783631399afef2d4358f8ae345dbec199117684b30eaea4bfea77",
+    "vet-cabce7c-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build-cabce7c-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pure-go-sqlite-cabce7c-final.log": "70486fac1bddefab17584fa195e84c0afcf36c36d2e7af6b0464a8caeb11c9d8"
+  },
+  "limits": [
+    "Exact clean cabce7c ordinary clone; no concurrent local tests or load",
+    "Not complete MySQL, live browser, external gateway or capacity acceptance",
+    "MySQL original 15m gate unresolved on prior source; new CI remains separate"
+  ]
+}

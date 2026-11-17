@@ -89,3 +89,31 @@ describe('useRemoteTable', () => {
     expect(table.items.value).toEqual([75])
   })
 })
+
+it('shares stale, timestamp and authorization states with independent reads', async () => {
+ const fetchPage = vi.fn().mockResolvedValueOnce({items:[1],total:1}).mockRejectedValueOnce({code:'ERR_NETWORK'}).mockRejectedValueOnce({response:{status:403}})
+ const table = useRemoteTable({offset:ref(0),limit:ref(25),fetchPage,errorMessage:'failed'})
+ await table.load()
+ const stamp = table.lastSuccessAt.value
+ await table.load()
+ expect(table.phase.value).toBe('stale')
+ expect(table.items.value).toEqual([1])
+ expect(table.lastSuccessAt.value).toBe(stamp)
+ await table.load()
+ expect(table.phase.value).toBe('forbidden')
+ expect(table.items.value).toEqual([])
+ expect(table.total.value).toBe(0)
+ expect(table.hasLoaded.value).toBe(false)
+})
+
+it('does not execute page callbacks from a cancelled scope', async () => {
+ const old = deferred<{items:number[];total:number}>()
+ const onPageLoaded=vi.fn()
+ const table = useRemoteTable({offset:ref(0),limit:ref(25),fetchPage:()=>old.promise,onPageLoaded,errorMessage:'failed'})
+ const request=table.load()
+ table.reset()
+ old.resolve({items:[99],total:1})
+ await request
+ expect(onPageLoaded).not.toHaveBeenCalled()
+ expect(table.items.value).toEqual([])
+})

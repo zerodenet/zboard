@@ -8,8 +8,14 @@
     :required="input.required"
     :full="full"
   >
+    <SiteImageInput
+      v-if="assetKeys.has(config.config_key)"
+      v-bind="controlAttrs"
+      :model-value="String(draft ?? '')"
+      @update:model-value="emit('update:draft', $event)"
+    />
     <UiTextarea
-      v-if="input.control === 'textarea'"
+      v-else-if="input.control === 'textarea'"
       v-bind="controlAttrs"
       :model-value="draft as any"
       :rows="rows"
@@ -34,6 +40,7 @@ import { resolveSystemConfigInput } from '../utils/systemConfig'
 import FormField from './FormField.vue'
 import UiInput from './UiInput.vue'
 import UiTextarea from './UiTextarea.vue'
+import SiteImageInput from './SiteImageInput.vue'
 
 const props = withDefaults(defineProps<{
   config: SystemConfig

@@ -20,7 +20,7 @@ func (s KernelReconciliationState) BeginReconciliation(ctx context.Context, requ
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, request.NodeID).Error; err != nil {
 			return err
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrKernelResourceDeleting
 		}
 		var actor model.User
@@ -41,6 +41,14 @@ func (s KernelReconciliationState) BeginReconciliation(ctx context.Context, requ
 				return network.ErrKernelOperationRunning
 			}
 		}
+		var publishing int64
+		if err := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status = ? AND started_at > ?", request.NodeID, "running", now.Add(-network.PublicationLease)).Count(&publishing).Error; err != nil {
+			return err
+		}
+		if publishing > 0 {
+			return network.ErrKernelOperationRunning
+		}
+
 		row := model.NodeOperation{NodeID: request.NodeID, OperationType: "reconcile", Status: "running", Phase: "queued", RequestedBy: actor.ID, StartedAt: &now}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
@@ -156,19 +164,15 @@ func (s KernelReconciliationState) RestoreKernelConnectorCredential(ctx context.
 		if _, _, err := lockOwnedKernelOperation(tx, operation); err != nil {
 			return err
 		}
+		// Reverting an activation restores its credential identity only. Runtime
+		// observations may have arrived after the snapshot; rewinding their values
+		// without their event cursor would permanently disagree with replay state.
+		// A later observation, rather than the saved pre-install snapshot, describes
+		// the process that actually remains after a remote rollback.
 		return tx.Model(&model.Node{}).Where("id = ?", operation.NodeID).Updates(map[string]interface{}{
 			"node_credential":            snapshot.Credential.Ciphertext,
 			"node_credential_prefix":     snapshot.Credential.Prefix,
 			"node_credential_revoked_at": snapshot.RevokedAt,
-			"connector_last_seen_at":     snapshot.ConnectorLastSeenAt,
-			"last_seen_at":               snapshot.LastSeenAt,
-			"is_online":                  snapshot.IsOnline,
-			"status":                     snapshot.Status,
-			"version":                    snapshot.Version,
-			"uptime_seconds":             snapshot.UptimeSeconds,
-			"active_flows":               snapshot.ActiveFlows,
-			"bytes_up":                   snapshot.BytesUp,
-			"bytes_down":                 snapshot.BytesDown,
 		}).Error
 	})
 }
@@ -218,7 +222,32 @@ func (s KernelReconciliationState) CompleteKernelReconciliation(ctx context.Cont
 				return err
 			}
 		}
+		// A verified, explicit binary installation ended the previous process.
+		// This also releases legacy unknown outcomes that had no remote guard.
+		// A same-binary configure action must still prove its own receipt.
+		if changed && row.OperationType != "configure" {
+			resolved := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status = ? AND created_at <= ?", operation.NodeID, "reconciling", row.StartedAt).
+				Updates(map[string]interface{}{"status": "superseded", "finished_at": now, "error": "", "output": "Previous process ended by a verified kernel installation; latest configuration remains queued"})
+			if resolved.Error != nil {
+				return resolved.Error
+			}
+			if resolved.RowsAffected > 0 {
+				if err := EnqueuePublication(tx, operation.NodeID, 0, row.RequestedBy); err != nil {
+					return err
+				}
+			}
+		}
+
+		if err := enqueueUnconfirmedCredentialPublication(tx, operation.NodeID); err != nil {
+			return err
+		}
 		if err := enqueueMieruReadinessPublication(tx, operation.NodeID); err != nil {
+			return err
+		}
+		// Explicit kernel installation/reconciliation can change available
+		// capabilities. Wake pending compatibility checks without losing intent.
+		if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ? AND (deferred = ? OR suspended = ?)", operation.NodeID, true, true).
+			Updates(map[string]interface{}{"deferred": false, "suspended": false, "generation": gorm.Expr("generation + 1"), "attempts": 0, "next_attempt_at": now, "last_error": ""}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "succeeded", "phase": "completed", "result_summary": summary, "error": "", "finished_at": now}).Error; err != nil {
@@ -241,6 +270,20 @@ func (s KernelReconciliationState) CompleteKernelReconciliation(ctx context.Cont
 
 func (s KernelReconciliationState) FailKernelReconciliation(ctx context.Context, operation network.KernelOperation, phase string, failure error, unsupported bool, now time.Time) error {
 	return (KernelDetection{DB: s.DB}).FailDetection(ctx, operation, phase, failure, unsupported, now)
+}
+
+func (s KernelReconciliationState) DeferKernelReconciliation(ctx context.Context, operation network.KernelOperation, cause error, now time.Time) error {
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, row, err := lockOwnedKernelOperation(tx, operation)
+		if err != nil {
+			return err
+		}
+		message := network.TruncateKernelError(cause.Error())
+		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "deferred", "phase": "configuration_deferred", "error": message, "result_summary": message, "finished_at": now}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&state).Updates(map[string]interface{}{"phase": "configuration_deferred", "active_operation_id": nil}).Error
+	})
 }
 
 func enqueueMieruReadinessPublication(tx *gorm.DB, nodeID uint) error {

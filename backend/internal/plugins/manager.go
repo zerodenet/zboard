@@ -23,30 +23,32 @@ var ErrConflict = errors.New("plugin changed; refresh and retry")
 var ErrUnavailable = errors.New("plugin service unavailable")
 
 type Manager struct {
-	tasks             *pluginTaskRuntime
-	db                *gorm.DB
-	identityTx        IdentityTransactions
-	cipher            *security.CredentialCipher
-	options           Options
-	fetch             func(context.Context, string, int64) ([]byte, error)
-	host              string
-	owner             string
-	epoch             atomic.Uint64
-	mu                sync.Mutex
-	marketMu          sync.Mutex
-	processes         map[string]*process
-	marketReleases    map[string]marketReleaseCache
-	sessions          map[string]Session
-	capabilityWindows map[string]capabilityAdmissionWindow
-	cancel            context.CancelFunc
-	done              chan struct{}
-	lost              atomic.Bool
-	leaseUntil        atomic.Int64
-	leaseErrors       atomic.Uint64
-	supervisorDone    chan struct{}
-	closeOnce         sync.Once
-	restarts          map[string]restartAttempt
-	services          HostServices
+	identityPresentation        map[string]identityPresentationEntry
+	identityPresentationLoading map[string]chan struct{}
+	tasks                       *pluginTaskRuntime
+	db                          *gorm.DB
+	identityTx                  IdentityTransactions
+	cipher                      *security.CredentialCipher
+	options                     Options
+	fetch                       func(context.Context, string, int64) ([]byte, error)
+	host                        string
+	owner                       string
+	epoch                       atomic.Uint64
+	mu                          sync.Mutex
+	marketMu                    sync.Mutex
+	processes                   map[string]*process
+	marketReleases              map[string]marketReleaseCache
+	sessions                    map[string]Session
+	capabilityWindows           map[string]capabilityAdmissionWindow
+	cancel                      context.CancelFunc
+	done                        chan struct{}
+	lost                        atomic.Bool
+	leaseUntil                  atomic.Int64
+	leaseErrors                 atomic.Uint64
+	supervisorDone              chan struct{}
+	closeOnce                   sync.Once
+	restarts                    map[string]restartAttempt
+	services                    HostServices
 }
 
 func (m *Manager) SetHostServices(services HostServices) {
@@ -181,13 +183,15 @@ func (m *Manager) maintain(ctx context.Context) {
 }
 func (m *Manager) Close() {
 	m.closeOnce.Do(func() {
+		m.lost.Store(true)
 		m.cancel()
 		<-m.done
 		<-m.supervisorDone
-		m.cancelPluginTasks()
+		m.tasks.reconcile.Lock()
+		m.detachPluginTasks()
+		m.tasks.reconcile.Unlock()
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		m.lost.Store(true)
 		m.stopProcesses()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

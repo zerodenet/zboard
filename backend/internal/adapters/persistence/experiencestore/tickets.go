@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -15,15 +16,40 @@ type Tickets struct{ DB *gorm.DB }
 
 func (s Tickets) CreateTicket(ctx context.Context, actor uint, input experience.NewTicket, now time.Time) (id uint, err error) {
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		seed, e := businessref.Provisional('T')
+		if e != nil {
+			return e
+		}
+		row := model.Ticket{TicketNo: seed, UserID: actor, Subject: input.Subject, Category: input.Category, Priority: input.Priority, Status: "open", LastMessageAt: now}
+		// Financial settlement/termination takes source orders before the owner.
+		// Do not hold the user's SHARE lock while waiting for that source order.
+		if input.References != nil {
+			var err error
+			row.OrderID, err = ownedTicketReference(tx, "orders", actor, input.References.OrderID)
+			if err != nil {
+				return err
+			}
+		}
 		user, err := currentExperienceUser(tx, actor, false)
 		if err != nil {
 			return err
 		}
-		row := model.Ticket{TicketNo: input.TicketNo, UserID: user.ID, Subject: input.Subject, Category: input.Category, Priority: input.Priority, Status: "open", LastMessageAt: now}
+		if err := bindTicketReferences(tx, &row, input.References); err != nil {
+			return err
+		}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.TicketMessage{TicketID: row.ID, AuthorID: &user.ID, AuthorRole: "user", Type: "message", Body: input.Body, CreatedAt: now}).Error; err != nil {
+		number := businessref.Ticket(row.ID, row.CreatedAt)
+		if e := tx.Model(&row).UpdateColumn("ticket_no", number).Error; e != nil {
+			return e
+		}
+		row.TicketNo = number
+		message := model.TicketMessage{TicketID: row.ID, AuthorID: &user.ID, AuthorRole: "user", Type: "message", Body: input.Body, CreatedAt: now}
+		if err := tx.Create(&message).Error; err != nil {
+			return err
+		}
+		if err := saveTicketAttachments(tx, user.ID, message.ID, input.Attachments); err != nil {
 			return err
 		}
 		id = row.ID
@@ -32,7 +58,7 @@ func (s Tickets) CreateTicket(ctx context.Context, actor uint, input experience.
 	return id, err
 }
 
-func (s Tickets) ReplyTicket(ctx context.Context, actor experience.TicketActor, id uint, body string, now time.Time) error {
+func (s Tickets) ReplyTicket(ctx context.Context, actor experience.TicketActor, id uint, body string, now time.Time, attachments ...experience.TicketAttachment) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user, err := currentExperienceUser(tx, actor.ID, actor.IsAdmin)
 		if err != nil {
@@ -52,7 +78,11 @@ func (s Tickets) ReplyTicket(ctx context.Context, actor experience.TicketActor, 
 		if actor.IsAdmin {
 			role, next = "admin", "pending_user"
 		}
-		if err := tx.Create(&model.TicketMessage{TicketID: ticket.ID, AuthorID: &user.ID, AuthorRole: role, Type: "message", Body: body, CreatedAt: now}).Error; err != nil {
+		message := model.TicketMessage{TicketID: ticket.ID, AuthorID: &user.ID, AuthorRole: role, Type: "message", Body: body, CreatedAt: now}
+		if err := tx.Create(&message).Error; err != nil {
+			return err
+		}
+		if err := saveTicketAttachments(tx, user.ID, message.ID, attachments); err != nil {
 			return err
 		}
 		previous := ticket.Status
@@ -119,7 +149,50 @@ func createTicketStatusEvent(tx *gorm.DB, ticketID, authorID uint, role, from, t
 }
 
 func ticketView(row model.Ticket) experience.Ticket {
-	return experience.Ticket{ID: row.ID, TicketNo: row.TicketNo, UserID: row.UserID, Subject: row.Subject, Category: row.Category, Priority: row.Priority, Status: row.Status, LastMessageAt: row.LastMessageAt, ResolvedAt: row.ResolvedAt, ClosedAt: row.ClosedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+	out := experience.Ticket{ID: row.ID, TicketNo: businessref.Ticket(row.ID, row.CreatedAt), UserID: row.UserID, Subject: row.Subject, Category: row.Category, Priority: row.Priority, Status: row.Status, LastMessageAt: row.LastMessageAt, ResolvedAt: row.ResolvedAt, ClosedAt: row.ClosedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+	if row.OrderID != nil || row.SubscriptionID != nil || row.WalletEntryID != nil {
+		out.References = &experience.TicketReferences{OrderID: row.OrderID, SubscriptionID: row.SubscriptionID, WalletEntryID: row.WalletEntryID}
+	}
+	return out
+}
+
+func bindTicketReferences(tx *gorm.DB, ticket *model.Ticket, refs *experience.TicketReferences) error {
+	if refs == nil {
+		return nil
+	}
+	for _, ref := range []struct {
+		table  string
+		input  *uint
+		target **uint
+	}{
+		{"subscriptions", refs.SubscriptionID, &ticket.SubscriptionID},
+		{"wallet_entries", refs.WalletEntryID, &ticket.WalletEntryID},
+	} {
+		var err error
+		*ref.target, err = ownedTicketReference(tx, ref.table, ticket.UserID, ref.input)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ownedTicketReference(tx *gorm.DB, table string, owner uint, input *uint) (*uint, error) {
+	if input == nil {
+		return nil, nil
+	}
+	id := *input
+	var target struct{ ID uint }
+	result := tx.Table(table).Clauses(clause.Locking{Strength: "SHARE"}).Select("id").Where("id = ? AND user_id = ?", id, owner).Limit(1).Find(&target)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if id == 0 || result.RowsAffected != 1 {
+		// Same response for a missing record and another account's record;
+		// references never become an existence or authorization oracle.
+		return nil, fmt.Errorf("%w: 关联记录不存在或不属于当前账户。", experience.ErrInvalid)
+	}
+	return &id, nil
 }
 
 func ticketMessageView(row model.TicketMessage) experience.TicketMessage {
@@ -149,7 +222,14 @@ func (s Tickets) ListTickets(ctx context.Context, input experience.TicketQuery) 
 	}
 	if input.Search != "" {
 		pattern := "%" + input.Search + "%"
-		query = query.Joins("JOIN users ticket_owner ON ticket_owner.id = tickets.user_id").Where("tickets.ticket_no LIKE ? OR tickets.subject LIKE ? OR ticket_owner.email LIKE ?", pattern, pattern, pattern)
+		query = query.Joins("JOIN users ticket_owner ON ticket_owner.id = tickets.user_id")
+		condition := "tickets.ticket_no LIKE ? OR tickets.subject LIKE ? OR ticket_owner.email LIKE ?"
+		args := []any{pattern, pattern, pattern}
+		if id, ok := businessref.Parse(input.Search, 'T'); ok {
+			condition += " OR tickets.id=?"
+			args = append(args, id)
+		}
+		query = query.Where(condition, args...)
 	}
 	page := experience.TicketPage{}
 	if err := query.Count(&page.Total).Error; err != nil {
@@ -175,16 +255,8 @@ func (s Tickets) TicketDetail(ctx context.Context, actor experience.TicketActor,
 	if !actor.IsAdmin && row.UserID != actor.ID {
 		return experience.TicketDetail{}, experience.ErrTicketForbidden
 	}
-	type messageRow struct {
-		model.TicketMessage
-		AuthorEmail string `gorm:"column:author_email"`
-	}
-	query := s.DB.WithContext(ctx).Table("ticket_messages").Select("ticket_messages.*, COALESCE(users.email, '') AS author_email").Joins("LEFT JOIN users ON users.id = ticket_messages.author_id").Where("ticket_messages.ticket_id = ?", id)
-	if beforeID > 0 {
-		query = query.Where("ticket_messages.id < ?", beforeID)
-	}
-	var messages []messageRow
-	if err := query.Order("ticket_messages.created_at DESC, ticket_messages.id DESC").Limit(limit + 1).Scan(&messages).Error; err != nil {
+	messages, err := loadTicketMessages(s.DB.WithContext(ctx), id, beforeID, limit+1)
+	if err != nil {
 		return experience.TicketDetail{}, err
 	}
 	hasOlder := len(messages) > limit
@@ -193,7 +265,9 @@ func (s Tickets) TicketDetail(ctx context.Context, actor experience.TicketActor,
 	}
 	result := make([]experience.TicketMessageView, 0, len(messages))
 	for index := len(messages) - 1; index >= 0; index-- {
-		result = append(result, experience.TicketMessageView{TicketMessage: ticketMessageView(messages[index].TicketMessage), AuthorEmail: messages[index].AuthorEmail})
+		message := ticketMessageView(messages[index].TicketMessage)
+		message.Attachments = messages[index].Attachments
+		result = append(result, experience.TicketMessageView{TicketMessage: message, AuthorEmail: messages[index].AuthorEmail})
 	}
 	oldest := uint(0)
 	if len(result) > 0 {

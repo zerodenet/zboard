@@ -1,0 +1,172 @@
+{
+  "scope": "P2-07 full-term replacement sub-batch verified; overall P2-P7 incomplete",
+  "base_commit": "f21039c125c6dc0b8a53e327d928e3dc97b01f4f",
+  "develop_verified": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "draft_pr": "https://github.com/zerodenet/zboard/pull/78",
+  "migration": "0049_entitlement_funding",
+  "actual_behaviors": [
+    "gross old residual credits wallet, full new actual price debits it in one transaction",
+    "same subscription identity and URL; new full duration/quota, fresh credential epoch",
+    "old unversioned pending agreements retained without issuing new legacy quotes",
+    "projected old contribution is separate from actual reserved cash",
+    "new residual JSON amounts are exact integer strings; browser uses existing BigInt wallet formatter"
+  ],
+  "approved_examples": [
+    {
+      "old_residual_minor": 9000,
+      "new_actual_paid_minor": 2000,
+      "wallet_net_gain_minor": 7000
+    },
+    {
+      "old_residual_minor": 9200,
+      "new_actual_paid_minor": 2000,
+      "wallet_net_gain_minor": 7200
+    },
+    {
+      "old_residual_minor": 2400,
+      "new_actual_paid_minor": 2000,
+      "wallet_net_gain_minor": 400
+    }
+  ],
+  "verified_checks": {
+    "initial_backend_full": "pass; handler251.562s, networkstore88.020s",
+    "initial_vet_and_build": "pass",
+    "initial_frontend_ci_scope": "897 passed, 8 existing skipped; build16.69s",
+    "initial_pure_go_sqlite": "pass13.190s",
+    "initial_full_mysql": "FAIL: datastore114.739s and networkstore122.066s passed; handler621.916s failed two existing ordinary-payment races due to early repeatable-read snapshot. Fixed, targeted two rounds38.970s pass; full final pending.",
+    "mysql_financial_concurrency": "pass33.103s: duplicate pay, two changes, change versus unsubscribe",
+    "mixed_payment_and_cancel_late_cash": "SQLite/MySQL pass in26.102s combined focused run",
+    "migration_data_preservation_and_interruption": "SQLite/MySQL pass6.856s",
+    "admin_discount_does_not_mint_balance": "SQLite/MySQL pass6.066s",
+    "json_and_ownership_contracts": "pass; ownership transactions15, no boundary removed",
+    "frontend_precision_and_confirmation": "35 focused passed, including above-JS-safe-integer residual",
+    "openapi": "valid,282 existing warnings, final precision schema included",
+    "final_frontend_ci_scope": "898 passed,8 existing skipped; build15.76s",
+    "wide_snapshot_migration": "SQLite/MySQL pass11.142s;12KiB source evidence and existing live hold/37-minor deferred contribution preserved",
+    "bounded_prepare_recovery": "deterministic before-fix FAIL; after-fix SQLite/MySQL and no-false-ACK retry bound pass9.768s; 3 attempts/1024 rows unchanged",
+    "post_snapshot_fix_concurrency": "existing ordinary-payment races plus full replacements,2 rounds pass38.970s",
+    "final_backend_full": "PASS: handler196.525s,networkstore79.854s",
+    "final_vet_build": "PASS",
+    "final_pure_go_sqlite": "PASS6.067s",
+    "final_mysql_full": "PASS: actual MySQL8.4 datastore87.182s,handler538.118s,networkstore117.715s; random isolated schemas",
+    "cancel_vs_wallet_and_cash_callback": "PASS17.281s,5 MySQL financial race scenarios"
+  },
+  "native_first_run": {
+    "artifact_relative": ".codex-local-artifacts/acceptance/zero-revocation-20261020T004016Z-eQY5JL",
+    "source_manifest_sha256": "e8e98292e684ed16a089bda0ce3f7c86e7b8c2e9f8a113666fb4a6ce8b4133a3",
+    "source_before_after_equal": true,
+    "result": {
+      "passed": true,
+      "scenarios": [
+        {
+          "cross_group_credentials_rejected": true,
+          "disjoint_group_listeners": 2,
+          "entitlement_epoch": 1,
+          "existing_connection_read_bytes": 0,
+          "existing_connection_read_error": "EOF",
+          "full_term_replacement": true,
+          "new_full_price_minor": 200,
+          "new_group_echo_passed": true,
+          "old_credential_rejected_probes": 3,
+          "old_group_positive_control_passed": true,
+          "old_residual_minor": 100,
+          "order_handler_return_to_verified_access_ms": 2036.459381,
+          "passed": true,
+          "physical_nodes": 1,
+          "scenario": "group_change",
+          "subscription_identity_preserved": true,
+          "verified_at": "2026-10-20T00:42:49.437614012Z"
+        }
+      ],
+      "driver_exit_code": 0,
+      "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+    },
+    "limit": "isolated public pinned Zero; source preceded final JSON string serialization and additional tests/docs; final rerun pending"
+  },
+  "failed_runs_retained": [
+    "initial137.363s handler audit with12 old-change fixture failures",
+    "old-flow test wrong column name then wrong uncapped charged expectation; raw30/charged20 verified",
+    "concurrency assertion used ended instead of actual canceled final state",
+    "admin discount fixture initially had zero target quota; fixed positive quota, implementation not weakened",
+    "ownership inventory expected14 before adding actual15th transaction",
+    "second native group run: all data-plane assertions pass, overall FAIL due one500 principal_projection_pending",
+    "deterministic preparation invalidation failed before bounded branch fix",
+    "initial full MySQL two ordinary-payment race failures caused by helper early consistent read, fixed without relaxing assertions",
+    "third native run005456: failed because overly restricted background-only injection did not execute; no false pass",
+    "fourth native run010046: stopped before driver by unchanged Zero outbox free-space guard"
+  ],
+  "limits": [
+    "no production payment, credentials, migration, deployment, release or merge",
+    "no external repository modified",
+    "no performance, throughput, production or all-kernel claim",
+    "1000 related-order/source history bound remains",
+    "P2 refunds/discount-plugin quote agreement/plan sync/configurable recovery/auto-renew incomplete",
+    "P3 resource move/delete identity retention and broader protocol coverage incomplete",
+    "same-epoch reset/late-meter boundary and P4 statistical/diagnostic decoupling/retention incomplete",
+    "P5 complete reauthentication/tickets, P6 capacity/local scaling, P7 comprehensive release readiness incomplete"
+  ],
+  "native_second_run": {
+    "artifact_relative": ".codex-local-artifacts/acceptance/zero-revocation-20261020T004728Z-NQb2Tz",
+    "data_plane_passed": true,
+    "overall_passed": false,
+    "receiver_failure": "one500 principal_projection_pending",
+    "causality_limit": "classification is compatible with independently proved preparation gap, not full unique-cause trace"
+  },
+  "metering_preparation_commit": "a47a4930a4ceb4619bc9bb1f49d18314d320fd86",
+  "metering_preparation_exact_ci": {
+    "run_id": 39350536788,
+    "conclusion": "success",
+    "jobs": 6
+  },
+  "native_final": {
+    "artifact_relative": ".codex-local-artifacts/acceptance/zero-revocation-20261020T010358Z-SkgLdp",
+    "source_manifest_sha256": "5c4500523c67b444a5b563d3ef8b277ffed868dd74e0b790ddf5660b2d978565",
+    "source_before_after_equal": true,
+    "runtime_files_checked": 1619,
+    "runtime_mismatches": [],
+    "result": {
+      "passed": true,
+      "scenarios": [
+        {
+          "cross_group_credentials_rejected": true,
+          "disjoint_group_listeners": 2,
+          "entitlement_epoch": 1,
+          "existing_connection_read_bytes": 0,
+          "existing_connection_read_error": "EOF",
+          "full_term_replacement": true,
+          "injected_in_background_context": false,
+          "native_preparation_queries": 7,
+          "new_full_price_minor": 200,
+          "new_group_echo_passed": true,
+          "old_credential_rejected_probes": 3,
+          "old_group_positive_control_passed": true,
+          "old_residual_minor": 100,
+          "order_handler_return_to_verified_access_ms": 54950.244045,
+          "passed": true,
+          "physical_nodes": 1,
+          "prepare_race_injected": true,
+          "scenario": "group_change",
+          "subscription_identity_preserved": true,
+          "verified_at": "2026-10-20T01:05:54.990415127Z"
+        }
+      ],
+      "driver_exit_code": 0,
+      "scope": "Selected real Zero scenario only; this result does not complete the other revocation, recovery or performance requirements."
+    },
+    "coverage_limit": "Injection hit a non-background native integration preparation context; synchronous completion recovery is separately proved by deterministic SQLite/MySQL tests. Fault recovery sample ~54.95s, not normal latency, capacity or SLO."
+  },
+  "resource_action": {
+    "kind": "deduplicate byte-identical public Zero binary copies by hardlink",
+    "new_copies": 7,
+    "bytes_reclaimed": 386936832,
+    "all_paths_and_bytes_preserved": true,
+    "business_queues_cursors_ledgers_checkpoints_and_failed_logs_untouched": true
+  },
+  "native_public_core": {
+    "source_commit": "71b3db1ff5b01dbb50576b36c6ba6d76922c67c7",
+    "version": "0.0.3-dev.202610102233",
+    "binary_sha256": "1f75740f1f5c1fefb7cb3aae219c7cbfe3365bd2dce33f58216a1001dc47268b",
+    "signatures_verified": false,
+    "scope": "isolated VLESS,one physical node,two group listeners,independent control; no other core repository edits"
+  }
+}

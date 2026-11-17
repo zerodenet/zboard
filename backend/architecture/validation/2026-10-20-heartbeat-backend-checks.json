@@ -1,0 +1,90 @@
+{
+  "source": "01ebcde72befca5f491e96c9b4c8b03fe125118a",
+  "checkout": "/workspace/zboard-heartbeat-verify",
+  "phase": "backend",
+  "started_utc": "2026-10-20T23:31:10.535678+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "full-go",
+      "command": "go test -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 294.95,
+      "log": "full-go-01ebcde-final.log"
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 13.007,
+      "log": "vet-01ebcde-final.log"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 2.381,
+      "log": "build-01ebcde-final.log",
+      "resumed_after_cloud_restart": true
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "environment_additions": {
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 37.698,
+      "log": "pure-go-sqlite-01ebcde-final.log",
+      "resumed_after_cloud_restart": true
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-20T23:52:24.948629+00:00",
+  "cloud_interruption_receipt": "01ebcde-cloud-interruption.json",
+  "raw_logs_sha256": {
+    "full-go-01ebcde-final.log": "8c01a5ce80cb3c72eac2bf1a5ea124f5d83d0c2704cc94e76feea930e4b4dab3",
+    "vet-01ebcde-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build-01ebcde-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pure-go-sqlite-01ebcde-final.log": "ea56ca01634313295c9a62989d0b3ae31d0c44838db8a049b9f9dc47c3b86d79"
+  },
+  "cloud_interruption": {
+    "observed_utc": "2026-10-20T23:51:44.837014+00:00",
+    "source": "01ebcde72befca5f491e96c9b4c8b03fe125118a",
+    "original_session": 94029,
+    "session_outcome": "Unknown process id after cloud restart; original Python618459 was defunct, no live Go/compiler/test",
+    "completed_persisted_checks": [
+      {
+        "name": "full-go",
+        "exit_code": 0,
+        "wall_seconds": 294.95,
+        "log_sha256": "8c01a5ce80cb3c72eac2bf1a5ea124f5d83d0c2704cc94e76feea930e4b4dab3"
+      },
+      {
+        "name": "vet",
+        "exit_code": 0,
+        "wall_seconds": 13.007,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "pending": [
+      "build",
+      "pure-go-sqlite"
+    ],
+    "pending_log_existence": {
+      "build": false,
+      "pure-go-sqlite": false
+    },
+    "pending_build_binary_exists": false,
+    "original_receipt_sha256": "a20254e6b5d73e1a3a1fc53eac910243fbdc241fb6ba2c269b7c467fd85b9047",
+    "policy": "Keep original persisted receipt; resume only remaining reversible local checks after exact clean clone validation. No repeated Go/vet, no financial command ran."
+  },
+  "mysql_local": "Separate exact-source local mysql-core handler15m failure; independent jobstore/copy pass. See2026-10-21-heartbeat-mysql-local.json."
+}

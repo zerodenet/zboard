@@ -1,6 +1,6 @@
 <template>
   <div>
-    <UiAutocomplete :model-value="input" :suggestions="items" option-label="label" :input-id="inputId" :aria-label="label" :placeholder="placeholder" :disabled="disabled" :loading="loading" force-selection dropdown @update:model-value="updateInput" @complete="search" @item-select="select" @clear="clear">
+    <UiAutocomplete :model-value="input" :suggestions="items" option-label="label" :input-id="inputId" :aria-label="label" :placeholder="placeholder" :disabled="disabled" :loading="loading" force-selection dropdown @update:model-value="updateInput" @open="openList" @complete="search" @item-select="select" @clear="clear">
       <template #option="{ option }"><span>{{ option.label }}</span></template>
       <template #footer>
         <div v-if="total > 25" class="lookup-pager">
@@ -27,12 +27,20 @@ let sequence = 0
 watch(() => props.modelValue, value => { if (value || typeof input.value !== 'string') input.value = value }, { immediate: true })
 function updateInput(value: AssignmentChoice | string | null) { input.value = value; if (typeof value === 'string' || !value) emit('update:modelValue', null) }
 function select(event: { value: AssignmentChoice }) { input.value = event.value; emit('update:modelValue', event.value) }
-function clear() { input.value = null; emit('update:modelValue', null) }
+function clear() { input.value = null; emit('update:modelValue', null); search({ query: '' }) }
+// A selected label is display text, not a search filter. Opening an untouched
+// or selected field must browse its scoped default list without a keyword.
+function openList() { search({ query: typeof input.value === 'string' ? input.value : '' }) }
 function search(event: { query: string }) { query.value = event.query.trim(); offset.value = 0; void load() }
-function page(delta: number) { offset.value += delta; void load() }
+function page(delta: number) {
+  const next = offset.value + delta
+  if (loading.value || props.disabled || next < 0 || next >= total.value) return
+  offset.value = next; void load()
+}
 async function load() {
+  if (props.disabled) return
   controller?.abort(); controller = new AbortController(); const current = controller, revision = ++sequence
-  loading.value = true; error.value = ''
+  loading.value = true; error.value = ''; items.value = []
   try {
     const result = await props.fetchPage(query.value, offset.value, current.signal)
     if (revision !== sequence) return
@@ -41,6 +49,10 @@ async function load() {
     if (revision === sequence && !current.signal.aborted) { items.value = []; total.value = 0; error.value = `${props.label}加载失败，请重试。` }
   } finally { if (revision === sequence) loading.value = false }
 }
+watch(() => props.disabled, disabled => {
+  if (!disabled) return
+  sequence++; controller?.abort(); loading.value = false; items.value = []; total.value = 0; error.value = ''
+})
 onBeforeUnmount(() => { sequence++; controller?.abort() })
 </script>
 <style scoped>

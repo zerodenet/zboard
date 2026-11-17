@@ -2,8 +2,10 @@ package platformstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"strings"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
@@ -49,12 +51,18 @@ func (s SettingUpdate) Update(ctx context.Context, actor uint, in platform.Setti
 		if in.ExpectedRevision != nil && row.Revision != *in.ExpectedRevision {
 			return platform.ErrSettingRevision
 		}
-		value, err := platform.NormalizeSettingValue(platform.Setting{ValueType: row.ValueType}, in.Value)
+		value, err := platform.NormalizeSettingValue(platform.Setting{ConfigKey: row.ConfigKey, ValueType: row.ValueType}, in.Value)
 		if err != nil {
 			return &platform.SettingValidation{Cause: err}
 		}
 		if err := platform.ValidateSettingValue(row.ConfigKey, value); err != nil {
 			return &platform.SettingValidation{Cause: err}
+		}
+		if (row.ConfigKey == "site_logo" || row.ConfigKey == "site_logo_dark" || row.ConfigKey == "site_favicon") && strings.HasPrefix(value, "/media/") {
+			var file model.StoredFile
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND purpose = ? AND deleted_at IS NULL", strings.TrimPrefix(value, "/media/"), "site").First(&file).Error; err != nil {
+				return &platform.SettingValidation{Cause: errors.New("uploaded site image is unavailable")}
+			}
 		}
 		stored := value
 		if row.IsSecret && value != "" {
@@ -89,7 +97,17 @@ func (s SettingUpdate) Update(ctx context.Context, actor uint, in platform.Setti
 		if err := tx.Select("id", "email").First(&user, actor).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "system.config.update", Target: "system_config:" + row.ConfigKey, Detail: fmt.Sprintf("revision=%d", row.Revision)}).Error; err != nil {
+		detail := fmt.Sprintf("revision=%d", row.Revision)
+		if row.ConfigKey == metering.DiagnosticCollectionKey {
+			// Keep the explicit capture reason/window for each revision, including
+			// after the current setting is disabled or replaced. No raw report body.
+			payload, err := json.Marshal(map[string]any{"revision": row.Revision, "policy": json.RawMessage(value)})
+			if err != nil {
+				return err
+			}
+			detail = string(payload)
+		}
+		if err := tx.Create(&model.AuditLog{UserID: &user.ID, Actor: user.Email, Action: "system.config.update", Target: "system_config:" + row.ConfigKey, Detail: detail}).Error; err != nil {
 			return err
 		}
 		return settingsQuery(tx).Where("id = ?", row.ID).Scan(&out).Error

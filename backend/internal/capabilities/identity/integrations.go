@@ -14,6 +14,13 @@ import (
 
 var ErrIntegrationInput = errors.New("invalid integration credential request")
 
+// Payment facts assert money received outside the panel. Account ownership
+// alone cannot authorize that assertion; ordinary users use admitted payment
+// plugins, whose native host grants are bound to an order.
+func IntegrationScopeRequiresAdministrator(scope string) bool {
+	return scope == "commerce.payments.record"
+}
+
 type IntegrationToken struct {
 	ID        uint       `json:"id"`
 	Name      string     `json:"name"`

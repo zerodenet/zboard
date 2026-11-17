@@ -1,4 +1,4 @@
-import { API_BASE, getAuthToken } from './client'
+import { authenticatedAPI } from './client'
 
 export interface AdminProjectLink {
   label: string
@@ -25,13 +25,13 @@ export interface AdminSystemInfo {
 }
 
 export async function fetchAdminSystemInfo(): Promise<AdminSystemInfo> {
-  const token = getAuthToken()
-  const response = await fetch(`${API_BASE}/admin/system-info`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    throw new Error(payload?.message || `系统信息请求失败（HTTP ${response.status}）。`)
+  let payload: any
+  try {
+    const response = await authenticatedAPI.get('/admin/system-info')
+    payload = response.data
+  } catch (cause: any) {
+    if (cause?.response) cause.message = cause.response.data?.message || `系统信息请求失败（HTTP ${cause.response.status}）。`
+    throw cause
   }
   if (!payload?.data) throw new Error('系统信息响应缺少 data。')
   return payload.data as AdminSystemInfo

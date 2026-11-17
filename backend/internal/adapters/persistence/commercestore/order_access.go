@@ -45,6 +45,10 @@ func (s OrderAccess) Read(ctx context.Context, actor, id uint) (entitlements.Acc
 			}
 			return err
 		}
+		if subscription.Status == "ended" {
+			view.Notice = "原订阅已结束，可在订单历史核对权益与用量。"
+			return nil
+		}
 		view.Notice = "客户或订阅已停用、到期或流量耗尽，暂不能获取订阅地址。"
 		if user.Status != "active" || !entitlements.AccessAvailable(entitlements.Subscription(subscription), time.Now().UTC()) {
 			return nil

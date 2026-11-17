@@ -6,6 +6,7 @@ import SubscriptionRuleSets from './SubscriptionRuleSets.vue'
 import UiSelect from '../components/UiSelect.vue'
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), list: vi.fn(), confirm: vi.fn() }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 vi.mock('../api/managedRuleSets', () => ({
   createManagedRuleSet: mocks.create, fetchManagedRuleSetsPage: mocks.list,
   deleteManagedRuleSet: vi.fn(), fetchManagedRuleSet: vi.fn(), fetchManagedRuleSetContent: vi.fn(),
@@ -48,7 +49,7 @@ async function fillRequired() {
 describe('managed rule set editor', () => {
   it('defaults remote imports to auto detection and explains process compatibility', async () => {
     await render()
-    expect(wrapper!.text()).toContain('不能绑定 Zero 模板')
+    expect(wrapper!.text()).toContain('Zero 订阅格式暂不支持')
     const mode = wrapper!.findAllComponents(UiSelect).find(select =>
       (select.props('options') as Array<{ value: string }>).some(option => option.value === 'remote'))!
     mode.vm.$emit('update:modelValue', 'remote')

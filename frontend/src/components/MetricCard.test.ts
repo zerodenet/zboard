@@ -24,5 +24,11 @@ describe('MetricCard', () => {
   it('omits a badge when the surrounding page already provides the time range', () => {
     const wrapper = mount(MetricCard, { props: { label: '本期实收', value: '¥20.00', icon: 'dollar' } })
     expect(wrapper.find('.status-badge').exists()).toBe(false)
+    expect(wrapper.find('.metric-meta').exists()).toBe(false)
   })
+})
+
+it('uses neutral icon treatment unless a semantic icon tone was requested', () => {
+  const w = mount(MetricCard, { props: { label: '订单', value: 0, icon: 'billing' } })
+  expect(w.get('.overview-card').attributes('data-tone')).toBe('neutral')
 })

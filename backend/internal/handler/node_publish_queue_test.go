@@ -139,6 +139,7 @@ func TestDurablePublishRecoversExpiredLeaseAndFencesOldAcknowledgement(t *testin
 
 func TestPublishWorkerScansPersistedWorkWithoutNewRequest(t *testing.T) {
 	h, path := newPublishFixture(t)
+	prepareTestMaintenanceSource(t, h)
 	mustEnqueuePublish(t, h, 11)
 	restarted := openPublishTestHandlers(t, path)
 	delivered := make(chan uint, 1)
@@ -282,6 +283,7 @@ func TestIndependentPublishWorkersCannotClaimSameNode(t *testing.T) {
 
 func TestPublishShutdownRetainsInterruptedExecution(t *testing.T) {
 	h, _ := newPublishFixture(t)
+	prepareTestMaintenanceSource(t, h)
 	mustEnqueuePublish(t, h, 11)
 	started := make(chan struct{})
 	h.startNodePublishWorker(func(ctx context.Context, item model.NodeConfigPublish) error {

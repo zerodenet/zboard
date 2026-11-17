@@ -1,0 +1,88 @@
+{
+  "stage": "P3 incremental plan-group synchronization and current topology reads",
+  "status": "actual MySQL and SQLite/Go targeted validation passed; final integrated CI pending",
+  "date_utc": "2026-10-20",
+  "repository": "zerodenet/zboard",
+  "branch": "codex/core-convergence",
+  "source_base": "2073edcee117112d9cf71d52fddb86fe3e973475",
+  "execution_source": "working-tree P3 changes; parent owns final commit/PR integration",
+  "draft_pr": "https://github.com/zerodenet/zboard/pull/78",
+  "evidence_document": "../core-convergence-group-evidence.md",
+  "behavior": [
+    "Plan group replacement automatically synchronizes up to 1000 eligible historical subscriptions in the existing PlanUpdate authority transaction.",
+    "No subscription exceptions; preserve quotas, used bytes, periods, reset schedule/policy, entitlement epoch, locked prices and all historical payment agreements.",
+    "Preserve shared endpoint credentials and confirmed delivery; revoke removed scope and persist old/new routing intents; new credentials require actual delivery confirmation.",
+    "Pending new/renewal/replacement orders keep their original amounts and snapshots but fulfill with the current plan group.",
+    "Direct and forward memberships and endpoint identities use actual current reads; revocation uses exact current IDs, including explicit revoke-all for an empty set.",
+    "Only MySQL3572 is a retryable ErrResourcesBusy; 1213/1205 and other failures retain their original failure behavior.",
+    "NOWAIT exact resource/FK parent locks avoid new reverse waiting edges; accounting protects only the actual candidate endpoint and source node, never all group resources.",
+    "Resource conflicts roll back the whole financial/accounting transaction; same intent can be explicitly retried without duplicate effects. Browser writes are not automatically replayed."
+  ],
+  "validation": {
+    "mysql": {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^TestMySQLPlanGroup' -count=1 -timeout 4m",
+      "server": "MySQL8.4 isolated localhost instance; random databases",
+      "result": "pass",
+      "seconds": 70.762,
+      "log": "/tmp/zboard-plan-group-mysql-final.log",
+      "actual_wait_evidence": "performance_schema.data_lock_waits proves Node row-lock waits for real endpoint mutations versus group removal/replacement/recovery",
+      "coverage": [
+        "1001 bound and lifecycle isolation",
+        "normal and rollback",
+        "pending new/renewal/replacement original agreements",
+        "old RR snapshot with later group/multiple endpoint/forward membership commits",
+        "confirmed shared membership added after old RR snapshot is not revoked",
+        "stale desired/configuration confirmation and reconciliation fences",
+        "endpoint mutation with membership removal versus wallet/payment-fact resource busy",
+        "503 unavailable retryable transport and original intent retries",
+        "Node-only FK parent contention",
+        "buffer resource busy retains checkpoint and rolls back charge; same-event retry and lost-ACK replay do not repeat charge"
+      ]
+    },
+    "sqlite_and_go": {
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/handler ./internal/adapters/persistence/networkstore ./internal/adapters/persistence/credentialstore ./internal/adapters/persistence/meteringstore -run '^(TestPlanGroup|TestFullReplacement|TestApprovedRenewal|TestPlanQuota|TestResourceContention|TestCurrentResourceRead|TestCompletion|TestCredentialReconciliationSQLite|TestZeroAccounting|TestZeroCompletion|TestAccountingBatch|TestConsumerCheckpoint|TestNodeCredential|TestGroupCredential|TestTrafficReset|TestSubscriptionQuota)' -count=1 -timeout 4m",
+      "result": "pass",
+      "handler_seconds": 10.205,
+      "networkstore_seconds": 0.007,
+      "credentialstore": "no test files; compiled",
+      "meteringstore": "no selected tests; compiled; behavior covered by handler integration",
+      "log": "/tmp/zboard-plan-group-final-sqlite.log"
+    },
+    "preserved_failed_attempts": [
+      {
+        "result": "fail",
+        "seconds": 69.803,
+        "log": "/tmp/zboard-plan-group-mysql.log",
+        "reason": [
+          "Endpoint editor fixture missing valid public address",
+          "1001-subscription fixture empty JSON",
+          "Old binary missing actual Completion FK-parent immediate lock, causing context deadline before publication"
+        ]
+      },
+      {
+        "result": "compile failure, no database execution",
+        "reason": "Existing networkstore imports meteringstore; eliminated reverse import by placing shared locking helper in existing credentialstore"
+      },
+      {
+        "result": "fail",
+        "seconds": 36.21,
+        "log": "/tmp/zboard-plan-group-mysql-locks.log",
+        "reason": [
+          "1001-subscription fixture missing PlanSKU FK",
+          "Test waited for credential-table contention while actual mutation was already waiting on Node row; fixed to assert the actual Node wait and require both operations to succeed"
+        ]
+      }
+    ],
+    "ci_exclusions_added": false
+  },
+  "transaction": "Existing PlanUpdate and existing financial/accounting transactions; group scope, revocation, publication intents and audit commit atomically. NOWAIT resource contention rolls back with no applied result.",
+  "schema_change": false,
+  "rollback": "Binary rollback retains committed scope changes. Reverse a business scope decision through a new audited plan revision and actual normal publication; do not erase queues, payment evidence or confirmations.",
+  "unverified": [
+    "Full final-commit backend/frontend/ownership/OpenAPI/dual-database CI is owned by parent integration.",
+    "Frozen configuration completion and connection callbacks are persistence/decision simulations, not native remote acceptance.",
+    "External payment/discount plugin production behavior and real core disconnect remain outside this isolated batch.",
+    "No performance improvement or zero-overuse claim; capacity measurement remains separate.",
+    "More than1000 affected historical subscriptions are rejected as a whole; no asynchronous large-scope migration."
+  ]
+}

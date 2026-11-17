@@ -1,0 +1,77 @@
+package handler
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+type upgradeFrozenTable struct {
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+	Rows    [][]any  `json:"rows"`
+}
+
+// Both binaries read precisely the old column list. Additive defaults cannot
+// hide a changed original amount, identity, credential or delivery lease.
+func freezeUpgradeRows(t *testing.T, db *gorm.DB, tables []upgradeFrozenTable) []upgradeFrozenTable {
+	t.Helper()
+	for i := range tables {
+		table := &tables[i]
+		columns := "*"
+		if len(table.Columns) > 0 {
+			columns = ""
+			for j, col := range table.Columns {
+				if j > 0 {
+					columns += ","
+				}
+				columns += "`" + col + "`"
+			}
+		}
+		key := "id"
+		if table.Name == "node_config_publishes" {
+			key = "node_id"
+		}
+		rows, err := db.Raw("SELECT " + columns + " FROM `" + table.Name + "` ORDER BY `" + key + "`").Rows()
+		if err != nil {
+			t.Fatal(err)
+		}
+		table.Columns, err = rows.Columns()
+		if err != nil {
+			t.Fatal(err)
+		}
+		table.Rows = nil
+		for rows.Next() {
+			values := make([]any, len(table.Columns))
+			targets := make([]any, len(values))
+			for j := range values {
+				targets[j] = &values[j]
+			}
+			if err := rows.Scan(targets...); err != nil {
+				t.Fatal(err)
+			}
+			for j, v := range values {
+				switch v := v.(type) {
+				case nil:
+					values[j] = nil
+				case []byte:
+					values[j] = string(v)
+				case time.Time:
+					values[j] = v.UTC().Format(time.RFC3339Nano)
+				default:
+					values[j] = fmt.Sprint(v)
+				}
+			}
+			table.Rows = append(table.Rows, values)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return tables
+}

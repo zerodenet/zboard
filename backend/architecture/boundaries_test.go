@@ -211,7 +211,7 @@ func TestMigratedBusinessEntrypointsDoNotStartPrivateWorkers(t *testing.T) {
 		"../internal/handler/zero_event_runtime.go":       {"ConfigureZeroEventSpool"},
 		"../internal/handler/database_migration.go":       {"AdminDatabaseMigrationStartHandler"},
 		"../internal/handler/admin_operations.go":         {"executeTaskItems", "executeTaskItemsContext"},
-		"../internal/plugins/tasks_runtime.go":            {"syncTaskRegistrations", "SetTaskRuntime", "cancelPluginTasks"},
+		"../internal/plugins/tasks_runtime.go":            {"syncTaskRegistrations", "SetTaskRuntime", "detachPluginTasks"},
 	} {
 		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
 		if err != nil {
@@ -683,7 +683,7 @@ func TestNodeRuntimeCompilationDoesNotReconcileCredentials(t *testing.T) {
 	rendersExternally := false
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "compileNodeRuntimeConfigWithOptionsContext" {
+		if !ok || (fn.Name.Name != "compileNodeRuntimeConfigWithOptionsContext" && fn.Name.Name != "compileNodeRuntimeConfigWithCredentialTargets") {
 			continue
 		}
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -694,7 +694,7 @@ func TestNodeRuntimeCompilationDoesNotReconcileCredentials(t *testing.T) {
 			if selector.Sel.Name == "RuntimeConfigurationSource" {
 				delegates = true
 			}
-			if selector.Sel.Name == "Render" {
+			if selector.Sel.Name == "Render" || selector.Sel.Name == "RenderWithCredentialTargets" {
 				rendersExternally = true
 			}
 			switch selector.Sel.Name {
@@ -1208,7 +1208,7 @@ func TestManagedDNSHandlersDelegatePersistenceAndExecutionOwnership(t *testing.T
 
 func TestNodePublicationAndKernelReconciliationUseNodeCredentialCapability(t *testing.T) {
 	for file, function := range map[string]string{
-		"../internal/handler/node_config_publish.go": "publishNodeConfigForNodeLocked",
+		"../internal/handler/node_config_publish.go": "publishNodeConfigWithOwnerLocked",
 		"../internal/handler/kernel_automation.go":   "PrepareActivation",
 	} {
 		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
@@ -1468,7 +1468,7 @@ func TestConfigurationPublicationDelegatesStateLifecycleToCapability(t *testing.
 		if fn.Name.Name == "restoreGeneratedNodeCredential" || fn.Name.Name == "buildZeroConfigPublishScript" || fn.Name.Name == "buildZeroConfigRollbackScript" {
 			t.Errorf("configuration publication implementation returned to handler through %s", fn.Name.Name)
 		}
-		if fn.Name.Name != "publishNodeConfigForNodeLocked" {
+		if fn.Name.Name != "publishNodeConfigForNodeLocked" && fn.Name.Name != "publishNodeConfigWithOwnerLocked" {
 			continue
 		}
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -1870,12 +1870,33 @@ func TestDashboardHTTPUsesObservabilityReadModel(t *testing.T) {
 		}
 		return true
 	})
-	calendar, err := os.ReadFile("../internal/handler/system_calendar_handlers.go")
+	calendar, err := parser.ParseFile(token.NewFileSet(), "../internal/handler/system_calendar_handlers.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(calendar), "loadDashboardOverview(r.Context(), period, now, location)") {
-		t.Error("system-calendar dashboard bypasses the shared observability read model")
+	uses := map[string]bool{}
+	for _, declaration := range calendar.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "DashboardOverviewSystemCalendarHandler" {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			method, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if receiver, ok := method.X.(*ast.Ident); ok && receiver.Name == "h" {
+				uses[method.Sel.Name] = true
+			}
+			return true
+		})
+	}
+	if !uses["loadDashboardOverview"] || !uses["loadDashboardView"] {
+		t.Error("system-calendar dashboard bypasses the shared complete or focused observability read model")
 	}
 	handlers, err := parser.ParseFile(token.NewFileSet(), "../internal/handler/handlers.go", nil, 0)
 	if err != nil {

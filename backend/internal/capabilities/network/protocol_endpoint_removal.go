@@ -13,10 +13,11 @@ var (
 )
 
 type ProtocolEndpointRemovalFacts struct {
-	ID        uint
-	NodeID    uint
-	Protocol  string
-	WasActive bool
+	ID             uint
+	NodeID         uint
+	Protocol       string
+	WasActive      bool
+	AlreadyDeleted bool
 }
 
 type ProtocolEndpointRemoved struct {
@@ -54,6 +55,18 @@ func (s ProtocolEndpointRemoval) Remove(ctx context.Context, actor, id uint) (Pr
 		return ProtocolEndpointRemoved{}, err
 	}
 	return ProtocolEndpointRemoved{
-		ID: facts.ID, Deleted: true, RemovedFromRuntime: false, RuntimeCleanupQueued: true,
+		ID: facts.ID, Deleted: true, RemovedFromRuntime: false, RuntimeCleanupQueued: !facts.AlreadyDeleted,
 	}, nil
+}
+
+func (s ProtocolEndpointRemoval) Check(ctx context.Context, actor, id uint) (DeletionCheck, error) {
+	if actor == 0 {
+		return DeletionCheck{}, ErrResourcePermission
+	}
+	if store, ok := s.Store.(interface {
+		CheckProtocolEndpointDeletion(context.Context, uint, uint) (DeletionCheck, error)
+	}); ok {
+		return store.CheckProtocolEndpointDeletion(ctx, actor, id)
+	}
+	return DeletionCheck{}, ErrProtocolEndpointRemovalUnavailable
 }

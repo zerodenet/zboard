@@ -1,21 +1,97 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="订阅配置" description="每个服务实例拥有独立链接，分别管理客户端配置和访问凭证。" eyebrow="SUBSCRIPTION">
+    <PageHeader title="连接设备">
       <template #actions>
-        <UiButton variant="secondary" type="button" :disabled="loading || working" @click="loadAll">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+        <PageRefreshButton label="刷新订阅" :loading="loading" :disabled="working || terminationBusy" @click="loadAll" />
       </template>
     </PageHeader>
 
     <TransientFeedback
       :success="message"
-      :error="error"
+      :error="listError || automaticRowError"
       success-title="订阅配置已更新"
-      error-title="订阅操作失败"
+      error-title="订阅列表未更新"
     />
 
     <PluginSlot name="account.subscriptions.actions" surface="account" />
+
+    <div v-if="terminationResult" class="subscription-completed" role="status">
+      <UiIcon name="check" /><span>{{ terminationResult.name }}已退订，{{ terminationResult.receipt.amount_minor === '0' ? '本次未退款' : `${refundLabel(terminationResult.receipt)} 已退回余额` }}。</span>
+      <RouterLink :to="{ path: '/account/wallet', query: { currency: terminationResult.receipt.currency } }">余额流水</RouterLink>
+      <UiButton variant="ghost" icon aria-label="关闭退订结果" @click="terminationResult = null">×</UiButton>
+    </div>
+
+    <div ref="accessPanel" class="subscription-access-panel" tabindex="-1">
+    <UiSection variant="outlined"
+      title="订阅链接"
+      class="subscription-access-section"
+    >
+      <template #actions>
+        <UiButton v-if="subscriptionUrl" type="button" @click="copy"><UiIcon name="copy" />{{ copyLabel }}</UiButton>
+        <UiButton v-else-if="selectedSubscription && !access.configured" type="button" :disabled="!accessReady || access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('generate')">生成订阅链接</UiButton>
+      </template>
+      <div class="account-section-body access-selection">
+        <FormField v-slot="{ controlAttrs }" label="当前套餐" name="connection-subscription">
+          <UiAutocomplete v-model="pickerValue" v-bind="controlAttrs" :suggestions="pickerItems" option-label="label" placeholder="选择有效套餐" dropdown force-selection :clearable="false" :loading="pickerResource.loading.value" :disabled="working || terminationBusy" @open="openPicker" @complete="searchPicker($event.query)" @item-select="selectSubscription($event.value.id)" @clear="restorePicker">
+            <template #option="{ option }"><span class="access-picker-option"><span>{{ option.plan_name || '未命名套餐' }}</span><small>{{ option.sku_name }} · {{ formatBytes(Math.max(0, option.flow_total - option.flow_used)) }} 可用 · 到期 {{ formatDateTime(option.end_at) }}</small></span></template>
+            <template #footer>
+              <div v-if="pickerResource.error.value" class="access-picker-error" role="alert">套餐读取失败<UiButton variant="ghost" size="sm" @click="pickerResource.load()">重试</UiButton></div>
+              <TablePager v-else-if="pickerResource.data.value.total > pickerLimit" :total="pickerResource.data.value.total" :offset="pickerOffset" :limit="pickerLimit" :loading="pickerResource.loading.value" @change="pagePicker" />
+            </template>
+          </UiAutocomplete>
+        </FormField>
+        <PageAlert v-if="selectedNotice" tone="info" title="此订阅已不可用">请在上方选择其他有效套餐。</PageAlert>
+        <PageAlert v-else-if="contextError && !selectedSubscriptionResource.stale.value" tone="danger" title="订阅信息读取失败">{{ contextError }}<UiButton variant="ghost" size="sm" @click="loadMetadata">重试</UiButton></PageAlert>
+      </div>
+      <div v-if="selectedSubscription" class="panel-body access-panel">
+        <PageAlert v-if="selectedSubscriptionResource.stale.value" tone="warning" title="订阅详情尚未更新">
+          暂时无法核对当前额度和期限，显示上次读取的信息。请刷新后再生成、轮换或吊销链接。
+        </PageAlert>
+        <PageAlert v-if="accessResource.error.value" tone="danger" title="订阅链接读取失败">
+          {{ accessResource.error.value }}
+          <UiButton variant="secondary" size="sm" type="button" @click="loadAccess">重试链接</UiButton>
+        </PageAlert>
+        <PageAlert v-else-if="selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="流量已用完">{{ exhaustedMessage(selectedSubscription) }}<UiButton v-if="canReset(selectedSubscription)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${selectedSubscription.id}`">购买流量重置</RouterLink></UiButton></PageAlert>
+        <p v-else-if="!accessReady" role="status">{{ working ? '正在更新链接状态…' : '正在读取链接状态…' }}</p>
+        <div v-else-if="!access.configured" class="access-meta"><strong>{{ access.notice || '此订阅尚未生成可用链接' }}</strong></div>
+
+        <div class="subscription-access-context">
+          <div><span>剩余流量</span><strong>{{ formatBytes(Math.max(0, selectedSubscription.flow_total - selectedSubscription.flow_used)) }}</strong></div>
+          <div><span>到期时间</span><TimeBadge :value="selectedSubscription.end_at" /></div>
+        </div>
+
+        <div v-if="subscriptionUrl" class="access-template-picker">
+          <FormField v-slot="{ controlAttrs }" label="客户端格式" name="subscription-format">
+            <UiSelect v-model="selectedTemplate" v-bind="controlAttrs" :options="templateOptions" />
+          </FormField>
+          <WorkbenchFilterInput v-model="templateDraftQuery" label="查找格式" placeholder="客户端或模板名称" @apply="searchTemplates" />
+          <span v-if="templateTotal > templates.length" class="field-hint">{{ templates.length }} / {{ templateTotal }}</span>
+        </div>
+        <PageAlert v-if="templateResource.error.value" tone="warning" title="客户端格式未更新">{{ templateResource.error.value }}<UiButton variant="ghost" size="sm" @click="searchTemplates">重试格式</UiButton></PageAlert>
+        <FormField v-if="subscriptionUrl" v-slot="{ controlAttrs }" class="access-url" label="订阅链接" full>
+          <UiInput :value="subscriptionUrl" v-bind="controlAttrs" readonly />
+        </FormField>
+        <details class="subscription-options"><summary>链接管理</summary><div class="subscription-options-body"><p v-if="deliveryHint" class="muted">{{ deliveryHint }}</p>
+        <div v-if="accessReady && access.configured" class="access-meta">
+          <p>凭证前缀 <code>{{ access.token_prefix }}…</code></p>
+          <div class="access-time"><span>最近使用</span><TimeBadge :value="access.last_used_at" /></div>
+        </div>
+        <div class="access-actions">
+          <UiButton v-if="accessReady && access.configured" variant="secondary" size="sm" type="button" :disabled="access.delivery_configured === false || !selectedContextReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask('rotate')">
+            重置链接
+          </UiButton>
+          <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working || !selectedContextReady" @click="ask('revoke')">停用链接</UiButton>
+        </div>
+        </div></details>
+      </div>
+      <div v-else class="account-section-body access-empty" role="status">
+        <template v-if="metadataLoading">正在读取订阅…</template>
+        <template v-else-if="!contextError && !selectedNotice && activeSubscriptionResource.loaded.value && !activeSubscriptionResource.data.value.total">暂无可连接的套餐<UiButton as-child variant="secondary" size="sm"><RouterLink to="/account/plans">购买套餐</RouterLink></UiButton></template>
+        <template v-else-if="!contextError && !selectedNotice">选择套餐后查看连接方式。</template>
+      </div>
+    </UiSection>
+
+    </div>
 
     <DataWorkbench :total="total" :loading="listLoading" :refreshing="refreshing">
       <template #filters>
@@ -23,62 +99,26 @@
           <WorkbenchFilterSelect v-model="status" label="订阅状态" :options="statusOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
-      <template #actions>
-        <StatusBadge :tone="activeSubscriptionTotal ? 'success' : 'neutral'">
-          {{ activeSubscriptionTotal }} 个有效订阅
-        </StatusBadge>
-      </template>
 
-      <TableSkeleton v-if="listLoading && !subscriptions.length" label="正在加载我的订阅" :columns="7" />
-      <DataTable v-else-if="subscriptions.length" caption="我的订阅列表" :row-count="total" :min-width="940">
-        <thead>
-          <tr>
-            <th class="table-primary-column">订阅</th>
-            <th>状态</th>
-            <th data-column-priority="2">套餐规格</th>
-            <th>流量配额</th>
-            <th data-column-priority="1">到期时间</th>
-            <th class="table-action-column"><span class="sr-only">操作</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="sub in subscriptions" :key="sub.id" :class="{ 'selected-subscription-row': sub.id === selectedSubscriptionID }">
-            <td class="table-primary-column"><strong class="mono">#{{ sub.id }}</strong></td>
-            <td><StatusBadge :tone="subTone(sub.status)">{{ sub.end_reason === 'exhausted' ? '已用完' : subLabel(sub.status) }}</StatusBadge></td>
-            <td data-column-priority="2">
-              <div class="cell-title cell-related">
-                <TableText :value="sub.plan_name || `套餐 #${sub.plan_id}`" />
-                <TableText :value="sub.sku_name || `SKU #${sub.plan_sku_id}`" />
-              </div>
-            </td>
-            <td>
-              <div class="quota-cell">
-                <span>{{ formatBytes(sub.flow_used) }} / {{ formatBytes(sub.flow_total) }}</span>
-                <div class="usage-track"><i :style="{ width: `${percent(sub)}%` }"></i></div>
-                <small>{{ sub.flow_used >= sub.flow_total ? '本周期流量已用完' : `剩余 ${formatBytes(sub.flow_total - sub.flow_used)}` }}</small>
-                <small v-if="sub.next_reset_at">下次重置 <TimeBadge :value="sub.next_reset_at" /></small>
-              </div>
-            </td>
-            <td data-column-priority="1"><TimeBadge :value="sub.ended_at || sub.end_at" /><div v-if="sub.renewal_until"><small>续费保留至 <TimeBadge :value="sub.renewal_until" /></small></div></td>
-            <td class="table-action-column">
-              <div class="subscription-row-actions">
-                <UiButton
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  :disabled="sub.status !== 'active' || working"
-                  @click="selectSubscription(sub.id)"
-                >
-                  {{ sub.id === selectedSubscriptionID ? '正在管理' : '管理链接' }}
-                </UiButton>
-                <RouterLink v-if="canReset(sub)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink>
-                <RouterLink v-if="sub.can_renew" class="button button-secondary button-sm" :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </DataTable>
-      <EmptyState v-else icon="plans" title="暂无订阅" description="订单确认后，订阅会自动显示在这里。" />
+      <TableSkeleton v-if="listLoading && !subscriptions.length" label="正在加载我的订阅" :columns="5" />
+      <div v-else-if="subscriptions.length" class="account-service-grid">
+        <AccountSubscriptionCard v-for="sub in subscriptions" :key="sub.id" :subscription="sub" :selected="sub.id === selectedSubscriptionID">
+          <template #name><UiButton variant="ghost" class="subscription-name-button" :disabled="sub.status !== 'active' || working" @click="selectSubscription(sub.id)">{{ sub.plan_name || `订阅 #${sub.id}` }}</UiButton></template>
+          <template #notice><div v-if="automaticNeedsAttention(sub.automatic_renewal_state)" class="subscription-renewal-result"><UiButton variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }"><UiIcon name="alert" />{{ sub.automatic_renewal_state === 'insufficient_balance' ? '自动续费余额不足' : '自动续费待核验' }}</UiButton></div></template>
+          <template #actions>
+            <RowActions :label="`${sub.plan_name || `订阅 #${sub.id}`}的更多操作`"><template #primary>
+              <UiButton v-if="sub.status === 'active' && !sub.ended_at" variant="secondary" size="sm" :disabled="working" @click="selectSubscription(sub.id)">{{ sub.flow_used >= sub.flow_total ? '管理订阅' : sub.id === selectedSubscriptionID ? '查看链接' : '连接设备' }}</UiButton>
+              <UiButton v-if="sub.can_renew" as-child variant="secondary" size="sm"><RouterLink :to="`/account/plans?operation=renew&subscription=${sub.id}`">{{ sub.renewal_until ? '续费恢复' : '续费' }}</RouterLink></UiButton>
+            </template>
+              <UiButton v-if="canReset(sub)" as-child variant="ghost" size="sm"><RouterLink :to="`/account/plans?operation=reset&subscription=${sub.id}`">购买流量重置</RouterLink></UiButton>
+              <UiButton v-if="['active', 'expired'].includes(sub.status)" variant="ghost" size="sm" :disabled="working || terminationBusy" @click="openTermination(sub)">退订</UiButton>
+              <UiButton v-if="sub.can_renew" variant="ghost" size="sm" @click="automaticTarget = { id: sub.id, planId: sub.plan_id }">自动续费</UiButton>
+              <UiButton v-if="Number.isSafeInteger(sub.id) && sub.id > 0" as-child variant="ghost" size="sm"><RouterLink :to="{ path: '/account/tickets', query: { new: '1', subscription_id: String(sub.id) } }">提交工单</RouterLink></UiButton>
+            </RowActions>
+          </template>
+        </AccountSubscriptionCard>
+      </div>
+      <EmptyState v-else-if="!listLoading && !listError" icon="plans" :title="status ? '暂无符合条件的订阅' : '暂无订阅'" description="" />
 
       <template #footer>
         <TablePager
@@ -91,110 +131,39 @@
       </template>
     </DataWorkbench>
 
-    <UiSection title="协议实时负载" description="仅显示当前有效套餐可使用的协议；优先使用 Zero Principal 当前态，旧版内核回退到最近两分钟的会话事件。">
-      <template #meta><TimeBadge :value="protocolLoads.sampled_at" /></template>
+    <ModalDialog :open="Boolean(terminationTarget)" :title="`退订 · ${terminationTarget?.name || '套餐'}`" size="sm" :busy="terminationBusy" return-focus-selector=".subscription-access-panel" @close="terminationTarget = null">
+      <SubscriptionTermination v-if="terminationTarget" :subscription-id="terminationTarget.id" :subscription-name="terminationTarget.name" embedded autoload-quote @busy="terminationBusy = $event" @settled="onTerminated" />
+    </ModalDialog>
+    <div v-if="automaticTarget" ref="automaticPanel" tabindex="-1"><SubscriptionAutomaticRenewal :subscription-id="automaticTarget.id" :plan-id="automaticTarget.planId" :subscription-name="subscriptions.find(sub => sub.id === automaticTarget?.id)?.plan_name" @changed="refreshAutomaticRenewal" /></div>
+
+    <details class="subscription-diagnostics"><summary>查看线路运行情况</summary>
+    <UiSection variant="outlined" title="线路状态">
+      <template #meta><RemoteReadStatus compact label="线路运行情况" :phase="protocolLoadResource.phase.value" :error="protocolLoadResource.error.value" :last-success-at="protocolLoadResource.lastSuccessAt.value" @retry="loadProtocolLoads" /></template>
       <div class="panel-body">
         <PageAlert v-if="protocolLoadResource.error.value" tone="danger" title="协议实时负载加载失败">
           {{ protocolLoadResource.error.value }} 订阅链接仍可独立使用。
           <UiButton variant="secondary" size="sm" type="button" @click="loadProtocolLoads">重试负载</UiButton>
         </PageAlert>
-        <p v-if="protocolLoadResource.loading.value" role="status">正在读取协议实时负载…</p>
+        <p v-if="protocolLoadResource.loading.value && !protocolLoadResource.loaded.value" role="status">正在读取协议实时负载…</p>
         <DataTable v-if="protocolLoads.items.length" caption="可用协议实时负载" :row-count="protocolLoads.items.length" :min-width="720">
-          <thead><tr><th class="table-primary-column">使用位置</th><th>协议</th><th class="numeric-column">活跃用户</th><th class="numeric-column">活跃连接</th><th data-column-priority="2">最近活动</th></tr></thead>
-          <tbody><tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id"><td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.region || '未设置区域'" /></div></td><td><StatusBadge :tone="item.active_flows ? 'success' : 'neutral'" icon="activity">{{ item.protocol.toUpperCase() }}</StatusBadge></td><td class="numeric-column">{{ item.active_users }}</td><td class="numeric-column">{{ item.active_flows }}</td><td data-column-priority="2"><TimeBadge :value="item.last_activity_at" /></td></tr></tbody>
+          <thead><tr><th class="table-primary-column">使用位置</th><th>协议</th><th class="numeric-column">活跃用户</th><th class="numeric-column">活跃连接</th><th data-column-priority="2">负载更新</th></tr></thead>
+          <tbody>
+            <tr v-for="item in protocolLoads.items" :key="item.protocol_endpoint_id">
+              <td class="table-primary-column"><div class="cell-title"><strong>{{ item.name }}</strong><TableText :value="item.region || '未设置区域'" /><StatusBadge :tone="item.connector_online ? 'success' : 'warning'" icon="activity">{{ item.connector_online ? '上报正常' : '上报延迟' }}</StatusBadge></div></td>
+              <td>{{ item.protocol.toUpperCase() }}</td>
+              <td class="numeric-column">{{ item.load_fresh ? item.active_users : '—' }}</td>
+              <td class="numeric-column">{{ item.load_fresh ? item.active_flows : '—' }}</td>
+              <td data-column-priority="2"><TimeBadge v-if="item.load_fresh" :value="item.load_observed_at" /><span v-else>{{ item.load_observed_at ? '负载数据已过期' : '暂无负载数据' }}</span></td>
+            </tr>
+          </tbody>
         </DataTable>
-        <EmptyState v-else-if="protocolLoadResource.loaded.value && !protocolLoadResource.error.value && !protocolLoadResource.loading.value" icon="activity" title="暂无可用协议" description="拥有有效套餐且节点在线后，会在这里显示对应协议的实时使用人数和连接数。" />
+        <EmptyState v-else-if="protocolLoadResource.loaded.value && !protocolLoadResource.error.value && !protocolLoadResource.loading.value" icon="activity" title="暂无可用协议" description="当前没有有效套餐授权的协议。节点上报延迟不会影响已授权协议的展示。" />
       </div>
     </UiSection>
+    </details>
 
-    <UiSection
-      :title="selectedSubscription ? `订阅 #${selectedSubscription.id} 的访问链接` : '订阅访问链接'"
-      :description="selectedSubscription ? `${selectedSubscription.plan_name} · ${selectedSubscription.sku_name}` : '从订阅列表选择需要管理的服务实例。'"
-    >
-      <template #meta>
-        <StatusBadge v-if="selectedSubscription && accessReady" :tone="access.configured ? 'success' : 'warning'">
-          {{ access.configured ? '已启用' : '未生成' }}
-        </StatusBadge>
-      </template>
-      <div v-if="selectedSubscription" class="panel-body access-panel">
-        <span class="access-icon"><UiIcon name="key" /></span>
-        <PageAlert v-if="accessResource.error.value" tone="danger" title="订阅链接读取失败">
-          {{ accessResource.error.value }}
-          <UiButton variant="secondary" size="sm" type="button" @click="loadAccess">重试链接</UiButton>
-        </PageAlert>
-        <PageAlert v-else-if="selectedSubscription.flow_used >= selectedSubscription.flow_total" tone="warning" title="流量已用完">{{ exhaustedMessage(selectedSubscription) }}<RouterLink v-if="canReset(selectedSubscription)" class="button button-secondary button-sm" :to="`/account/plans?operation=reset&subscription=${selectedSubscription.id}`">购买流量重置</RouterLink></PageAlert>
-        <p v-else-if="!accessReady" role="status">{{ working ? '正在更新链接状态…' : '正在读取链接状态…' }}</p>
-        <div v-else-if="access.configured" class="access-meta">
-          <strong>{{ selectedSubscription.plan_name }} 的链接已启用</strong>
-          <p>凭证前缀 <code>{{ access.token_prefix }}…</code></p>
-          <div class="access-time"><span>最近使用</span><TimeBadge :value="access.last_used_at" /></div>
-        </div>
-        <div v-else class="access-meta">
-          <strong>此订阅尚未生成可用链接</strong>
-          <p>生成或轮换只会影响订阅 #{{ selectedSubscription.id }}。</p>
-        </div>
 
-        <div class="subscription-access-context">
-          <div><span>套餐规格</span><strong>{{ selectedSubscription.plan_name }} · {{ selectedSubscription.sku_name }}</strong></div>
-          <div><span>剩余流量</span><strong>{{ formatBytes(Math.max(0, selectedSubscription.flow_total - selectedSubscription.flow_used)) }}</strong></div>
-          <div><span>到期时间</span><TimeBadge :value="selectedSubscription.end_at" /></div>
-        </div>
 
-        <div v-if="subscriptionUrl" class="access-template-picker">
-          <FormField
-            v-slot="{ controlAttrs }"
-            label="查找导出模板"
-            hint="每次只返回前 25 个匹配结果；结果较多时继续缩小关键词。"
-            full
-          >
-            <div class="inline-filter">
-              <UiInput
-                v-model="templateDraftQuery"
-                v-bind="controlAttrs"
-                placeholder="名称、标识或说明"
-                @keyup.enter="searchTemplates"
-              />
-              <UiButton variant="secondary" size="sm" type="button" :loading="templateLoading" @click="searchTemplates">
-                <UiIcon name="search" />搜索
-              </UiButton>
-            </div>
-          </FormField>
-          <FormField
-            v-slot="{ controlAttrs }"
-            class="access-url"
-            label="订阅格式"
-            :hint="deliveryHint"
-            full
-          >
-            <UiSelect v-model="selectedTemplate" v-bind="controlAttrs" :options="templateOptions" />
-          </FormField>
-        </div>
-        <FormField v-if="subscriptionUrl" v-slot="{ controlAttrs }" class="access-url" label="完整订阅链接" full>
-          <UiInput :value="subscriptionUrl" v-bind="controlAttrs" readonly />
-        </FormField>
-        <PageAlert v-if="subscriptionUrl" title="用量信息仅属于当前订阅">
-          Subscription-Userinfo 只返回订阅 #{{ selectedSubscription.id }} 的已用流量、总额和到期时间；其他订阅不会被合并到该链接。
-        </PageAlert>
-        <div class="access-actions">
-          <UiButton v-if="subscriptionUrl" variant="secondary" size="sm" type="button" @click="copy">
-            <UiIcon name="copy" />{{ copyLabel }}
-          </UiButton>
-          <UiButton variant="secondary" size="sm" type="button" :disabled="!accessReady || working || selectedSubscription.flow_used >= selectedSubscription.flow_total" @click="ask(access.configured ? 'rotate' : 'generate')">
-            {{ access.configured ? '轮换此链接' : '生成此链接' }}
-          </UiButton>
-          <UiButton v-if="accessReady && access.configured" variant="danger" size="sm" type="button" :disabled="working" @click="ask('revoke')">吊销此链接</UiButton>
-        </div>
-      </div>
-      <EmptyState v-else icon="key" title="请选择有效订阅" description="每条订阅分别生成和管理自己的客户端链接。" />
-    </UiSection>
-
-    <aside class="account-notice">
-      <UiIcon name="shield" />
-      <div>
-        <strong>每条链接都是独立访问凭证</strong>
-        <p>轮换或吊销只影响当前选择的订阅，不会改变同一账户下其他订阅的链接。</p>
-      </div>
-    </aside>
 
     <ConfirmDialog
       :open="confirmOpen"
@@ -210,14 +179,24 @@
 </template>
 
 <script setup lang="ts">
+import AccountSubscriptionCard from '../../components/account/AccountSubscriptionCard.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
+import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
+import SubscriptionTermination from '../../components/SubscriptionTermination.vue'
+import SubscriptionAutomaticRenewal from '../../components/SubscriptionAutomaticRenewal.vue'
 import PluginSlot from '../../plugins/PluginSlot.vue'
+import RemoteReadStatus from '../../components/RemoteReadStatus.vue'
+import RowActions from '../../components/RowActions.vue'
 import TableText from '../../components/TableText.vue'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAppStore } from '../../stores/app'
+import { isAuthSessionExpired } from '../../utils/authSession'
 import {
   fetchActiveSubscriptionTemplatesPage,
   fetchAccountProtocolLoads,
   fetchAccountSubscriptionsPage,
+  getAuthToken,
   type AccountProtocolLoadSnapshot,
   type AdminSubscriptionListItem,
   type SubscriptionTemplate,
@@ -229,6 +208,9 @@ import {
   type SubscriptionAccess,
 } from '../../api/subscriptionAccess'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import ModalDialog from '../../components/ModalDialog.vue'
+import UiAutocomplete from '../../components/UiAutocomplete.vue'
+import type { SubscriptionTerminationReceipt } from '../../api/subscriptionValue'
 import DataTable from '../../components/DataTable.vue'
 import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
@@ -249,7 +231,8 @@ import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
 import { useRemoteResource } from '../../composables/useRemoteResource'
-import { formatBytes, formatUnknownValue } from '../../utils/format'
+import { formatBytes, formatDateTime } from '../../utils/format'
+import { walletMajor } from '../../utils/walletMoney'
 import {
   buildSubscriptionURL,
   isBuiltInDeliveryMode,
@@ -257,6 +240,28 @@ import {
   subscriptionDeliveryNative,
 } from '../../utils/subscriptionDelivery'
 
+const accessPanel = ref<HTMLElement | null>(null)
+const automaticPanel = ref<HTMLElement | null>(null)
+
+const terminationTarget = ref<{ id: number; name: string } | null>(null)
+const terminationBusy = ref(false)
+const terminationResult = ref<{ name: string; receipt: SubscriptionTerminationReceipt } | null>(null)
+const retiredSubscriptions = new Set<number>()
+const automaticTarget = ref<{ id: number; planId: number } | null>(null)
+watch(automaticTarget, async automatic => {
+  await nextTick()
+  const panel = automatic ? automaticPanel.value : null
+  panel?.focus({ preventScroll: true }); panel?.scrollIntoView?.({ block: 'start' })
+})
+function automaticNeedsAttention(state?: string) {
+  return Boolean(state && !['waiting', 'renewed', 'disabled', 'window_closed'].includes(state))
+}
+const app = useAppStore()
+const identityScope = () => `${app.user?.id || 0}:${app.sessionEpoch}:${getAuthToken()}`
+const selectedNotice = ref('')
+const selectedUnavailable = ref(false)
+const automaticRowError = ref('')
+let automaticRowController: AbortController | null = null
 const route = useRoute()
 const router = useRouter()
 const allowedPageSizes = [25, 50, 100]
@@ -265,6 +270,10 @@ const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const status = ref(String(route.query.status || ''))
 const selectedSubscriptionID = ref(Math.max(0, Number(route.query.subscription) || 0))
+type PickerItem = AdminSubscriptionListItem & { label: string }
+const pickerValue = ref<PickerItem | string | null>(null)
+const pickerQuery = ref(''), pickerOffset = ref(0), pickerLimit = ref(25)
+let pickerTimer: ReturnType<typeof setTimeout> | undefined
 const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '有效', value: 'active' },
@@ -292,6 +301,7 @@ const {
   refreshing,
   error: listError,
   load,
+  reset: resetSubscriptions,
 } = useRemoteTable<AdminSubscriptionListItem>({
   offset,
   limit,
@@ -305,8 +315,14 @@ const {
 })
 
 const selectedSubscription = computed(() => {
-  return selectedSubscriptionResource.data.value
-    || activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
+  if (selectedUnavailable.value) return null
+  if (selectedSubscriptionResource.loaded.value) {
+    const selected = selectedSubscriptionResource.data.value
+    return selected?.id === selectedSubscriptionID.value && selected.status === 'active' ? selected : null
+  }
+  if (selectedSubscriptionResource.errorKind.value === 'forbidden'
+    || selectedSubscriptionResource.errorKind.value === 'unauthorized' && !isAuthSessionExpired()) return null
+  return activeSubscriptions.value.find(item => item.id === selectedSubscriptionID.value)
     || subscriptions.value.find(item => item.id === selectedSubscriptionID.value && item.status === 'active')
     || null
 })
@@ -314,14 +330,29 @@ const selectedSubscription = computed(() => {
 const selectedSubscriptionResource = useRemoteResource<AdminSubscriptionListItem | null>({
   initial: () => null,
   fetch: async ({ signal }) => {
-    const id = selectedSubscriptionID.value
-    const page = await fetchAccountSubscriptionsPage({ subscriptionId: id, status: 'active', offset: 0, limit: 1 }, { signal })
-    const selected = page.items.find(item => item.id === id && item.status === 'active')
-    if (!selected) throw new Error('unavailable subscription')
-    return selected
+    const id = selectedSubscriptionID.value, selection = selectionGeneration, identity = identityScope()
+    const isCurrent = () => !signal.aborted && !disposed && id === selectedSubscriptionID.value
+      && selection === selectionGeneration && identity === identityScope()
+    try {
+      const page = await fetchAccountSubscriptionsPage({ subscriptionId: id, status: 'active', offset: 0, limit: 1 }, { signal })
+      if (!isCurrent()) throw Object.assign(new Error('subscription identity changed'), { code: 'AUTH_SESSION_CHANGED' })
+      const selected = page.items.find(item => item.id === id && item.status === 'active') || null
+      selectedUnavailable.value = !selected
+      return selected
+    } catch (cause: any) {
+      if (!isCurrent()) throw Object.assign(new Error('subscription identity changed'), { code: 'AUTH_SESSION_CHANGED' })
+      // A confirmed missing target is authoritative; a network error is unknown.
+      // Do not let the cached list turn a 404 into another available credential.
+      if (cause?.response?.status === 404) { selectedUnavailable.value = true; return null }
+      if (cause?.response?.status === 403) selectedUnavailable.value = true
+      throw cause
+    }
   },
-  errorMessage: '所选订阅不存在或已失效，请从列表重新选择。',
+  errorMessage: '暂时无法刷新所选订阅，请核对网络后重试；已读取的信息可能已过期。',
 })
+const selectedContextReady = computed(() => selectedSubscriptionResource.loaded.value
+  && !selectedSubscriptionResource.loading.value && !selectedSubscriptionResource.error.value
+  && Boolean(selectedSubscription.value))
 
 const activeSubscriptionResource = useRemoteResource({
   initial: () => ({ items: [] as AdminSubscriptionListItem[], total: 0 }),
@@ -331,6 +362,34 @@ const activeSubscriptionResource = useRemoteResource({
   },
   errorMessage: '有效订阅加载失败。',
 })
+const pickerResource = useRemoteResource({
+  initial: () => ({ items: [] as AdminSubscriptionListItem[], total: 0 }),
+  fetch: ({ signal }) => fetchAccountSubscriptionsPage({ status: 'active', q: pickerQuery.value || undefined, offset: pickerOffset.value, limit: pickerLimit.value }, { signal }),
+  errorMessage: '有效套餐读取失败。',
+})
+const pickerItems = computed(() => (pickerResource.loaded.value ? pickerResource.data.value.items : pickerQuery.value ? [] : activeSubscriptions.value)
+  .filter(item => item.status === 'active' && !item.ended_at && !retiredSubscriptions.has(item.id))
+  .map(toPickerItem))
+function toPickerItem(item: AdminSubscriptionListItem): PickerItem {
+  return { ...item, label: [item.plan_name || '未命名套餐', item.sku_name].filter(Boolean).join(' · ') }
+}
+function restorePicker() { pickerValue.value = selectedSubscription.value ? toPickerItem(selectedSubscription.value) : null }
+function openPicker() {
+  clearTimeout(pickerTimer)
+  pickerQuery.value = ''; pickerOffset.value = 0
+  pickerResource.reset()
+  void pickerResource.load()
+}
+function searchPicker(query: string) {
+  clearTimeout(pickerTimer)
+  pickerQuery.value = query.trim(); pickerOffset.value = 0
+  pickerResource.reset()
+  pickerTimer = setTimeout(() => void pickerResource.load(), 200)
+}
+async function pagePicker(value: { offset: number; limit: number }) {
+  pickerOffset.value = value.offset; pickerLimit.value = value.limit
+  await pickerResource.load()
+}
 const templateResource = useRemoteResource({
   initial: () => ({ items: [] as SubscriptionTemplate[], total: 0 }),
   fetch: async ({ signal }) => {
@@ -347,8 +406,11 @@ const protocolLoadResource = useRemoteResource<AccountProtocolLoadSnapshot>({
 const accessResource = useRemoteResource<SubscriptionAccess>({
   initial: () => ({ configured: false, subscription_id: selectedSubscriptionID.value }),
   fetch: async ({ signal }) => {
-    const subscriptionID = selectedSubscriptionID.value
+    const subscriptionID = selectedSubscriptionID.value, selection = selectionGeneration, identity = identityScope()
     const result = await fetchSubscriptionAccess(subscriptionID, { signal })
+    if (signal.aborted || disposed || selection !== selectionGeneration || identity !== identityScope()) {
+      throw Object.assign(new Error('subscription identity changed'), { code: 'AUTH_SESSION_CHANGED' })
+    }
     if (result.subscription_id !== subscriptionID) throw new Error('subscription access response mismatch')
     return result
   },
@@ -356,7 +418,7 @@ const accessResource = useRemoteResource<SubscriptionAccess>({
 })
 
 const activeSubscriptions = computed(() => activeSubscriptionResource.data.value.items)
-const activeSubscriptionTotal = computed(() => activeSubscriptionResource.data.value.total)
+watch(selectedSubscription, restorePicker)
 const templates = computed(() => templateResource.data.value.items)
 const templateTotal = computed(() => templateResource.data.value.total)
 const templateLoading = templateResource.loading
@@ -364,21 +426,21 @@ const metadataLoading = computed(() => activeSubscriptionResource.loading.value 
 const protocolLoads = protocolLoadResource.data
 const access = accessResource.data
 const accessLoading = accessResource.loading
-const accessReady = computed(() => accessResource.loaded.value
+const accessReady = computed(() => Boolean(selectedSubscription.value) && accessResource.loaded.value
   && !accessLoading.value
   && !accessResource.error.value
   && access.value.subscription_id === selectedSubscriptionID.value)
 const loading = computed(() => listLoading.value || metadataLoading.value || accessLoading.value || templateLoading.value || protocolLoadResource.loading.value)
-const error = computed(() => listError.value || selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value || templateResource.error.value)
+const contextError = computed(() => selectedSubscriptionResource.error.value || activeSubscriptionResource.error.value)
 const subscriptionUrl = computed(() => accessReady.value
-  ? buildSubscriptionURL(access.value.subscription_url ? `${window.location.origin}${access.value.subscription_url}` : '', selectedTemplate.value)
+  ? buildSubscriptionURL(access.value.subscription_url ? new URL(access.value.subscription_url, window.location.origin).toString() : '', selectedTemplate.value)
   : '')
 const templateOptions = computed(() => [
   { label: '自动识别（推荐）', value: subscriptionDeliveryAuto },
   { label: 'ZBoard 原生格式（Base64）', value: subscriptionDeliveryNative },
   ...templates.value
     .filter(item => !isBuiltInDeliveryMode(item.slug))
-    .map(item => ({ label: `${item.name} · ${item.content_type || '系统格式'}`, value: item.slug })),
+    .map(item => ({ label: item.name, value: item.slug })),
 ])
 const deliveryHint = computed(() => {
   if (templateTotal.value > templates.value.length) {
@@ -413,38 +475,98 @@ function exhaustedMessage(sub: AdminSubscriptionListItem) {
   return '此订阅流量已用完，可前往套餐中心购买新的订阅。'
 }
 
-function percent(sub: AdminSubscriptionListItem) {
-  return sub.flow_total ? Math.min(100, Math.round(sub.flow_used / sub.flow_total * 100)) : 0
-}
-
-function subTone(value: string): 'success' | 'warning' | 'danger' | 'neutral' {
-  return value === 'active' ? 'success' : value === 'expired' ? 'warning' : value === 'exhausted' ? 'danger' : 'neutral'
-}
-
-function subLabel(value: string) {
-  return ({ active: '有效', expired: '已到期', exhausted: '流量耗尽', canceled: '已取消', inactive: '无效' } as Record<string, string>)[value]
-    || formatUnknownValue('状态', value)
-}
-
 function selectDefaultSubscription() {
   if (selectedSubscriptionID.value) return
-  selectedSubscriptionID.value = activeSubscriptions.value[0]?.id || 0
+  selectedSubscriptionID.value = activeSubscriptions.value.find(item => item.status === 'active' && !item.ended_at && !retiredSubscriptions.has(item.id))?.id || 0
+}
+
+function openTermination(sub: AdminSubscriptionListItem) {
+  terminationTarget.value = { id: sub.id, name: sub.plan_name || '套餐' }
+}
+function refundLabel(receipt: SubscriptionTerminationReceipt) {
+  const amount = walletMajor(receipt.amount_minor)
+  return receipt.currency === 'CNY' ? `¥${amount}` : `${receipt.currency} ${amount}`
+}
+async function onTerminated(receipt: SubscriptionTerminationReceipt) {
+  const target = terminationTarget.value
+  if (!target || receipt.subscription_id !== target.id) return
+  const identity = identityScope()
+  retiredSubscriptions.add(target.id)
+  clearTimeout(pickerTimer)
+  terminationResult.value = { name: target.name, receipt }
+  terminationTarget.value = null
+  terminationBusy.value = false
+  // Known successful cancellation is a context transition, not a failed GET.
+  // Invalidate old credentials before any refresh or navigation can complete.
+  if (selectedSubscriptionID.value === target.id) {
+    selectedSubscriptionID.value = 0
+    activeSubscriptionResource.reset()
+    await syncURL(true)
+  }
+  pickerResource.reset()
+  if (!disposed && identity === identityScope()) await loadAll()
 }
 
 async function loadAccess() {
   if (working.value && mutationSubscriptionID === selectedSubscriptionID.value) return
   if (!selectedSubscriptionID.value) return
-  const selection = selectionGeneration
-  if (selectedSubscription.value) selectedSubscriptionResource.replace(selectedSubscription.value)
-  else if (!await selectedSubscriptionResource.load() || disposed || selection !== selectionGeneration) return
+  const selection = selectionGeneration, identity = identityScope()
+  const isCurrent = () => !disposed && selection === selectionGeneration && identity === identityScope()
+  // The selected target can be outside both the list page and the one-row active
+  // summary. Its authoritative quota/term GET must run for every explicit read.
+  const ready = await selectedSubscriptionResource.load()
+  if (!isCurrent()) return
+  if (!ready) {
+    if (selectedSubscriptionResource.errorKind.value === 'forbidden'
+      || selectedSubscriptionResource.errorKind.value === 'unauthorized' && !isAuthSessionExpired()) accessResource.reset()
+    return
+  }
+  if (!selectedSubscriptionResource.data.value) {
+    accessResource.reset()
+    selectedNotice.value = '所选订阅不存在或已失效，请从列表重新选择。'
+    return
+  }
+  selectedNotice.value = ''
   await accessResource.load()
 }
 
 async function loadMetadata() {
-  if (await activeSubscriptionResource.load()) {
+  const selection = selectionGeneration, identity = identityScope()
+  // A slow/failed active-count summary cannot hold an explicit selected target.
+  if (selectedSubscriptionID.value) {
+    await Promise.all([activeSubscriptionResource.load(), loadAccess()])
+  } else if (await activeSubscriptionResource.load()) {
+    if (disposed || selection !== selectionGeneration || identity !== identityScope()) return
     selectDefaultSubscription()
     await loadAccess()
-    if (!disposed) await syncURL(true)
+  }
+  if (!disposed && identity === identityScope()) await syncURL(true)
+}
+
+async function refreshAutomaticRenewal(subscriptionID: number) {
+  if (disposed || automaticTarget.value?.id !== subscriptionID) return
+  automaticRowController?.abort()
+  const controller = new AbortController()
+  automaticRowController = controller
+  const identity = identityScope(), pageOffset = offset.value, pageLimit = limit.value, filter = status.value
+  automaticRowError.value = ''
+  // Refresh only the affected row and, when it is still managed, its exact
+  // access context. Optional statistics/counts and other subscriptions stay independent.
+  const detail = selectedSubscriptionID.value === subscriptionID ? loadAccess() : Promise.resolve()
+  try {
+    const page = await fetchAccountSubscriptionsPage({ subscriptionId: subscriptionID, offset: 0, limit: 1 }, { signal: controller.signal })
+    if (disposed || controller.signal.aborted || identity !== identityScope()
+      || pageOffset !== offset.value || pageLimit !== limit.value || filter !== status.value) return
+    const row = page.items.find(item => item.id === subscriptionID)
+    if (row) subscriptions.value = subscriptions.value.map(item => item.id === subscriptionID ? row : item)
+    else automaticRowError.value = '自动续费设置已保存，但该订阅的列表状态暂无法核对，请刷新列表。'
+  } catch {
+    if (!disposed && !controller.signal.aborted && identity === identityScope()) {
+      automaticRowError.value = '自动续费设置已保存，列表仍显示上次读取的状态，请刷新后核对。'
+    }
+  } finally {
+    if (automaticRowController === controller) automaticRowController = null
+    await detail
   }
 }
 
@@ -477,10 +599,19 @@ async function syncURL(replace = false) {
 }
 
 async function selectSubscription(subscriptionID: number) {
-  if (working.value || subscriptionID === selectedSubscriptionID.value) return
+  if (working.value || terminationBusy.value || retiredSubscriptions.has(subscriptionID)) return
+  if (subscriptionID === selectedSubscriptionID.value) { restorePicker(); focusAccess(); return }
   selectedSubscriptionID.value = subscriptionID
+  restorePicker()
   message.value = ''
-  await Promise.all([syncURL(), loadAccess()])
+  const settled = Promise.all([syncURL(), loadAccess()])
+  await nextTick()
+  focusAccess()
+  await settled
+}
+function focusAccess() {
+  accessPanel.value?.focus({ preventScroll: true })
+  accessPanel.value?.scrollIntoView?.({ block: 'start' })
 }
 
 async function applyFilters() {
@@ -502,17 +633,17 @@ async function changePage(value: { offset: number; limit: number }) {
 }
 
 function ask(next: typeof kind.value) {
-  if (!selectedSubscription.value || !accessReady.value || working.value) return
+  if (!selectedSubscription.value || !selectedContextReady.value || !accessReady.value || working.value) return
   kind.value = next
   confirmOpen.value = true
 }
 
 async function execute() {
-  if (!selectedSubscription.value || !accessReady.value || working.value || !confirmOpen.value) return
+  if (!selectedSubscription.value || !selectedContextReady.value || !accessReady.value || working.value || !confirmOpen.value) return
   const subscriptionID = selectedSubscription.value.id
   const selection = selectionGeneration
-  const action = kind.value
-  const isCurrent = () => !disposed && selection === selectionGeneration && subscriptionID === selectedSubscriptionID.value
+  const action = kind.value, identity = identityScope()
+  const isCurrent = () => !disposed && identity === identityScope() && selection === selectionGeneration && subscriptionID === selectedSubscriptionID.value
   mutationSubscriptionID = subscriptionID
   working.value = true
   accessResource.reset()
@@ -564,10 +695,45 @@ async function copy() {
 watch(selectedSubscriptionID, () => {
   selectionGeneration += 1
   selectedSubscriptionResource.reset()
+  selectedNotice.value = ''
+  selectedUnavailable.value = false
   accessResource.reset()
   copyLabel.value = '复制链接'
   message.value = ''
   confirmOpen.value = false
+}, { flush: 'sync' })
+
+// Changing account/permission epoch invalidates every cached personal read and
+// in-flight continuation, even if this route remains mounted. Read recovery is
+// separate from mutations: no credential or commerce write is ever replayed.
+watch([() => app.user?.id || 0, () => app.sessionEpoch], () => {
+  selectionGeneration += 1
+  const selection = selectionGeneration
+  automaticRowController?.abort()
+  automaticRowController = null
+  automaticRowError.value = ''
+  resetSubscriptions()
+  activeSubscriptionResource.reset()
+  clearTimeout(pickerTimer)
+  pickerResource.reset()
+  pickerValue.value = null
+  retiredSubscriptions.clear()
+  selectedSubscriptionResource.reset()
+  accessResource.reset()
+  templateResource.reset()
+  protocolLoadResource.reset()
+  selectedNotice.value = ''
+  selectedUnavailable.value = false
+  terminationTarget.value = null
+  terminationBusy.value = false
+  terminationResult.value = null
+  automaticTarget.value = null
+  confirmOpen.value = false
+  message.value = ''
+  copyLabel.value = '复制链接'
+  void Promise.resolve().then(() => {
+    if (!disposed && selection === selectionGeneration && app.user?.id && !app.reauthRequired) void loadAll()
+  })
 }, { flush: 'sync' })
 
 watch(() => route.fullPath, async () => {
@@ -594,6 +760,8 @@ onMounted(() => {
   }, protocolLoadRefreshIntervalMS)
 })
 onBeforeUnmount(() => {
+  clearTimeout(pickerTimer)
+  automaticRowController?.abort()
   disposed = true
   selectionGeneration += 1
   if (protocolLoadRefreshTimer !== undefined) window.clearInterval(protocolLoadRefreshTimer)
@@ -601,6 +769,32 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.subscription-name-button { justify-content: flex-start; height: auto; min-height: 0; padding: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; font-size: 16px; font-weight: 600; }
+.subscription-name-button:disabled { opacity: 1; color: var(--foreground); }
+.access-template-picker { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.access-template-picker > .form-field { flex: 1; min-width: min(100%, 240px); max-width: 480px; }
+.subscription-renewal-result { color: var(--destructive); }
+
+.subscription-access-panel { scroll-margin-top: 100px; }
+.subscription-access-panel:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.access-selection { display: grid; gap: 12px; padding-bottom: 0; margin-bottom: 16px; }
+.access-selection > .form-field { width: min(100%, 480px); }
+.access-picker-error { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 13px; }
+.access-empty { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+.access-empty:empty { display: none; }
+.subscription-completed { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.subscription-completed > .ui-icon { color: var(--success); flex: none; }
+.subscription-completed > span { overflow-wrap: anywhere; }
+.subscription-completed > a { white-space: nowrap; }
+.subscription-completed > button { margin-left: auto; flex: none; }
+.access-picker-option { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.access-picker-option small { color: var(--muted); font-size: 12px; }
+.subscription-options, .subscription-diagnostics { padding-top: 12px; }
+.subscription-options summary, .subscription-diagnostics summary { width: fit-content; cursor: pointer; font-size: 13px; color: var(--foreground); }
+.subscription-options summary:focus-visible, .subscription-diagnostics summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.subscription-options-body { display: grid; gap: 16px; padding-top: 16px; }
+.subscription-diagnostics > .ui-section { margin-top: 12px; }
+
 .quota-cell {
   min-width: 180px;
 }
@@ -608,7 +802,7 @@ onBeforeUnmount(() => {
 .quota-cell > span,
 .quota-cell small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .quota-cell small {
@@ -621,11 +815,7 @@ onBeforeUnmount(() => {
   margin-top: 7px;
 }
 
-.subscription-row-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 7px;
-}
+
 
 .selected-subscription-row td {
   background: var(--primary-soft);
@@ -633,32 +823,27 @@ onBeforeUnmount(() => {
 
 .subscription-access-context {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  max-width: 640px;
 }
 
 .subscription-access-context > div {
   display: grid;
   gap: 4px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
+  min-width: 0;
 }
 
 .subscription-access-context span {
   color: var(--muted);
-  font-size: 10px;
-}
-
-.subscription-access-context strong {
   font-size: 12px;
 }
 
-.access-template-picker {
-  display: grid;
-  gap: 12px;
+.subscription-access-context strong {
+  font-size: 13px;
 }
+
+.access-template-picker { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 
 .inline-filter {
   display: grid;
@@ -667,14 +852,13 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
-  .subscription-row-actions,
-  .subscription-access-context,
-  .inline-filter {
-    grid-template-columns: 1fr;
-  }
-
-  .subscription-row-actions {
-    display: grid;
-  }
+  .access-selection > .form-field { width: 100%; }
+  .subscription-completed { display: grid; grid-template-columns: 16px minmax(0, 1fr) 32px; gap: 4px 8px; }
+  .subscription-completed > span { grid-column: 2; min-width: 0; }
+  .subscription-completed > a { grid-column: 2; grid-row: 2; width: fit-content; }
+  .subscription-completed > button { grid-column: 3; grid-row: 1; }
+  .subscription-access-context { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inline-filter { grid-template-columns: 1fr; }
+  .access-template-picker > .form-field { min-width: 0; flex-basis: 170px; }
 }
 </style>

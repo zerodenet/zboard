@@ -11,6 +11,7 @@ var (
 	ErrConfigurationPublicationUnavailable = errors.New("configuration publication state capability unavailable")
 	ErrConfigurationDeploymentLost         = errors.New("configuration deployment ownership lost")
 	ErrConfigurationPublicationCommit      = errors.New("configuration publication state commit failed")
+	ErrConfigurationCapabilityUnavailable  = errors.New("当前内核不支持本次设置，现有运行配置保持不变")
 )
 
 type ConfigurationPublicationRequest struct {
@@ -19,6 +20,7 @@ type ConfigurationPublicationRequest struct {
 	// that remove the last runtime listener from a node.
 	TriggerEndpointID uint
 	RequestedBy       uint
+	KernelOperationID uint
 }
 
 type ConfigurationDeployment struct {
@@ -39,6 +41,9 @@ type ConfigurationDeployment struct {
 type ConfigurationPublicationStart struct {
 	Deployment         ConfigurationDeployment
 	MieruFallbackCount int64
+	// LaterCompleted is evidence of a subsequent acknowledged publication, not
+	// permission to trust an old receipt without checking the live node.
+	LaterCompleted *ConfigurationDeployment
 }
 
 type ConfigurationPublicationCompletion struct {
@@ -53,11 +58,14 @@ type ConfigurationPublicationCompletion struct {
 
 type ConfigurationPublicationRepository interface {
 	BeginConfigurationPublication(context.Context, ConfigurationPublicationRequest, time.Time) (ConfigurationPublicationStart, error)
-	SetConfigurationPublicationDesired(context.Context, ConfigurationDeployment, string) (ConfigurationDeployment, error)
+	UncertainConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
+	ResolveConfigurationPublication(context.Context, ConfigurationDeployment, bool, string, time.Time) error
+	SetConfigurationPublicationDesired(context.Context, ConfigurationDeployment, string, ...string) (ConfigurationDeployment, error)
 	ActivateConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelEncryptedCredential) error
 	RestoreConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelConnectorSnapshot) error
 	CompleteConfigurationPublication(context.Context, ConfigurationDeployment, ConfigurationPublicationCompletion, time.Time) (ConfigurationDeployment, error)
 	FailConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
+	DeferConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
 }
 
 type ConfigurationPublicationState struct {
@@ -72,11 +80,32 @@ func (s ConfigurationPublicationState) Begin(ctx context.Context, request Config
 	return s.Repository.BeginConfigurationPublication(ctx, request, s.now())
 }
 
-func (s ConfigurationPublicationState) SetDesired(ctx context.Context, deployment ConfigurationDeployment, configSHA string) (ConfigurationDeployment, error) {
+func (s ConfigurationPublicationState) SetDesired(ctx context.Context, deployment ConfigurationDeployment, configSHA string, targets ...[]CredentialDeliveryTarget) (ConfigurationDeployment, error) {
 	if s.Repository == nil || deployment.ID == 0 || strings.TrimSpace(configSHA) == "" {
 		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
 	}
+	if len(targets) > 1 {
+		return ConfigurationDeployment{}, ErrCredentialDeliveryManifest
+	}
+	if len(targets) == 1 {
+		manifest, err := EncodeCredentialDeliveryManifest(targets[0])
+		if err != nil {
+			return ConfigurationDeployment{}, err
+		}
+		return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), manifest)
+	}
 	return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA))
+}
+
+func (s ConfigurationPublicationState) SetDesiredWithTargets(ctx context.Context, deployment ConfigurationDeployment, configSHA string, targets ConfigurationDeliveryTargets) (ConfigurationDeployment, error) {
+	if s.Repository == nil || deployment.ID == 0 || strings.TrimSpace(configSHA) == "" {
+		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
+	}
+	manifest, err := EncodeCredentialDeliveryManifest(targets.Credentials, targets.NetworkEntries)
+	if err != nil {
+		return ConfigurationDeployment{}, err
+	}
+	return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), manifest)
 }
 
 func (s ConfigurationPublicationState) ActivateConnectorCredential(ctx context.Context, deployment ConfigurationDeployment, credential KernelEncryptedCredential) error {
@@ -111,6 +140,40 @@ func (s ConfigurationPublicationState) Fail(ctx context.Context, deployment Conf
 		return failed, errors.Join(cause, ErrConfigurationPublicationCommit, err)
 	}
 	return failed, cause
+}
+
+func (s ConfigurationPublicationState) Uncertain(ctx context.Context, deployment ConfigurationDeployment, cause error, output string) (ConfigurationDeployment, error) {
+	if s.Repository == nil || deployment.ID == 0 || !errors.Is(cause, ErrConfigurationOutcomeUnknown) {
+		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
+	}
+	pending, err := s.Repository.UncertainConfigurationPublication(ctx, deployment, TruncateKernelError(cause.Error()), strings.TrimSpace(output), s.now())
+	if err != nil {
+		return pending, errors.Join(cause, ErrConfigurationPublicationCommit, err)
+	}
+	return pending, cause
+}
+
+func (s ConfigurationPublicationState) Resolve(ctx context.Context, deployment ConfigurationDeployment, applied bool, output string) error {
+	if s.Repository == nil || deployment.ID == 0 || deployment.Status != "reconciling" {
+		return ErrConfigurationPublicationUnavailable
+	}
+	return s.Repository.ResolveConfigurationPublication(ctx, deployment, applied, strings.TrimSpace(output), s.now())
+}
+
+func (s ConfigurationPublicationState) Defer(ctx context.Context, deployment ConfigurationDeployment, cause error, output string) (ConfigurationDeployment, error) {
+	if s.Repository == nil || deployment.ID == 0 || !errors.Is(cause, ErrConfigurationCapabilityUnavailable) {
+		return ConfigurationDeployment{}, ErrConfigurationPublicationUnavailable
+	}
+	deferred, err := s.Repository.DeferConfigurationPublication(ctx, deployment, TruncateKernelError(cause.Error()), strings.TrimSpace(output), s.now())
+	if err != nil {
+		return deferred, errors.Join(cause, ErrConfigurationPublicationCommit, err)
+	}
+	return deferred, cause
+}
+
+func IsConfigurationCapabilityDeferral(err error) bool {
+	return errors.Is(err, ErrConfigurationCapabilityUnavailable) &&
+		!errors.Is(err, ErrConfigurationPublicationCommit) && !errors.Is(err, ErrPublicationLeaseLost) && !errors.Is(err, ErrPublicationFinalize)
 }
 
 func (s ConfigurationPublicationState) now() time.Time {

@@ -112,7 +112,9 @@ func TestTrafficTrendsReuseFactsButReadAuthorizationAndFacetsLive(t *testing.T) 
 	if first.RecordCount != 6 || second.RecordCount != first.RecordCount || !second.AsOf.Equal(first.AsOf) || len(second.Subscriptions) != 1 || second.Subscriptions[0].Status != subStatusExpired {
 		t.Fatalf("first=%+v second=%+v", first, second)
 	}
-	if len(f.log.queries) != 1 || len(f.log.authContexts) != 2 {
+	// A cache hit still checks indexed projection readiness, alongside live
+	// subscription references; historical aggregation is not repeated.
+	if len(f.log.queries) != 2 || len(f.log.authContexts) != 2 {
 		t.Fatalf("trend cache queries=%d auth=%d", len(f.log.queries), len(f.log.authContexts))
 	}
 	for _, handler := range []http.HandlerFunc{f.h.TrafficTrendsHandler, f.h.TrafficUsageRecordsHandler} {

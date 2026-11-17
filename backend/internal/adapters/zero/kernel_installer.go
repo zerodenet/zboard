@@ -36,6 +36,7 @@ var kernelSHA256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type KernelRemoteSession interface {
 	Run(command string, privileged bool) (string, error)
+	RunWithLifetime(context.Context, string, bool) (string, error)
 	Upload(path, mode string, payload []byte) error
 	Close() error
 }
@@ -52,6 +53,9 @@ type KernelInstallRequest struct {
 	ConnectorKey    string
 	UseSCP          bool
 	ExpectedVersion string
+	// Only an already observed node may adopt queues from an older installation
+	// that predates the event-state ownership marker.
+	PreserveLegacyEventState bool
 }
 
 type KernelInstaller struct {
@@ -113,23 +117,38 @@ func (i KernelInstaller) Install(parent context.Context, request KernelInstallRe
 			return operationError(ctx, fmt.Errorf("stage %s: %w", file.path, err))
 		}
 	}
-	if request.ExpectedVersion != "" {
+	var capabilities NativeBuildInfo
+	{
 		output, err := session.Run("test \"$(sha256sum "+shellQuote(stage+"/zero")+" | awk '{print $1}')\" = "+shellQuote(request.BinarySHA256)+" && "+shellQuote(stage+"/zero")+" build_info", false)
 		if err != nil {
 			return operationError(ctx, fmt.Errorf("inspect uploaded kernel: %w", err))
 		}
-		actual := ""
-		for _, line := range strings.Split(output, "\n") {
-			if strings.HasPrefix(line, "build_id: ") {
-				actual = strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(line, "build_id: ")), "v")
-			}
+		info, infoErr := ParseNativeBuildInfo(output, request.RuntimeConfig)
+		if infoErr != nil {
+			return infoErr
 		}
-		if actual != request.ExpectedVersion {
-			return fmt.Errorf("uploaded kernel version %q does not match requested %q", actual, request.ExpectedVersion)
+		capabilities = info
+		if info.FeaturesDeclared && !info.Features["status-api"] {
+			return fmt.Errorf("%w：本次托管安装需要控制接口，未替换当前内核", ErrConfigurationCapabilityUnavailable)
+		}
+		if request.ExpectedVersion != "" && info.Version != request.ExpectedVersion {
+			return fmt.Errorf("uploaded kernel version %q does not match requested %q", info.Version, request.ExpectedVersion)
+		}
+	}
+	preserveEventState, err := prepareKernelEventState(session, stage, request)
+	if err != nil {
+		return operationError(ctx, err)
+	}
+	if preserveEventState && (capabilities.Features["connector"] || !capabilities.FeaturesDeclared) {
+		if output, err := session.Run(shellQuote(stage+"/zero")+" connector state --json "+shellQuote(stage+"/runtime.json"), true); err != nil {
+			return operationError(ctx, fmt.Errorf("Zero persistent-state preflight failed; kernel left unchanged: %w: %s", err, truncateOutput(output)))
 		}
 	}
 	output, err := session.Run(BuildKernelInstallScript(stage, request.BinarySHA256, request.OperationID), true)
 	if err != nil {
+		if configurationConfirmedUnapplied(output) && unsupportedConfigurationCapability(output) {
+			return fmt.Errorf("%w：%s", ErrConfigurationCapabilityUnavailable, truncateOutput(output))
+		}
 		return operationError(ctx, fmt.Errorf("activate Zero (automatic rollback attempted): %w: %s", err, truncateOutput(output)))
 	}
 	return operationError(ctx, nil)
@@ -183,17 +202,25 @@ test "$(id -u)" = "0"
 test "$(uname -s)" = "Linux"
 test "$(uname -m)" = "x86_64"
 command -v systemctl >/dev/null
+command -v flock >/dev/null
 actual_sha="$(sha256sum "$stage/zero" | awk '{print $1}')"
 test "$actual_sha" = "$expected_sha"
 set -a
 . "$stage/zero.env"
 set +a
 "$stage/zero" build_info >/dev/null
-"$stage/zero" validate "$stage/runtime.json" >/dev/null
+if ! "$stage/zero" validate "$stage/runtime.json" >/dev/null; then
+  printf 'ZBOARD_CONFIG_VALIDATION_REJECTED_CURRENT_UNCHANGED\n' >&2
+  exit 1
+fi
 install -d -m 0755 /usr/local/bin /etc/zerodenet/generations /var/lib/zerodenet/backups
+exec 9>/var/lib/zerodenet/config-publication.lock
+flock -w 20 9
 install -d -m 0700 "$backup"
+%s
+validate_event_state_plan
 had_bin=0; had_env=0; had_service=0; old_active=0; old_enabled=0
-old_link="$(readlink /etc/zerodenet/current.json 2>/dev/null || true)"
+backup_current_configuration
 if [ -f /usr/local/bin/zero ]; then cp -a /usr/local/bin/zero "$backup/zero"; had_bin=1; fi
 if [ -f /etc/zerodenet/zero.env ]; then cp -a /etc/zerodenet/zero.env "$backup/zero.env"; had_env=1; fi
 if [ -f /etc/systemd/system/zero.service ]; then cp -a /etc/systemd/system/zero.service "$backup/zero.service"; had_service=1; fi
@@ -204,15 +231,15 @@ printf '%%s\n' "$had_env" > "$backup/had_env"
 printf '%%s\n' "$had_service" > "$backup/had_service"
 printf '%%s\n' "$old_active" > "$backup/old_active"
 printf '%%s\n' "$old_enabled" > "$backup/old_enabled"
-printf '%%s\n' "$old_link" > "$backup/old_link"
 rollback() {
+  if [ "${event_state_touched:-0}" = 1 ]; then restore_event_state || return 1; fi
   if [ "$had_bin" = "1" ]; then
     install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
     mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
   else
     rm -f /usr/local/bin/zero
   fi
-  if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
+  restore_current_configuration || return 1
   if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
   if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
   systemctl daemon-reload >/dev/null 2>&1 || true
@@ -220,6 +247,7 @@ rollback() {
   if [ "$old_active" = "1" ]; then systemctl restart zero >/dev/null 2>&1 || true; else systemctl stop zero >/dev/null 2>&1 || true; fi
 }
 trap 'rc=$?; if [ "$rc" != "0" ]; then rollback; fi; exit "$rc"' EXIT
+prepare_event_state
 install -m 0755 "$stage/zero" /usr/local/bin/zero.next
 mv -f /usr/local/bin/zero.next /usr/local/bin/zero
 install -m 0600 "$stage/runtime.json" "$generation"
@@ -235,7 +263,7 @@ install -m 0755 "$stage/cleanup-zero-node.sh" /usr/local/sbin/zboard-zero-cleanu
 trap - EXIT
 rm -rf "$stage"
 printf 'ZBOARD_KERNEL_ACTIVATED=1\n'
-`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA))
+`, shellQuote(stage), shellQuote(generation), shellQuote(backup), shellQuote(binarySHA), kernelEventStateShell+kernelConfigurationShell)
 }
 
 func BuildKernelRollbackScript(operationID uint) string {
@@ -246,21 +274,25 @@ backup=%s
 generation=%s
 test "$(id -u)" = "0"
 test -d "$backup"
+exec 9>/var/lib/zerodenet/config-publication.lock
+flock -w 20 9
+%s
 for key in had_bin had_env had_service old_active old_enabled old_link; do test -f "$backup/$key"; done
 had_bin="$(cat "$backup/had_bin")"
 had_env="$(cat "$backup/had_env")"
 had_service="$(cat "$backup/had_service")"
 old_active="$(cat "$backup/old_active")"
 old_enabled="$(cat "$backup/old_enabled")"
-old_link="$(cat "$backup/old_link")"
 case "$had_bin$had_env$had_service$old_active$old_enabled" in *[!01]*) exit 1;; esac
+validate_configuration_backup
+restore_event_state
 if [ "$had_bin" = "1" ]; then
   install -m 0755 "$backup/zero" /usr/local/bin/zero.rollback
   mv -f /usr/local/bin/zero.rollback /usr/local/bin/zero
 else
   rm -f /usr/local/bin/zero
 fi
-if [ -n "$old_link" ]; then ln -sfn "$old_link" /etc/zerodenet/current.json; else rm -f /etc/zerodenet/current.json; fi
+restore_current_configuration
 if [ "$had_env" = "1" ]; then cp -a "$backup/zero.env" /etc/zerodenet/zero.env; else rm -f /etc/zerodenet/zero.env; fi
 if [ "$had_service" = "1" ]; then cp -a "$backup/zero.service" /etc/systemd/system/zero.service; else rm -f /etc/systemd/system/zero.service; fi
 rm -f "$generation"
@@ -268,7 +300,7 @@ systemctl daemon-reload
 if [ "$old_enabled" = "1" ]; then systemctl enable zero >/dev/null; else systemctl disable zero >/dev/null 2>&1 || true; fi
 if [ "$old_active" = "1" ]; then systemctl restart zero; else systemctl stop zero >/dev/null 2>&1 || true; fi
 printf 'ZBOARD_KERNEL_ROLLED_BACK=1\n'
-`, shellQuote(backup), shellQuote(generation))
+`, shellQuote(backup), shellQuote(generation), kernelEventStateShell+kernelConfigurationShell)
 }
 
 func shellQuote(value string) string {

@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+func TestNativeKernelVersionLineMigrationDoesNotRequireDowngrade(t *testing.T) {
+	for _, old := range []string{"0.0.4", "0.0.15-rc.4", "0.0.16"} {
+		if CompareKernelVersions(old, "0.0.3-dev.202610102233") != -1 || CompareKernelVersions("0.0.3-dev.202610102233", old) != 1 {
+			t.Fatalf("line migration misclassified: %s", old)
+		}
+	}
+	if CompareKernelVersions("0.0.3-dev.202610102233", "0.0.3-dev.202610100641") != 1 {
+		t.Fatal("native downgrade protection lost")
+	}
+}
+
 type kernelReconciliationPreparerStub struct {
 	prepared PreparedKernelReconciliation
 	nodeID   uint
@@ -62,6 +73,7 @@ type preparedKernelActivationStub struct {
 	connectorAt     time.Time
 	connectorErr    error
 	invalidations   int
+	lastSeenAt      *time.Time
 }
 
 func (s *preparedKernelActivationStub) ConfigSHA256() string { return s.configSHA }
@@ -69,7 +81,7 @@ func (s *preparedKernelActivationStub) ConnectorCredential() (KernelEncryptedCre
 	return s.credential, s.newCredential
 }
 func (s *preparedKernelActivationStub) ConnectorSnapshot() KernelConnectorSnapshot {
-	return KernelConnectorSnapshot{Credential: KernelEncryptedCredential{Ciphertext: "old", Prefix: "old-prefix"}}
+	return KernelConnectorSnapshot{Credential: KernelEncryptedCredential{Ciphertext: "old", Prefix: "old-prefix"}, LastSeenAt: s.lastSeenAt}
 }
 func (s *preparedKernelActivationStub) Materialize(context.Context) (PreparedKernelMaterialization, error) {
 	return s.materialization, nil
@@ -98,6 +110,48 @@ func (s *preparedKernelMaterializationStub) Install(context.Context, uint) error
 func (s *preparedKernelMaterializationStub) Rollback(context.Context, uint) error {
 	s.rolledBack = true
 	return s.rollbackErr
+}
+
+func TestMatchingKernelStillInitializesNeverObservedNode(t *testing.T) {
+	for _, observed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "new node", true: "observed node"}[observed], func(t *testing.T) {
+			repository := &kernelReconciliationRepositoryStub{operation: KernelOperation{ID: 7, NodeID: 4}}
+			materialization := &preparedKernelMaterializationStub{sha: "same-binary"}
+			probe := KernelProbe{OperatingSystem: "linux", Architecture: "x86_64", Systemd: true, Installed: true, Version: "0.0.3", BinarySHA256: "same-binary", ConfigSHA256: "same-config", ServiceStatus: "active", ControlStatus: "healthy"}
+			activation := &preparedKernelActivationStub{configSHA: "same-config", materialization: materialization, verified: probe, connectorAt: time.Now()}
+			if observed {
+				now := time.Now()
+				activation.lastSeenAt = &now
+			}
+			prepared := &preparedKernelReconciliationStub{probe: probe, release: &preparedKernelReleaseStub{descriptor: KernelRelease{Version: "0.0.3"}, activation: activation}}
+			service := KernelReconciliation{State: KernelReconciliationState{Repository: repository}, Preparer: &kernelReconciliationPreparerStub{prepared: prepared}}
+			if _, err := service.Reconcile(context.Background(), KernelReconciliationRequest{NodeID: 4, ActorID: 1, Version: "0.0.3"}); err != nil {
+				t.Fatal(err)
+			}
+			if materialization.installed == observed {
+				t.Fatalf("observed=%t installed=%t", observed, materialization.installed)
+			}
+		})
+	}
+}
+
+type runtimeKeepingMaterialization struct {
+	*preparedKernelMaterializationStub
+}
+
+func (runtimeKeepingMaterialization) PreservesRuntimeOnFailure() bool { return true }
+
+func TestConfirmedNativeConfigurationIsNotRolledBackOnLostVerification(t *testing.T) {
+	want := errors.New("verification response lost")
+	repository := &kernelReconciliationRepositoryStub{operation: KernelOperation{ID: 7, NodeID: 4}}
+	base := &preparedKernelMaterializationStub{sha: "same-binary"}
+	activation := &preparedKernelActivationStub{configSHA: "new-config", credential: KernelEncryptedCredential{Ciphertext: "new-key", Prefix: "new-prefix"}, newCredential: true, materialization: runtimeKeepingMaterialization{base}, verifyErr: want}
+	prepared := &preparedKernelReconciliationStub{probe: KernelProbe{OperatingSystem: "linux", Architecture: "x86_64", Systemd: true, Installed: true, Version: "0.0.3", BinarySHA256: "same-binary", ConfigSHA256: "old-config", ServiceStatus: "active", ControlStatus: "healthy"}, release: &preparedKernelReleaseStub{descriptor: KernelRelease{Version: "0.0.3"}, activation: activation}}
+	service := KernelReconciliation{State: KernelReconciliationState{Repository: repository}, Preparer: &kernelReconciliationPreparerStub{prepared: prepared}}
+	_, err := service.Reconcile(context.Background(), KernelReconciliationRequest{NodeID: 4, ActorID: 2, Version: "0.0.3"})
+	if !errors.Is(err, want) || !base.installed || base.rolledBack || repository.connectorRestored || activation.invalidations != 1 {
+		t.Fatalf("runtime or credential undone after native confirmation: rollback=%t restored=%t invalidations=%d error=%v", base.rolledBack, repository.connectorRestored, activation.invalidations, err)
+	}
 }
 
 func TestKernelReconciliationOwnsPreparationTimeoutAndFailureFinalization(t *testing.T) {

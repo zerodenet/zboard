@@ -1,6 +1,4 @@
-import axios from 'axios'
-import { normalizeApiErrorPayload } from '../utils/apiError'
-import { API_BASE, getAuthToken, normalizePageResult, type ApiRequestOptions, type PageResult } from './client'
+import { authenticatedAPI as api, normalizePageResult, type ApiRequestOptions, type PageResult } from './client'
 
 export type ManagedRuleSourceFormat = 'auto' | 'zero_rule_ir' | 'domain_list' | 'cidr_list' | 'clash_classical'
 
@@ -50,20 +48,8 @@ export interface ManagedRuleSetContent {
   revision: number
 }
 
-const api = axios.create({ baseURL: API_BASE, timeout: 30_000 })
-api.interceptors.request.use(config => {
-  const token = getAuthToken()
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
-api.interceptors.response.use(
-  response => response,
-  cause => {
-    if (cause?.response) cause.response.data = normalizeApiErrorPayload(cause.response.data)
-    return Promise.reject(cause)
-  },
-)
-
+// The common authenticated transport retains its 30-second default and all
+// caller cancellation/body/response contracts; it never queues a mutation.
 function unwrap(response: any) {
   return response.data?.data || null
 }

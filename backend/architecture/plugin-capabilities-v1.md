@@ -133,3 +133,6 @@ checks in plugin page authority through `identity.Accounts.Me`. Replace the
 identity-only slot restriction with the explicit slot grant while preserving
 existing identity slot declarations. Do not merge plugin-specific page actions
 or paths from local drafts.
+
+
+> 2026-10-19：本轮产品决策与 P0–P7 验收以 [核心收敛决策](core-convergence-decisions.md) 和 [实现证据/差距](core-convergence-plan.md) 为准。本文历史阶段与完成记录保留，不代替当前实现验证。

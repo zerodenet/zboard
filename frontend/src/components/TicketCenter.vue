@@ -1,17 +1,22 @@
 <template>
-  <section class="standard-page" :class="{ 'detail-active': Boolean(selectedTicketID) }">
+  <section class="standard-page" :class="{ 'detail-active': Boolean(selectedTicketID), 'ticket-customer': !admin }">
     <PageHeader
-      :title="admin ? '工单中心' : '我的工单'"
-      :description="admin ? '集中处理用户问题，所有回复与状态变化都会保留在时间线中。' : '提交连接、账单或账户问题，并在同一条时间线中持续追问。'"
-      eyebrow="Support"
+      :title="admin ? '工单中心' : '联系客服'"
+      :description="admin ? '集中处理用户问题，所有回复与状态变化都会保留在时间线中。' : ''"
+      :eyebrow="admin ? 'Support' : ''"
     >
       <template #actions>
         <PageRefreshButton label="刷新工单" :loading="loading" @click="loadTickets()" />
         <UiButton v-if="!admin" type="button" @click="openCreate"><UiIcon name="plus" />新建工单</UiButton>
       </template>
     </PageHeader>
+    <PageAlert v-if="createDraftRecovery.message.value || replyDraftRecovery.message.value" tone="info" title="重新认证后的草稿">
+      {{ createDraftRecovery.message.value || replyDraftRecovery.message.value }}
+      <UiButton variant="ghost" size="sm" type="button" @click="createDraftRecovery.restore(); replyDraftRecovery.restore()">重新检查草稿恢复</UiButton>
+    </PageAlert>
 
     <TransientFeedback :success="message" :error="error" success-title="工单操作已完成" error-title="工单操作失败" />
+    <PageAlert v-if="createContextNotice && !createOpen" tone="info">{{ createContextNotice }}</PageAlert>
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
@@ -21,11 +26,11 @@
             <WorkbenchFilterSelect v-model="filters.category" label="问题分类" :options="categoryFilterOptions" @apply="applyFilters" />
           </WorkbenchFilterBar>
       </template>
-      <template #actions><span class="muted">按最近活动排序</span></template>
+      <template v-if="admin" #actions><span class="muted">按最近活动排序</span></template>
 
       <div class="ticket-workspace" :class="{ 'detail-open': Boolean(selectedTicketID) }">
       <article class="panel ticket-list-panel">
-        <header class="panel-header"><div><h2>{{ admin ? '处理队列' : '工单记录' }}</h2><p>选择一条工单查看完整沟通记录。</p></div><span class="count-label">本页 {{ tickets.length }} 条</span></header>
+        <header class="panel-header"><div><h2>{{ admin ? '处理队列' : '工单记录' }}</h2></div><span v-if="admin" class="count-label">本页 {{ tickets.length }} 条</span></header>
         <div v-if="tickets.length" class="ticket-list">
           <UiButton
             v-for="ticket in tickets"
@@ -35,6 +40,7 @@
             :class="{ active: selectedTicketID === ticket.id }"
             :aria-current="selectedTicketID === ticket.id ? 'true' : undefined"
             :data-ticket-trigger="ticket.id"
+            :aria-label="`${ticket.subject}，${statusLabel(ticket.status)}`"
             @click="selectTicket(ticket.id)"
           >
             <div class="ticket-list-head"><code>{{ ticket.ticket_no }}</code><StatusBadge :tone="statusTone(ticket.status)">{{ statusLabel(ticket.status) }}</StatusBadge></div>
@@ -66,13 +72,17 @@
               <UiButton class="ticket-back-button" variant="ghost" size="sm" type="button" @click="closeDetail">
                 <UiIcon name="chevron" />返回列表
               </UiButton>
-              <div class="ticket-title-line"><code>{{ detail.ticket.ticket_no }}</code><StatusBadge :tone="statusTone(detail.ticket.status)">{{ statusLabel(detail.ticket.status) }}</StatusBadge><span v-if="detail.ticket.priority === 2" class="priority-badge">紧急</span><TimeBadge :value="detail.ticket.created_at" /></div><h2>{{ detail.ticket.subject }}</h2><p>{{ categoryLabel(detail.ticket.category) }}<template v-if="admin"> · {{ detail.ticket.user_email }}</template></p>
+              <div class="ticket-title-line"><BusinessReference :value="detail.ticket.ticket_no" label="工单号" /><StatusBadge :tone="statusTone(detail.ticket.status)">{{ statusLabel(detail.ticket.status) }}</StatusBadge><span v-if="detail.ticket.priority === 2" class="priority-badge">紧急</span><TimeBadge :value="detail.ticket.created_at" /></div><h2>{{ detail.ticket.subject }}</h2><p>{{ categoryLabel(detail.ticket.category) }}<template v-if="admin"> · {{ detail.ticket.user_email }}</template></p>
             </div>
             <div class="ticket-detail-actions">
               <label v-if="admin" class="status-select"><span>流转状态</span><UiSelect aria-label="流转状态" :model-value="selectedStatus" :options="statusOptions" :disabled="saving" @update:model-value="changeStatus($event as TicketStatus)" /></label>
               <UiButton v-else-if="detail.ticket.status !== 'closed'" variant="secondary" size="sm" type="button" :disabled="saving" @click="closeCurrent">关闭工单</UiButton>
             </div>
           </header>
+
+          <dl v-if="ticketReferenceRows.length" class="ticket-reference-records" aria-label="关联记录">
+            <div v-for="reference in ticketReferenceRows" :key="reference.key"><dt>{{ reference.label }}</dt><dd>{{ reference.key === 'order_id' ? orderReference(reference.id) : `#${reference.id}` }}</dd></div>
+          </dl>
 
           <div ref="timelineElement" class="ticket-timeline">
             <div v-if="detail.has_older_messages" class="timeline-history-control">
@@ -86,6 +96,7 @@
               <article v-else class="ticket-message" :class="item.author_role">
                 <header><span class="message-avatar">{{ item.author_role === 'admin' ? 'A' : 'U' }}</span><div><strong>{{ item.author_role === 'admin' ? '管理员' : (admin ? item.author_email : '我') }}</strong><TimeBadge :value="item.created_at" mode="exact" /></div></header>
                 <p>{{ item.body }}</p>
+                <TicketAttachments :items="item.attachments" />
               </article>
             </template>
           </div>
@@ -93,9 +104,11 @@
           <form v-if="detail.ticket.status !== 'closed'" ref="replyFormElement" class="ticket-reply" novalidate @submit.prevent="sendReply">
             <PageAlert v-if="replyErrors.formError.value" tone="danger" title="回复未发送">{{ replyErrors.formError.value }}</PageAlert>
             <FormField v-slot="{ controlAttrs }" :label="admin ? '回复用户' : detail.ticket.status === 'resolved' ? '继续追问（将重新打开工单）' : '补充信息'" name="ticket-reply-body" :error="replyErrors.fields.body" required><UiTextarea v-model="replyBody" v-bind="controlAttrs" maxlength="5000" placeholder="清楚描述处理结果、复现信息或需要补充的内容…" /></FormField>
-            <footer><small>{{ replyBody.length }} / 5000</small><UiButton type="submit" :loading="saving" :disabled="!replyBody.trim()">发送回复</UiButton></footer>
+            <TicketAttachmentEditor v-model="replyAttachments" v-model:busy="replyUploading" :disabled="saving" />
+            <footer><small>{{ replyBody.length }} / 5000</small><UiButton type="submit" :loading="saving" :disabled="!replyBody.trim() || replyUploading">发送回复</UiButton></footer>
           </form>
-          <div v-else class="closed-notice"><UiIcon name="check" /><div><strong>工单已关闭</strong><p>时间线保持只读。如有新问题，请创建新的工单。</p></div></div>
+          <UiTextarea v-if="detail.ticket.status === 'closed' && replyBody" :model-value="replyBody" readonly aria-label="已关闭工单的未发送草稿" />
+          <div v-if="detail.ticket.status === 'closed'" class="closed-notice"><UiIcon name="check" /><div><strong>工单已关闭</strong><p>时间线保持只读。如有新问题，请创建新的工单。</p></div></div>
         </template>
         <div v-else class="ticket-detail-empty"><span><UiIcon name="ticket" /></span><h2>选择一条工单</h2><p>这里会按需展示问题详情、回复和状态流转记录。</p></div>
       </article>
@@ -103,26 +116,32 @@
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="新建工单" description="请尽量一次性提供问题现象和复现信息。" size="lg" :busy="saving" @close="createOpen = false">
+    <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="新建工单" description="请尽量一次性提供问题现象和复现信息。" size="lg" :busy="saving || createUploading" @close="createOpen = false">
       <form id="create-ticket-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="submitTicket">
+        <PageAlert v-if="createContextNotice" class="field-full" tone="info">{{ createContextNotice }}</PageAlert>
         <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法提交工单">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="问题主题" name="ticket-subject" :error="createErrors.fields.subject" required full><UiInput v-model.trim="draft.subject" v-bind="controlAttrs" maxlength="160" placeholder="例如：订阅导入后节点连接超时" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题分类" name="ticket-category" :error="createErrors.fields.category"><UiSelect v-model="draft.category" v-bind="controlAttrs" :options="categoryOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="优先级" name="ticket-priority" :error="createErrors.fields.priority"><UiSelect v-model.number="draft.priority" v-bind="controlAttrs" :options="priorityOptions" /></FormField>
+        <FormField v-for="reference in referenceFields" :key="reference.key" v-slot="{ controlAttrs }" :label="`${reference.label}编号（可选）`" :name="`ticket-${reference.key}`" :error="createErrors.fields[reference.key]" hint="仅可关联当前账户的记录；留空则不关联。"><UiInput v-model.trim="referenceDraft[reference.key]" v-bind="controlAttrs" :inputmode="reference.key === 'order_id' ? 'text' : 'numeric'" :disabled="saving" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="问题描述" name="ticket-body" :error="createErrors.fields.body" hint="请勿提交密码、订阅凭证等敏感信息。" required full><UiTextarea v-model.trim="draft.body" v-bind="controlAttrs" maxlength="5000" placeholder="操作步骤、错误提示、发生时间，以及你已经尝试过的方法。" /></FormField>
+        <FormField label="附件（可选）" name="ticket-attachments" full><TicketAttachmentEditor v-model="draft.attachments" v-model:busy="createUploading" :disabled="saving" /></FormField>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="create-ticket-form" type="submit" :loading="saving">提交工单</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving || createUploading" @click="requestClose">取消</UiButton><UiButton form="create-ticket-form" type="submit" :loading="saving" :disabled="createUploading">提交工单</UiButton></template>
     </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import { orderReference, parseBusinessReference } from '../utils/businessReference'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { closeTicket, createTicket, fetchTicket, fetchTickets, replyTicket, updateTicketStatus, type Ticket, type TicketCategory, type TicketDetail, type TicketStatus } from '../api/client'
+import { closeTicket, createTicket, fetchTicket, fetchTickets, replyTicket, updateTicketStatus, type Ticket, type TicketCategory, type TicketDetail, type TicketReferences, type TicketStatus } from '../api/client'
 import { confirmAction } from '../utils/feedback'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { ticketRecoveryDraft, ticketReplyRecoveryDraft } from '../utils/reauthenticationDraftSchemas'
 import { formatUnknownValue } from '../utils/format'
 import { preserveAdminReturnTo } from '../utils/navigation'
 import { collectFieldErrors, isCharacterLengthInRange, isOneOf } from '../utils/validation'
@@ -135,7 +154,11 @@ import PageHeader from './PageHeader.vue'
 import StatusBadge from './StatusBadge.vue'
 import TablePager from './TablePager.vue'
 import TransientFeedback from './TransientFeedback.vue'
+import BusinessReference from './BusinessReference.vue'
 import UiIcon from './UiIcon.vue'
+import TicketAttachmentEditor from './TicketAttachmentEditor.vue'
+import TicketAttachments from './TicketAttachments.vue'
+import type { TicketAttachment } from '../api/files'
 import WorkbenchFilterBar from './WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from './WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from './WorkbenchFilterSelect.vue'
@@ -153,7 +176,10 @@ const loadingOlder = ref(false)
 const saving = ref(false)
 const message = ref('')
 const createOpen = ref(false)
+const createContextNotice = ref('')
 const replyBody = ref('')
+const replyAttachments = ref<TicketAttachment[]>([])
+const replyUploading = ref(false), createUploading = ref(false)
 const createFormElement = ref<HTMLElement | null>(null)
 const replyFormElement = ref<HTMLElement | null>(null)
 const createErrors = useFormErrors()
@@ -164,9 +190,36 @@ const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
-const draft = reactive<{ subject: string; category: TicketCategory; priority: 1 | 2; body: string }>({ subject: '', category: 'connection', priority: 1, body: '' })
-const createState = useDirtyForm(() => draft)
-const replyState = useDirtyForm(() => replyBody.value)
+const draft = reactive<{ subject: string; category: TicketCategory; priority: 1 | 2; body: string; attachments: TicketAttachment[] }>({ subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
+const referenceFields: { key: keyof TicketReferences; label: string }[] = [
+  { key: 'order_id', label: '关联订单' }, { key: 'subscription_id', label: '关联订阅' }, { key: 'wallet_entry_id', label: '关联余额账目' },
+]
+const referenceDraft = reactive({ order_id: '', subscription_id: '', wallet_entry_id: '' })
+const createState = useDirtyForm(() => ({ ...draft, references: referenceDraft }))
+const ticketReferenceRows = computed(() => referenceFields.flatMap(field => {
+  const id = detail.value?.ticket.references?.[field.key]
+  return Number.isSafeInteger(id) && id! > 0 ? [{ ...field, id: id! }] : []
+}))
+const replyState = useDirtyForm(() => ({ body: replyBody.value, attachments: replyAttachments.value }))
+const recoveryReady = ref(false)
+const createDraftRecovery = useReauthenticationDraft({
+  scope: 'account.tickets.create', permission: 'account', ready: () => recoveryReady.value && !admin.value,
+  read: () => !admin.value && createOpen.value ? { subject: draft.subject, category: draft.category, priority: draft.priority, body: draft.body, references: { ...referenceDraft } } : null,
+  sanitize: ticketRecoveryDraft,
+  restore: value => {
+    Object.assign(draft, { subject: value.subject, category: value.category, priority: value.priority, body: value.body, attachments: [] })
+    Object.assign(referenceDraft, value.references)
+    createOpen.value = true
+  },
+})
+const replyDraftRecovery = useReauthenticationDraft({
+  scope: admin.value ? 'admin.tickets.reply' : 'account.tickets.reply', permission: admin.value ? 'admin' : 'account',
+  ready: () => recoveryReady.value && Boolean(detail.value && detail.value.ticket.id === selectedTicketID.value),
+  read: () => !createOpen.value && selectedTicketID.value && replyBody.value ? { ticketID: selectedTicketID.value, body: replyBody.value } : null,
+  sanitize: ticketReplyRecoveryDraft,
+  restore: value => { if (value.ticketID !== detail.value?.ticket.id) return false; replyBody.value = value.body; replyAttachments.value = [] },
+})
+
 useUnsavedChangesGuard(
   () => (createOpen.value && createState.dirty.value) || replyState.dirty.value,
   async () => {
@@ -204,6 +257,7 @@ watch(() => draft.subject, () => createErrors.clear('subject'))
 watch(() => draft.category, () => createErrors.clear('category'))
 watch(() => draft.priority, () => createErrors.clear('priority'))
 watch(() => draft.body, () => createErrors.clear('body'))
+for (const field of referenceFields) watch(() => referenceDraft[field.key], () => createErrors.clear(field.key))
 watch(replyBody, () => replyErrors.clear('body'))
 const { items: tickets, total, loading, refreshing, error, load: loadTicketPage } = useRemoteTable<Ticket>({
   offset,
@@ -223,7 +277,7 @@ async function loadTickets() {
 }
 
 function validTicketID(value: unknown) {
-  const parsed = Number(value)
+  const parsed = parseBusinessReference(value, 'T') || 0
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0
 }
 
@@ -254,7 +308,7 @@ function clearDetailState() {
 }
 async function discardReplyForNavigation(message: string) {
   if (!await replyState.confirmDiscard({ title: '放弃未发送的回复？', message, confirmText: '放弃草稿' })) return false
-  replyBody.value = ''; replyErrors.clear(); replyState.markClean(); return true
+  replyBody.value = ''; replyAttachments.value = []; replyErrors.clear(); replyState.markClean(); return true
 }
 
 async function applyFilters() {
@@ -287,8 +341,51 @@ async function changePage(value: { offset: number; limit: number }) {
 }
 
 async function openCreate() {
+  if (admin.value) return
   if (!await discardReplyForNavigation('新建工单后，当前回复草稿将被清空。')) return
-  Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '' })
+  if (route.query.new === '1') {
+    appliedCreateContext = ''
+    applyCreateContext()
+    return
+  }
+  resetCreateDraft()
+  createContextNotice.value = ''
+  createErrors.clear(); createState.markClean(); createOpen.value = true
+}
+
+function resetCreateDraft() {
+  Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '', attachments: [] })
+  Object.assign(referenceDraft, { order_id: '', subscription_id: '', wallet_entry_id: '' })
+}
+function referenceID(value: string) {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return undefined
+  const id = Number(trimmed)
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined
+}
+let appliedCreateContext = ''
+function applyCreateContext() {
+  if (admin.value) return
+  if (route.query.new !== '1') { appliedCreateContext = ''; return }
+  const context = JSON.stringify(referenceFields.map(field => route.query[field.key]))
+  if (context === appliedCreateContext) return
+  appliedCreateContext = context
+  if (replyState.dirty.value) {
+    createContextNotice.value = '当前工单有未发送的回复，关联信息尚未应用。请先发送回复，或点击“新建工单”明确确认是否放弃回复。'
+    return
+  }
+  if (createState.dirty.value) {
+    createContextNotice.value = '已保留当前新工单草稿，链接中的关联信息未覆盖。'
+    createOpen.value = true
+    return
+  }
+  resetCreateDraft()
+  for (const field of referenceFields) {
+    const value = route.query[field.key]
+    referenceDraft[field.key] = typeof value === 'string' ? value : Array.isArray(value) ? value.join(',') : ''
+  }
+  if (referenceDraft.order_id || referenceDraft.wallet_entry_id) draft.category = 'billing'
+  createContextNotice.value = '关联信息已预填，请核对记录并填写问题后明确提交。'
   createErrors.clear(); createState.markClean(); createOpen.value = true
 }
 
@@ -365,6 +462,11 @@ async function loadOlderMessages() {
 }
 
 async function submitTicket() {
+  if (admin.value || saving.value || createUploading.value) return
+  if (replyState.dirty.value) {
+    createErrors.set({}, '当前工单有未发送的回复，请先处理该回复后再新建工单。')
+    return
+  }
   draft.subject = draft.subject.trim()
   draft.body = draft.body.trim()
   const valid = await createErrors.applyValidation(collectFieldErrors({
@@ -372,25 +474,32 @@ async function submitTicket() {
     category: !isOneOf(draft.category, ticketCategories) && '请选择有效的问题分类。',
     priority: !isOneOf(draft.priority, ticketPriorities) && '请选择有效的优先级。',
     body: !isCharacterLengthInRange(draft.body, 1, 5000, true) && '问题描述需包含 1 到 5000 个字符。',
+    ...Object.fromEntries(referenceFields.map(field => [field.key, Boolean(referenceDraft[field.key].trim()) && (field.key === 'order_id' ? parseBusinessReference(referenceDraft[field.key], 'O') : referenceID(referenceDraft[field.key])) === undefined && '请输入有效的关联编号，或留空取消关联。'])),
   }), createFormElement, '请更正标记字段后再提交工单。')
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    const created = await createTicket({ ...draft })
-    createOpen.value = false; Object.assign(draft, { subject: '', category: 'connection', priority: 1, body: '' })
+    const references: TicketReferences = {}
+    for (const field of referenceFields) {
+      const id = field.key === 'order_id' ? parseBusinessReference(referenceDraft[field.key], 'O') : referenceID(referenceDraft[field.key])
+      if (id !== undefined) references[field.key] = id
+    }
+    const created = await createTicket({ ...draft, ...(Object.keys(references).length ? { references } : {}) })
+    createOpen.value = false; resetCreateDraft(); createContextNotice.value = ''
     createState.markClean()
+    replyBody.value = ''; replyAttachments.value = []; replyErrors.clear(); replyState.markClean()
     selectedTicketID.value = created.ticket.id
     detail.value = created
     message.value = `工单 ${created.ticket.ticket_no} 已提交。`
     await syncURL()
     await loadTickets()
     await scrollTimeline()
-  } catch (e: any) { await createErrors.applyApiError(e, '工单提交失败。', createFormElement, { subject: 'subject', category: 'category', priority: 'priority', message: 'body', body: 'body' }) }
+  } catch (e: any) { await createErrors.applyApiError(e, '工单提交失败。', createFormElement, { subject: 'subject', category: 'category', priority: 'priority', message: 'body', body: 'body', order_id: 'order_id', subscription_id: 'subscription_id', wallet_entry_id: 'wallet_entry_id', 'references.order_id': 'order_id', 'references.subscription_id': 'subscription_id', 'references.wallet_entry_id': 'wallet_entry_id' }) }
   finally { saving.value = false }
 }
 
 async function sendReply() {
-  if (!detail.value) return
+  if (!detail.value || detail.value.ticket.status === 'closed' || saving.value || replyUploading.value) return
   replyBody.value = replyBody.value.trim()
   const valid = await replyErrors.applyValidation(collectFieldErrors({
     body: !isCharacterLengthInRange(replyBody.value, 1, 5000, true) && '回复需包含 1 到 5000 个字符。',
@@ -398,7 +507,7 @@ async function sendReply() {
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    detail.value = await replyTicket(detail.value.ticket.id, replyBody.value.trim(), admin.value); replyBody.value = ''; replyState.markClean()
+    detail.value = await replyTicket(detail.value.ticket.id, replyBody.value.trim(), admin.value, replyAttachments.value); replyBody.value = ''; replyAttachments.value = []; replyState.markClean()
     message.value = '回复已写入工单时间线。'; await loadTickets(); await scrollTimeline()
   } catch (e: any) { await replyErrors.applyApiError(e, '回复发送失败。', replyFormElement, { message: 'body', body: 'body' }) }
   finally { saving.value = false }
@@ -451,6 +560,10 @@ watch(() => detail.value?.ticket.status, (status) => {
   if (status) selectedStatus.value = status
 })
 watch(() => route.fullPath, async () => {
+  // A create link carries draft context, not a request to change the active
+  // conversation or discard its reply. Explicit ticket/list actions still use
+  // their existing navigation and discard confirmation flow.
+  if (!admin.value && route.query.new === '1') return
   const nextFilters = {
     q: String(route.query.q || ''),
     status: String(route.query.status || ''),
@@ -484,6 +597,7 @@ watch(() => route.fullPath, async () => {
 })
 
 onBeforeRouteUpdate(async (to) => {
+  if (!admin.value && to.query.new === '1') return true
   if (!replyState.dirty.value) return true
   const nextTicket = validTicketID(to.query.ticket)
   const currentTicket = selectedTicketID.value
@@ -496,33 +610,51 @@ onBeforeRouteUpdate(async (to) => {
   return discardReplyForNavigation('切换工单或列表状态后，当前回复草稿将被清空。')
 })
 
+watch(() => [route.query.new, route.query.order_id, route.query.subscription_id, route.query.wallet_entry_id], applyCreateContext, { immediate: true })
+
 onMounted(async () => {
   await loadTickets()
   const initialTicket = validTicketID(route.query.ticket)
   if (initialTicket) await loadTicketDetail(initialTicket)
+  recoveryReady.value = true
 })
 onBeforeUnmount(() => detailController?.abort())
 </script>
 
 <style scoped>
+.ticket-customer:not(.detail-active) .ticket-workspace { min-height: 0; grid-template-columns: minmax(0, 1fr); }
+.ticket-customer:not(.detail-active) .ticket-detail-panel { display: none; }
+.ticket-customer .ticket-list { max-height: none; }
+.ticket-customer .ticket-list-panel, .ticket-customer .ticket-detail-panel { border: 0; box-shadow: none; }
+.ticket-customer .ticket-list-panel > .panel-header, .ticket-customer .ticket-detail-header, .ticket-customer .ticket-reply, .ticket-customer .ticket-list-panel > .table-pager { border: 0; }
+.ticket-customer .ticket-list > button { min-height: 92px; height: auto; grid-template-columns: minmax(0, 1fr); justify-content: stretch; border-bottom: 0; }
+.ticket-customer .ticket-list > button > strong { grid-row: 1; }
+.ticket-customer .ticket-list-head { grid-row: 2; }
+.ticket-customer .ticket-list-meta { grid-row: 3; }
+.ticket-customer .ticket-list code { color: var(--muted-foreground); font-weight: 400; }
+
+.ticket-reference-records { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.ticket-reference-records div { display: flex; gap: 8px; }
+.ticket-reference-records dt { color: var(--muted); }
+.ticket-reference-records dd { margin: 0; }
 .page-alert { margin-bottom: 14px; }
 .ticket-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
 .ticket-summary article { display: flex; align-items: center; gap: 14px; padding: 17px 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
-.ticket-summary article > div { display: grid; gap: 2px; }.ticket-summary small,.ticket-summary p { color: var(--muted); font-size: 10px; }.ticket-summary strong { font-size: 23px; }.ticket-summary p { margin: 0; }
+.ticket-summary article > div { display: grid; gap: 2px; }.ticket-summary small,.ticket-summary p { color: var(--muted); font-size: 12px; }.ticket-summary strong { font-size: 23px; }.ticket-summary p { margin: 0; }
 .ticket-toolbar { margin-bottom: 16px; }.ticket-toolbar .panel-body { margin: 0; padding: 12px 14px; }.ticket-toolbar select { width: 160px; min-height: 36px; }
 .ticket-workspace { min-height: 650px; display: grid; grid-template-columns: minmax(300px, .38fr) minmax(480px, .62fr); gap: 16px; }
 .ticket-list-panel,.ticket-detail-panel { min-width: 0; overflow: hidden; }.ticket-list { max-height: 690px; overflow-y: auto; }
 .ticket-list > button { width: 100%; display: grid; gap: 8px; padding: 16px 18px; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: var(--surface); }
 .ticket-list > button:hover,.ticket-list > button.active { background: var(--surface-selected); }.ticket-list > button.active { box-shadow: inset 3px 0 var(--primary); }
-.ticket-list-head,.ticket-list-meta,.ticket-title-line { display: flex; align-items: center; gap: 8px; }.ticket-list-head { justify-content: space-between; }.ticket-list code,.ticket-detail-header code { color: var(--primary); font-size: 10px; font-weight: 700; }.ticket-list > button > strong { font-size:13px; white-space:normal; overflow-wrap:anywhere; }.ticket-list > button > p { margin: -3px 0 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.ticket-list-meta { color: var(--muted); font-size: 9px; }.ticket-list-meta span:last-child { margin-left: auto; }.urgent,.priority-badge { color: var(--danger); font-weight: 700; }.ticket-state { padding: 50px 20px; color: var(--muted); text-align: center; }
-.ticket-detail-panel { display: flex; flex-direction: column; }.ticket-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px; border-bottom: 1px solid var(--line); }.ticket-detail-header h2 { margin: 10px 0 5px; font-size: 19px; }.ticket-detail-header p { margin: 0; color: var(--muted); font-size: 10px; }.ticket-detail-actions { flex: 0 0 auto; }.status-select { display: grid; gap: 4px; }.status-select span { color: var(--muted); font-size: 9px; }.status-select select { min-width: 150px; min-height: 34px; padding-block: 5px; font-size: 11px; }.priority-badge { padding: 3px 7px; border-radius: 999px; background: var(--danger-soft); font-size: 9px; }
+.ticket-list-head,.ticket-list-meta,.ticket-title-line { display: flex; align-items: center; gap: 8px; }.ticket-list-head { justify-content: space-between; }.ticket-list code,.ticket-detail-header code { color: var(--primary); font-size: 12px; font-weight: 600; }.ticket-list > button > strong { font-size:13px; white-space:normal; overflow-wrap:anywhere; }.ticket-list > button > p { margin: -3px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.ticket-list-meta { color: var(--muted); font-size: 12px; }.ticket-list-meta span:last-child { margin-left: auto; }.urgent,.priority-badge { color: var(--danger); font-weight: 600; }.ticket-state { padding: 50px 20px; color: var(--muted); text-align: center; }
+.ticket-detail-panel { display: flex; flex-direction: column; }.ticket-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px; border-bottom: 1px solid var(--line); }.ticket-detail-header h2 { margin: 10px 0 5px; font-size: 19px; }.ticket-detail-header p { margin: 0; color: var(--muted); font-size: 12px; }.ticket-detail-actions { flex: 0 0 auto; }.status-select { display: grid; gap: 4px; }.status-select span { color: var(--muted); font-size: 12px; }.status-select select { min-width: 150px; min-height: 34px; padding-block: 5px; font-size: 11px; }.priority-badge { padding: 3px 7px; border-radius: 999px; background: var(--danger-soft); font-size: 12px; }
 .ticket-detail-loading { min-height: 420px; display: grid; place-items: center; }
 .ticket-detail-error { margin: 16px 20px; }
 .ticket-back-button { display: none; margin-bottom: 10px; }
 .ticket-back-button :deep(.ui-icon) { transform: rotate(180deg); }
-.ticket-timeline { flex: 1; min-height: 340px; max-height: 520px; display: grid; align-content: start; gap: 14px; overflow-y: auto; padding: 22px; background: var(--surface-canvas); }.ticket-message { max-width: 78%; display: grid; gap: 10px; justify-self: start; padding: 13px 15px; border: 1px solid var(--line); border-radius: 4px 13px 13px 13px; background: var(--surface); }.ticket-message.admin { justify-self: end; border-color: var(--info-border-strong); border-radius: 13px 4px 13px 13px; background: var(--info-soft-alt); }.ticket-message header { display: flex; align-items: center; gap: 8px; }.message-avatar { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; color: var(--text-inverse); background: var(--neutral-avatar); font-size: 9px; font-weight: 750; }.ticket-message.admin .message-avatar { background: var(--primary); }.ticket-message header div { display: grid; gap: 1px; }.ticket-message strong { font-size: 10px; }.ticket-message time { color: var(--muted); font-size: 8px; }.ticket-message > p { margin: 0; color: var(--text-body); font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }.timeline-event { display: flex; align-items: center; justify-content: center; gap: 7px; }.timeline-event > span { width: 6px; height: 6px; border-radius: 50%; background: var(--neutral-icon); }.timeline-event p { margin: 0; color: var(--muted); font-size: 9px; }
-.timeline-history-control { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 9px; }
-.ticket-reply { display: grid; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--line); }.ticket-reply textarea { min-height: 90px; }.ticket-reply footer { display: flex; align-items: center; justify-content: space-between; }.ticket-reply small { color: var(--muted); font-size: 9px; }.closed-notice { display: flex; align-items: center; gap: 11px; padding: 18px 20px; border-top: 1px solid var(--line); background: var(--success-soft); }.closed-notice > .ui-icon { color: var(--success); font-size: 20px; }.closed-notice strong { font-size: 12px; }.closed-notice p { margin: 2px 0 0; color: var(--muted); font-size: 10px; }.ticket-detail-empty { min-height: 600px; display: grid; place-items: center; align-content: center; text-align: center; }.ticket-detail-empty > span { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 14px; color: var(--primary); background: var(--primary-soft); font-size: 23px; }.ticket-detail-empty h2 { margin: 14px 0 5px; font-size: 17px; }.ticket-detail-empty p { color: var(--muted); font-size: 11px; }
+.ticket-timeline { flex: 1; min-height: 340px; max-height: 520px; display: grid; align-content: start; gap: 14px; overflow-y: auto; padding: 22px; background: var(--surface-canvas); }.ticket-message { max-width: 78%; display: grid; gap: 10px; justify-self: start; padding: 13px 15px; border: 1px solid var(--line); border-radius: 4px 13px 13px 13px; background: var(--surface); }.ticket-message.admin { justify-self: end; border-color: var(--info-border-strong); border-radius: 13px 4px 13px 13px; background: var(--info-soft-alt); }.ticket-message header { display: flex; align-items: center; gap: 8px; }.message-avatar { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; color: var(--text-inverse); background: var(--neutral-avatar); font-size: 12px; font-weight: 600; }.ticket-message.admin .message-avatar { background: var(--primary); }.ticket-message header div { display: grid; gap: 1px; }.ticket-message strong { font-size: 12px; }.ticket-message time { color: var(--muted); font-size: 12px; }.ticket-message > p { margin: 0; color: var(--text-body); font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }.timeline-event { display: flex; align-items: center; justify-content: center; gap: 7px; }.timeline-event > span { width: 6px; height: 6px; border-radius: 50%; background: var(--neutral-icon); }.timeline-event p { margin: 0; color: var(--muted); font-size: 12px; }
+.timeline-history-control { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.ticket-reply { display: grid; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--line); }.ticket-reply textarea { min-height: 90px; }.ticket-reply footer { display: flex; align-items: center; justify-content: space-between; }.ticket-reply small { color: var(--muted); font-size: 12px; }.closed-notice { display: flex; align-items: center; gap: 11px; padding: 18px 20px; border-top: 1px solid var(--line); background: var(--success-soft); }.closed-notice > .ui-icon { color: var(--success); font-size: 20px; }.closed-notice strong { font-size: 12px; }.closed-notice p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }.ticket-detail-empty { min-height: 600px; display: grid; place-items: center; align-content: center; text-align: center; }.ticket-detail-empty > span { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 14px; color: var(--primary); background: var(--primary-soft); font-size: 23px; }.ticket-detail-empty h2 { margin: 14px 0 5px; font-size: 17px; }.ticket-detail-empty p { color: var(--muted); font-size: 11px; }
 @media (max-width: 1000px) { .ticket-workspace { grid-template-columns: 1fr; }.ticket-list { max-height: 360px; }.ticket-detail-empty { min-height: 320px; } }
 @media (max-width: 680px) {
   .standard-page.detail-active { gap: 0; }

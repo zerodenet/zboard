@@ -1,0 +1,235 @@
+{
+  "scope": "0066 automatic finite reservation, 0065 host-native transport tests; uncommitted source on ff3b147, not full stage acceptance",
+  "sqlite": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/handler",
+      "./internal/datastore",
+      "./internal/adapters/persistence/commercestore",
+      "./internal/capabilities/commerce",
+      "./tools/capabilityinventory",
+      "-run",
+      "AutomaticFinite|AutomaticPending|AutomaticRenewal|AutomaticRecurring|DiscountRedemption|DiscountReservation|RepositoryContractInventory",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "go_cache": "new disposable build outputs on the same cloud environment temporary filesystem; existing data/cache were not moved",
+    "started_utc": "2026-10-27T05:29:17.163920+00:00",
+    "source_before": "069fa35417afeaca3adae6208cb36eb30cc2314344db8a04b7e3511c4ff19254",
+    "source_scope": "all backend Go/SQL/module/ownership sources",
+    "status": "completed",
+    "exit_code": 0,
+    "wall_seconds": 134.092,
+    "source_after": "069fa35417afeaca3adae6208cb36eb30cc2314344db8a04b7e3511c4ff19254",
+    "log_sha256": "7fdb9d9f628f4cbb35b2e5e5d001365b32b966f133616f9a0165a67a0691287d",
+    "finished_utc": "2026-10-27T05:31:31.365207+00:00",
+    "source_unchanged": true,
+    "events": {
+      "pass": 103,
+      "skip": 43
+    },
+    "failures": [],
+    "build_failures": []
+  },
+  "native": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/plugins",
+      "-run",
+      "CommerceRedemption",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "go_cache": "new disposable build outputs on the same cloud environment temporary filesystem; existing data/cache were not moved",
+    "started_utc": "2026-10-27T05:31:58.450419+00:00",
+    "source_before": "f0a351889ae93ae52ff535314acab7bd80d531596174e7c806670560e32d9995",
+    "source_scope": "all backend Go/SQL/module/ownership sources",
+    "status": "completed",
+    "exit_code": 0,
+    "wall_seconds": 13.758,
+    "source_after": "f0a351889ae93ae52ff535314acab7bd80d531596174e7c806670560e32d9995",
+    "log_sha256": "342b29842898818452550a37d0a17eebe2f99da846378a9dfc051923665d7ecd",
+    "finished_utc": "2026-10-27T05:32:12.304776+00:00",
+    "source_unchanged": true,
+    "events": {
+      "pass": 14
+    },
+    "failures": [],
+    "build_failures": []
+  },
+  "first_mysql_enabled_attempt": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/handler",
+      "./internal/datastore",
+      "./internal/adapters/persistence/commercestore",
+      "./internal/capabilities/commerce",
+      "./tools/capabilityinventory",
+      "-run",
+      "AutomaticFinite|AutomaticPending|AutomaticRenewal|AutomaticRecurring|DiscountRedemption|DiscountReservation|RepositoryContractInventory",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "started_utc": "2026-10-27T05:21:00.517975+00:00",
+    "source_before": "f7bccd838789c8daec4c5f1cdcd9cc178b839a5d7b9c04160784a36d5150d4af",
+    "source_scope": "all backend Go/SQL/module/ownership sources",
+    "status": "completed",
+    "exit_code": 1,
+    "wall_seconds": 137.687,
+    "source_after": "f7bccd838789c8daec4c5f1cdcd9cc178b839a5d7b9c04160784a36d5150d4af",
+    "log_sha256": "566c6d99ddda121a01c02333a6cc58e7ca4586f7a5d304bcaa2027acc4f6a4fa",
+    "finished_utc": "2026-10-27T05:23:18.306597+00:00",
+    "source_unchanged": true,
+    "events": {
+      "pass": 96,
+      "fail": 47,
+      "skip": 1
+    },
+    "failures": [
+      "TestMySQLAutomaticFiniteStageRestartConfirmedOfflineAndIdempotency",
+      "TestMySQLAutomaticFiniteRevokeDuringReserveWithoutHistoricalValuation",
+      "TestMySQLAutomaticFiniteManualRenewalInvalidatesOldStage",
+      "TestMySQLAutomaticFiniteUnknownACKAndExpiredStageRetry",
+      "TestMySQLAutomaticFiniteSlowProviderMovesQueueAndStableBalanceCompetition",
+      "TestMySQLAutomaticFiniteConcurrentExecutorsPayOnce",
+      "TestAutomaticFiniteSQLiteClosedWindowAndUnsubscribePreventOldStage/replacement",
+      "TestAutomaticFiniteSQLiteClosedWindowAndUnsubscribePreventOldStage",
+      "TestMySQLAutomaticFiniteClosedWindowAndUnsubscribePreventOldStage/window",
+      "TestMySQLAutomaticFiniteClosedWindowAndUnsubscribePreventOldStage/unsubscribe",
+      "TestMySQLAutomaticFiniteClosedWindowAndUnsubscribePreventOldStage/replacement",
+      "TestMySQLAutomaticFiniteClosedWindowAndUnsubscribePreventOldStage",
+      "TestMySQLAutomaticFiniteHistoricalConsumedCouponAllowsLaterPureRenewal",
+      "TestMySQLAutomaticFinitePublicationFailureKeepsPendingAndRollsBackCommit",
+      "TestAutomaticFiniteSQLiteQueueAdvanceIsNotDamagedAuthority",
+      "TestMySQLAutomaticFiniteQueueAdvanceIsNotDamagedAuthority",
+      "TestMySQLAutomaticRecurringContinuousRenewalsKeepApprovalAndPaidSource",
+      "TestMySQLAutomaticRecurringStableWalletCompetition",
+      "TestMySQLAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits",
+      "TestMySQLAutomaticRenewalVersusCredentialExpiry",
+      "TestMySQLAutomaticRenewalOverBoundItemKeepsNeighborsAndRevocationAvailable",
+      "TestMySQLAutomaticRenewalOverBoundWindowStillCloses",
+      "TestMySQLAutomaticRenewalConsentWithdrawalRace",
+      "TestMySQLAutomaticRenewalDefaultOffAndSingleRecovery",
+      "TestMySQLAutomaticRenewalShortenedWindowStopsWithoutCharging",
+      "TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry",
+      "TestMySQLAutomaticRenewalMigrationPreservesConsentAndRefusesLostSource",
+      "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+      "TestMySQLAutomaticRenewalKeepsBasePriceAndRequiresConsentForNewTerms",
+      "TestMySQLAutomaticRenewalVersusUnsubscribe",
+      "TestMySQLAutomaticRenewalPaidWalletReplayDoesNotLockEntireHistory",
+      "TestMySQLCommerceDiscountNativeHTTPWalletAndAutomaticRenewal",
+      "TestMySQLDiscountRedemptionManualWalletReceiptLifecycle",
+      "TestMySQLDiscountRedemptionZeroAmountAndUnfundedCancellation",
+      "TestMySQLDiscountRedemptionPublishFailureRollsBackMoneyAndCommitIntent",
+      "TestMySQLDiscountRedemptionFullReplacementCannotSpendResidualBeforeConfirmation",
+      "TestMySQLDiscountRedemptionLostHoldAndHardPreparationWindow",
+      "TestMySQLDiscountRedemptionDamagedAuthorityRetainsCashButDatabaseFailureDoesNotACK",
+      "TestMySQLAutomaticRenewalAndVerifiedCashReprepareStaleScopeBothWinnerOrders/automatic_wins",
+      "TestMySQLAutomaticRenewalAndVerifiedCashReprepareStaleScopeBothWinnerOrders/manual_wins",
+      "TestMySQLAutomaticRenewalAndVerifiedCashReprepareStaleScopeBothWinnerOrders",
+      "TestSQLiteAutomaticPendingMigrationCopyAndMissingAuthority",
+      "TestMySQLAutomaticPendingMigrationCopyAndMissingAuthority",
+      "TestMySQLAutomaticPendingInterruptedEmptyDDLAndPartialIndexes",
+      "TestMySQLAutomaticRecurringApprovalMigrationPreservesAuthority",
+      "TestMySQLDiscountRedemptionSchemaReplayCopyAndAuthorityLoss",
+      "TestMySQLDiscountRedemptionAbsentAuthorityUsesSemanticBoundedSnapshotScan"
+    ],
+    "build_failures": []
+  },
+  "mysql_first_failure_classification": {
+    "environment": "Original data filesystem exhausted; MySQL business template creation errno28 before product transactions. These failures do not verify MySQL behavior.",
+    "independent_sqlite_fixture_failures": [
+      "Expired subscription replacement was correctly refused; test now performs real manual renewal before changing plan.",
+      "SQLite IMMEDIATE transaction barrier wrongly held writer before neighbor; barrier moved outside transaction.",
+      "Schema fixture omitted required closed entitlement epoch history; explicit structural fixture added."
+    ]
+  },
+  "full_mysql": "not yet rerun; storage constrained",
+  "exact_ci_ff3b": {
+    "run": 40453759289,
+    "five_jobs": "success",
+    "mysql": "handler900.016s timeout; full log retained; independent performance diagnosis in progress, no thresholds changed"
+  },
+  "frontend": {
+    "source_before": "45e6dab0b7fd26d92b4fc94219650a412ef13e728f71147f9fd5f864db27edae",
+    "source_after": "45e6dab0b7fd26d92b4fc94219650a412ef13e728f71147f9fd5f864db27edae",
+    "source_unchanged": true,
+    "steps": [
+      {
+        "command": [
+          "pnpm",
+          "test",
+          "--no-file-parallelism",
+          "src/components/SubscriptionAutomaticRenewal.test.ts",
+          "src/api/automaticRenewalOffer.test.ts"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 2.985,
+        "log_sha256": "e54588a6299a822599dc994671511d28d2c6cacdb1ec1958a3aefadd9d5903fc"
+      },
+      {
+        "command": [
+          "pnpm",
+          "build"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 29.726,
+        "log_sha256": "952318871f704ec3702dddc8a0e2ba6703fecbdd4fec1865db51518c9e7fcab9"
+      }
+    ],
+    "test_files_pass": 2,
+    "test_events_pass": 26
+  },
+  "metadata_and_automatic_after_optimization": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/handler",
+      "./internal/datastore",
+      "./internal/adapters/persistence/commercestore",
+      "./internal/capabilities/commerce",
+      "./tools/capabilityinventory",
+      "-run",
+      "StartupMetadata|AutomaticFinite|AutomaticPending|AutomaticRenewal|AutomaticRecurring|DiscountRedemption|DiscountReservation|RepositoryContractInventory",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "go_cache": "same cloud environment temporary filesystem; no existing cache/data moved",
+    "started_utc": "2026-10-27T05:46:43.913049+00:00",
+    "source_before": "180c74291d1a85a88c41ba831256d506a446303ecbd0ecfbbb3d297fdf8ffe66",
+    "source_scope": "all backend Go/SQL/module/ownership sources",
+    "status": "completed",
+    "exit_code": 0,
+    "wall_seconds": 56.478,
+    "source_after": "180c74291d1a85a88c41ba831256d506a446303ecbd0ecfbbb3d297fdf8ffe66",
+    "log_sha256": "307970b43a12e988f74c52f9054cab3c42bba623f04126b52479b701e2d73929",
+    "finished_utc": "2026-10-27T05:47:40.492041+00:00",
+    "source_unchanged": true,
+    "events": {
+      "pass": 127,
+      "skip": 43
+    },
+    "failures": [],
+    "build_failures": []
+  },
+  "metadata_count_scope": "Exact query-count/error/row-close tests use a pure MySQL-dialect driver, not a real server or a measured CI latency improvement; full shape checks and each-call metadata freshness remain."
+}

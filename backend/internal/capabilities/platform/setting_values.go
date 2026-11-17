@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
+	"github.com/zerodenet/zboard/backend/internal/security"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func NormalizeSettingValue(config Setting, raw json.RawMessage) (string, error) {
@@ -20,7 +25,11 @@ func NormalizeSettingValue(config Setting, raw json.RawMessage) (string, error) 
 		if len(value) > 100000 {
 			return "", errors.New("string config value is too long")
 		}
-		return strings.TrimSpace(value), nil
+		value = strings.TrimSpace(value)
+		if config.ConfigKey == DefaultCurrencyKey {
+			value = strings.ToUpper(value)
+		}
+		return value, nil
 	case "bool":
 		var value bool
 		if err := json.Unmarshal(raw, &value); err != nil {
@@ -46,6 +55,14 @@ func NormalizeSettingValue(config Setting, raw json.RawMessage) (string, error) 
 }
 
 func ValidateSettingValue(key, value string) error {
+	if setting, ok := observability.RetentionSettingFor(key); ok {
+		n, e := strconv.Atoi(value)
+		if e != nil || n < 0 || n > setting.Maximum {
+			return fmt.Errorf("%s必须为0–%d之间的整数", setting.Name, setting.Maximum)
+		}
+		return nil
+	}
+
 	if minimum, maximum, ok := alertSettingBounds(key); ok {
 		number, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || number < minimum || number > maximum {
@@ -53,6 +70,20 @@ func ValidateSettingValue(key, value string) error {
 		}
 	}
 	switch key {
+	case DefaultCurrencyKey:
+		return ValidateDefaultCurrency(value)
+	case identity.CleanupDaysKey:
+		_, err := identity.ParseCleanupDays(value)
+		return err
+	case SubscriptionPrefixKey:
+		_, err := SubscriptionPrefix(value)
+		return err
+	case metering.DiagnosticCollectionKey:
+		return metering.ValidateDiagnosticCollection(value, time.Now().UTC())
+	case entitlements.RecoveryGraceDaysKey:
+		if _, err := entitlements.ParseRecoveryGraceDays(value); err != nil {
+			return err
+		}
 	case "subscription_alert_low_enabled", "subscription_alert_exhausted_enabled", "subscription_alert_expiring_enabled", "subscription_alert_expired_enabled":
 		if value != "true" && value != "false" {
 			return errors.New("subscription alert switch must be a boolean")
@@ -61,7 +92,18 @@ func ValidateSettingValue(key, value string) error {
 		if value == "" || len(value) > 80 {
 			return errors.New("site_name must contain 1 to 80 bytes")
 		}
-	case "site_url", "subscribe_url", "site_logo", "subscription_camouflage_url":
+	case "site_logo", "site_logo_dark", "site_favicon":
+		if value == "" || security.IsLocalSiteImageReference(value) {
+			return nil
+		}
+		if len(value) > 2048 {
+			return fmt.Errorf("%s must not exceed 2048 bytes", key)
+		}
+		parsed, err := url.ParseRequestURI(value)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Fragment != "" || strings.Contains(value, "#") {
+			return fmt.Errorf("%s must be an HTTP/HTTPS URL or an uploaded site image", key)
+		}
+	case "site_url", "subscribe_url", "subscription_camouflage_url":
 		if value == "" && key != "site_url" {
 			return nil
 		}

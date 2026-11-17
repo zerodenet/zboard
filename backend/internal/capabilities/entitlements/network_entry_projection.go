@@ -10,6 +10,7 @@ type NetworkEntryProjectionSubscription struct {
 }
 
 type NetworkEntryProjectionEntry struct {
+	DeliveryStatus                      string
 	DeploymentMode                      string
 	ID, NodeGroupID, NodeID, EndpointID uint
 	Name, Address, Network              string
@@ -34,6 +35,8 @@ type NetworkEntryProjectionNode struct {
 }
 
 type NetworkEntryProjectionCredential struct {
+	MaterialVersion                    uint16
+	DeliveryStatus                     string
 	SubscriptionID, ProtocolEndpointID uint
 	CredentialID, SecretCiphertext     string
 	ListenPort, PublicPort             int

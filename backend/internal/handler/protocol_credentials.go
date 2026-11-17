@@ -285,14 +285,8 @@ func (h *handlers) ReconcileMieruEndpointCredentials() error {
 		}
 	}
 	if !h.zeroMieruAccess {
-		for _, endpoint := range endpoints {
-			if !endpoint.MieruPrincipalReady {
-				continue
-			}
-			if _, exists := changedNodes[endpoint.NodeID]; !exists {
-				changedNodes[endpoint.NodeID] = endpoint.ID
-			}
-		}
+		// Artifact selection mode is not the installed kernel's capability.
+		// Never reverse a successfully published Mieru readiness fact on startup.
 		if err := h.queueMieruEndpointPublications(changedNodes); err != nil {
 			return err
 		}
@@ -340,6 +334,24 @@ func (h *handlers) credentialClientConfig(endpoint model.ProtocolEndpoint, crede
 	secret, err := h.credentialCipher.Decrypt(credential.Secret)
 	if err != nil {
 		return nil, err
+	}
+	if credential.MaterialVersion > 0 {
+		method := ""
+		if strings.EqualFold(endpoint.Protocol, "shadowsocks") {
+			raw, e := h.credentialCipher.Decrypt(endpoint.ServerConfig)
+			if e != nil {
+				return nil, e
+			}
+			var server map[string]interface{}
+			if e = json.Unmarshal([]byte(raw), &server); e != nil {
+				return nil, e
+			}
+			method, _ = server["cipher"].(string)
+		}
+		secret, err = entitlements.RenderCredentialMaterial(secret, endpoint.Protocol, method)
+		if err != nil {
+			return nil, err
+		}
 	}
 	client["server"] = endpoint.Address
 	client["port"] = protocolCredentialClientPort(endpoint, credential)

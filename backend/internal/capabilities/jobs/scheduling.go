@@ -42,6 +42,10 @@ type Definition struct {
 	// Ephemeral admission hint from the domain's read-only work-availability
 	// probe. Plans remain visible without writing empty execution records.
 	SuppressDispatch bool
+	// CompactHistory keeps only the latest clean successful execution of a core
+	// reconciler. Schedule counters remain cumulative. Failed, retried and lost
+	// executions retain their original evidence; plugin/manual jobs never opt in.
+	CompactHistory bool
 }
 
 type ScheduleView struct {
@@ -61,4 +65,17 @@ type SchedulingStore interface {
 	Schedule(context.Context, Definition) error
 	Schedules(context.Context) ([]ScheduleView, error)
 	CancelHandler(context.Context, string) error
+}
+
+// ScheduleDispatch is a committed scheduling observation, not permission to
+// bypass Claim's global budget, resource fence, maintenance or lease rules.
+type ScheduleDispatch struct {
+	NextAt   time.Time
+	Runnable bool
+}
+
+// DispatchSchedulingStore reports the outcome of the same canonical Schedule
+// writer. Stores without this optional observation retain ordinary polling.
+type DispatchSchedulingStore interface {
+	ScheduleDispatch(context.Context, Definition) (ScheduleDispatch, error)
 }

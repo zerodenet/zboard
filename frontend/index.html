@@ -1,8 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Apply before styles and Vue load so a saved dark preference never paints light first.
+      (function () {
+        var mode = 'system', dark = false;
+        try { mode = localStorage.getItem('zboard.appearance') || 'system'; } catch (_) {}
+        try { dark = mode === 'dark' || (mode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (_) { dark = mode === 'dark'; }
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      })();
+    </script>
     <title>zboard console</title>
   </head>
   <body>

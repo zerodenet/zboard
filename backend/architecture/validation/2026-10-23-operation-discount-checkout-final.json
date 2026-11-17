@@ -1,0 +1,183 @@
+{
+  "source": "28d3b60c8da10f7e8e8f6d9ddf0637f668920732",
+  "scope": "actual target-operation discount admission and timed quota value continuity",
+  "local": {
+    "backend": {
+      "source": "28d3b60c8da10f7e8e8f6d9ddf0637f668920732",
+      "checkout": "/workspace/zboard",
+      "phase": "backend",
+      "started_utc": "2026-10-23T12:37:39.560611+00:00",
+      "environment": {
+        "GOMAXPROCS": "2",
+        "parallel_packages": "1"
+      },
+      "checks": [
+        {
+          "name": "full-go",
+          "command": "go test -p 1 ./...",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 493.817,
+          "log": "full-go-28d3b60-final.log",
+          "log_sha256": "efa187824d8f607963a688de7cbc8f5efbbfc080022e7589f0aebe6e10841c26"
+        },
+        {
+          "name": "vet",
+          "command": "go vet -p 1 ./...",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 17.541,
+          "log": "vet-28d3b60-final.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "build",
+          "command": "go build ./cmd/zboard",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 2.133,
+          "log": "build-28d3b60-final.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "pure-go-sqlite",
+          "command": "go test -p 1 ./internal/datastore -run SQLite -count=1",
+          "environment_additions": {
+            "CGO_ENABLED": "0"
+          },
+          "exit_code": 0,
+          "wall_seconds": 61.4,
+          "log": "pure-go-sqlite-28d3b60-final.log",
+          "log_sha256": "645b5c1821a6d0168ce9b95a803045a34dc93b6b1b84b0b66e3f37d89df47df2"
+        }
+      ],
+      "pending": [],
+      "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+      "finished_utc": "2026-10-23T12:47:14.452376+00:00"
+    },
+    "mysql": {
+      "source": "28d3b60c8da10f7e8e8f6d9ddf0637f668920732",
+      "checkout": "/workspace/zboard",
+      "phase": "mysql",
+      "started_utc": "2026-10-23T12:48:31.340856+00:00",
+      "environment": {
+        "GOMAXPROCS": "2",
+        "parallel_packages": "1"
+      },
+      "checks": [
+        {
+          "name": "mysql-core",
+          "command": "go test -p 1 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 1273.554,
+          "log": "mysql-core-28d3b60-final.log",
+          "log_sha256": "4ddc6e66a98c6e827d0d9e1ea0c5ee5d5c4afdc51a16588f4402865706fccf96"
+        },
+        {
+          "name": "mysql-jobstore",
+          "command": "go test -p 1 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 143.089,
+          "log": "mysql-jobstore-28d3b60-final.log",
+          "log_sha256": "0d14a34f0d076e399485a3d119dcc98af835032758dc301b89aea84b7a8f61fe"
+        },
+        {
+          "name": "mysql-copy",
+          "command": "go test -p 1 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 274.254,
+          "log": "mysql-copy-28d3b60-final.log",
+          "log_sha256": "de49880646d60fa53a59401c3cbba76c83d950c56650b969b133191b4ba0b3e9"
+        }
+      ],
+      "pending": [],
+      "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+      "finished_utc": "2026-10-23T13:16:42.238818+00:00"
+    }
+  },
+  "ci": {
+    "source": "28d3b60c8da10f7e8e8f6d9ddf0637f668920732",
+    "run_id": 39954656048,
+    "status": "completed",
+    "conclusion": "failure",
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39954656048",
+    "jobs": [
+      {
+        "id": 120417357969,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120417358171,
+        "name": "compose",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120417358269,
+        "name": "mysql",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 120417358323,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120417358324,
+        "name": "contract",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120417358359,
+        "name": "zrs-compiler",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "ci_failure": {
+    "source": "28d3b60c8da10f7e8e8f6d9ddf0637f668920732",
+    "run_id": 39954656048,
+    "job_id": 120417358269,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39954656048/job/120417358269",
+    "raw_log_sha256": "cb91eb2f0127e6f0be7dfaa999c3a42d5630fef4498bfd673e427ffa8990a9a6",
+    "lines": [
+      "2026-10-23T12:41:14.7075243Z ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t192.563s",
+      "2026-10-23T12:53:21.2098537Z panic: test timed out after 15m0s",
+      "2026-10-23T12:53:21.2098914Z \t\tTestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay (1s)",
+      "2026-10-23T12:53:21.2129547Z FAIL\tgithub.com/zerodenet/zboard/backend/internal/handler\t900.022s",
+      "2026-10-23T12:53:21.2129847Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t195.129s",
+      "2026-10-23T12:53:21.2130051Z ok  \tgithub.com/zerodenet/zboard/backend/internal/application\t25.565s",
+      "2026-10-23T12:53:21.4680607Z  2026-10-23T12:42:02.915449Z 0 [Warning] [MY-014089] [InnoDB] Redo log writer is waiting for a new redo log file. Consider increasing innodb_redo_log_capacity. The current log capacity is 104857600 bytes. The log capacity used is 104857600 bytes.",
+      "2026-10-23T12:53:21.4681315Z  2026-10-23T12:43:20.048182Z 0 [Warning] [MY-014089] [InnoDB] Redo log writer is waiting for a new redo log file. Consider increasing innodb_redo_log_capacity. The current log capacity is 104857600 bytes. The log capacity used is 104857600 bytes."
+    ],
+    "interpretation": "Package-total15m timeout, not evidence final test hung. Redo warnings are diagnostic clues only. Jobstore/copy not run by this failed CI command chain. Original15m/-p2/coverage remain unchanged."
+  },
+  "cache_cleanup": {
+    "utc": "2026-10-23T12:48:16.296832+00:00",
+    "target": "/workspace/toolchains/cache/go-build",
+    "resolved": "/workspace/toolchains/cache/go-build",
+    "symlinks": false,
+    "workloads": [],
+    "command": "go clean -cache",
+    "free_before": 112123904,
+    "exit_code": 0,
+    "output": "",
+    "free_after": 1148645376
+  },
+  "note": "Local completion does not override failed CI. Full original CI jobstore/copy did not run after handler timeout. No unchanged-CI rerun was requested.",
+  "not_verified": [
+    "new behavior race/count3",
+    "external live providers/kernels/browser/OS crashes",
+    "original capacity disk gate",
+    "remaining P2/P4/P6/P7"
+  ]
+}

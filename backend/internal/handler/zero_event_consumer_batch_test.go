@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ type checkpointTestSpool struct {
 	zeroevent.EventSpool
 	events    []zeroevent.Envelope
 	position  int
+	readCap   int
 	limits    []int
 	commitErr error
 	complete  context.CancelFunc
@@ -24,6 +27,9 @@ func (s *checkpointTestSpool) ReadBatch(ctx context.Context, limit int) (zeroeve
 		return zeroevent.Batch{}, err
 	}
 	s.limits = append(s.limits, limit)
+	if s.readCap > 0 {
+		limit = min(limit, s.readCap)
+	}
 	end := min(s.position+limit, len(s.events))
 	return zeroevent.Batch{Events: s.events[s.position:end], Next: zeroevent.Checkpoint{Record: uint64(end)}}, nil
 }
@@ -39,9 +45,11 @@ func (s *checkpointTestSpool) Commit(_ context.Context, next zeroevent.Checkpoin
 	return nil
 }
 
-func (s *checkpointTestSpool) Status() zeroevent.Status { return zeroevent.Status{} }
+func (s *checkpointTestSpool) Status() zeroevent.Status {
+	return zeroevent.Status{PendingEvents: int64(len(s.events) - s.position)}
+}
 
-func TestSQLiteConsumerShortTransactionsContinueAfterFullBurst(t *testing.T) {
+func TestSQLiteConsumerDrainsWindowThroughShortTransactions(t *testing.T) {
 	h, credential := accountingBenchmarkFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -57,12 +65,12 @@ func TestSQLiteConsumerShortTransactionsContinueAfterFullBurst(t *testing.T) {
 			break
 		}
 	}
-	if spool.position != count || len(spool.limits) != zeroEventConsumerBurstBatches+1 {
+	if spool.position != count || len(spool.limits) != 1 {
 		t.Fatalf("consumer stalled after full burst: position=%d reads=%v", spool.position, spool.limits)
 	}
 	for _, limit := range spool.limits {
-		if limit != zeroEventSQLiteBatchLimit {
-			t.Fatalf("SQLite transaction limit=%d", limit)
+		if limit != 2000 {
+			t.Fatalf("SQLite read window limit=%d", limit)
 		}
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, int64(count*30), subStatusActive)
@@ -100,4 +108,67 @@ func TestConsumerBatchSizingPreservesConfiguredSmallerAndMySQLLimits(t *testing.
 	if got := zeroEventConsumerNextInterval(time.Hour, zeroevent.Status{}, false); got != time.Hour {
 		t.Fatalf("idle interval=%s", got)
 	}
+}
+
+func TestConsumerContinuesByteLimitedWindowOnlyWhenPending(t *testing.T) {
+	h, credential := accountingBenchmarkFixture(t)
+	spool := &checkpointTestSpool{events: accountingBenchmarkEvents(credential, 0, 3), readCap: 2}
+	runtime := &zeroEventRuntime{spool: spool, config: zeroevent.ConsumerConfig{MaxBatch: 2000}}
+	if err := h.consumeZeroEventCycle(context.Background(), runtime); !errors.Is(err, capabilityjobs.ErrContinue) || spool.position != 2 {
+		t.Fatalf("byte-limited backlog stalled: position=%d err=%v", spool.position, err)
+	}
+	if err := h.consumeZeroEventCycle(context.Background(), runtime); err != nil || spool.position != 3 {
+		t.Fatalf("drained window kept yielding: position=%d err=%v", spool.position, err)
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 90, subStatusActive)
+}
+
+func TestConsumerRebasedLegacySpoolReplaysAccountingExactlyOnce(t *testing.T) {
+	h, credential := accountingBenchmarkFixture(t)
+	events := accountingBenchmarkEvents(credential, 0, 33)
+	prior := &checkpointTestSpool{events: events, commitErr: errors.New("old cursor persistence failed")}
+	if _, err := h.consumeZeroEventBatch(context.Background(), prior, 32); err == nil {
+		t.Fatal("fixture did not leave committed accounting behind")
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 960, subStatusActive)
+	cfg := zeroevent.DefaultConfig()
+	cfg.Directory = t.TempDir()
+	cfg.Compression.Enabled = false
+	cfg.Compression.Algorithm = zeroevent.CompressionNone
+	cfg.Compaction.Enabled = false
+	cfg.Storage.MinFreeSpace = 0
+	cfg.Storage.EmergencyReserve = 0
+	spool, err := zeroevent.NewFileSpool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := spool.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if err := spool.Append(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := spool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// A retained pre-reuse cursor, matching the production failure shape.
+	if err := os.WriteFile(filepath.Join(cfg.Directory, "checkpoint.json"), []byte(`{"segment":2975,"block":1,"record":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := zeroevent.NewFileSpool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recovered.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer recovered.Close()
+	for _, want := range []int{32, 1, 0} {
+		if count, err := h.consumeZeroEventBatch(context.Background(), recovered, 32); err != nil || count != want {
+			t.Fatalf("count=%d want=%d err=%v", count, want, err)
+		}
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 990, subStatusActive)
 }

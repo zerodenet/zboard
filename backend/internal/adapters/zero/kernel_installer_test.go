@@ -25,16 +25,31 @@ func (d *kernelRemoteDialerStub) Dial(ctx context.Context) (KernelRemoteSession,
 }
 
 type kernelRemoteSessionStub struct {
-	runs       []kernelRemoteRun
-	uploads    []kernelRemoteUpload
-	closed     int
-	runErrorAt int
-	uploadErr  int
+	runs           []kernelRemoteRun
+	uploads        []kernelRemoteUpload
+	closed         int
+	buildInfo      string
+	runErrorAt     int
+	runErrorOutput string
+	uploadErr      int
+	eventStateMode string
 }
+
+const nativeTestBuildInfo = `build_id: 0.0.3-dev.202610102233
+features: status-api,connector
+protocol_capabilities: [{"protocol":"direct","compiled":true,"inbound":{"udp":{"supported":true}}},{"protocol":"vless","compiled":true},{"protocol":"socks5","compiled":true},{"protocol":"trojan","compiled":true},{"protocol":"vmess","compiled":true},{"protocol":"shadowsocks","compiled":true},{"protocol":"hysteria2","compiled":true},{"protocol":"mieru","compiled":true}]
+`
 
 type kernelRemoteRun struct {
 	command    string
 	privileged bool
+}
+
+func (s *kernelRemoteSessionStub) RunWithLifetime(ctx context.Context, command string, privileged bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return s.Run(command, privileged)
 }
 
 type kernelRemoteUpload struct {
@@ -46,7 +61,29 @@ type kernelRemoteUpload struct {
 func (s *kernelRemoteSessionStub) Run(command string, privileged bool) (string, error) {
 	s.runs = append(s.runs, kernelRemoteRun{command: command, privileged: privileged})
 	if s.runErrorAt == len(s.runs) {
+		if s.runErrorOutput != "" {
+			return s.runErrorOutput, errors.New("run failed")
+		}
 		return "remote failure", errors.New("run failed")
+	}
+	if strings.Contains(command, " build-info") || strings.Contains(command, " build_info") {
+		if s.buildInfo != "" {
+			return s.buildInfo, nil
+		}
+		return nativeTestBuildInfo, nil
+	}
+	if strings.HasSuffix(command, "\nevent_state_mode\n") {
+		if s.eventStateMode != "" {
+			return s.eventStateMode, nil
+		}
+		return "preserve", nil
+	}
+	if strings.Contains(command, "expected_sha=") {
+		for _, line := range strings.Split(command, "\n") {
+			if strings.HasPrefix(line, "expected_sha='") {
+				return "ZBOARD_CONFIG_APPLIED=" + strings.TrimSuffix(strings.TrimPrefix(line, "expected_sha='"), "'"), nil
+			}
+		}
 	}
 	return "ok", nil
 }
@@ -75,19 +112,58 @@ func TestKernelInstallerStagesAndActivatesThroughRemotePort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dialer.dials != 1 || len(session.runs) != 2 || len(session.uploads) != 5 || session.closed != 1 {
+	if dialer.dials != 1 || len(session.runs) != 4 || len(session.uploads) != 5 || session.closed != 1 {
 		t.Fatalf("dials=%d runs=%d uploads=%d closed=%d", dialer.dials, len(session.runs), len(session.uploads), session.closed)
 	}
 	if session.runs[0].privileged || !strings.Contains(session.runs[0].command, "/tmp/zboard-zero-stage-id") {
 		t.Fatalf("staging command=%+v", session.runs[0])
 	}
-	if !session.runs[1].privileged || !strings.Contains(session.runs[1].command, "ZBOARD_KERNEL_ACTIVATED") {
+	if !session.runs[2].privileged || session.runs[2].command != "'/tmp/zboard-zero-stage-id/zero' connector state --json '/tmp/zboard-zero-stage-id/runtime.json'" {
+		t.Fatalf("persistent-state preflight command=%+v", session.runs[2])
+	}
+	if !session.runs[3].privileged || !strings.Contains(session.runs[3].command, "ZBOARD_KERNEL_ACTIVATED") {
 		t.Fatalf("activation command=%+v", session.runs[1])
 	}
 	want := []struct{ suffix, mode string }{{"/zero", "0700"}, {"/runtime.json", "0600"}, {"/zero.env", "0600"}, {"/zero.service", "0644"}, {"/cleanup-zero-node.sh", "0700"}}
 	for index, expected := range want {
 		if !strings.HasSuffix(session.uploads[index].path, expected.suffix) || session.uploads[index].mode != expected.mode {
 			t.Fatalf("upload[%d]=%+v", index, session.uploads[index])
+		}
+	}
+}
+
+func TestKernelInstallerDoesNotRequireUnusedConnectorOrVersionFloor(t *testing.T) {
+	session := &kernelRemoteSessionStub{buildInfo: strings.Replace(strings.Replace(nativeTestBuildInfo, NativeBaselineVersion, "0.0.3-dev.202610100641", 1), "status-api,connector", "status-api", 1)}
+	err := (KernelInstaller{Dialer: &kernelRemoteDialerStub{session: session}}).Install(context.Background(), KernelInstallRequest{OperationID: 9, Binary: []byte("binary"), BinarySHA256: strings.Repeat("a", 64), RuntimeConfig: []byte(`{"inbounds":[]}`), ConnectorKey: "secret", ExpectedVersion: "0.0.3-dev.202610100641"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activated := false
+	for _, run := range session.runs {
+		if strings.Contains(run.command, " connector ") || strings.Contains(run.command, "connector-state") {
+			t.Fatal("unused connector capability required")
+		}
+		activated = activated || strings.Contains(run.command, "systemctl restart zero")
+	}
+	if !activated {
+		t.Fatal("compatible operator-selected binary was not installed")
+	}
+}
+
+func TestKernelInstallerLeavesRunningKernelUntouchedWhenPersistentStatePreflightFails(t *testing.T) {
+	session := &kernelRemoteSessionStub{runErrorAt: 3, runErrorOutput: `{"compatible":false,"connector_files":[{"status":"incompatible"}]}`}
+	err := (KernelInstaller{Dialer: &kernelRemoteDialerStub{session: session}, NewStageID: func() string { return "stage-id" }}).Install(context.Background(), KernelInstallRequest{
+		OperationID: 41, Binary: []byte("binary"), BinarySHA256: strings.Repeat("a", 64), RuntimeConfig: []byte(`{"inbounds":[]}`), ConnectorKey: "secret",
+	})
+	if err == nil || !strings.Contains(err.Error(), "persistent-state preflight failed; kernel left unchanged") || !strings.Contains(err.Error(), `"compatible":false`) {
+		t.Fatalf("preflight failure lost: %v", err)
+	}
+	if len(session.runs) != 3 || session.closed != 1 {
+		t.Fatalf("runs=%+v closed=%d", session.runs, session.closed)
+	}
+	for _, run := range session.runs {
+		if strings.Contains(run.command, "systemctl") || strings.Contains(run.command, "ZBOARD_KERNEL_ACTIVATED") || strings.Contains(run.command, "/usr/local/bin/zero") {
+			t.Fatalf("preflight failure touched current runtime: %s", run.command)
 		}
 	}
 }
@@ -153,7 +229,7 @@ func (s *offlineKernelSession) UploadSCP(path, mode string, data []byte) error {
 func (s *offlineKernelSession) Run(command string, privileged bool) (string, error) {
 	output, err := s.kernelRemoteSessionStub.Run(command, privileged)
 	if strings.HasSuffix(command, " build_info") {
-		return "build_id: " + s.version + "\n", err
+		return strings.Replace(nativeTestBuildInfo, NativeBaselineVersion, s.version, 1), err
 	}
 	return output, err
 }
@@ -169,14 +245,14 @@ func TestOfflineKernelInstallerUsesSCPAndChecksVersionBeforeActivation(t *testin
 		scpErr        error
 		activate      bool
 	}{
-		{"valid", "0.0.3-dev.1", nil, true}, {"wrong version", "0.0.2", nil, false}, {"transfer rejected", "0.0.3-dev.1", errors.New("denied"), false},
+		{"valid", NativeBaselineVersion, nil, true}, {"wrong version", "0.0.2", nil, false}, {"transfer rejected", NativeBaselineVersion, errors.New("denied"), false},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			session := &offlineKernelSession{version: scenario.version, scpErr: scenario.scpErr}
-			err := (KernelInstaller{Dialer: offlineKernelDialer{session: session}}).Install(context.Background(), KernelInstallRequest{OperationID: 12, Binary: []byte("binary"), BinarySHA256: strings.Repeat("a", 64), RuntimeConfig: []byte("{}"), ConnectorKey: "secret", UseSCP: true, ExpectedVersion: "0.0.3-dev.1"})
+			err := (KernelInstaller{Dialer: offlineKernelDialer{session: session}}).Install(context.Background(), KernelInstallRequest{OperationID: 12, Binary: []byte("binary"), BinarySHA256: strings.Repeat("a", 64), RuntimeConfig: []byte("{}"), ConnectorKey: "secret", UseSCP: true, ExpectedVersion: NativeBaselineVersion})
 			activated := false
 			for _, run := range session.runs {
-				if run.privileged {
+				if strings.Contains(run.command, "ZBOARD_KERNEL_ACTIVATED") {
 					activated = true
 				}
 			}

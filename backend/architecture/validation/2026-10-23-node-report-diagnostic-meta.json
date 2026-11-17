@@ -1,0 +1,258 @@
+{
+  "recorded_utc": "2026-10-23T18:00:08.264036+00:00",
+  "base_head": "b5c525c335e57d9ae9224c0a8d6b9c94576e16bb",
+  "candidate_not_base_commit": true,
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "overall_complete": false,
+  "checks": [
+    {
+      "head": "b5c525c335e57d9ae9224c0a8d6b9c94576e16bb",
+      "phase": "baseline",
+      "started_utc": "2026-10-23T17:46:22.681773+00:00",
+      "finished_utc": "2026-10-23T17:48:37.112035+00:00",
+      "checks": [
+        {
+          "name": "old-mysql-failure",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestMySQLNodeReportDiagnosticSizeDoesNotBlockAccounting$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 134.28,
+          "log": "baseline-1-old-mysql-failure.log",
+          "log_sha256": "78186a3a24052bd4a397472e1ff52b34a3d02e852d62438e5aa5368b3169ac33"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": true,
+      "name": "baseline-1",
+      "source_before_sha256": "12ca7fc2a2df2746cb8d91291ac71a5bbdc67f569d678bb341a521a2bfb4eedb",
+      "source_after_sha256": "12ca7fc2a2df2746cb8d91291ac71a5bbdc67f569d678bb341a521a2bfb4eedb",
+      "top_level": {
+        "pass": [],
+        "fail": [
+          "TestMySQLNodeReportDiagnosticSizeDoesNotBlockAccounting"
+        ],
+        "skip": []
+      },
+      "interpretation": "Actual old MySQL8.4 implementation:65535-byte Meta committed;65536-byte Meta raised Error1406, rolling back entire valid billable report.134.280s includes cold compile; no SQLite substitution."
+    },
+    {
+      "head": "b5c525c335e57d9ae9224c0a8d6b9c94576e16bb",
+      "phase": "go",
+      "started_utc": "2026-10-23T17:50:19.936973+00:00",
+      "finished_utc": "2026-10-23T17:52:22.683402+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/adapters/persistence/meteringstore",
+            "./internal/capabilities/metering",
+            "./internal/handler",
+            "-run",
+            "^Test(NodeReport.*|LegacyTrafficReport.*|UsageProjectionReadsOnlyRequiredColumnsAndPreservesMetadata|UsageProjectionNarrowColumnsStillRejectChangedSourceEvidence)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 122.609,
+          "log": "go-1-target.log",
+          "log_sha256": "158e6abc23127b9ecc9e52583cedb3246e37765abe618fb6d900094b4877368f"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": false,
+      "name": "go-1",
+      "source_before_sha256": "d5be0318329e459113d0c73c1b1e4438febca23ada2fff5186804db65c1ee482",
+      "source_after_sha256": "d5be0318329e459113d0c73c1b1e4438febca23ada2fff5186804db65c1ee482",
+      "top_level": {
+        "pass": [
+          "TestUsageProjectionReadsOnlyRequiredColumnsAndPreservesMetadata",
+          "TestUsageProjectionNarrowColumnsStillRejectChangedSourceEvidence",
+          "TestNodeReportSignature",
+          "TestLegacyTrafficReportCannotMixIndependentSubscriptions",
+          "TestNodeReportCapabilityTransactionReplayAndRotation",
+          "TestNodeReportDiagnosticSizeDoesNotBlockAccounting"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "interpretation": "Final Go source passed unchanged boundary/omission receipt, credential/nonce/independent subscription, original metadata projection and rollback behavior."
+    },
+    {
+      "head": "b5c525c335e57d9ae9224c0a8d6b9c94576e16bb",
+      "phase": "mysql",
+      "started_utc": "2026-10-23T17:53:59.650995+00:00",
+      "finished_utc": "2026-10-23T17:54:13.569914+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^TestMySQL(NodeReportDiagnostic.*|LegacyTrafficReport.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 13.776,
+          "log": "mysql-1-mysql.log",
+          "log_sha256": "e03ed43996957d6e10196dfbbcf00169f87f4dfc8d4caa1c31f784b8cbf8c6d4"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": true,
+      "name": "mysql-1",
+      "source_before_sha256": "d5be0318329e459113d0c73c1b1e4438febca23ada2fff5186804db65c1ee482",
+      "source_after_sha256": "d5be0318329e459113d0c73c1b1e4438febca23ada2fff5186804db65c1ee482",
+      "top_level": {
+        "pass": [
+          "TestMySQLLegacyTrafficReportCannotMixIndependentSubscriptions",
+          "TestMySQLNodeReportDiagnosticSizeDoesNotBlockAccounting"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "interpretation": "Same final Go source, actual MySQL8.4 diagnostic limit and original independent-subscription attribution passed; zero skip."
+    },
+    {
+      "head": "b5c525c335e57d9ae9224c0a8d6b9c94576e16bb",
+      "phase": "contract",
+      "started_utc": "2026-10-23T17:56:59.502773+00:00",
+      "finished_utc": "2026-10-23T17:57:09.277834+00:00",
+      "checks": [
+        {
+          "name": "lint",
+          "cwd": ".",
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "-v",
+            "/workspace/zboard/backend/api:/spec/backend/api:ro",
+            "-w",
+            "/spec",
+            "redocly/cli:1.34.3",
+            "lint",
+            "backend/api/openapi.yaml"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 9.637,
+          "log": "contract-1-lint.log",
+          "log_sha256": "46415da4b57a59a152df532e7e65c3c53bad160ea3437efd06f54463ea67524f"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": false,
+      "name": "contract-1",
+      "source_before_sha256": "10a5c76ca49619d948d809e20445d7a2489c98818a7e28ae61b43ad6365f1c77",
+      "source_after_sha256": "10a5c76ca49619d948d809e20445d7a2489c98818a7e28ae61b43ad6365f1c77",
+      "top_level": {
+        "pass": [],
+        "fail": [],
+        "skip": []
+      },
+      "interpretation": "Final OpenAPI prose clarifies existing request limits and source-specific omission; same Go bytes, Redocly1.34.3 passed282existing warnings."
+    }
+  ],
+  "source_binding": "Go and actual MySQL sources identical. Only OpenAPI descriptions changed afterward to clarify existing request limits and native metadata preservation; contract check covers final API.",
+  "final_source_sha256": "10a5c76ca49619d948d809e20445d7a2489c98818a7e28ae61b43ad6365f1c77",
+  "source_scope": "All Go, frontend ts/vue, module manifests, OpenAPI/ownership JSON; prose/evidence/ignored artifacts excluded.",
+  "files": [
+    {
+      "path": "backend/internal/adapters/persistence/meteringstore/node_report.go",
+      "original_sha256": "c6677fa666041b871311a1a1393daf75d05c9079e89a60e7d6e44e2120412aa9",
+      "candidate_sha256": "fcac63eefa5c2b192f8e498d77eadb586f0f6ddaedece5450a09fd026e046a0d"
+    },
+    {
+      "path": "backend/internal/adapters/persistence/meteringstore/node_report_metadata.go",
+      "original_sha256": null,
+      "candidate_sha256": "52efe8043b2a6e19b6f5c67763fb21e7aca5a85a932b3fad32cf83efc92f4087"
+    },
+    {
+      "path": "backend/internal/handler/node_report_diagnostic_meta_test.go",
+      "original_sha256": null,
+      "candidate_sha256": "ad618c1ea5d77da426fc7b3ed40fd234bf48c87cfc59b180c0df0ea30e36dd06"
+    },
+    {
+      "path": "backend/api/openapi.yaml",
+      "original_sha256": "62657c31b38e12abf8d4d7525e5491302d6f49b7bb753a005e7370b86b12a812",
+      "candidate_sha256": "5aa031466eeee70492f5a27dfa6b635c17287f2f56718f1995c1dbc5c635d821"
+    }
+  ],
+  "cache_actions": [
+    {
+      "utc": "2026-10-23T17:50:19.776812+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "process_scan_valid": true,
+      "ps_columns": [
+        "pid",
+        "state",
+        "comm",
+        "args"
+      ],
+      "workloads_before_env_probe": [],
+      "workloads_after_env_probe": [],
+      "free_before": 47742976,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 518840320
+    },
+    {
+      "utc": "2026-10-23T17:56:59.365589+00:00",
+      "target": "/workspace/toolchains/cache/go-build",
+      "resolved": "/workspace/toolchains/cache/go-build",
+      "symlinks": false,
+      "process_scan_valid": true,
+      "ps_columns": [
+        "pid",
+        "state",
+        "comm",
+        "args"
+      ],
+      "workloads_before_env_probe": [],
+      "workloads_after_env_probe": [],
+      "free_before": 39550976,
+      "command": "go clean -cache",
+      "exit_code": 0,
+      "output": "",
+      "free_after": 516595712
+    }
+  ],
+  "transaction": "Original credential/endpoint/single-period fence, report/nonce identities, original raw/mode/multiplier/ceiling/min-remaining charge, quota/ledger/durable projection intent stay one transaction. Only optional legacy reporter Meta over published TEXT65535 byte capacity becomes bounded length/limit/SHA256 receipt; native financial Meta and historical records untouched.",
+  "unverified": [
+    "Latest exact new head CI not yet created until batch push; b5 intermediate has no independent CI, final descendant must validate both",
+    "Full local backend4/MySQL3/race3 under original storage limit not executed",
+    "No new capacity/load/browser/actual node/production acceptance",
+    "Only per-report diagnostic TEXT size solved; opt-in controls, total retention/archive and accounting/identity growth remain incomplete"
+  ]
+}

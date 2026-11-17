@@ -3,6 +3,7 @@ import { formatNumber, formatUnknownValue } from './format'
 import { normalizeOutput, truncateOutput } from './output'
 
 const auditActions: Record<string, string> = {
+  'subscription.delete': '删除订阅',
   'system.settings.update': '更新站点设置',
   'system.config.update': '更新系统配置',
   'user.create': '创建用户',

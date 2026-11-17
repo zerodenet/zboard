@@ -65,7 +65,7 @@ func receiptRequest(h *handlers, nodeID uint, id string) *httptest.ResponseRecor
 }
 
 func TestMySQLBufferedReceiptsDoNotWaitForLockedNode(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	node, runtime := receiptFixture(t, h)
 	lock := h.db.Begin()
 	if lock.Error != nil {
@@ -123,7 +123,7 @@ func TestMySQLBufferedReceiptsDoNotWaitForLockedNode(t *testing.T) {
 }
 
 func TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	node, runtime := receiptFixture(t, h)
 	// Warm the existing five-second authentication cache before starving the
 	// pool. An uncached authentication read still needs a database connection.
@@ -163,7 +163,7 @@ func TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool(t *testing.T) {
 }
 
 func TestMySQLBufferedReceiptRevalidatesCredentialAfterContention(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	node, runtime := receiptFixture(t, h)
 	lock := h.db.Begin()
 	if lock.Error != nil {
@@ -256,7 +256,7 @@ func TestFailedDurableAppendDoesNotQueueReceipt(t *testing.T) {
 }
 
 func TestMySQLBufferedReceiptCannotUndoStopWithinSameMillisecond(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	node, runtime := receiptFixture(t, h)
 	base := time.Now().UTC().Truncate(time.Millisecond)
 	runtime.enqueueReceipt(bufferedConnectorReceipt{node: network.EventNode{ID: node.ID, Credential: node.NodeCredential}, at: base.Add(100 * time.Microsecond)})

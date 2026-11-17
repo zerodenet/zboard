@@ -61,6 +61,7 @@ type zeroEventEnvelope struct {
 }
 
 type zeroFlowProjection struct {
+	InboundTag   string
 	FlowID       string
 	Revision     uint64
 	PrincipalKey string
@@ -113,6 +114,20 @@ func (h *handlers) zeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	// High-frequency buffered events are fully validated before durable append.
 	// After validation, any Append error is a storage/service failure and must
 	// stay retryable instead of being misclassified as a client-side 400.
+	if buffered, err := h.appendBufferedZeroEvent(r.Context(), node, event); buffered {
+		if err != nil {
+			writeZeroEventRequestError(w, err)
+			return
+		}
+		state.buffered = true
+		OK(w, map[string]interface{}{
+			"accepted": true,
+			"buffered": true,
+			"event_id": event.EventID,
+		})
+		return
+	}
+
 	switch event.EventType {
 	case "stats.sampled":
 		if _, err := parseZeroStatsProjection(event.Payload); err != nil {
@@ -129,19 +144,6 @@ func (h *handlers) zeroEventHandler(w http.ResponseWriter, r *http.Request) {
 			BadRequest(w, "flow event has no attributable principal_key")
 			return
 		}
-	}
-	if buffered, err := h.appendBufferedZeroEvent(r.Context(), node, event); buffered {
-		if err != nil {
-			ServerError(w, err)
-			return
-		}
-		state.buffered = true
-		OK(w, map[string]interface{}{
-			"accepted": true,
-			"buffered": true,
-			"event_id": event.EventID,
-		})
-		return
 	}
 
 	// Legacy mode intentionally keeps the old synchronous path as the migration
@@ -199,12 +201,7 @@ func (h *handlers) zeroEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if exhausted {
 	}
-	OK(w, map[string]interface{}{
-		"accepted":          true,
-		"event_id":          event.EventID,
-		"traffic_record_id": result.ID,
-		"charged_bytes":     result.UsedBytes,
-	})
+	OK(w, zeroFlowEventReceiptResponse(event.EventID, result))
 }
 
 type zeroEventRequestError struct {
@@ -329,7 +326,7 @@ func (h *handlers) invalidateZeroEventCredential(nodeID uint) {
 
 func (h *handlers) recordZeroConnectorActivity(ctx context.Context, node network.EventNode, event zeroEventEnvelope) error {
 	now := time.Now().UTC()
-	activity := network.NodeActivityUpdate{At: now, Online: true, ConnectorSeen: true}
+	activity := network.NodeActivityUpdate{At: now, Online: true, ConnectorSeen: true, CounterWriter: network.CounterWriterLegacyConnector}
 	switch event.EventType {
 	case "engine.started":
 		var payload struct {
@@ -425,11 +422,15 @@ func parseZeroFlowProjection(event zeroEventEnvelope) (zeroFlowProjection, error
 	if revision == 0 {
 		revision, _ = uint64Value(payload["revision"])
 	}
-	return zeroFlowProjection{FlowID: flowID, Revision: revision, PrincipalKey: principal, BytesUp: bytesUp, BytesDown: bytesDown}, nil
+	inboundTag, err := zeroFlowInboundTag(payload, record)
+	if err != nil {
+		return zeroFlowProjection{}, err
+	}
+	return zeroFlowProjection{InboundTag: inboundTag, FlowID: flowID, Revision: revision, PrincipalKey: principal, BytesUp: bytesUp, BytesDown: bytesDown}, nil
 }
 
 func (h *handlers) recordZeroFlowEvent(node network.EventNode, event zeroEventEnvelope, flow zeroFlowProjection) (model.TrafficRecord, bool, error) {
-	record, exhausted, err := h.services.CompletionAccounting(h.credentialCipher).Complete(context.Background(), metering.CompletedFlow{NodeID: node.ID, SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())})
+	record, exhausted, err := h.services.CompletionAccounting(h.credentialCipher).Complete(context.Background(), metering.CompletedFlow{NodeID: node.ID, SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, InboundTag: flow.InboundTag, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())})
 	return model.TrafficRecord(record), exhausted, err
 }
 func zeroEventTime(event zeroEventEnvelope, fallback time.Time) time.Time {
@@ -486,4 +487,19 @@ func maxInt64(left, right int64) int64 {
 
 func (event zeroEventEnvelope) String() string {
 	return fmt.Sprintf("%s/%s", event.EventType, event.EventID)
+}
+
+// A canonical row can include many original reports. Replaying one accepted
+// report applies no new charge; its ACK must never claim the entire minute's
+// cumulative amount as the charge for that report. Legacy ACKs stay unchanged.
+func zeroFlowEventReceiptResponse(eventID string, record model.TrafficRecord) map[string]interface{} {
+	out := map[string]interface{}{"accepted": true, "event_id": eventID, "traffic_record_id": record.ID, "charged_bytes": record.UsedBytes}
+	if record.IsAggregate {
+		out["traffic_record_aggregate"] = true
+		if record.ReportID != eventID {
+			out["duplicate"] = true
+			out["charged_bytes"] = int64(0)
+		}
+	}
+	return out
 }

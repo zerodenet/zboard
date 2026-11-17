@@ -1,23 +1,25 @@
 <template>
   <section class="standard-page">
     <PageHeader
-      title="商品与套餐"
-      description="查看商品的购买用途、价格与交付范围，进入详情管理销售规格。"
-      eyebrow="Catalog"
+      title="套餐管理"
     >
       <template #actions>
-        <PageRefreshButton label="刷新商品与套餐" :loading="loading" @click="refreshAll" />
+        <PageRefreshButton label="刷新套餐管理" :loading="loading" @click="refreshAll" />
         <UiButton v-if="app.isAdmin" type="button" @click="openCreate">
-          <UiIcon name="plus" />创建商品
+          <UiIcon name="plus" />创建套餐
         </UiButton>
       </template>
     </PageHeader>
+    <PageAlert v-if="createDraftRecovery.message.value || planDraftRecovery.message.value || skuDraftRecovery.message.value" tone="info" title="重新认证后的草稿">
+      {{ createDraftRecovery.message.value || planDraftRecovery.message.value || skuDraftRecovery.message.value }}
+      <UiButton variant="ghost" size="sm" type="button" @click="createDraftRecovery.restore(); planDraftRecovery.restore(); skuDraftRecovery.restore()">重新检查草稿恢复</UiButton>
+    </PageAlert>
 
     <TransientFeedback
       :success="message"
       :error="error"
-      success-title="商品配置已更新"
-      error-title="商品操作失败"
+      success-title="套餐配置已更新"
+      error-title="套餐操作失败"
     />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
@@ -33,17 +35,17 @@
         </WorkbenchFilterBar>
       </template>
 
-      <TableSkeleton v-if="loading && !plans.length" label="正在加载商品" :columns="8" />
+      <TableSkeleton v-if="loading && !plans.length" label="正在加载套餐" :columns="8" />
       <DataTable
         v-else-if="plans.length"
-        caption="套餐商品列表"
+        caption="套餐列表"
         :row-count="total"
         :min-width="820"
         table-class="plan-table"
       >
         <thead>
           <tr>
-            <th class="table-primary-column">商品</th>
+            <th class="table-primary-column">套餐</th>
             <th>状态</th>
             <th class="numeric-column">流量配额</th>
             <th data-column-priority="2">节点组</th>
@@ -57,8 +59,8 @@
           <tr v-for="plan in plans" :key="plan.id">
             <td class="table-primary-column">
               <div class="cell-title">
-                <strong>{{ plan.name }}</strong>
-                <TableText :value="`${plan.slug} · ${plan.summary || '暂无摘要'}`" />
+                <EntityDetailButton :data-plan-detail-trigger="plan.id" @click="openDetails(plan.id)">{{ plan.name }}</EntityDetailButton>
+                <TableText :value="plan.summary ? `${plan.slug} · ${plan.summary}` : plan.slug" />
               </div>
             </td>
             <td>
@@ -87,13 +89,13 @@
       </DataTable>
 
       <EmptyState
-        v-else
+        v-else-if="!error"
         icon="plans"
-        title="没有匹配的商品"
-        description="调整筛选条件，或创建第一个商品。"
+        title="没有匹配的套餐"
+        description="调整筛选条件，或创建第一个套餐。"
       >
         <template v-if="app.isAdmin" #actions>
-          <UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建商品</UiButton>
+          <UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建套餐</UiButton>
         </template>
       </EmptyState>
 
@@ -110,15 +112,15 @@
 
     <DetailDrawer
       :open="Boolean(expandedPlanID)"
-      :title="detailPlan?.name || '商品详情'"
-      :description="detailPlan?.summary || '商品策略和销售规格按需加载'"
+      :title="detailPlan?.name || '套餐详情'"
+      :description="detailPlan?.summary || '套餐策略和销售规格按需加载'"
       :return-focus-selector="detailReturnFocusSelector"
       @close="closeDetails"
     >
       <div v-if="detailLoading" class="detail-loading" role="status" aria-live="polite">
-        <StatusBadge tone="info" icon="refresh">正在加载商品详情</StatusBadge>
+        <StatusBadge tone="info" icon="refresh">正在加载套餐详情</StatusBadge>
       </div>
-      <PageAlert v-else-if="detailError" tone="danger" title="商品详情加载失败">
+      <PageAlert v-else-if="detailError" tone="danger" title="套餐详情加载失败">
         {{ detailError }}
         <template #actions>
           <UiButton variant="secondary" size="sm" type="button" @click="retryDetail">重试</UiButton>
@@ -134,7 +136,7 @@
             :data-plan-editor-trigger="detailPlan.id"
             @click="openPlanEditor"
           >
-            <UiIcon name="edit" />编辑商品
+            <UiIcon name="edit" />编辑套餐
           </UiButton>
           <UiButton
             v-if="app.isAdmin"
@@ -154,14 +156,14 @@
             :loading="statusUpdating"
             @click="toggleActive(detailPlan)"
           >
-            {{ detailPlan.is_active ? '转为草稿' : '发布商品' }}
+            {{ detailPlan.is_active ? '转为草稿' : '发布套餐' }}
           </UiButton>
-          <UiButton v-if="app.isAdmin" variant="danger" size="sm" type="button" :loading="deleting" @click="removePlan(detailPlan)">删除商品</UiButton>
+          <UiButton v-if="app.isAdmin" variant="danger" size="sm" type="button" :loading="deleting" @click="removePlan(detailPlan)">删除套餐</UiButton>
         </div>
 
         <dl class="detail-kv">
-          <div><dt>商品状态</dt><dd><StatusBadge :tone="detailPlan.is_active ? 'success' : 'neutral'">{{ detailPlan.is_active ? '已发布' : '草稿' }}</StatusBadge></dd></div>
-          <div><dt>商品 Slug</dt><dd class="mono">{{ detailPlan.slug }}</dd></div>
+          <div><dt>套餐状态</dt><dd><StatusBadge :tone="detailPlan.is_active ? 'success' : 'neutral'">{{ detailPlan.is_active ? '已发布' : '草稿' }}</StatusBadge></dd></div>
+          <div><dt>套餐 Slug</dt><dd class="mono">{{ detailPlan.slug }}</dd></div>
           <div><dt>权限组</dt><dd><RouterLink v-if="app.isAdmin" :to="withAdminReturnTo('/admin/node-groups', route.fullPath, { group: String(detailPlan.node_group_id) })">{{ detailPlan.node_group?.name || `#${detailPlan.node_group_id}` }} · 管理线路权限</RouterLink><span v-else>{{ detailPlan.node_group?.name || `#${detailPlan.node_group_id}` }}</span></dd></div>
           <div><dt>SKU 总数 / 可售</dt><dd>{{ detailPlan.sku_count }} / {{ detailPlan.active_sku_count }}</dd></div>
           <div><dt>流量配额</dt><dd>{{ formatBytes(detailPlan.traffic_bytes) }}</dd></div>
@@ -181,7 +183,7 @@
         <div class="detail-section-heading">
           <div>
             <h3>销售规格</h3>
-            <p>商品统一定义流量、限速和设备数；SKU 只定义价格、周期和可用场景。</p>
+            <p>套餐统一定义流量、限速和设备数；SKU 只定义价格、周期和可用场景。</p>
           </div>
           <span>{{ detailPlan.sku_count }} 个</span>
         </div>
@@ -232,7 +234,7 @@
                 <td data-column-priority="2"><span class="sku-operation-summary">{{ operationSummary(sku.allowed_operations) }}</span></td>
                 <td class="value-cell" data-column-priority="3">
                   <div class="cell-title cell-related">
-                    <TableText :value="sku.entitlement_mode === 'traffic_reset' ? '恢复本周期套餐额度' : sku.entitlement_mode === 'traffic_addon' ? `流量加购 · ${formatBytes(sku.grant_traffic_bytes)}` : '继承商品权益'" />
+                    <TableText :value="sku.entitlement_mode === 'traffic_reset' ? '恢复本周期套餐额度' : sku.entitlement_mode === 'traffic_addon' ? `流量加购 · ${formatBytes(sku.grant_traffic_bytes)}` : '继承套餐权益'" />
                     <span v-if="skuOperationsFor(sku).includes('renew')">再次购买：{{ renewalEffectLabel(sku) }}</span>
                   </div>
                 </td>
@@ -249,7 +251,7 @@
             v-else
             icon="plans"
             title="没有匹配销售规格"
-            description="调整筛选条件，或为商品新增 SKU。"
+            description="调整筛选条件，或为套餐新增 SKU。"
           >
             <template v-if="app.isAdmin" #actions>
               <UiButton type="button" @click="openCreateSKU"><UiIcon name="plus" />新增 SKU</UiButton>
@@ -272,18 +274,18 @@
     <ModalDialog
       :open="createOpen"
       :dirty="createState.dirty.value"
-      title="创建商品与首个 SKU"
-      description="先建立商品边界和一个可售规格，后续 SKU 独立维护。"
+      title="创建套餐与首个 SKU"
+      description="先建立套餐边界和一个可售规格，后续 SKU 独立维护。"
       size="xl"
       :busy="saving"
       @close="createOpen = false"
     >
       <form id="create-plan-form" ref="createFormElement" class="stack" novalidate @submit.prevent="create">
-        <PageAlert v-if="createErrors.formError.value" tone="danger" title="无法创建商品">{{ createErrors.formError.value }}</PageAlert>
+        <PageAlert v-if="createErrors.formError.value" tone="danger" title="无法创建套餐">{{ createErrors.formError.value }}</PageAlert>
         <section class="form-section">
-          <div class="form-section-title"><span>1</span><div><h3>商品信息</h3><p>用于目录展示和内部识别。</p></div></div>
+          <div class="form-section-title"><span>1</span><div><h3>套餐信息</h3><p>用于目录展示和内部识别。</p></div></div>
           <div class="form-grid form-grid-3">
-            <FormField v-slot="{ controlAttrs }" label="商品名称" name="create-plan-name" :error="createErrors.fields.name" required>
+            <FormField v-slot="{ controlAttrs }" label="套餐名称" name="create-plan-name" :error="createErrors.fields.name" required>
               <UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="基础套餐" />
             </FormField>
             <FormField v-slot="{ controlAttrs }" label="Slug" name="create-plan-slug" :error="createErrors.fields.slug" required>
@@ -315,7 +317,7 @@
             </FormField>
             <SKUCycleFields v-if="form.sku.entitlement_mode === 'plan'" id-prefix="create-plan" v-model:billing-unit="form.sku.billing_unit" v-model:billing-value="form.sku.billing_value" :hint="billingUnitHint(form.sku)" :unit-error="createErrors.fields['sku.billing_unit']" :value-error="createErrors.fields['sku.billing_value']" />
             <FormField v-if="skuOperationsFor(form.sku).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="create-plan-renewal-effect" :hint="renewalEffectHint(form.sku)" :error="createErrors.fields['sku.renewal_effect']" required><UiSelect v-model="form.sku.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(form.sku)" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种输入金额。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || 'CNY'" :min-cents="0" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="价格" name="create-plan-price" hint="按所选币种输入金额。" :error="createErrors.fields['sku.price_cents']" required><MoneyInput v-model="form.sku.price_cents" v-bind="controlAttrs" :currency="form.sku.currency || platformDefaultCurrency(app.publicConfigs)" :min-cents="0" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="币种" name="create-plan-currency" :error="createErrors.fields['sku.currency']" required><UiInput v-model.trim="form.sku.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
             <FormField v-if="form.sku.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="create-plan-grant-traffic" hint="增加目标订阅当前周期的可用流量；定期重置时不会重复发放。" :error="createErrors.fields['sku.grant_traffic_bytes']"><ByteSizeInput v-model="form.sku.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="create-plan-max-subscriptions" :error="createErrors.fields.max_active_subscriptions"><UiNumberInput v-model="form.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
@@ -323,7 +325,7 @@
           </div>
         </section>
         <section class="form-section">
-          <div class="form-section-title"><span>3</span><div><h3>套餐权益与交付边界</h3><p>这些权益由商品统一定义，所有“套餐权益”SKU 共享。</p></div></div>
+          <div class="form-section-title"><span>3</span><div><h3>套餐权益与交付边界</h3><p>这些权益由套餐统一定义，所有“套餐权益”SKU 共享。</p></div></div>
           <div class="form-grid form-grid-3">
             <FormField v-slot="{ controlAttrs }" label="流量配额" name="create-plan-traffic" hint="统一以 GiB 输入并换算为字节保存。" :error="createErrors.fields.traffic_bytes" required><ByteSizeInput v-model="form.traffic_bytes" v-bind="controlAttrs" :min-bytes="1024 ** 3" /></FormField>
   <FormField v-slot="{ controlAttrs }" label="设备数" name="create-plan-device-limit" :error="createErrors.fields.device_limit" required><UiNumberInput v-model="form.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
@@ -331,38 +333,38 @@
             <FormField v-slot="{ controlAttrs }" label="节点组" name="create-plan-node-group" hint="按名称、代码或说明远程搜索，不预载全部节点组。" :error="createErrors.fields.node_group_id" required><NodeGroupLookup v-model="form.node_group_id" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量重置" name="create-plan-reset-policy" hint="永久套餐交付时始终不重置；此策略用于其他定期 SKU。" :error="createErrors.fields.reset_policy"><UiSelect v-model.number="form.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="消耗计算" name="create-plan-traffic-mode" :error="createErrors.fields.traffic_calc_mode"><UiSelect v-model.number="form.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="发布状态" name="create-plan-is_active"><label class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>创建后立即发布商品</span></label></FormField>
+            <FormField v-slot="{ controlAttrs }" label="发布状态" name="create-plan-is_active"><label class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>创建后立即发布套餐</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="续费" name="create-plan-is_renewable"><label class="check-field"><UiCheckbox v-model="form.is_renewable" v-bind="controlAttrs" /><span>允许用户续费</span></label></FormField>
           </div>
         </section>
       </form>
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
-        <UiButton form="create-plan-form" type="submit" :loading="saving">创建商品与 SKU</UiButton>
+        <UiButton form="create-plan-form" type="submit" :loading="saving">创建套餐与 SKU</UiButton>
       </template>
     </ModalDialog>
 
     <ModalDialog
       :open="planEditorOpen"
       :dirty="planEditorState.dirty.value"
-      title="编辑商品"
-      description="商品展示、交付边界和套餐策略独立于 SKU 价格维护。"
+      title="编辑套餐"
+      description="套餐展示、交付边界和套餐策略独立于 SKU 价格维护。"
       size="xl"
       :busy="saving"
       :return-focus-selector="planEditorReturnFocusSelector"
       @close="closePlanEditor"
     >
       <form id="edit-plan-form" ref="planFormElement" class="stack" novalidate @submit.prevent="savePlan">
-        <PageAlert v-if="planErrors.formError.value" tone="danger" title="无法保存商品">{{ planErrors.formError.value }}</PageAlert>
+        <PageAlert v-if="planErrors.formError.value" tone="danger" title="无法保存套餐">{{ planErrors.formError.value }}</PageAlert>
         <div class="editor-version-meta"><StatusBadge tone="neutral" icon="history">版本 {{ planDraft.revision }}</StatusBadge><TimeBadge :value="planDraft.updated_at" /></div>
-        <PageAlert v-if="planRevisionConflict" tone="warning" title="商品已在其他会话更新">
-          当前草稿基于旧版本。请重新加载最新商品信息后再继续，避免覆盖其他会话的修改。
+        <PageAlert v-if="planRevisionConflict" tone="warning" title="套餐已在其他会话更新">
+          当前草稿基于旧版本。请重新加载最新套餐信息后再继续，避免覆盖其他会话的修改。
           <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="detailLoading" @click="reloadPlanEditor"><UiIcon name="refresh" />重新加载最新版本</UiButton></template>
         </PageAlert>
         <section class="form-section">
-          <div class="form-section-title"><span>1</span><div><h3>商品信息</h3><p>调整目录展示和内部排序。</p></div></div>
+          <div class="form-section-title"><span>1</span><div><h3>套餐信息</h3><p>调整目录展示和内部排序。</p></div></div>
           <div class="form-grid form-grid-3">
-            <FormField v-slot="{ controlAttrs }" label="商品名称" name="edit-plan-name" :error="planErrors.fields.name" required><UiInput v-model.trim="planDraft.name" v-bind="controlAttrs" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="套餐名称" name="edit-plan-name" :error="planErrors.fields.name" required><UiInput v-model.trim="planDraft.name" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="Slug" name="edit-plan-slug" :error="planErrors.fields.slug" required><UiInput v-model.trim="planDraft.slug" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="排序" name="edit-plan-sort-order" :error="planErrors.fields.sort_order"><UiNumberInput v-model="planDraft.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="摘要" name="edit-plan-summary" :error="planErrors.fields.summary" full><UiInput v-model.trim="planDraft.summary" v-bind="controlAttrs" maxlength="255" /></FormField>
@@ -371,23 +373,28 @@
         </section>
         <section class="form-section">
           <div class="form-section-title"><span>2</span><div><h3>套餐策略</h3><p>定义所有 SKU 共享的权限上限和流量口径。</p></div></div>
+          <PageAlert title="更换节点组会同步现有订阅">
+            保存节点组变更后，本套餐所有未结束订阅的接入范围自动同步，无需勾选流量配额同步。两组共有且已确认交付的接入点继续保留；新增接入点需等待配置交付核验后才能使用，移出范围的接入点将撤权。
+          </PageAlert>
           <div class="form-grid form-grid-3">
             <FormField v-slot="{ controlAttrs }" label="节点组" name="edit-plan-node-group" hint="按需检索，不预载全部节点组。" :error="planErrors.fields.node_group_id" required><NodeGroupLookup v-model="planDraft.node_group_id" v-bind="controlAttrs" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量配额" name="edit-plan-traffic" :error="planErrors.fields.traffic_bytes" required><ByteSizeInput v-model="planDraft.traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="历史订阅额度" name="edit-plan-sync-traffic-quota" hint="此选项只控制流量配额，不影响更换节点组时的接入范围同步。同步仍有效的订阅，保留已用流量、有效期、原重置日期和续费锁价。永久额度仅调整原基础批次，已购加购额度保持；无法核对的历史会整笔拒绝。普通单周期额度下调至已用量以下时剩余为零。" :error="planErrors.fields.sync_traffic_quota" full><label class="check-field"><UiCheckbox v-model="planDraft.sync_traffic_quota" v-bind="controlAttrs" /><span>将本次流量配额同步到现有订阅</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="速率限制" name="edit-plan-speed" hint="0 表示不限速。" :error="planErrors.fields.speed_limit_mbps"><UiNumberInput v-model="planDraft.speed_limit_mbps" v-bind="controlAttrs" :min="0" suffix=" Mbps" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="设备数" name="edit-plan-device-limit" :error="planErrors.fields.device_limit" required><UiNumberInput v-model="planDraft.device_limit" v-bind="controlAttrs" :min="1" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="最大有效订阅" name="edit-plan-max-subscriptions" :error="planErrors.fields.max_active_subscriptions"><UiNumberInput v-model="planDraft.max_active_subscriptions" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="家庭共享人数" name="edit-plan-family-limit" :error="planErrors.fields.family_limit"><UiNumberInput v-model="planDraft.family_limit" v-bind="controlAttrs" :min="0" inputmode="numeric" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="流量重置" name="edit-plan-reset-policy" :error="planErrors.fields.reset_policy"><UiSelect v-model.number="planDraft.reset_policy" v-bind="controlAttrs" :options="resetPolicyOptions" /></FormField>
+            <FormField v-slot="{ controlAttrs }" label="现有订阅重置" name="edit-plan-sync-reset-policy" :error="planErrors.fields.sync_reset_policy" hint="仅调整后续重置，不清零当前用量。永久和固定流量订阅不参与。"><label class="check-field"><UiCheckbox v-model="planDraft.sync_reset_policy" v-bind="controlAttrs" /><span>同步重置策略</span></label></FormField>
             <FormField v-slot="{ controlAttrs }" label="消耗计算" name="edit-plan-traffic-mode" :error="planErrors.fields.traffic_calc_mode"><UiSelect v-model.number="planDraft.traffic_calc_mode" v-bind="controlAttrs" :options="trafficCalcOptions" /></FormField>
             <FormField v-slot="{ controlAttrs }" label="续费" name="edit-plan-is_renewable"><label class="check-field"><UiCheckbox v-model="planDraft.is_renewable" v-bind="controlAttrs" /><span>允许用户续费</span></label></FormField>
-            <FormField v-slot="{ controlAttrs }" label="发布状态" name="edit-plan-is_active"><label class="check-field"><UiCheckbox v-model="planDraft.is_active" v-bind="controlAttrs" /><span>商品已发布</span></label></FormField>
+            <FormField v-slot="{ controlAttrs }" label="发布状态" name="edit-plan-is_active"><label class="check-field"><UiCheckbox v-model="planDraft.is_active" v-bind="controlAttrs" /><span>套餐已发布</span></label></FormField>
           </div>
         </section>
       </form>
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
-        <UiButton form="edit-plan-form" type="submit" :loading="saving" :disabled="planRevisionConflict">保存商品</UiButton>
+        <UiButton form="edit-plan-form" type="submit" :loading="saving" :disabled="planRevisionConflict">保存套餐</UiButton>
       </template>
     </ModalDialog>
 
@@ -402,6 +409,9 @@
       @close="closeSKU"
     >
       <form id="sku-form" ref="skuFormElement" class="form-grid form-grid-3" novalidate @submit.prevent="saveSKU">
+        <PageAlert v-if="skuRecoveryConflict" tone="warning" title="销售规格已在其他会话更新">当前草稿仍可查看，但不能直接覆盖服务器的新内容。
+          <template #actions><UiButton type="button" variant="secondary" @click="reloadRecoveredSKU">重新加载最新规格</UiButton></template>
+        </PageAlert>
         <PageAlert v-if="skuErrors.formError.value" class="field-full" tone="danger" title="无法保存规格">{{ skuErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="销售用途" name="edit-sku-entitlement-mode" full :error="skuErrors.fields.entitlement_mode"><UiSelect v-model="skuDraft.entitlement_mode" v-bind="controlAttrs" :options="entitlementModeOptions" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="规格名称" name="edit-sku-name" :error="skuErrors.fields.name" required><UiInput v-model.trim="skuDraft.name" v-bind="controlAttrs" /></FormField>
@@ -419,7 +429,7 @@
         <SKUCycleFields v-if="skuDraft.entitlement_mode === 'plan'" id-prefix="edit-sku" v-model:billing-unit="skuDraft.billing_unit" v-model:billing-value="skuDraft.billing_value" :hint="billingUnitHint(skuDraft)" :unit-error="skuErrors.fields.billing_unit" :value-error="skuErrors.fields.billing_value" />
         <FormField v-if="skuOperationsFor(skuDraft).includes('renew')" v-slot="{ controlAttrs }" label="再次购买效果" name="edit-sku-renewal-effect" :hint="renewalEffectHint(skuDraft)" :error="skuErrors.fields.renewal_effect" required><UiSelect v-model="skuDraft.renewal_effect" v-bind="controlAttrs" :options="renewalEffectOptions(skuDraft)" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="币种" name="edit-sku-currency" :error="skuErrors.fields.currency" required><UiInput v-model.trim="skuDraft.currency" v-bind="controlAttrs" maxlength="8" /></FormField>
-        <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按所选币种输入金额。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || 'CNY'" :min-cents="0" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="价格" name="edit-sku-price" hint="按所选币种输入金额。" :error="skuErrors.fields.price_cents"><MoneyInput v-model="skuDraft.price_cents" v-bind="controlAttrs" :currency="skuDraft.currency || platformDefaultCurrency(app.publicConfigs)" :min-cents="0" /></FormField>
         <FormField v-if="skuDraft.entitlement_mode === 'traffic_addon'" v-slot="{ controlAttrs }" label="附加流量" name="edit-sku-grant-traffic" hint="只增加目标订阅当前周期的可用流量；定期重置时失效。" :error="skuErrors.fields.grant_traffic_bytes"><ByteSizeInput v-model="skuDraft.grant_traffic_bytes" v-bind="controlAttrs" :min-bytes="1" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="排序" name="edit-sku-sort-order" :error="skuErrors.fields.sort_order"><UiNumberInput v-model="skuDraft.sort_order" v-bind="controlAttrs" inputmode="numeric" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="销售状态" name="edit-sku-active" :error="skuErrors.fields.is_active" full>
@@ -428,13 +438,14 @@
       </form>
       <template #footer="{ requestClose }">
         <UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton>
-        <UiButton form="sku-form" type="submit" :loading="saving">{{ skuDraft.id ? '保存规格' : '创建规格' }}</UiButton>
+        <UiButton form="sku-form" type="submit" :disabled="skuRecoveryConflict" :loading="saving">{{ skuDraft.id ? '保存规格' : '创建规格' }}</UiButton>
       </template>
     </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import EntityDetailButton from '../components/EntityDetailButton.vue'
 import TableText from '../components/TableText.vue'
 import SKUCycleFields from '../components/SKUCycleFields.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -479,7 +490,11 @@ import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import UiNumberInput from '../components/UiNumberInput.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { useRemoteTable } from '../composables/useRemoteTable'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { createPlanRecoveryDraft, pickPlanDraft, pickSKUDraft, planRecoveryDraft, skuRecoveryDraft } from '../utils/reauthenticationDraftSchemas'
+import { resetPolicyOptions } from '../utils/resetPolicy'
 import { useAppStore } from '../stores/app'
+import { platformDefaultCurrency } from '../utils/platformCurrency'
 import { confirmAction, notify } from '../utils/feedback'
 import { formatBytes, formatCurrency, formatUnknownValue } from '../utils/format'
 import {
@@ -537,7 +552,7 @@ const emptySKU = (planID = 0) => ({
   billing_unit: 'month',
   billing_value: 1,
   price_cents: 0,
-  currency: 'CNY',
+  currency: platformDefaultCurrency(app.publicConfigs),
   grant_traffic_bytes: 0,
   is_active: true,
   sort_order: 0,
@@ -562,6 +577,8 @@ const emptyPlanForm = () => ({
   sku: emptySKU(),
 })
 const emptyPlanDraft = () => ({
+  sync_traffic_quota: false,
+  sync_reset_policy: false,
   id: 0,
   name: '',
   slug: '',
@@ -587,6 +604,66 @@ const skuDraft = reactive<PlanSKU>(emptySKU())
 const createState = useDirtyForm(() => form)
 const planEditorState = useDirtyForm(() => planDraft)
 const skuState = useDirtyForm(() => skuDraft)
+const recoveryReady = ref(false)
+const planDraftBaseline = ref('')
+const createDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.plans.create', permission: 'admin', ready: () => recoveryReady.value,
+  read: () => createOpen.value ? { entityID: 0, revision: 0, baseline: '', fields: { ...form, sort_order: 0 }, sku: form.sku } : null,
+  sanitize: createPlanRecoveryDraft,
+  restore: value => {
+    if (value.entityID !== 0) return false
+    Object.assign(form, value.fields)
+    Object.assign(form.sku, value.sku)
+    createOpen.value = true
+  },
+})
+const planDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.plans.edit', permission: 'admin',
+  ready: () => recoveryReady.value && planEditorOpen.value && detailPlan.value?.id === planDraft.id,
+  read: () => planEditorOpen.value && !createOpen.value && !skuOpen.value ? { entityID: planDraft.id, revision: Number.isSafeInteger(planDraft.revision) ? planDraft.revision : 0, baseline: planDraftBaseline.value, syncTraffic: planDraft.sync_traffic_quota, syncReset: planDraft.sync_reset_policy, fields: planDraft } : null,
+  sanitize: planRecoveryDraft,
+  restore: value => {
+    if (value.entityID !== planDraft.id || !detailPlan.value) return false
+    const changed = value.revision > 0 ? detailPlan.value.revision !== value.revision : value.baseline !== planDraftBaseline.value
+    Object.assign(planDraft, value.fields)
+    // Recovery restores the original concurrency boundary, never authorizes an
+    // old draft against the freshly fetched server revision.
+    planDraft.revision = value.revision
+    planDraftBaseline.value = value.baseline
+    planDraft.sync_traffic_quota = value.syncTraffic
+    planDraft.sync_reset_policy = value.syncReset
+    planRevisionConflict.value = changed || !value.baseline
+  },
+})
+
+const skuDraftBaseline = ref('')
+const skuRecoveryConflict = ref(false)
+const skuDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.plans.sku', permission: 'admin', ready: () => recoveryReady.value && skuOpen.value,
+  read: () => skuOpen.value && !createOpen.value ? { entityID: skuDraft.id, planID: skuDraft.plan_id, baseline: skuDraftBaseline.value, fields: skuDraft } : null,
+  sanitize: skuRecoveryDraft,
+  restore: value => {
+    if (value.entityID !== skuDraft.id || value.planID !== skuDraft.plan_id) return false
+    skuRecoveryConflict.value = value.entityID !== 0 && (!value.baseline || value.baseline !== skuDraftBaseline.value)
+    Object.assign(skuDraft, value.fields)
+    skuDraftBaseline.value = value.baseline
+  },
+})
+async function reloadRecoveredSKU() {
+  if (!skuDraft.id) return
+  try {
+    const fresh = await fetchPlanSKU(skuDraft.id)
+    if (fresh.id !== skuDraft.id || fresh.plan_id !== skuDraft.plan_id) return
+    Object.assign(skuDraft, fresh)
+    skuDraft.allowed_operations = skuOperationsFor(skuDraft)
+    skuDraft.billing_mode = skuDraft.billing_mode || (skuDraft.billing_unit === 'once' ? 'one_time' : 'periodic')
+    skuDraft.entitlement_mode = skuDraft.entitlement_mode || (skuDraft.sku_type === 'traffic_reset' ? 'traffic_reset' : skuDraft.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
+    syncSKUCommerceFields(skuDraft)
+    skuDraftBaseline.value = JSON.stringify({ fields: pickSKUDraft(skuDraft), updatedAt: fresh.updated_at || '' })
+    skuRecoveryConflict.value = false
+    skuState.markClean()
+  } catch { skuErrors.set({}, '暂时无法重新加载规格，已保留当前草稿。请检查网络后重试。') }
+}
 useUnsavedChangesGuard(
   () => (createOpen.value && createState.dirty.value)
     || (planEditorOpen.value && planEditorState.dirty.value)
@@ -637,6 +714,8 @@ const createPlanFieldMap: Record<string, string> = {
   'skus.0.grant_traffic_bytes': 'sku.grant_traffic_bytes',
 }
 const planFieldMap: Record<string, string> = {
+  sync_traffic_quota: 'sync_traffic_quota',
+  sync_reset_policy: 'sync_reset_policy',
   name: 'name',
   slug: 'slug',
   summary: 'summary',
@@ -690,7 +769,7 @@ const entitlementModeOptions = [
 const planOperationOptions = [
   { label: '新购', value: 'purchase' as const, description: '允许用户创建新的独立订阅。' },
   { label: '续费', value: 'renew' as const, description: '允许延长有效期，或为永久套餐补充套餐流量。' },
-  { label: '套餐切换', value: 'change' as const, description: '允许其他商品的订阅切换到当前商品。' },
+  { label: '套餐切换', value: 'change' as const, description: '允许其他套餐的订阅切换到当前套餐。' },
 ]
 const timedRenewalEffectOptions = [
   { label: '只延长有效期', value: 'extend_only' },
@@ -698,14 +777,6 @@ const timedRenewalEffectOptions = [
 ]
 const permanentRenewalEffectOptions = [
   { label: '只补充套餐流量', value: 'add_quota_only' },
-]
-const resetPolicyOptions = [
-  { label: '未设置（不重置）', value: 0 },
-  { label: '每月 1 日', value: 1 },
-  { label: '按购买日每月', value: 2 },
-  { label: '每年 1 月 1 日', value: 3 },
-  { label: '按购买日每年', value: 4 },
-  { label: '不重置', value: 5 },
 ]
 const trafficCalcOptions = [
   { label: '上行 + 下行', value: 0 },
@@ -814,7 +885,7 @@ const {
     offset: offset.value,
     limit: limit.value,
   }, { signal }),
-  errorMessage: (cause: any) => cause?.response?.data?.message || '商品数据加载失败。',
+  errorMessage: (cause: any) => cause?.response?.data?.message || '套餐数据加载失败。',
   onOffsetCorrected: () => syncListURL(true),
 })
 
@@ -912,7 +983,7 @@ async function loadDetail(id: number) {
   } catch (cause: any) {
     if (sequence !== detailRequestSequence || cause?.name === 'CanceledError' || cause?.name === 'AbortError') return
     detailPlan.value = null
-    detailError.value = cause?.response?.data?.message || '商品详情加载失败。'
+    detailError.value = cause?.response?.data?.message || '套餐详情加载失败。'
   } finally {
     if (sequence === detailRequestSequence) detailLoading.value = false
   }
@@ -980,11 +1051,13 @@ async function syncDetailAndEditorsFromRoute() {
       return
     }
     if (!skuOpen.value || skuDraft.id !== source.id || (skuKey === 'new' && skuDraft.plan_id !== nextPlanID)) {
+      skuRecoveryConflict.value = false
       Object.assign(skuDraft, JSON.parse(JSON.stringify(source)))
       skuDraft.allowed_operations = skuOperationsFor(skuDraft)
       skuDraft.billing_mode = skuDraft.billing_mode || (skuDraft.billing_unit === 'once' ? 'one_time' : 'periodic')
       skuDraft.entitlement_mode = skuDraft.entitlement_mode || (skuDraft.sku_type === 'traffic_reset' ? 'traffic_reset' : skuDraft.sku_type === 'traffic_pack' ? 'traffic_addon' : 'plan')
       syncSKUCommerceFields(skuDraft)
+      skuDraftBaseline.value = source.id ? JSON.stringify({ fields: pickSKUDraft(skuDraft), updatedAt: source.updated_at || '' }) : ''
       skuErrors.clear()
       skuState.markClean()
     }
@@ -1104,7 +1177,7 @@ function renewalEffectHint(sku: PlanSKU | ReturnType<typeof emptySKU>) {
     ? '永久套餐没有可延长的时间，再次购买会给同一订阅补充一份套餐流量。'
     : sku.renewal_effect === 'extend_and_add_quota'
       ? '延长所选服务期，同时把一份套餐流量加入当前剩余额度。'
-      : '只延长所选服务期；流量额度仍由商品的重置策略管理。'
+      : '只延长所选服务期；流量额度仍由套餐的重置策略管理。'
 }
 
 function renewalEffectLabel(sku: PlanSKU | ReturnType<typeof emptySKU>) {
@@ -1252,8 +1325,8 @@ async function create() {
   delete firstSKUValidation['sku.sort_order']
   const valid = await createErrors.applyValidation({
     ...collectFieldErrors({
-      name: !isUtf8LengthInRange(form.name, 1, 80, true) && '商品名称需包含 1–80 个 UTF-8 字节。',
-      slug: !isSlug(form.slug, 80) && '商品 Slug 只能包含小写字母、数字和单个连字符。',
+      name: !isUtf8LengthInRange(form.name, 1, 80, true) && '套餐名称需包含 1–80 个 UTF-8 字节。',
+      slug: !isSlug(form.slug, 80) && '套餐 Slug 只能包含小写字母、数字和单个连字符。',
       summary: !isUtf8LengthInRange(form.summary, 0, 255) && '摘要不能超过 255 个 UTF-8 字节。',
       description: !isUtf8LengthInRange(form.description, 0, 20_000) && '详细说明不能超过 20,000 个 UTF-8 字节。',
       node_group_id: !isIntegerInRange(form.node_group_id, 1, Number.MAX_SAFE_INTEGER) && '请选择节点组。',
@@ -1266,9 +1339,9 @@ async function create() {
       traffic_calc_mode: !isOneOf(form.traffic_calc_mode, trafficCalcModes) && '请选择有效的流量计算方式。',
     }),
     ...firstSKUValidation,
-  }, createFormElement, '请更正标记字段后再创建商品。')
+  }, createFormElement, '请更正标记字段后再创建套餐。')
   if (!valid) {
-    notify('无法创建商品', createErrors.formError.value, 'danger')
+    notify('无法创建套餐', createErrors.formError.value, 'danger')
     return
   }
   saving.value = true
@@ -1307,12 +1380,12 @@ async function create() {
     })
     createState.markClean()
     createOpen.value = false
-    message.value = '商品和首个 SKU 已创建。'
+    message.value = '套餐和首个 SKU 已创建。'
     await refresh()
     if (created?.id) await setRoute({ plan: Number(created.id), editor: null, sku: null }, true)
   } catch (cause: any) {
-    const failure = await createErrors.applyApiError(cause, '商品创建失败，请检查表单内容。', createFormElement, createPlanFieldMap)
-    notify('无法创建商品', failure.message, 'danger')
+    const failure = await createErrors.applyApiError(cause, '套餐创建失败，请检查表单内容。', createFormElement, createPlanFieldMap)
+    notify('无法创建套餐', failure.message, 'danger')
   } finally {
     saving.value = false
   }
@@ -1331,7 +1404,10 @@ async function closePlanEditor() {
 }
 
 function assignPlanDraft(detail: PlanDetail) {
+  planDraftBaseline.value = JSON.stringify(pickPlanDraft(detail)) || ''
   Object.assign(planDraft, {
+    sync_traffic_quota: false,
+    sync_reset_policy: false,
     id: detail.id,
     name: detail.name,
     slug: detail.slug,
@@ -1365,8 +1441,8 @@ async function reloadPlanEditor() {
 
 function planValidation() {
   return collectFieldErrors({
-    name: !isUtf8LengthInRange(planDraft.name, 1, 80, true) && '商品名称需包含 1–80 个 UTF-8 字节。',
-    slug: !isSlug(planDraft.slug, 80) && '商品 Slug 只能包含小写字母、数字和单个连字符。',
+    name: !isUtf8LengthInRange(planDraft.name, 1, 80, true) && '套餐名称需包含 1–80 个 UTF-8 字节。',
+    slug: !isSlug(planDraft.slug, 80) && '套餐 Slug 只能包含小写字母、数字和单个连字符。',
     summary: !isUtf8LengthInRange(planDraft.summary, 0, 255) && '摘要不能超过 255 个 UTF-8 字节。',
     description: !isUtf8LengthInRange(planDraft.description, 0, 20_000) && '详细说明不能超过 20,000 个 UTF-8 字节。',
     node_group_id: !isIntegerInRange(planDraft.node_group_id, 1, Number.MAX_SAFE_INTEGER) && '请选择节点组。',
@@ -1382,13 +1458,16 @@ function planValidation() {
 }
 
 async function savePlan() {
+  if (planRevisionConflict.value) return
+  const syncTrafficQuota = planDraft.sync_traffic_quota
+  const syncResetPolicy = planDraft.sync_reset_policy
   planDraft.name = planDraft.name.trim()
   planDraft.slug = planDraft.slug.trim().toLowerCase()
   planDraft.summary = planDraft.summary.trim()
   planDraft.description = planDraft.description.trim()
-  const valid = await planErrors.applyValidation(planValidation(), planFormElement, '请更正标记字段后再保存商品。')
+  const valid = await planErrors.applyValidation(planValidation(), planFormElement, '请更正标记字段后再保存套餐。')
   if (!valid) {
-    notify('无法保存商品', planErrors.formError.value, 'danger')
+    notify('无法保存套餐', planErrors.formError.value, 'danger')
     return
   }
   saving.value = true
@@ -1400,6 +1479,8 @@ async function savePlan() {
       description: planDraft.description,
       node_group_id: planDraft.node_group_id,
       traffic_bytes: planDraft.traffic_bytes,
+      sync_traffic_quota: syncTrafficQuota,
+      sync_reset_policy: syncResetPolicy,
       speed_limit_mbps: planDraft.speed_limit_mbps,
       max_active_subscriptions: planDraft.max_active_subscriptions,
       is_renewable: planDraft.is_renewable,
@@ -1414,16 +1495,22 @@ async function savePlan() {
     planEditorState.markClean()
     planEditorOpen.value = false
     await setRoute({ editor: null }, true)
-    message.value = '商品信息和套餐策略已保存。'
+    message.value = syncResetPolicy ? '套餐及所选现有订阅设置已保存。' : syncTrafficQuota ? '套餐已保存，符合条件的历史订阅流量配额已同步。' : '套餐信息和套餐策略已保存。'
     await refreshAll()
   } catch (cause: any) {
     if (cause?.response?.status === 409 || cause?.response?.status === 428) {
       planRevisionConflict.value = true
-      planErrors.formError.value = '服务器版本已变化。请重新加载最新商品信息后再保存。'
-      notify('无法保存商品', planErrors.formError.value, 'danger')
+      planErrors.formError.value = '服务器版本已变化。请重新加载最新套餐信息后再保存。'
+      notify('无法保存套餐', planErrors.formError.value, 'danger')
+    } else if (cause?.response?.status === 503
+      && cause.response.data?.error?.version === 1
+      && cause.response.data.error.code === 'unavailable'
+      && cause.response.data.error.retryable === true) {
+      planErrors.set({}, '服务暂不可用，已保留当前表单、节点组选择和原版本。请稍后再次点击“保存套餐”重试。')
+      notify('无法保存套餐', planErrors.formError.value, 'danger')
     } else {
-      const failure = await planErrors.applyApiError(cause, '商品保存失败，请检查表单内容。', planFormElement, planFieldMap)
-      notify('无法保存商品', failure.message, 'danger')
+      const failure = await planErrors.applyApiError(cause, '套餐保存失败，请检查表单内容。', planFormElement, planFieldMap)
+      notify('无法保存套餐', failure.message, 'danger')
     }
   } finally {
     saving.value = false
@@ -1464,6 +1551,7 @@ function skuPayload() {
 }
 
 async function saveSKU() {
+  if (skuRecoveryConflict.value) return
   normalizeSKUInput(skuDraft)
   syncSKUCommerceFields(skuDraft)
   const valid = await skuErrors.applyValidation(skuValidation(skuDraft), skuFormElement, '请更正标记字段后再保存 SKU。')
@@ -1495,19 +1583,19 @@ async function saveSKU() {
 }
 
 async function removePlan(plan: PlanDetail) {
-  if (deleting.value || !await confirmAction({ title: '删除商品？', message: `删除“${plan.name}”及其销售规格，已有订单和订阅保留。`, confirmText: '删除商品', tone: 'danger' })) return
+  if (deleting.value || !await confirmAction({ title: '删除套餐？', message: `删除“${plan.name}”及其销售规格，已有订单和订阅保留。`, confirmText: '删除套餐', tone: 'danger' })) return
   deleting.value = true
   try {
     await deletePlan(plan.id)
     await closeDetails()
     await refresh()
-    notify('商品已删除', '已有订单和订阅保留。', 'success')
+    notify('套餐已删除', '已有订单和订阅保留。', 'success')
   } catch (cause: any) {
     notify('删除失败', cause?.response?.data?.message || '请稍后重试。', 'danger')
   } finally { deleting.value = false }
 }
 async function removeSKU(sku: PlanSKU) {
-  if (deleting.value || !await confirmAction({ title: '删除销售规格？', message: `删除“${sku.name}”，已有订单和订阅保留。删除最后一个可新购规格时，商品自动转为草稿。`, confirmText: '删除规格', tone: 'danger' })) return
+  if (deleting.value || !await confirmAction({ title: '删除销售规格？', message: `删除“${sku.name}”，已有订单和订阅保留。删除最后一个可新购规格时，套餐自动转为草稿。`, confirmText: '删除规格', tone: 'danger' })) return
   deleting.value = true
   try {
     await deletePlanSKU(sku.id)
@@ -1522,7 +1610,7 @@ async function removeSKU(sku: PlanSKU) {
 async function toggleActive(plan: PlanDetail) {
   const publishing = !plan.is_active
   const confirmed = await confirmAction({
-    title: publishing ? '发布商品？' : '将商品转为草稿？',
+    title: publishing ? '发布套餐？' : '将套餐转为草稿？',
     message: publishing
       ? `发布“${plan.name}”后，所有可售 SKU 将进入用户可购买目录。`
       : `转为草稿后，“${plan.name}”将立即从新购目录中移除，已有订单和订阅不受影响。`,
@@ -1534,10 +1622,10 @@ async function toggleActive(plan: PlanDetail) {
   error.value = ''
   try {
     await updatePlan(plan.id, { is_active: publishing, expected_revision: plan.revision })
-    message.value = publishing ? '商品已发布。' : '商品已转为草稿。'
+    message.value = publishing ? '套餐已发布。' : '套餐已转为草稿。'
     await refreshAll()
   } catch (cause: any) {
-    error.value = cause?.response?.data?.message || '商品状态更新失败。'
+    error.value = cause?.response?.data?.message || '套餐状态更新失败。'
   } finally {
     statusUpdating.value = false
   }
@@ -1585,8 +1673,8 @@ onBeforeRouteUpdate(async (to, from) => {
   const skuEditorChanging = String(to.query.sku || '') !== String(from.query.sku || '')
   if (planEditorChanging && planEditorOpen.value && planEditorState.dirty.value) {
     const confirmed = await confirmAction({
-      title: '放弃未保存的商品修改？',
-      message: '离开商品编辑器后，当前商品信息和套餐策略草稿将丢失。',
+      title: '放弃未保存的套餐修改？',
+      message: '离开套餐编辑器后，当前套餐信息和套餐策略草稿将丢失。',
       confirmText: '放弃修改',
       tone: 'danger',
     })
@@ -1609,6 +1697,7 @@ onBeforeRouteUpdate(async (to, from) => {
 onMounted(async () => {
   await refresh()
   await syncDetailAndEditorsFromRoute()
+  recoveryReady.value = true
 })
 
 onBeforeUnmount(() => {
@@ -1663,7 +1752,7 @@ onBeforeUnmount(() => {
 
 .detail-kv dt {
   color: var(--muted);
-  font-size: 9px;
+  font-size:12px;
 }
 
 .detail-kv dd {
@@ -1671,7 +1760,7 @@ onBeforeUnmount(() => {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
   font-size: 11px;
-  font-weight: 650;
+  font-weight:600;
 }
 
 .plan-description {
@@ -1704,7 +1793,7 @@ onBeforeUnmount(() => {
 .detail-section-heading p,
 .detail-section-heading > span {
   color: var(--muted);
-  font-size: 9px;
+  font-size:12px;
 }
 
 .detail-section-heading p {
@@ -1737,7 +1826,7 @@ onBeforeUnmount(() => {
   color: var(--text-inverse);
   background: var(--primary);
   font-size: 11px;
-  font-weight: 700;
+  font-weight:600;
 }
 
 .form-section-title h3 {

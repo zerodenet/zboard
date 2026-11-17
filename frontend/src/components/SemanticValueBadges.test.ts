@@ -26,6 +26,6 @@ describe('semantic value badges', () => {
     expect(time.attributes('title')).toContain('2026')
     expect(time.attributes('aria-label')).toContain('精确时间')
     expect(time.text()).not.toBe('2026-07-23T04:05:06Z')
-    expect(wrapper.getComponent(UiIcon).props('name')).toBe('clock')
+    expect(wrapper.findComponent(UiIcon).exists()).toBe(false)
   })
 })

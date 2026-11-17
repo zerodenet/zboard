@@ -99,7 +99,7 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 			return &network.NetworkEntryMutationValidation{Message: "A 与 B 必须是两个存在的不同节点"}
 		}
 		for _, node := range nodes {
-			if change.Entry.Enabled && (!node.IsEnabled || node.LifecycleStatus == "deleting") {
+			if change.Entry.Enabled && (!node.IsEnabled || network.NodeManagementClosed(node.LifecycleStatus)) {
 				return &network.NetworkEntryMutationValidation{Message: "A、B 节点必须启用且未在删除"}
 			}
 		}
@@ -108,8 +108,11 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pool, change.Pool.ID).Error; err != nil {
 				return &network.NetworkEntryMutationValidation{Message: "请选择存在的共享代理池"}
 			}
-			if pool.NodeID != change.Entry.NodeID || pool.Revision != change.Pool.Revision || pool.Config != change.Pool.ConfigCiphertext {
+			if pool.Revision != change.Pool.Revision || pool.Config != change.Pool.ConfigCiphertext {
 				return network.ErrNetworkEntryConflict
+			}
+			if e := bindSharedProxyPool(tx, change.Entry.NodeID, pool.ID); e != nil {
+				return e
 			}
 			if change.Entry.Network != "tcp" && !change.PoolSupportsDatagram {
 				message := strings.TrimSpace(change.PoolDatagramError)
@@ -149,6 +152,7 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 		}
 
 		row := networkEntryMutationModel(change.Entry, change.PathCiphertext)
+		row.DeliveryRequired = row.DeploymentMode != "external"
 		if before == nil {
 			row.Revision = 1
 			create := tx
@@ -256,7 +260,7 @@ func networkEntryRecordView(row model.NetworkEntry) network.NetworkEntryRecord {
 	return network.NetworkEntryRecord{
 		DeploymentMode: row.DeploymentMode, ID: row.ID, ProxyPoolID: row.ProxyPoolID, DeliverySortOrder: row.DeliverySortOrder,
 		Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
-		Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
+		Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 		Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -265,7 +269,7 @@ func networkEntryMutationModel(row network.NetworkEntryRecord, path string) mode
 	return model.NetworkEntry{
 		DeploymentMode: row.DeploymentMode, DeliverySortOrder: row.DeliverySortOrder, ProxyPoolID: row.ProxyPoolID, ID: row.ID,
 		Network: row.Network, Name: row.Name, NodeID: row.NodeID, EndpointID: row.EndpointID,
-		Address: row.Address, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
+		Address: row.Address, ListenAddress: row.ListenAddress, Port: row.Port, PublicPort: row.PublicPort, Enabled: row.Enabled,
 		PathConfig: path, Revision: row.Revision, CreatedAt: row.CreatedAt,
 	}
 }

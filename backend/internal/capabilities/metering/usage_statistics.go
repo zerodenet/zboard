@@ -6,6 +6,7 @@ import (
 )
 
 type UsageStatistics struct {
+	History    *HistoryCoverage `json:"history,omitempty"`
 	Total      int64            `json:"total"`
 	Aggregates RecordAggregates `json:"aggregates"`
 	Bucket     string           `json:"bucket"`

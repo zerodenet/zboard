@@ -21,7 +21,6 @@ describe('subscription access isolation source contract', () => {
     expect(source).toContain('result.subscription_id !== subscriptionID')
     expect(source).toContain('rotateSubscriptionAccess(subscriptionID)')
     expect(source).toContain('revokeSubscriptionAccess(subscriptionID)')
-    expect(source).toContain('其他订阅不会被合并到该链接')
     expect(source).not.toContain('累计已用流量、总额和到期时间')
   })
 

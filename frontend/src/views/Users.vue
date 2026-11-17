@@ -1,15 +1,15 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="用户与权限" description="查找账户、管理权限与状态，直接查看关联订阅和订单。" eyebrow="Identity">
-      <template #actions><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
+    <PageHeader title="用户管理">
+      <template #actions><UiButton as-child variant="ghost"><RouterLink to="/admin/settings/runtime#account-cleanup">自动清理规则</RouterLink></UiButton><PageRefreshButton label="刷新用户" :loading="loading" @click="refresh" /><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template>
     </PageHeader>
 
-    <TransientFeedback :success="message" :error="error" success-title="用户信息已更新" error-title="用户操作失败" />
+    <TransientFeedback :success="message" :error="error || (!detailID ? actionError : '')" success-title="用户信息已更新" error-title="用户操作失败" />
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="activeFilterCount > 0" :active-count="activeFilterCount" :advanced-count="advancedFilterCount" :loading="loading" @clear="clearFilters">
-          <WorkbenchFilterInput v-model="search" label="搜索" placeholder="邮箱或账户名称" @apply="applyFilters" />
+          <WorkbenchFilterInput v-model="search" label="搜索" field-label="搜索用户" placeholder="邮箱、账户名称或备注" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="statusFilter" label="账户状态" :options="filterStatusOptions" @apply="applyFilters" />
           <template #advanced>
             <WorkbenchFilterSelect v-model="adminFilter" label="管理权限" :options="adminOptions" @apply="applyFilters" />
@@ -17,89 +17,150 @@
           </template>
         </WorkbenchFilterBar>
       </template>
-      <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="7" />
-      <DataTable v-else-if="users.length" caption="用户与权限列表" :row-count="total" :min-width="980">
-          <thead><tr><th class="table-primary-column">用户</th><th data-column-priority="2">管理权限</th><th>状态</th><th class="numeric-column" data-column-priority="2">订阅（有效/全部）</th><th class="numeric-column" data-column-priority="3">订单（待处理/全部）</th><SortableHeader field="created_at" label="创建时间" :sort-field="sortField" :direction="sortDirection" :priority="3" @sort="setSort" /><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
-          <tbody>
-            <tr v-for="user in users" :key="user.id">
-              <td class="table-primary-column"><div class="user-cell"><span class="user-avatar">{{ user.email.slice(0, 1).toUpperCase() }}</span><div class="cell-title"><strong>{{ user.email }}</strong><span class="mono">#{{ user.id }}</span></div></div></td>
-              <td data-column-priority="2"><StatusBadge :tone="permissionTone(user.is_admin)">{{ permissionName(user.is_admin) }}</StatusBadge></td>
-              <td><StatusBadge :tone="statusTone(user.status)">{{ statusName(user.status) }}</StatusBadge></td>
-              <td class="numeric-column" data-column-priority="2"><RouterLink :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订阅`">{{ formatNumber(user.active_subscription_count) }} / {{ formatNumber(user.total_subscription_count) }}</RouterLink></td>
-              <td class="numeric-column" data-column-priority="3"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id) })" :aria-label="`查看 ${user.email} 的订单`">{{ formatNumber(user.pending_order_count) }} / {{ formatNumber(user.total_order_count) }}</RouterLink></td>
-              <td data-column-priority="3"><TimeBadge :value="user.created_at" /></td>
-              <td class="table-action-column"><RowActions :label="`${user.email} 的操作`" :trigger-key="`user-${user.id}`"><UiButton variant="secondary" size="sm" type="button" :data-user-detail-trigger="user.id" @click="openDetail(user.id)">查看详情</UiButton><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id) })">查看订阅</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink><UiButton variant="ghost" size="sm" type="button" @click="openEdit(user)"><UiIcon name="edit" />账户与权限</UiButton></RowActions></td>
-            </tr>
-          </tbody>
+      <TableSkeleton v-if="loading && !users.length" label="正在加载用户" :columns="6" />
+      <DataTable v-else-if="users.length" caption="用户管理列表" :row-count="total" :min-width="780" table-class="users-table">
+        <thead><tr><SortableHeader field="email" label="用户" class="table-primary-column" :sort-field="sortField" :direction="sortDirection" @sort="setSort" /><th>账户状态</th><th class="numeric-column">余额<template v-if="balanceCurrency">（{{ balanceCurrency }}）</template></th><th class="numeric-column">近 7 天消耗</th><th>预计自动删除</th><th class="table-action-column"><span class="sr-only">操作</span></th></tr></thead>
+        <tbody>
+          <tr v-for="user in users" :key="user.id">
+            <td class="table-primary-column"><div class="cell-title"><RouterLink :to="{ query: { ...route.query, user: String(user.id) } }" :data-user-detail-trigger="user.id" v-overflow-title="user.email" :aria-label="`查看用户 ${user.email}`" class="user-detail-link">{{ user.email }}</RouterLink><span class="table-secondary-text"><span class="mono">#{{ user.id }}</span><template v-if="user.admin_note"> · <span class="user-admin-note" v-overflow-title="user.admin_note">{{ user.admin_note }}</span></template><template v-if="user.is_admin"> · 管理员</template><template v-if="user.active_subscription_count"> · <RouterLink class="user-subscription-link" :aria-label="`查看 ${user.email} 的 ${user.active_subscription_count} 份有效订阅`" :to="adminContextLink('/admin/subscriptions', { user_id: String(user.id), status: 'active' })">有效订阅 {{ formatNumber(user.active_subscription_count) }}</RouterLink></template></span></div></td>
+            <td>
+              <UiSwitch :model-value="user.status === 'active'" :disabled="statusBusy.has(user.id)" :aria-label="`启用账户 ${user.email}`" :aria-busy="statusBusy.has(user.id)" :aria-describedby="`user-status-${user.id}${statusErrors[user.id] ? ` user-status-error-${user.id}` : ''}`" :title="statusBusy.has(user.id) ? '保存中' : statusName(user.status)" @update:model-value="toggleUserStatus(user, $event)" />
+              <span :id="`user-status-${user.id}`" class="sr-only" role="status">{{ statusBusy.has(user.id) ? '保存中' : statusName(user.status) }}</span>
+              <p v-if="statusErrors[user.id]" :id="`user-status-error-${user.id}`" class="user-status-error" role="alert">{{ statusErrors[user.id] }}</p>
+            </td>
+            <td class="numeric-column user-wallet-cell">
+              <span class="user-mobile-label" aria-hidden="true">余额</span><div class="user-wallet-balances">
+                <RouterLink v-for="wallet in user.wallet_balances" :key="wallet.currency" :to="{ query: { ...route.query, user: String(user.id), section: 'wallet', wallet_currency: wallet.currency } }" :aria-label="`查看 ${user.email} 的 ${wallet.currency} 余额（${formatWalletMoney(wallet.balance_minor, wallet.currency)}）`" class="user-wallet-link"><BalanceValue :amount="wallet.balance_minor" :currency="wallet.currency" :show-currency="balanceCurrency !== wallet.currency" /><small v-if="wallet.reserved_minor !== '0'">含冻结 <BalanceValue :amount="wallet.reserved_minor" :currency="wallet.currency" :show-currency="balanceCurrency !== wallet.currency" /></small></RouterLink>
+                <RouterLink v-if="!user.wallet_balances?.length" :to="{ query: { ...route.query, user: String(user.id), section: 'wallet' } }" :aria-label="`查看 ${user.email} 的余额（${user.wallet_balances ? '0.00' : '未知'}）`" class="user-wallet-link">-</RouterLink>
+              </div>
+            </td>
+            <td class="numeric-column user-traffic-cell"><span class="user-mobile-label" aria-hidden="true">近 7 天</span><UserTrafficActivity :item="activityByUser.get(user.id)" :user-label="user.email" :link="activityLink(user.id)" :loading="activityLoading" :error="activityError" :pending="activityData?.projection_pending" @retry="loadActivity" /></td>
+            <td class="user-cleanup-cell"><span class="user-mobile-label" aria-hidden="true">自动删除</span><AccountCleanupSummary :status="user.cleanup" :user-id="user.id" /></td>
+            <td class="table-action-column"><RowActions :label="`${user.email} 的更多操作`" :trigger-key="`user-${user.id}`"><UiButton variant="ghost" size="sm" type="button" :data-user-edit-trigger="`list-${user.id}`" :disabled="statusBusy.has(user.id)" :loading="openingUserID === user.id" @click="openEdit(user)">编辑账户</UiButton><UiButton variant="ghost" size="sm" type="button" :data-user-password-trigger="`list-${user.id}`" @click="openPasswordReset(user)">重置密码</UiButton><UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(user.id), assign: '1' })">分配订单</RouterLink></UiButton><UiButton variant="danger" size="sm" type="button" @click="openDeletion(user)">删除用户</UiButton></RowActions></td>
+          </tr>
+        </tbody>
       </DataTable>
-      <EmptyState v-else icon="users" title="没有匹配用户" description="调整搜索条件，或创建一个新的平台账户。"><template #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template></EmptyState>
+      <EmptyState v-else-if="!error" icon="users" title="没有匹配用户" description="调整搜索条件，或创建一个新的平台账户。"><template #actions><UiButton type="button" @click="openCreate"><UiIcon name="plus" />创建用户</UiButton></template></EmptyState>
       <template #footer><TablePager :total="total" :offset="offset" :limit="limit" :loading="loading" @change="changePage" /></template>
     </DataWorkbench>
 
-    <DetailDrawer :open="Boolean(detailID)" :title="selectedUserDetail?.email || '用户详情'" eyebrow="User account" :description="selectedUserDetail ? `账户 #${selectedUserDetail.id}` : '正在加载账户业务概览'" :return-focus-selector="detailID ? `[data-row-action-trigger='user-${detailID}']` : ''" @close="closeDetail">
+    <DetailDrawer :open="Boolean(detailID)" :title="selectedUserDetail?.email || '用户详情'" :description="selectedUserDetail ? `账户 #${selectedUserDetail.id}` : '正在加载账户业务概览'" :return-focus-selector="detailID ? `[data-user-detail-trigger='${detailID}']` : ''" @close="closeDetail">
       <PageAlert v-if="detailError" tone="danger" title="用户详情加载失败">{{ detailError }}</PageAlert>
-      <div v-if="detailLoading" class="detail-loading" role="status">正在加载用户详情…</div>
-      <main v-else-if="selectedUserDetail" class="business-detail stack">
-        <section class="detail-status-strip" aria-label="用户状态">
-          <StatusBadge :tone="statusTone(selectedUserDetail.status)">{{ statusName(selectedUserDetail.status) }}</StatusBadge>
-          <StatusBadge :tone="permissionTone(selectedUserDetail.is_admin)">{{ permissionName(selectedUserDetail.is_admin) }}</StatusBadge>
-          <StatusBadge :tone="selectedUserDetail.email_verified_at ? 'success' : 'warning'">{{ selectedUserDetail.email_verified_at ? '邮箱已验证' : '邮箱未验证' }}</StatusBadge>
-        </section>
-        <section class="detail-metrics" aria-label="关联业务数量">
-          <div><strong>{{ selectedUserDetail.active_subscription_count }}</strong><span>有效订阅</span></div>
-          <div><strong>{{ selectedUserDetail.total_subscription_count }}</strong><span>全部订阅</span></div>
-          <div><strong>{{ selectedUserDetail.pending_order_count }}</strong><span>待处理订单</span></div>
-          <div><strong>{{ selectedUserDetail.total_order_count }}</strong><span>全部订单</span></div>
-        </section>
-        <section class="detail-facts" aria-label="账户信息">
-          <div><span>账户名称</span><strong>{{ selectedUserDetail.account_name || '未设置' }}</strong></div>
-          <div><span>账户 ID</span><strong class="mono">#{{ selectedUserDetail.id }}</strong></div>
-          <div><span>最近登录</span><TimeBadge :value="selectedUserDetail.last_login_at" /></div>
-          <div><span>创建时间</span><TimeBadge :value="selectedUserDetail.created_at" /></div>
-          <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
-          <div><span>邮箱验证</span><TimeBadge :value="selectedUserDetail.email_verified_at" /></div>
-        </section>
-        <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
-        <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
-        <div class="detail-action-row">
-          <RouterLink class="button button-secondary button-sm" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">查看订阅</RouterLink>
-          <RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">查看订单</RouterLink><RouterLink class="button button-ghost button-sm" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink>
-          <UiButton variant="ghost" size="sm" type="button" @click="openEdit(selectedUserDetail)"><UiIcon name="edit" />账户与权限</UiButton>
+      <div v-if="detailLoading && !selectedUserDetail" class="detail-loading" role="status">正在加载用户详情…</div>
+      <main v-else-if="selectedUserDetail" class="business-detail stack user-detail">
+        <PageAlert v-if="actionError" tone="danger" title="用户操作未完成">{{ actionError }}</PageAlert>
+        <div class="user-detail-heading">
+          <div class="detail-status-strip" aria-label="用户状态">
+            <StatusBadge :tone="statusTone(selectedUserDetail.status)">{{ statusName(selectedUserDetail.status) }}</StatusBadge>
+            <StatusBadge v-if="selectedUserDetail.is_admin" tone="info">管理员</StatusBadge>
+          </div>
+          <div class="user-detail-actions">
+            <RowActions label="用户更多操作" :trigger-key="`user-detail-${selectedUserDetail.id}`">
+              <template #primary>
+                <UiButton variant="secondary" size="sm" type="button" :data-user-edit-trigger="`detail-${selectedUserDetail.id}`" :loading="openingUserID === selectedUserDetail.id" @click="openEdit(selectedUserDetail)">编辑账户</UiButton>
+              </template>
+              <UiButton as-child variant="ghost" size="sm"><RouterLink :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), assign: '1' })">分配订单</RouterLink></UiButton>
+              <UiButton variant="danger" size="sm" type="button" @click="openDeletion(selectedUserDetail)">删除用户</UiButton>
+            </RowActions>
+          </div>
         </div>
+        <UiTabs v-model="userDetailSection" :items="[{ label: '账户', value: 'account' }, { label: '余额', value: 'wallet' }, { label: '外部账号', value: 'identities' }]" label="用户详情分区" />
+        <template v-if="userDetailSection === 'account'">
+          <section class="detail-metrics" aria-label="关联业务数量">
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的有效订阅`" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id), status: 'active' })">{{ selectedUserDetail.active_subscription_count }}</RouterLink><span>有效订阅</span></div>
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的全部订阅`" :to="adminContextLink('/admin/subscriptions', { user_id: String(selectedUserDetail.id) })">{{ selectedUserDetail.total_subscription_count }}</RouterLink><span>全部订阅</span></div>
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的待处理订单`" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id), status: 'pending' })">{{ selectedUserDetail.pending_order_count }}</RouterLink><span>待处理订单</span></div>
+            <div><RouterLink class="user-related-count" :aria-label="`查看用户 ${selectedUserDetail.email} 的全部订单`" :to="adminContextLink('/admin/orders', { user_id: String(selectedUserDetail.id) })">{{ selectedUserDetail.total_order_count }}</RouterLink><span>全部订单</span></div>
+          </section>
+          <section class="detail-facts" aria-label="账户信息">
+            <div v-if="selectedUserDetail.admin_note"><span>管理员备注</span><strong class="user-note-detail">{{ selectedUserDetail.admin_note }}</strong></div>
+            <div><span>账户名称</span><strong>{{ selectedUserDetail.account_name || '未设置' }}</strong></div>
+            <div><span>账户 ID</span><strong class="mono">#{{ selectedUserDetail.id }}</strong></div>
+            <div><span>最近登录</span><TimeBadge :value="selectedUserDetail.last_login_at" /></div>
+            <div><span>创建时间</span><TimeBadge :value="selectedUserDetail.created_at" /></div>
+            <div><span>更新时间</span><TimeBadge :value="selectedUserDetail.updated_at" /></div>
+            <div><span>邮箱验证</span><TimeBadge v-if="selectedUserDetail.email_verified_at" :value="selectedUserDetail.email_verified_at" /><strong v-else>未验证</strong></div>
+          </section>
+          <section class="user-cleanup-detail" aria-label="账号自动删除">
+            <h3>自动删除</h3>
+            <AccountCleanupSummary :status="selectedUserDetail.cleanup" :user-id="selectedUserDetail.id" />
+            <RouterLink to="/admin/settings/runtime#account-cleanup">管理清理规则</RouterLink>
+          </section>
+          <section class="user-security" aria-label="账户安全">
+            <h3>账户安全</h3>
+            <div class="user-security-row">
+              <div><strong>登录密码</strong><p>为此用户设置新的登录密码。</p></div>
+              <UiButton variant="secondary" size="sm" type="button" :data-user-password-trigger="`detail-${selectedUserDetail.id}`" @click="openPasswordReset(selectedUserDetail)">重置密码</UiButton>
+            </div>
+          </section>
+        </template>
+        <AdminWalletPanel v-else-if="userDetailSection === 'wallet'" :key="`${selectedUserDetail.id}:${route.query.wallet_currency || ''}`" :user-id="selectedUserDetail.id" :user-label="selectedUserDetail.email" @changed="walletChanged" :initial-currency="detailWalletCurrency" />
+        <template v-else-if="userDetailSection === 'identities'">
+          <PluginSlot name="admin.user.identities" surface="admin" :target-user-id="selectedUserDetail.id" />
+          <PluginSlot name="admin.user.actions" surface="admin" :target-user-id="selectedUserDetail.id" />
+        </template>
       </main>
     </DetailDrawer>
 
+    <PageAlert v-if="accountRecovery.message.value" tone="info" title="登录后草稿恢复">{{ accountRecovery.message.value }}</PageAlert>
+    <PageAlert v-if="accountRecoveryConflict" tone="warning" title="草稿需要人工核对">原账户已变化，草稿仍保留；不能直接覆盖服务器的新内容。请另存普通字段后重新打开编辑器。</PageAlert>
     <ModalDialog :open="createOpen" :dirty="createState.dirty.value" title="创建平台用户" description="邮箱是唯一账户标识，创建后即可登录。" size="lg" :busy="saving" @close="closeCreate">
       <form id="create-user-form" ref="createFormElement" class="form-grid" novalidate @submit.prevent="create">
         <PageAlert v-if="createErrors.formError.value" class="field-full" tone="danger" title="无法创建用户">{{ createErrors.formError.value }}</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="邮箱地址" name="create-user-email" :error="createErrors.fields.email" required full><UiInput v-model.trim="form.email" v-bind="controlAttrs" type="email" autocomplete="email" placeholder="user@example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="初始密码" name="create-user-password" hint="长度为 12–72 个 UTF-8 字节。" :error="createErrors.fields.password" required full><UiInput v-model="form.password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" /></FormField>
+        <FormField v-slot="{ controlAttrs }" label="管理员备注" name="create-user-note" :error="createErrors.fields.admin_note" full><UiTextarea v-model="form.adminNote" v-bind="controlAttrs" :rows="2" maxlength="500" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="账户状态" name="create-user-status" :error="createErrors.fields.status"><UiSelect v-model="form.status" v-bind="controlAttrs" :options="userStatusOptions" /></FormField>
         <label class="check-field"><UiCheckbox v-model="form.isAdmin" /><span><strong>授予管理员权限</strong><br /><small class="field-hint">用户仍可使用个人中心，并额外获得管理后台访问权。</small></span></label>
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="create-user-form" type="submit" :loading="saving">创建用户</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="管理用户账户" :description="selectedUser ? selectedUser.email : ''" size="lg" :busy="saving" @close="closeEdit">
+    <ModalDialog :open="editOpen" :dirty="editState.dirty.value" title="编辑用户" :description="selectedUser ? selectedUser.email : ''" :return-focus-selector="selectedUser ? (detailID === selectedUser.id ? `[data-user-edit-trigger='detail-${selectedUser.id}']` : `[data-row-action-trigger='user-${selectedUser.id}']`) : ''" :busy="saving" @close="closeEdit">
       <form id="edit-user-form" ref="editFormElement" class="stack" novalidate @submit.prevent="saveUser">
         <PageAlert v-if="editErrors.formError.value" tone="danger" title="无法保存账户">{{ editErrors.formError.value }}</PageAlert>
         <div class="form-grid">
           <FormField v-slot="{ controlAttrs }" label="邮箱身份" full><UiInput :value="selectedUser?.email" v-bind="controlAttrs" disabled /></FormField>
+          <FormField v-slot="{ controlAttrs }" label="管理员备注" name="edit-user-note" :error="editErrors.fields.admin_note" full><UiTextarea v-model="editDraft.admin_note" v-bind="controlAttrs" :rows="2" maxlength="500" /></FormField>
           <FormField v-slot="{ controlAttrs }" label="账户状态" name="edit-user-status" :error="editErrors.fields.status"><UiSelect v-model="editDraft.status" v-bind="controlAttrs" :options="userStatusOptions" /></FormField>
           <label class="check-field"><UiCheckbox v-model="editDraft.is_admin" /><span><strong>授予管理员权限</strong><br /><small class="field-hint">关闭后仅移除管理能力，不改变用户身份和个人数据。</small></span></label>
         </div>
-        <div class="password-section"><div><strong>重置密码</strong><p>如不需要修改密码，请保持为空。</p></div><FormField v-slot="{ controlAttrs }" label="新密码" name="edit-user-password" hint="长度为 12–72 个 UTF-8 字节；留空则不修改。" :error="editErrors.fields.password"><UiInput v-model="editDraft.password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="new-password" placeholder="留空则不修改" /></FormField></div>
         <PageAlert v-if="selectedUser?.id === currentUserId" tone="warning" title="当前登录用户">请谨慎变更管理员权限或账户状态。</PageAlert>
       </form>
-      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="edit-user-form" type="submit" :loading="saving">保存账户</UiButton></template>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="saving" @click="requestClose">取消</UiButton><UiButton form="edit-user-form" type="submit" :disabled="accountRecoveryConflict" :loading="saving">保存账户</UiButton></template>
+    </ModalDialog>
+    <ModalDialog :open="Boolean(passwordResetUser)" title="重置密码" :description="passwordResetUser?.email" :dirty="passwordResetState.dirty.value" :busy="passwordResetBusy" :return-focus-selector="passwordResetReturnSelector" initial-focus-selector="#reset-user-password" @close="closePasswordReset">
+      <form id="reset-user-password-form" ref="passwordResetFormElement" novalidate @submit.prevent="resetPassword">
+        <PageAlert v-if="passwordResetErrors.formError.value" tone="danger" title="密码重置失败">{{ passwordResetErrors.formError.value }}</PageAlert>
+        <FormField v-slot="{ controlAttrs }" label="新密码" name="reset-user-password" hint="12–72 个 UTF-8 字节。只修改密码，账户状态、权限和订阅保持不变。" :error="passwordResetErrors.fields.password" required>
+          <UiInput v-model="passwordResetDraft.password" v-bind="controlAttrs" type="password" autocomplete="new-password" minlength="12" maxlength="72" />
+        </FormField>
+      </form>
+      <template #footer="{ requestClose }"><UiButton variant="secondary" :disabled="passwordResetBusy" @click="requestClose">取消</UiButton><UiButton type="submit" form="reset-user-password-form" :loading="passwordResetBusy">保存新密码</UiButton></template>
+    </ModalDialog>
+    <ModalDialog :open="Boolean(deletingUser)" title="永久删除用户" :description="deletingUser ? `${deletingUser.email} · #${deletingUser.id}` : ''" :return-focus-selector="deletingUser ? `[data-row-action-trigger='${detailID === deletingUser.id ? 'user-detail' : 'user'}-${deletingUser.id}']` : ''" :busy="deletionBusy" @close="closeDeletion">
+      <p>硬删除登录账号、外部身份及访问凭证，无法恢复。历史订单、结算和流量账本保留，原账号将无法登录。</p>
+      <p v-if="deletionLoading" role="status">正在检查订阅和资金状态…</p>
+      <PageAlert v-if="deletionError" tone="danger" title="删除未完成">{{ deletionError }}</PageAlert>
+      <PageAlert v-if="deletionPreview && !deletionPreview.allowed" tone="warning" title="请先处理以下条件"><ul><li v-for="reason in deletionPreview.blockers" :key="reason">{{ reason }}</li></ul></PageAlert>
+      <FormField v-if="deletionPreview?.allowed" v-slot="{ controlAttrs }" label="输入用户邮箱确认永久删除" name="delete-user-email"><UiInput v-model="deletionConfirmation" v-bind="controlAttrs" autocomplete="off" /></FormField>
+      <template #footer>
+        <UiButton variant="secondary" :disabled="deletionBusy" @click="closeDeletion">取消</UiButton>
+        <UiButton variant="secondary" :disabled="deletionBusy || deletionLoading" @click="loadDeletionPreview">重新检查</UiButton>
+        <UiButton variant="danger" :loading="deletionBusy" :disabled="deletionLoading || !deletionPreview?.allowed || deletionConfirmation !== deletingUser?.email" @click="removeUser">永久删除</UiButton>
+      </template>
     </ModalDialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { sameRecoveryBaseline, userAccountBaseline, userAccountRecovery } from '../utils/adminAssetRecovery'
 import { useRoute, useRouter } from 'vue-router'
-import { createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
+import { deleteAdminUser, fetchUserDeletionPreview, type UserDeletionPreview, createAdminUser, fetchAdminUserDetail, fetchUsersPage, updateAdminUser, type AdminUserDetail, type AdminUserListItem } from '../api/client'
+import AdminWalletPanel from '../components/AdminWalletPanel.vue'
 import DataTable from '../components/DataTable.vue'
 import TableSkeleton from '../components/TableSkeleton.vue'
 import DataWorkbench from '../components/DataWorkbench.vue'
@@ -110,11 +171,15 @@ import PageAlert from '../components/PageAlert.vue'
 import PageHeader from '../components/PageHeader.vue'
 import RowActions from '../components/RowActions.vue'
 import SortableHeader from '../components/SortableHeader.vue'
+import AccountCleanupSummary from '../components/AccountCleanupSummary.vue'
+import UiSwitch from '../components/UiSwitch.vue'
+import UiTextarea from '../components/UiTextarea.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TablePager from '../components/TablePager.vue'
 import TimeBadge from '../components/TimeBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
+import UiTabs from '../components/UiTabs.vue'
 import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
@@ -123,7 +188,12 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { nextSortDirection, resolveSortDirection, resolveSortField } from '../composables/tableState'
 import { useAppStore } from '../stores/app'
+import { platformDefaultCurrency } from '../utils/platformCurrency'
 import { formatNumber } from '../utils/format'
+import BalanceValue from '../components/BalanceValue.vue'
+import UserTrafficActivity from '../components/UserTrafficActivity.vue'
+import { useUserTrafficActivity } from '../composables/useUserTrafficActivity'
+import { formatWalletMoney } from '../utils/walletMoney'
 import { collectFieldErrors, isEmail, isOneOf, isUtf8LengthInRange } from '../utils/validation'
 import { preserveAdminReturnTo, withAdminReturnTo } from '../utils/navigation'
 import PluginSlot from '../plugins/PluginSlot.vue'
@@ -150,6 +220,8 @@ const userSortFields = new Set<UserSortField>(['id', 'email', 'created_at'])
 const sortField = ref(resolveSortField(route.query.sort, userSortFields, 'created_at'))
 const sortDirection = ref<'asc' | 'desc'>(resolveSortDirection(route.query.direction, 'desc'))
 const message = ref('')
+const actionError = ref('')
+const openingUserID = ref(0)
 const saving = ref(false)
 const createOpen = ref(false)
 const editOpen = ref(false)
@@ -157,21 +229,126 @@ const createFormElement = ref<HTMLElement | null>(null)
 const editFormElement = ref<HTMLElement | null>(null)
 const createErrors = useFormErrors()
 const editErrors = useFormErrors()
+const passwordResetUser = ref<UserItem | null>(null)
+const passwordResetDraft = reactive({ password: '' })
+const passwordResetBusy = ref(false)
+const passwordResetReturnSelector = ref('')
+const passwordResetFormElement = ref<HTMLElement | null>(null)
+const passwordResetErrors = useFormErrors()
+const passwordResetState = useDirtyForm(() => passwordResetDraft)
+let passwordResetGeneration = 0
+function openPasswordReset(user: UserItem) {
+  if (passwordResetBusy.value) return
+  accountEditorGeneration++; openingUserID.value = 0; actionError.value = ''
+  passwordResetGeneration++
+  passwordResetDraft.password = ''; passwordResetErrors.clear(); passwordResetState.markClean()
+  passwordResetReturnSelector.value = detailID.value === user.id ? `[data-user-password-trigger='detail-${user.id}']` : `[data-row-action-trigger='user-${user.id}']`
+  passwordResetUser.value = user
+}
+function closePasswordReset() {
+  if (passwordResetBusy.value) return
+  passwordResetGeneration++
+  passwordResetDraft.password = ''; passwordResetUser.value = null; passwordResetErrors.clear(); passwordResetState.markClean()
+}
+async function resetPassword() {
+  const user = passwordResetUser.value
+  if (!user || passwordResetBusy.value) return
+  const generation = passwordResetGeneration, actor = app.user.id, token = app.token
+  const valid = await passwordResetErrors.applyValidation(collectFieldErrors({
+    password: !isUtf8LengthInRange(passwordResetDraft.password, 12, 72) && '密码必须为 12–72 个 UTF-8 字节。',
+  }), passwordResetFormElement, '请填写有效的新密码。')
+  if (!valid || passwordResetBusy.value || generation !== passwordResetGeneration || actor !== app.user.id || token !== app.token || app.reauthRequired) return
+  passwordResetBusy.value = true
+  try {
+    await updateAdminUser(user.id, { password: passwordResetDraft.password })
+    if (generation !== passwordResetGeneration || actor !== app.user.id) return
+    passwordResetBusy.value = false; closePasswordReset()
+    message.value = `${user.email} 的密码已重置。`
+  } catch (cause: any) {
+    if (generation === passwordResetGeneration && actor === app.user.id) await passwordResetErrors.applyApiError(cause, '密码重置失败，请重试。', passwordResetFormElement, { password: 'password' })
+  } finally { if (generation === passwordResetGeneration) passwordResetBusy.value = false }
+}
+watch(() => app.user.id, () => {
+  passwordResetGeneration++; passwordResetBusy.value = false; closePasswordReset()
+})
 const selectedUser = ref<UserItem | null>(null)
 const detailID = ref(0)
+const userDetailSection = ref('account')
 const detailResource = useRemoteResource<AdminUserDetail | null>({
   initial: () => null,
   fetch: ({ signal }) => fetchAdminUserDetail(detailID.value, { signal }),
   errorMessage: '用户详情加载失败。',
 })
 const { data: selectedUserDetail, loading: detailLoading, error: detailError } = detailResource
+async function walletChanged() { await Promise.all([refresh(), detailResource.load()]) }
+const deletingUser = ref<UserItem | null>(null)
+const deletionPreview = ref<UserDeletionPreview | null>(null)
+const deletionError = ref(''), deletionConfirmation = ref('')
+const deletionBusy = ref(false), deletionLoading = ref(false)
+let deletionGeneration = 0
+function closeDeletion() { if (deletionBusy.value) return; deletionGeneration++; deletingUser.value = null; deletionPreview.value = null; deletionError.value = ''; deletionConfirmation.value = '' }
+async function openDeletion(user: UserItem) { deletingUser.value = user; deletionConfirmation.value = ''; await loadDeletionPreview() }
+async function loadDeletionPreview() {
+  if (!deletingUser.value) return
+  const id = deletingUser.value.id, generation = ++deletionGeneration
+  deletionPreview.value = null; deletionError.value = ''; deletionLoading.value = true
+  try { const preview = await fetchUserDeletionPreview(id); if (generation === deletionGeneration) deletionPreview.value = preview }
+  catch (cause: any) { if (generation === deletionGeneration) deletionError.value = cause?.response?.data?.message || '删除条件检查失败，请重试。' }
+  finally { if (generation === deletionGeneration) deletionLoading.value = false }
+}
+async function removeUser() {
+  const user = deletingUser.value
+  if (!user || !deletionPreview.value?.allowed || deletionConfirmation.value !== user.email || deletionBusy.value) return
+  deletionBusy.value = true; deletionError.value = ''
+  try {
+    await deleteAdminUser(user.id)
+    deletionBusy.value = false; closeDeletion()
+    if (detailID.value === user.id) await closeDetail()
+    message.value = `用户 ${user.email} 已永久删除。`
+    await refresh()
+  } catch (cause: any) { deletionError.value = cause?.response?.data?.message || '删除失败，请重新检查账号状态后重试。' }
+  finally { deletionBusy.value = false }
+}
 const currentUserId = computed(() => app.user.id)
-const form = reactive({ email: '', password: '', isAdmin: false, status: 'active' })
-const editDraft = reactive({ is_admin: false, status: 'active', password: '' })
+const form = reactive({ email: '', password: '', isAdmin: false, status: 'active', adminNote: '' })
+const editDraft = reactive({ is_admin: false, status: 'active', admin_note: '' })
+let accountEditorGeneration = 0
+const accountRecoveryConflict = ref(false)
+const accountOriginal = ref<ReturnType<typeof userAccountBaseline>>()
+const accountRecovered = ref(false)
+const accountRecovery = useReauthenticationDraft({
+  scope: 'admin.users.editor', permission: 'admin', ready: () => !saving.value && !passwordResetBusy.value,
+  read: () => {
+    if (passwordResetUser.value && passwordResetDraft.password) throw new Error('密码草稿不能安全暂存；请留在原页完成认证。')
+    if (!createOpen.value && !editOpen.value) return null
+    if (form.password && createOpen.value) throw new Error('密码草稿不能安全暂存；请留在原页完成认证。')
+    return createOpen.value
+      ? { id: 0, baseline: null, fields: { email: form.email, status: form.status, is_admin: form.isAdmin, admin_note: form.adminNote } }
+      : { id: selectedUser.value?.id, baseline: accountOriginal.value, fields: { email: accountOriginal.value?.email || selectedUser.value?.email, status: editDraft.status, is_admin: editDraft.is_admin, admin_note: editDraft.admin_note } }
+  },
+  sanitize: userAccountRecovery,
+  restore: async (draft, { isCurrent }) => {
+    const generation = accountEditorGeneration
+    const fresh = draft.id ? await fetchAdminUserDetail(draft.id) : null
+    if (!isCurrent()) return false
+    if (generation !== accountEditorGeneration || createOpen.value || editOpen.value || passwordResetUser.value) throw new Error('已有新的本地编辑，原草稿保留待恢复。')
+    accountRecoveryConflict.value = Boolean(draft.id && !sameRecoveryBaseline(draft.baseline, userAccountBaseline(fresh)))
+    accountRecovered.value = Boolean(draft.id)
+    accountOriginal.value = draft.baseline || undefined
+    if (fresh) {
+      selectedUser.value = fresh
+      Object.assign(editDraft, { status: fresh.status, is_admin: fresh.is_admin, admin_note: fresh.admin_note || '' }); editState.markClean()
+      Object.assign(editDraft, { status: draft.fields.status, is_admin: draft.fields.is_admin, admin_note: draft.fields.admin_note }); editOpen.value = true
+    } else {
+      Object.assign(form, { email: '', status: 'active', isAdmin: false, password: '', adminNote: '' }); createState.markClean()
+      Object.assign(form, { email: draft.fields.email, status: draft.fields.status, isAdmin: draft.fields.is_admin, adminNote: draft.fields.admin_note }); createOpen.value = true
+    }
+  },
+})
 const createState = useDirtyForm(() => form)
 const editState = useDirtyForm(() => editDraft)
 useUnsavedChangesGuard(
-  () => (createOpen.value && createState.dirty.value) || (editOpen.value && editState.dirty.value),
+  () => (createOpen.value && createState.dirty.value) || (editOpen.value && editState.dirty.value) || (Boolean(passwordResetUser.value) && passwordResetState.dirty.value),
   async () => {
     if (createOpen.value && !await createState.confirmDiscard({
       title: '放弃新用户草稿？',
@@ -183,6 +360,7 @@ useUnsavedChangesGuard(
       message: '离开用户管理后，尚未保存的账户修改将丢失。',
       confirmText: '离开页面',
     })) return false
+    if (passwordResetUser.value && !await passwordResetState.confirmDiscard({ title: '放弃密码修改？', message: '离开后未保存的新密码将丢失。', confirmText: '离开页面' })) return false
     return true
   },
 )
@@ -191,7 +369,9 @@ watch(() => form.email, () => createErrors.clear('email'))
 watch(() => form.password, () => createErrors.clear('password'))
 watch(() => form.status, () => createErrors.clear('status'))
 watch(() => editDraft.status, () => editErrors.clear('status'))
-watch(() => editDraft.password, () => editErrors.clear('password'))
+watch(() => editDraft.admin_note, () => editErrors.clear('admin_note'))
+watch(() => form.adminNote, () => createErrors.clear('admin_note'))
+watch(() => passwordResetDraft.password, () => passwordResetErrors.clear('password'))
 const filterStatusOptions = [
   { label: '全部状态', value: '' },
   { label: '正常', value: 'active' },
@@ -216,8 +396,36 @@ const { items: users, total, loading, refreshing, error, load: refresh } = useRe
   onOffsetCorrected: () => syncURL(true),
 })
 
-function permissionName(isAdmin: boolean) { return isAdmin ? '管理员权限' : '无额外权限' }
-function permissionTone(isAdmin: boolean): 'info' | 'neutral' { return isAdmin ? 'info' : 'neutral' }
+const { data: activityData, byUser: activityByUser, loading: activityLoading, error: activityError, load: loadActivity } = useUserTrafficActivity(users, loading, () => `${app.user?.id}:${app.token}:${app.systemTimeZone}`)
+function activityLink(userID: number) {
+  return adminContextLink('/admin/traffic', { user_id: String(userID), from: activityData.value?.from || '', to: activityData.value?.to || '', bucket: 'day' })
+}
+
+const detailWalletCurrency = computed(() => String(route.query.wallet_currency || selectedUserDetail.value?.wallet_balances?.[0]?.currency || platformDefaultCurrency(app.publicConfigs)))
+const balanceCurrency = computed(() => {
+  const currencies = [...new Set(users.value.flatMap(user => user.wallet_balances?.map(wallet => wallet.currency) || []))]
+  return currencies.length === 1 ? currencies[0] : ''
+})
+
+const statusBusy = reactive(new Set<number>())
+const statusErrors = reactive<Record<number, string>>({})
+async function toggleUserStatus(user: UserItem, enabled: boolean) {
+  if (statusBusy.has(user.id) || app.reauthRequired) return
+  const actor = app.user.id, token = app.token
+  statusBusy.add(user.id); delete statusErrors[user.id]
+  try {
+    const updated = await updateAdminUser(user.id, { status: enabled ? 'active' : 'suspended' })
+    if (actor !== app.user.id || token !== app.token || app.reauthRequired) return
+    if (!isOneOf(updated?.status, validUserStatuses)) throw new Error('状态结果未能确认，请刷新核对。')
+    users.value = users.value.map(item => item.id === user.id ? { ...item, status: updated.status } : item)
+    if (selectedUserDetail.value?.id === user.id) selectedUserDetail.value = { ...selectedUserDetail.value, status: updated.status }
+    if (statusFilter.value && updated.status !== statusFilter.value) await refresh()
+    if (user.id === actor) await app.loadMe()
+  } catch (cause: any) {
+    if (actor === app.user.id && token === app.token) statusErrors[user.id] = cause?.response?.data?.message || cause?.message || '状态更新未能确认，请刷新核对。'
+  } finally { statusBusy.delete(user.id) }
+}
+
 function statusName(status: string) { return ({ active: '正常', suspended: '已暂停', deactivated: '已停用' } as Record<string, string>)[status] || `未知状态（${status || '空'}）` }
 function statusTone(status: string): 'success' | 'warning' | 'danger' { return status === 'active' ? 'success' : status === 'suspended' ? 'warning' : 'danger' }
 
@@ -227,17 +435,18 @@ async function applyFilters() { offset.value = 0; await syncURL(); await refresh
 async function clearFilters() { search.value = ''; statusFilter.value = ''; adminFilter.value = ''; verifiedFilter.value = ''; await applyFilters() }
 async function changePage(value: { offset: number; limit: number }) { offset.value = value.offset; limit.value = value.limit; await syncURL(); await refresh() }
 async function setSort(field: string) { const next = resolveSortField(field, userSortFields, 'created_at'); sortDirection.value = nextSortDirection(sortField.value, next, sortDirection.value, next === 'email' ? 'asc' : 'desc'); sortField.value = next; offset.value = 0; await syncURL(); await refresh() }
-async function openDetail(id: number) { await router.push({ query: { ...route.query, user: String(id) } }) }
-async function closeDetail() { detailResource.reset(); detailID.value = 0; const { user: _user, ...query } = route.query; await router.push({ query }) }
+async function closeDetail() { detailResource.reset(); detailID.value = 0; actionError.value = ''; const { user: _user, section: _section, wallet_currency: _currency, ...query } = route.query; await router.push({ query }) }
 async function syncDetailFromRoute() {
   const id = Number(route.query.user)
   if (!Number.isInteger(id) || id <= 0) {
     detailResource.reset(); detailID.value = 0
     return
   }
-  if (detailID.value === id && (selectedUserDetail.value?.id === id || detailLoading.value)) return
+  const section = ['account', 'wallet', 'identities'].includes(String(route.query.section)) ? String(route.query.section) : 'account'
+  if (detailID.value === id && (selectedUserDetail.value?.id === id || detailLoading.value)) { userDetailSection.value = section; return }
   detailResource.reset()
   detailID.value = id
+  userDetailSection.value = section
   await detailResource.load()
 }
 
@@ -247,35 +456,55 @@ async function create() {
     email: !isEmail(form.email) && '请输入不超过 128 个 UTF-8 字节的有效邮箱。',
     password: !isUtf8LengthInRange(form.password, 12, 72) && '密码必须为 12–72 个 UTF-8 字节。',
     status: !isOneOf(form.status, validUserStatuses) && '请选择有效的账户状态。',
+    admin_note: Array.from(form.adminNote).length > 500 && '备注最多 500 个字符。',
   }), createFormElement, '请更正标记字段后再创建用户。')
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    await createAdminUser({ email: form.email, password: form.password, is_admin: form.isAdmin, status: form.status })
-    Object.assign(form, { email: '', password: '', isAdmin: false, status: 'active' })
+    await createAdminUser({ email: form.email, password: form.password, is_admin: form.isAdmin, status: form.status, admin_note: form.adminNote })
+    Object.assign(form, { email: '', password: '', isAdmin: false, status: 'active', adminNote: '' })
     createOpen.value = false; message.value = '用户已创建。'; await refresh()
-  } catch (e: any) { await createErrors.applyApiError(e, '用户创建失败，请检查表单内容。', createFormElement, { email: 'email', password: 'password', status: 'status' }) }
+  } catch (e: any) { await createErrors.applyApiError(e, '用户创建失败，请检查表单内容。', createFormElement, { email: 'email', password: 'password', status: 'status', admin_note: 'admin_note' }) }
   finally { saving.value = false }
 }
 
-function openCreate() { Object.assign(form, { email: '', password: '', isAdmin: false, status: 'active' }); createState.markClean(); createErrors.clear(); createOpen.value = true }
-function closeCreate() { if (!saving.value) { createErrors.clear(); createOpen.value = false } }
-function openEdit(user: UserItem) { selectedUser.value = user; editErrors.clear(); Object.assign(editDraft, { is_admin: user.is_admin, status: user.status, password: '' }); editState.markClean(); editOpen.value = true }
-function closeEdit() { if (!saving.value) { editErrors.clear(); editOpen.value = false } }
+function openCreate() { accountEditorGeneration++; accountRecoveryConflict.value = false; accountRecovered.value = false; Object.assign(form, { email: '', password: '', isAdmin: false, status: 'active', adminNote: '' }); createState.markClean(); createErrors.clear(); createOpen.value = true }
+function closeCreate() { if (!saving.value) { accountEditorGeneration++; createErrors.clear(); createOpen.value = false } }
+async function openEdit(user: UserItem) {
+  const generation = ++accountEditorGeneration, actor = app.user.id, token = app.token
+  openingUserID.value = user.id; actionError.value = ''
+  try {
+    const fresh = await fetchAdminUserDetail(user.id)
+    if (generation !== accountEditorGeneration || actor !== app.user.id || token !== app.token || app.reauthRequired) return
+    selectedUser.value = fresh; accountOriginal.value = userAccountBaseline(fresh)
+    accountRecoveryConflict.value = false; accountRecovered.value = false; editErrors.clear()
+    Object.assign(editDraft, { is_admin: fresh.is_admin, status: fresh.status, admin_note: fresh.admin_note || '' }); editState.markClean(); editOpen.value = true
+  } catch (cause: any) { if (generation === accountEditorGeneration) actionError.value = cause?.response?.data?.message || '账户详情读取失败，请重试。' }
+  finally { if (generation === accountEditorGeneration) openingUserID.value = 0 }
+}
+function closeEdit() { if (!saving.value) { accountEditorGeneration++; editErrors.clear(); editOpen.value = false } }
 async function saveUser() {
-  if (!selectedUser.value) return
+  if (!selectedUser.value || accountRecoveryConflict.value) return
+  if (accountRecovered.value) {
+    const actor = app.user.id, token = app.token, generation = accountEditorGeneration
+    try {
+      const fresh = await fetchAdminUserDetail(selectedUser.value.id)
+      if (actor !== app.user.id || token !== app.token || app.reauthRequired || generation !== accountEditorGeneration) return
+      if (!sameRecoveryBaseline(accountOriginal.value, userAccountBaseline(fresh))) { accountRecoveryConflict.value = true; return }
+    } catch { editErrors.formError.value = '无法核对原账户，保留草稿且未保存。'; return }
+  }
   const valid = await editErrors.applyValidation(collectFieldErrors({
     status: !isOneOf(editDraft.status, validUserStatuses) && '请选择有效的账户状态。',
-    password: Boolean(editDraft.password) && !isUtf8LengthInRange(editDraft.password, 12, 72) && '密码必须为 12–72 个 UTF-8 字节；留空则不修改。',
+    admin_note: Array.from(editDraft.admin_note).length > 500 && '备注最多 500 个字符。',
   }), editFormElement, '请更正标记字段后再保存账户。')
   if (!valid) return
   saving.value = true; message.value = ''
   try {
-    await updateAdminUser(selectedUser.value.id, { is_admin: editDraft.is_admin, status: editDraft.status, password: editDraft.password || undefined })
-    editDraft.password = ''; editOpen.value = false; message.value = `${selectedUser.value.email} 已更新。`; await refresh()
+    await updateAdminUser(selectedUser.value.id, { is_admin: editDraft.is_admin, status: editDraft.status, admin_note: editDraft.admin_note })
+    editOpen.value = false; message.value = `${selectedUser.value.email} 已更新。`; await refresh()
     if (detailID.value === selectedUser.value.id) { selectedUserDetail.value = null; await syncDetailFromRoute() }
     if (selectedUser.value.id === app.user.id) await app.loadMe()
-  } catch (e: any) { await editErrors.applyApiError(e, '账户保存失败，请检查表单内容。', editFormElement, { status: 'status', password: 'password' }) }
+  } catch (e: any) { await editErrors.applyApiError(e, '账户保存失败，请检查表单内容。', editFormElement, { status: 'status', password: 'password', admin_note: 'admin_note' }) }
   finally { saving.value = false }
 }
 watch(() => route.fullPath, async () => {
@@ -289,16 +518,64 @@ watch(() => route.fullPath, async () => {
   const nextSortField = resolveSortField(route.query.sort, userSortFields, 'created_at')
   const nextSortDirection = resolveSortDirection(route.query.direction, 'desc')
   if (nextAdmin !== adminFilter.value || nextVerified !== verifiedFilter.value || nextSearch !== search.value || nextStatus !== statusFilter.value || nextLimit !== limit.value || nextOffset !== offset.value || nextSortField !== sortField.value || nextSortDirection !== sortDirection.value) {
-    search.value = nextSearch; statusFilter.value = nextStatus; adminFilter.value = nextAdmin; verifiedFilter.value = nextVerified; limit.value = nextLimit; offset.value = nextOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; await refresh()
+    search.value = nextSearch; statusFilter.value = nextStatus; adminFilter.value = nextAdmin; verifiedFilter.value = nextVerified; limit.value = nextLimit; offset.value = nextOffset; sortField.value = nextSortField; sortDirection.value = nextSortDirection; void refresh()
   }
   await syncDetailFromRoute()
 })
-onMounted(async () => { await refresh(); await syncDetailFromRoute() })
+onMounted(() => { void refresh(); void syncDetailFromRoute() })
 </script>
 
 <style scoped>
-.page-alert { margin-bottom: 14px; }.user-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }.user-summary > div { display: flex; align-items: center; gap: 11px; padding: 16px 18px; }.user-summary > div + div { border-left: 1px solid var(--line); }.summary-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.summary-icon.success { color: var(--success); background: var(--success-soft); }.summary-icon.admin { color: var(--admin-accent); background: var(--code-soft); }.summary-icon.warning { color: var(--warning); background: var(--warning-soft); }.user-summary > div > div { display: grid; }.user-summary strong { font-size: 20px; }.user-summary span:not(.summary-icon) { color: var(--muted); font-size: 10px; }.user-cell { display: flex; align-items: center; gap: 10px; }.user-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: var(--info); background: var(--info-soft); font-size: 12px; font-weight: 750; }.password-section { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(240px, 1.3fr); gap: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.password-section strong { font-size: 13px; }.password-section p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-@media (max-width: 900px) { .user-summary { grid-template-columns: repeat(2, 1fr); }.user-summary > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }.user-summary > div:nth-child(4) { border-top: 1px solid var(--line); } }
-@media (max-width: 560px) { .user-summary { grid-template-columns: 1fr; }.user-summary > div + div { border-left: 0; border-top: 1px solid var(--line); }.password-section { grid-template-columns: 1fr; } }
-.user-summary{border-inline:0;border-radius:0}
+.page-alert { margin-bottom: 14px; }
+.user-admin-note { color: var(--text-body); }
+.user-note-detail { white-space: pre-wrap; overflow-wrap: anywhere; }
+.user-status-error { margin: 4px 0 0; color: var(--destructive); font-size: 12px; max-width: 180px; }
+.user-subscription-link { color: inherit; text-decoration: none; }
+.user-subscription-link:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
+.user-subscription-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.user-wallet-balances { display: grid; gap: 4px; }
+.user-wallet-link { display: grid; gap: 4px; color: var(--foreground); font-variant-numeric: tabular-nums; text-decoration: none; white-space: nowrap; }
+.user-wallet-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.user-wallet-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.user-wallet-link small { display: block; color: var(--muted-foreground); font-size: 12px; }
+.user-cleanup-detail { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+.user-cleanup-detail h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.user-cleanup-detail p { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+.user-cleanup-detail a { width: fit-content; font-size: 13px; }
+.user-detail-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.user-detail-link { display: block; max-width: clamp(160px, 18vw, 240px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-weight: 500; text-decoration: none; }
+.user-detail-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.user-detail-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
+.user-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.user-detail .detail-metrics span, .user-detail .detail-facts span { font-size: 12px; }
+.user-detail .detail-facts strong { font-size: 13px; }
+.user-related-count { color: var(--foreground); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-decoration: none; }
+.user-related-count:hover { text-decoration: underline; text-underline-offset: 3px; }
+.user-related-count:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.user-security { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+.user-security h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.user-security-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.user-security-row strong { font-size: 13px; font-weight: 500; }
+.user-security-row p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; }
+</style>
+
+<style scoped>
+.user-mobile-label { display: none; }
+@media (max-width: 600px) {
+  :deep(.users-table) { display: block; min-width: 0 !important; }
+  :deep(.users-table thead) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :deep(.users-table tbody) { display: grid; gap: 16px; }
+  :deep(.users-table tbody tr) { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 8px; padding: 12px 0; }
+  :deep(.users-table td) { min-width: 0; height: auto; padding: 0; border: 0; }
+  :deep(.users-table .table-primary-column) { grid-column: 1; grid-row: 1; }
+  :deep(.users-table .cell-title) { min-width: 0; max-width: 100%; }
+  :deep(.users-table td:nth-child(2)) { grid-column: 2; grid-row: 1; padding-top: 4px; }
+  :deep(.users-table .user-wallet-cell) { grid-column: 1; grid-row: 2; display: flex; gap: 8px; text-align: left; }
+  :deep(.users-table .user-traffic-cell) { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 8px; text-align: left; }
+  :deep(.users-table .user-traffic-cell .user-traffic-activity) { flex: 1; min-width: 0; }
+  :deep(.users-table .user-cleanup-cell) { grid-column: 1 / -1; grid-row: 4; display: flex; gap: 8px; }
+  :deep(.users-table .table-action-column) { grid-column: 3; grid-row: 1; min-width: 40px; }
+  .user-mobile-label { display: inline; flex: none; color: var(--muted-foreground); font-size: 12px; }
+  .user-wallet-link { align-items: flex-start; }
+}
 </style>

@@ -1,0 +1,43 @@
+{
+  "source": "e9021b2b698cbb06d402a20b7ead28c696a8befa",
+  "scope": "read-only code-path audit; no execution, migration allocation or independent Stats cursor implementation",
+  "files_sha256": {
+    "backend/internal/adapters/persistence/networkstore/node_observation.go": "05450bbf1b9c1deb3f8c6f8ea0b32fc77897cabb8ef6fc19649e8fed2a161310",
+    "backend/internal/adapters/persistence/networkstore/observation_cursor.go": "2cd114a8e21447d9da60bda4be97f27a1ab19447ea09cbd8114c0c3288b94da5",
+    "backend/internal/adapters/persistence/networkstore/node_activity.go": "771291202ddb22cc88db9239f345095ae713892d57cc4e4bba64619c6ead6ac1",
+    "backend/internal/adapters/persistence/networkstore/node_removal.go": "7349bd248a2884361fae6b372b3ce26e19c49859c4ad4d383eaedc8f49604bf6",
+    "backend/internal/datastore/zero_event_schema.go": "4d01ea863a5b7123ea4936958780f54bfc1a8f5e2ce79fbb9809b165f78c3ae9",
+    "backend/internal/datastore/sqlite_migrations.go": "e09aeddc8507f74194a4a6d796a4fb213138c42dc01b38b13cf2dbdec9677df0",
+    "backend/internal/datastore/database_copy.go": "01553d552455bf466553e3470a54b21822ecbbcee57ecf05060b4a57a3dc0013",
+    "backend/internal/handler/zero_event_runtime.go": "7ad3be79ad1793ee1bbd5c34d5833674d467f60db9860042f260327192b6d081",
+    "backend/internal/capabilities/network/node_observation.go": "63689dfe46228be99a9cbe3538eac4f5b5e4fc34aa6ec41f6cfe81ac726e23d3"
+  },
+  "facts": [
+    "ProjectObservation returns on stale Latest before evaluating Stats; both compare against one persisted position.",
+    "NodeActivity heartbeat/legacy writers can replace nodes counters without the buffered cursor.",
+    "Kernel/configuration executed rollback paths now restore credential fields only; unused restoreConnectorSnapshot is not a current execution path.",
+    "Normal node creation uses auto-increment; restore/import/explicit ID reuse still needs asset ownership handling.",
+    "RemoveNode does not tombstone the observation cursor; its node-first locking differs from projection cursor-first order.",
+    "MySQL current cursor CoreID varchar128 has no corresponding HTTP field-length validation; overall body bound is not a128-character bound.",
+    "Database copy omits schema_migrations, so legacy/current/partial source column sets must be distinguished at the controlled copy boundary."
+  ],
+  "source_derived_counterexample_not_executed": [
+    "fresh node flow A100 establishes Latest100 and no Stats position",
+    "delete node and explicitly reuse its ID for a new asset",
+    "replay acknowledged old Stats A99",
+    "old shared gate rejects99; independent empty Stats slot would admit99 and nodes UPDATE only checks ID/enabled/revoked"
+  ],
+  "required_before_independent_stats": [
+    "stable panel-owned asset incarnation captured at authenticated durable admission",
+    "deletion tombstone/restore-copy and compatible lock order",
+    "explicit legacy unknown source handling without losing billable facts",
+    "tagged fresh_unknown / legacy_floor_unknown / sampled position states and exact source/time preservation",
+    "migration/preflight/recovery/copy and actual MySQL failure/concurrency evidence"
+  ],
+  "limits": [
+    "CreatedAt/ReceivedAt only constrain time; copied CreatedAt and legacy missing ReceivedAt cannot prove asset identity.",
+    "Current credential, CoreID, sender SourceID, HTTP ACK or heartbeat must not fabricate accepted incarnation.",
+    "No0059 added; accounting/observation transaction coupling remains unchanged.",
+    "Technical prerequisite, not a new commercial policy question; no P4/P6 completion claim."
+  ]
+}

@@ -1,5 +1,6 @@
 <template>
   <div class="setup-shell">
+    <AppearanceSwitch floating />
     <aside class="setup-aside">
       <div class="auth-brand"><span class="brand-mark">Z</span><span>zboard</span></div>
       <div>
@@ -53,13 +54,13 @@
             <UiInput v-model.trim="form.system_timezone" v-bind="controlAttrs" maxlength="100" placeholder="Asia/Shanghai" autocomplete="off" />
           </FormField>
           <div class="retention-grid">
-            <FormField v-slot="{ controlAttrs }" label="审计日志保留" name="setup-audit-retention" hint="默认 180 天；0 表示永久保留。" :error="fieldErrors.fields.audit_log_retention_days" required>
+            <FormField v-slot="{ controlAttrs }" label="审计日志保留" name="setup-audit-retention" hint="默认 30 天；0 表示永久保留。" :error="fieldErrors.fields.audit_log_retention_days" required>
               <UiInput v-model.number="form.audit_log_retention_days" v-bind="controlAttrs" type="number" min="0" max="3650" step="1" inputmode="numeric" />
             </FormField>
-            <FormField v-slot="{ controlAttrs }" label="运行历史保留" name="setup-operation-retention" hint="默认 90 天；仅清理已结束的节点、发布、证书与供应商操作。" :error="fieldErrors.fields.operation_history_retention_days" required>
+            <FormField v-slot="{ controlAttrs }" label="运行历史保留" name="setup-operation-retention" hint="默认 14 天；仅清理已结束的节点、发布、证书与供应商操作。" :error="fieldErrors.fields.operation_history_retention_days" required>
               <UiInput v-model.number="form.operation_history_retention_days" v-bind="controlAttrs" type="number" min="0" max="3650" step="1" inputmode="numeric" />
             </FormField>
-            <FormField v-slot="{ controlAttrs }" label="运营任务保留" name="setup-task-retention" hint="默认 90 天；仅清理已完成任务及任务项。" :error="fieldErrors.fields.task_history_retention_days" required>
+            <FormField v-slot="{ controlAttrs }" label="运营任务保留" name="setup-task-retention" hint="默认 7 天；仅清理已完成任务及任务项。" :error="fieldErrors.fields.task_history_retention_days" required>
               <UiInput v-model.number="form.task_history_retention_days" v-bind="controlAttrs" type="number" min="0" max="3650" step="1" inputmode="numeric" />
             </FormField>
           </div>
@@ -91,6 +92,7 @@
 </template>
 
 <script setup lang="ts">
+import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { installZboard } from '../api/client'
@@ -119,9 +121,9 @@ const form = reactive({
   site_url: window.location.origin,
   allow_registration: true,
   system_timezone: browserTimezone,
-  audit_log_retention_days: 180,
-  operation_history_retention_days: 90,
-  task_history_retention_days: 90,
+  audit_log_retention_days: 30,
+  operation_history_retention_days: 14,
+  task_history_retention_days: 7,
   admin_email: '',
   admin_password: '',
 })
@@ -221,7 +223,7 @@ async function submit() {
 
 <style scoped>
 .setup-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(300px, 38%) minmax(0, 1fr); background: var(--page); }
-.setup-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 40px; overflow: hidden; padding: 46px; color: var(--sidebar-text); background: var(--sidebar); }
+.setup-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 40px; overflow: hidden; padding: 46px; color: var(--text-inverse); background: var(--auth-aside-background); }
 .setup-aside::before { content: ''; position: absolute; inset: 0; opacity: .25; background-image: linear-gradient(var(--auth-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--auth-grid-line) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom right, var(--color-black), transparent 76%); pointer-events: none; }.setup-aside > * { position: relative; z-index: 1; }
 .setup-aside h1 { margin: 0 0 14px; color: var(--text-inverse); font-size: clamp(32px, 4vw, 48px); line-height: 1.12; }.setup-aside > div > p:last-child { max-width: 500px; color: var(--setup-muted-soft); line-height: 1.7; }
 .setup-steps { display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; }.setup-steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; opacity: .48; }.setup-steps li > span { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--setup-muted-strong); border-radius: 50%; font-size: 12px; }.setup-steps li div { display: grid; gap: 2px; }.setup-steps strong { color: var(--info-soft); font-size: 13px; }.setup-steps small { color: var(--setup-muted); }.setup-steps li.active, .setup-steps li.complete { opacity: 1; }.setup-steps li.active > span { border-color: var(--focus-border); background: var(--primary); color: var(--text-inverse); }.setup-steps li.complete > span { border-color: var(--success-accent); color: var(--success-accent-soft); }

@@ -104,7 +104,7 @@ func TestRouterRemovesAccountAggregateAccessRoutes(t *testing.T) {
 		`/api/v1/account/subscriptions/:id/access`,
 		`/api/v1/account/subscriptions/:id/access/rotate`,
 		`h.ScopedClientSubscriptionHandler`,
-		`h.ReconcileSubscriptionAccessTokens()`,
+		`runStartupPhase("subscription_access", h.ReconcileSubscriptionAccessTokens)`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("router missing %q", expected)

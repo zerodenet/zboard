@@ -43,8 +43,8 @@ func (i proxyPoolMutationInspector) InspectProxyPoolConfiguration(ctx context.Co
 func (h *handlers) proxyPoolPath(db *gorm.DB, id, nodeID uint, network string) (networkEntryPath, error) {
 	var pool model.NodeProxyPool
 	var path networkEntryPath
-	if err := db.First(&pool, id).Error; err != nil || pool.NodeID != nodeID {
-		return path, fmt.Errorf("请选择入口节点 A 自己的共享代理池")
+	if err := db.First(&pool, id).Error; err != nil {
+		return path, fmt.Errorf("请选择存在的共享代理池")
 	}
 	raw, err := h.credentialCipher.Decrypt(pool.Config)
 	if err != nil {
@@ -100,8 +100,12 @@ func (h *handlers) NodeProxyPoolsHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if r.Method == http.MethodGet {
-		nodeID, err := strconv.ParseUint(r.URL.Query().Get("node_id"), 10, 64)
-		if err != nil || nodeID == 0 {
+		nodeValue := strings.TrimSpace(r.URL.Query().Get("node_id"))
+		if nodeValue == "" {
+			nodeValue = "0"
+		}
+		nodeID, err := strconv.ParseUint(nodeValue, 10, 64)
+		if err != nil {
 			BadRequest(w, "请选择节点")
 			return
 		}
@@ -134,8 +138,8 @@ func (h *handlers) NodeProxyPoolsHandler(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		req.Name = strings.TrimSpace(req.Name)
-		if req.NodeID == 0 || req.Name == "" || len(req.Name) > 80 {
-			BadRequest(w, "请选择节点并填写 1–80 字节的代理池名称")
+		if req.Name == "" || len(req.Name) > 80 {
+			BadRequest(w, "请填写 1–80 字节的代理池名称")
 			return
 		}
 		if req.SubscriptionURL != nil {
@@ -224,4 +228,49 @@ func (h *handlers) NodeProxyPoolsHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	OK(w, row)
+}
+
+func (h *handlers) NodeProxyPoolReferenceHandler(w http.ResponseWriter, r *http.Request) {
+	actor, e := h.requireAdmin(w, r)
+	if e != nil {
+		return
+	}
+	id, e := parsePathID(strings.TrimSuffix(r.URL.Path, "/reference"), "/api/v1/admin/node-proxy-pools/")
+	if e != nil {
+		BadRequest(w, "无效的代理池")
+		return
+	}
+	var request struct {
+		NodeID uint `json:"node_id"`
+	}
+	if e := decodeBody(r, &request); e != nil || request.NodeID == 0 {
+		BadRequest(w, "请选择服务器")
+		return
+	}
+	e = h.services.ProxyPoolMutations(h.credentialCipher, proxyPoolMutationInspector{h: h}).SetNodeReference(r.Context(), actor.UserID, id, request.NodeID, r.Method == http.MethodPut)
+	if e != nil {
+		if writeResourceBusy(w, e) {
+			return
+		}
+		if errors.Is(e, networkcap.ErrProxyPoolMutationPermission) {
+			Forbidden(w, "管理员权限已失效。")
+			return
+		}
+		if errors.Is(e, gorm.ErrRecordNotFound) {
+			NotFound(w)
+			return
+		}
+		if errors.Is(e, networkcap.ErrProxyPoolConflict) {
+			writeJSON(w, http.StatusConflict, "服务器状态已变化，请刷新后重试。", nil)
+			return
+		}
+		var validation *networkcap.ProxyPoolMutationValidation
+		if errors.As(e, &validation) {
+			BadRequest(w, validation.Message)
+		} else {
+			ServerError(w, e)
+		}
+		return
+	}
+	OK(w, map[string]bool{"referenced": r.Method == http.MethodPut})
 }

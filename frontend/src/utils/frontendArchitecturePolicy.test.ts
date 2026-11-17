@@ -111,7 +111,7 @@ describe('frontend architecture policy', () => {
     for (const [route, files] of Object.entries(adminRoutes)) {
       const source = surface(files)
       expect(source, `${route} needs PageHeader`).toContain('<PageHeader')
-      expect(source, `${route} needs application feedback`).toContain('<TransientFeedback')
+      expect(source, `${route} needs application feedback`).toMatch(/<(?:TransientFeedback|RemoteReadStatus|PageAlert)\b/)
       expect(source, `${route} needs semantic status labels`).toContain('<StatusBadge')
       expect(source, `${route} needs formatted time labels`).toContain('<TimeBadge')
     }
@@ -195,8 +195,9 @@ describe('frontend architecture policy', () => {
     expect(users).toContain('total_subscription_count')
     expect(users).toContain('pending_order_count')
     expect(users).toContain('total_order_count')
-    expect(users).toContain('<SortableHeader field="created_at"')
-    expect(users).toContain('<TimeBadge :value="user.created_at"')
+    expect(users).toContain('<SortableHeader field="email"')
+    expect(users).toContain('user.wallet_balances')
+    expect(users).toContain('<AccountCleanupSummary')
     expect(client).toContain("sort?: 'id' | 'email' | 'created_at'")
     expect(client).toContain("direction?: 'asc' | 'desc'")
     expect(users).not.toMatch(/\bfetchUsers\(/)

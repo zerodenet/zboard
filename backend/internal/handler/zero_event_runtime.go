@@ -7,12 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
-	"github.com/zerodenet/zboard/backend/internal/application"
 	capabilityjobs "github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"log"
-	"sort"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +25,7 @@ const (
 	zeroEventConsumerCompactBurstBatches   = 16
 	zeroEventConsumerEmergencyBurstBatches = 32
 	zeroEventConsumerMinimumInterval       = 100 * time.Millisecond
+	zeroEventConsumerCycleBudget           = 200 * time.Millisecond
 	zeroEventSQLiteBatchLimit              = 32
 	zeroEventMySQLBatchLimit               = 128
 	zeroConnectorReceiptPersistInterval    = 30 * time.Second
@@ -55,7 +55,7 @@ type zeroNodeProjection struct {
 func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	h.StartCredentialExpiryWorker()
 	if err := h.ReconcileHistoryRetentionDefaults(); err != nil {
-		h.CloseCredentialExpiryWorker()
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	h.StartHistoryRetentionWorker()
@@ -64,15 +64,15 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	}
 	spool, err := zeroevent.NewFileSpool(cfg)
 	if err != nil {
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachHistoryRetentionWorkers()
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := spool.Start(ctx); err != nil {
 		cancel()
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachHistoryRetentionWorkers()
+		h.detachScheduledJob("credential_expiry")
 		return err
 	}
 	runtime := &zeroEventRuntime{
@@ -84,8 +84,8 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 	if _, loaded := zeroEventRuntimeRegistry.LoadOrStore(h, runtime); loaded {
 		cancel()
 		_ = spool.Close()
-		h.CloseHistoryRetentionWorker()
-		h.CloseCredentialExpiryWorker()
+		h.detachHistoryRetentionWorkers()
+		h.detachScheduledJob("credential_expiry")
 		return errors.New("Zero event spool is already configured")
 	}
 	h.backgroundJobs().observations.Register("event_consumer", jobNames["event_consumer"], "queue", cfg.Consumer.CommitInterval, 1)
@@ -95,14 +95,16 @@ func (h *handlers) ConfigureZeroEventSpool(cfg zeroevent.Config) error {
 }
 
 func (h *handlers) CloseZeroEventSpool() error {
-	h.CloseHistoryRetentionWorker()
-	h.CloseCredentialExpiryWorker()
+	// File-spool configuration and ownership are local to this process. Closing
+	// it or failing startup must never revoke another process's durable tasks.
+	h.detachHistoryRetentionWorkers()
+	h.detachScheduledJob("credential_expiry")
 	value, ok := zeroEventRuntimeRegistry.LoadAndDelete(h)
 	if !ok {
 		return nil
 	}
 	runtime := value.(*zeroEventRuntime)
-	h.closeScheduledJob("event_consumer")
+	h.detachScheduledJob("event_consumer")
 	runtime.cancel()
 	close(runtime.done)
 	if err := runtime.spool.Close(); err != nil {
@@ -112,8 +114,18 @@ func (h *handlers) CloseZeroEventSpool() error {
 	return nil
 }
 
+// Warnings and config notifications only feed node presence/coverage today.
+// Keep them off the synchronous database path even during a warning storm.
+func isZeroBufferedEvent(kind string) bool {
+	switch kind {
+	case "flow.updated", "stats.sampled", "engine.warning", "config.changed":
+		return true
+	}
+	return false
+}
+
 func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.EventNode, event zeroEventEnvelope) (bool, error) {
-	if event.EventType != "flow.updated" && event.EventType != "stats.sampled" {
+	if !isZeroBufferedEvent(event.EventType) {
 		return false, nil
 	}
 	value, ok := zeroEventRuntimeRegistry.Load(h)
@@ -122,19 +134,35 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.Eve
 	}
 	runtime := value.(*zeroEventRuntime)
 	flowID := ""
+	principal := strings.TrimSpace(event.PrincipalKey)
+	payload := json.RawMessage(`{}`)
 	if event.EventType == "stats.sampled" {
-		if _, err := parseZeroStatsProjection(event.Payload); err != nil {
-			return true, err
+		stats, err := parseZeroStatsProjection(event.Payload)
+		if err != nil {
+			return true, &zeroEventRequestError{status: http.StatusBadRequest, message: err.Error()}
 		}
-	} else {
+		payload, err = json.Marshal(map[string]uint64{"active_sessions": stats.ActiveSessions, "bytes_up": stats.BytesUp, "bytes_down": stats.BytesDown})
+		if err != nil {
+			return true, &zeroEventRequestError{status: http.StatusBadRequest, message: err.Error()}
+		}
+	} else if event.EventType == "flow.updated" {
 		flow, err := parseZeroFlowProjection(event)
 		if err != nil {
-			return true, err
+			return true, &zeroEventRequestError{status: http.StatusBadRequest, message: err.Error()}
 		}
 		if flow.PrincipalKey == "" {
-			return true, errors.New("flow event has no attributable principal_key")
+			return true, &zeroEventRequestError{status: http.StatusBadRequest, message: "flow event has no attributable principal_key"}
 		}
 		flowID = flow.FlowID
+		principal = flow.PrincipalKey
+		reduced := map[string]interface{}{"flow_id": flow.FlowID, "revision": flow.Revision, "traffic": map[string]int64{"bytes_up": flow.BytesUp, "bytes_down": flow.BytesDown}}
+		if flow.InboundTag != "" {
+			reduced["inbound_tag"] = flow.InboundTag
+		}
+		payload, err = json.Marshal(reduced)
+		if err != nil {
+			return true, &zeroEventRequestError{status: http.StatusBadRequest, message: err.Error()}
+		}
 	}
 	receivedAt := time.Now().UTC()
 	if state := zeroEventStateFromContext(ctx); state != nil && !state.receivedAt.IsZero() {
@@ -143,8 +171,9 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.Eve
 	envelope := zeroevent.Envelope{
 		ID:             strings.TrimSpace(event.EventID),
 		NodeID:         uint64(node.ID),
+		AssetTag:       node.AssetTag,
 		SourceID:       strings.TrimSpace(event.SourceID),
-		PrincipalKey:   strings.TrimSpace(event.PrincipalKey),
+		PrincipalKey:   principal,
 		Type:           event.EventType,
 		OccurredAt:     zeroEventTime(event, time.Now().UTC()),
 		ReceivedAt:     receivedAt,
@@ -152,10 +181,10 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.Eve
 		ConfigRevision: event.ConfigRevision,
 		FlowID:         flowID,
 		Sequence:       event.Sequence,
-		Payload:        append(json.RawMessage(nil), event.Payload...),
+		Payload:        payload,
 	}
 	if err := runtime.spool.Append(ctx, envelope); err != nil {
-		return true, fmt.Errorf("persist Zero event %s: %w", event, err)
+		return true, fmt.Errorf("persist Zero event %q: %w", event.EventID, err)
 	}
 	h.recordBufferedZeroConnectorReceipt(node, receivedAt, runtime)
 	return true, nil
@@ -186,26 +215,40 @@ func zeroBufferedFlowID(payload json.RawMessage) string {
 }
 
 func (h *handlers) consumeZeroEventCycle(ctx context.Context, runtime *zeroEventRuntime) error {
+	started := time.Now()
 	h.flushBufferedConnectorReceipts(ctx, runtime)
-	limit := zeroEventConsumerBatchLimit(runtime.config.MaxBatch, h.services.TrafficReadsUseSQLite())
+	limit := min(runtime.config.MaxBatch, zeroEventReadWindowLimit)
 	burst := zeroEventConsumerBurst(runtime.spool.Status())
 	for index := 0; index < burst; index++ {
 		count, err := h.consumeZeroEventBatchMeasured(ctx, runtime.spool, limit, &runtime.metrics)
 		if err != nil {
-			runtime.metrics.failures.Add(1)
+			runtime.metrics.failed(err, time.Now())
 			return err
 		}
 		h.flushBufferedConnectorReceipts(ctx, runtime)
-		if count < limit {
+		if count == 0 {
 			return nil
+		}
+		if count < limit {
+			// A byte-limited window may still have a backlog even though its
+			// record count is below the configured limit.
+			if status := runtime.spool.Status(); status.PendingUnknown || status.PendingEvents > 0 {
+				return capabilityjobs.ErrContinue
+			}
+			return nil
+		}
+		// Yield between windows so an event flood cannot monopolize a job worker.
+		// The budget is soft: the current bounded window completes first.
+		if time.Since(started) >= zeroEventConsumerCycleBudget {
+			return capabilityjobs.ErrContinue
 		}
 	}
 	return capabilityjobs.ErrContinue
 }
 
 // SQLite shares a single connection with live authorization and management
-// reads. Keep transactions short; each committed batch retains its own durable
-// checkpoint. MySQL batches are also bounded to limit accounting lock duration.
+// reads. Keep transactions short inside a separately bounded read window. The
+// durable checkpoint advances only after every authority chunk succeeds.
 func zeroEventConsumerBatchLimit(configured int, sqlite bool) int {
 	if sqlite && configured > zeroEventSQLiteBatchLimit {
 		return zeroEventSQLiteBatchLimit
@@ -268,80 +311,70 @@ func (h *handlers) consumeZeroEventBatchMeasured(ctx context.Context, spool zero
 		return 0, nil
 	}
 	finishObservation := h.observeJob("event_consumer", "queue", 0, 1)
-	if err := h.projectZeroNodeEvents(ctx, batch.Events); err != nil {
-		finishObservation(err)
-		return 0, err
+	observed := false
+	defer func() {
+		if !observed {
+			finishObservation(errors.New("job handler did not return; result requires verification"))
+		}
+	}()
+	processed := 0
+	// Keep the large read window, but durably acknowledge contiguous transaction
+	// cohorts. A later busy resource cannot send already committed prefixes back
+	// through every discovery/authority query on each retry.
+	chunk := len(batch.Events)
+	if len(batch.Positions) == len(batch.Events) {
+		chunk = zeroEventConsumerBatchLimit(chunk, h.services.TrafficReadsUseSQLite())
 	}
-	if err := spool.Commit(ctx, batch.Next); err != nil {
-		finishObservation(err)
-		return 0, fmt.Errorf("commit Zero event checkpoint: %w", err)
+	for start := 0; start < len(batch.Events); start += chunk {
+		end := min(start+chunk, len(batch.Events))
+		events := batch.Events[start:end]
+		projected, err := h.projectZeroNodeEventsBounded(ctx, events)
+		if errors.Is(err, metering.ErrFlowWindowNeedsIndividualReports) {
+			projected, err = h.projectZeroNodeEventsWithMerge(ctx, events, false)
+		}
+		if err == nil {
+			next := batch.Next
+			if len(batch.Positions) == len(batch.Events) {
+				next = batch.Positions[end-1]
+			}
+			if e := spool.Commit(ctx, next); e != nil {
+				err = fmt.Errorf("commit Zero event checkpoint: %w", e)
+			}
+		}
+		if err != nil {
+			finishObservation(err)
+			observed = true
+			return processed, err
+		}
+		processed = end
+		if metrics != nil {
+			metrics.committed(events, time.Since(started), time.Now().UTC())
+			metrics.projectedFlows.Add(uint64(projected))
+			for _, event := range events {
+				if event.Type == "flow.updated" {
+					metrics.flowUpdates.Add(1)
+				}
+			}
+		}
+		started = time.Now()
 	}
 	finishObservation(nil)
-	if metrics != nil {
-		metrics.committed(batch.Events, time.Since(started), time.Now().UTC())
-	}
-	return len(batch.Events), nil
+	observed = true
+	return processed, nil
 }
 
 func (h *handlers) projectZeroNodeEvents(ctx context.Context, events []zeroevent.Envelope) error {
-	nodeProjections := aggregateZeroNodeEvents(events)
-	flowEvents := aggregateZeroFlowEvents(events)
-	if len(nodeProjections) == 0 && len(flowEvents) == 0 {
-		return nil
+	_, err := h.projectZeroNodeEventsBounded(ctx, events)
+	if errors.Is(err, metering.ErrFlowWindowNeedsIndividualReports) {
+		_, err = h.projectZeroNodeEventsWithMerge(ctx, events, false)
 	}
-	nodeIDs := make([]uint, 0, len(nodeProjections))
-	for nodeID := range nodeProjections {
-		nodeIDs = append(nodeIDs, nodeID)
-	}
-	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
-
-	samples := make([]metering.FlowSample, 0, len(flowEvents))
-	for _, buffered := range flowEvents {
-		event := zeroBufferedEnvelopeAsEvent(buffered)
-		flow, err := parseZeroFlowProjection(event)
-		if err != nil {
-			return err
-		}
-		if flow.PrincipalKey == "" {
-			return errors.New("flow event has no attributable principal_key")
-		}
-		if isMieruMigrationPrincipal(flow.PrincipalKey) {
-			continue
-		}
-		samples = append(samples, metering.FlowSample{NodeID: uint(buffered.NodeID), SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())})
-	}
-	observations := make([]network.NodeObservation, 0, len(nodeIDs))
-	for _, nodeID := range nodeIDs {
-		observations = append(observations, zeroNodeObservation(nodeProjections[nodeID]))
-	}
-	coverage := make([]metering.NodeCoverageEvent, 0, len(events))
-	now := time.Now().UTC()
-	for _, event := range events {
-		receivedAt := event.ReceivedAt
-		if receivedAt.IsZero() {
-			receivedAt = now
-		}
-		coverage = append(coverage, coverageInput(uint(event.NodeID), zeroBufferedEnvelopeAsEvent(event), receivedAt))
-	}
-	result, err := h.services.ProjectBufferedEvents(ctx, application.BufferedEventProjection{Nodes: observations, Flows: samples, Coverage: coverage}, h.credentialCipher)
-	if err != nil {
-		return err
-	}
-	// Coverage is observability state rather than accounting state. Fold it in
-	// one transaction per spool batch, but keep it fail-open so an auxiliary
-	// write can never stop traffic settlement or checkpoint progress.
-	if result.CoverageErr != nil && ctx.Err() == nil {
-		log.Printf("fair use buffered coverage projection failed: %v", result.CoverageErr)
-	}
-	if len(result.Exhausted) > 0 {
-	}
-	return nil
+	return err
 }
 
 func aggregateZeroNodeEvents(events []zeroevent.Envelope) map[uint]zeroNodeProjection {
 	result := make(map[uint]zeroNodeProjection)
 	for _, event := range events {
-		if event.NodeID == 0 || (event.Type != "flow.updated" && event.Type != "stats.sampled") {
+		if event.NodeID == 0 || !isZeroBufferedEvent(event.Type) {
 			continue
 		}
 		nodeID := uint(event.NodeID)
@@ -364,7 +397,7 @@ func aggregateZeroNodeEvents(events []zeroevent.Envelope) map[uint]zeroNodeProje
 }
 
 func networkEventPosition(event zeroevent.Envelope) network.EventPosition {
-	return network.EventPosition{ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt}
+	return network.EventPosition{AssetTag: event.AssetTag, ID: event.ID, CoreInstanceID: event.CoreInstanceID, Sequence: event.Sequence, ConfigRevision: event.ConfigRevision, OccurredAt: event.OccurredAt, SourceID: event.SourceID, ReceivedAt: event.ReceivedAt}
 }
 func zeroNodeObservation(projection zeroNodeProjection) network.NodeObservation {
 	input := network.NodeObservation{NodeID: projection.NodeID, Latest: networkEventPosition(projection.Latest), Stats: network.NodeStats(projection.Stats)}

@@ -27,6 +27,7 @@ type RegistrationWelcome struct{ Repository WelcomeRepository }
 
 type RegistrationEventRepository interface {
 	ProcessRegistrationEvents(context.Context, int) (int, error)
+	PendingRegistrationEvents(context.Context) (bool, error)
 }
 type RegistrationEvents struct{ Repository RegistrationEventRepository }
 
@@ -39,4 +40,8 @@ func (s RegistrationWelcome) Enqueue(ctx context.Context, accountID uint) (Welco
 		return WelcomeReceipt{}, ErrInvalidMessage
 	}
 	return s.Repository.EnqueueRegisteredAccount(ctx, accountID)
+}
+
+func (s RegistrationEvents) Pending(ctx context.Context) (bool, error) {
+	return s.Repository.PendingRegistrationEvents(ctx)
 }

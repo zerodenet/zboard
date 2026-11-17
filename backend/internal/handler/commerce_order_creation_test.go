@@ -17,7 +17,7 @@ func TestCommerceOrderCreationAuthorityAndRollback(t *testing.T) {
 		t.Run(engine, func(t *testing.T) {
 			var f orderFixture
 			if engine == "mysql" {
-				f = newMySQLOrderFixture(t)
+				f = newMySQLBusinessOrderFixture(t)
 			} else {
 				f = newOrderFixture(t)
 			}
@@ -92,7 +92,7 @@ func TestCommerceOrderCreationAuthorityAndRollback(t *testing.T) {
 func TestMySQLCommerceOrderCreationReadsCommittedSKUAfterParentLock(t *testing.T) {
 	for _, mutation := range []string{"price", "disabled", "operation"} {
 		t.Run(mutation, func(t *testing.T) {
-			f := newMySQLOrderFixture(t)
+			f := newMySQLBusinessOrderFixture(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			writer := f.h.db.WithContext(ctx).Begin()

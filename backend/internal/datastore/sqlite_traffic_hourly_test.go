@@ -19,6 +19,13 @@ func TestTrafficHourlyMaintainsLedgerAcrossMutationsAndRollback(t *testing.T) {
 	if err := RunMigrations(db); err != nil {
 		t.Fatal(err)
 	}
+	// This is the published 0024 trigger contract, before the 0054 cutover.
+	// Current writers use independent intents; test the legacy SQL explicitly.
+	for _, statement := range sqliteTrafficHourlyTriggers() {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	assert := func(want int64, count int64) {
 		t.Helper()
 		var got struct{ Used, Count int64 }
@@ -75,7 +82,7 @@ func TestTrafficHourlyBackfillsExistingLedgerOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"traffic_hourly_insert", "traffic_hourly_update", "traffic_hourly_delete", "traffic_hourly_replace"} {
-		if err := db.Exec("DROP TRIGGER " + name).Error; err != nil {
+		if err := db.Exec("DROP TRIGGER IF EXISTS " + name).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

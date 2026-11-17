@@ -158,7 +158,8 @@ export function normalizeSystemConfigDraft(
   if (config.config_key === 'system_timezone' && !isValidTimeZone(value)) {
     return { error: '请输入有效的 IANA 时区，例如 Asia/Shanghai、UTC 或 America/Los_Angeles。' }
   }
-  if (input.control === 'url' && !isHttpUrl(value)) {
+  const localAsset = assetUrlConfigKeys.has(config.config_key) && /^\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
+  if (input.control === 'url' && !localAsset && !isHttpUrl(value)) {
     return { error: '请输入不含账号、密码或片段的完整 HTTP 或 HTTPS 地址。' }
   }
   if (input.control === 'email' && !isEmail(value, input.max_bytes || 254)) {

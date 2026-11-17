@@ -3,6 +3,7 @@ package zeroevent
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -21,8 +22,14 @@ const (
 type semanticCompactionKey struct {
 	kind           semanticCompactionKind
 	nodeID         uint64
+	assetTag       string
 	coreInstanceID string
 	flowID         string
+	principalKey   string
+	sourceID       string
+	configRevision uint64
+	minute         int64
+	payloadHash    [32]byte
 }
 
 type semanticCompactionLatest struct {
@@ -282,6 +289,25 @@ func validateCompactedRepresentation(path, codec string, records uint64, size in
 }
 
 func compactSemanticEvents(events []Envelope, cfg CompactionConfig) ([]Envelope, int64, int64, int64) {
+	// The input is one already loaded segment; these maps have at most len(events)
+	// entries. Retain every event in
+	// a mixed-tag node/core lineage, including A/B/A and unknown/known changes.
+	// Per-tag keys alone would let A3 erase A1 across B2 and hide a sample/rounding
+	// boundary. This conservative pass changes no financial identity or ordering.
+	type lineage struct {
+		node uint64
+		core string
+	}
+	tags := make(map[lineage]string)
+	mixed := make(map[lineage]bool)
+	for _, event := range events {
+		key := lineage{event.NodeID, strings.TrimSpace(event.CoreInstanceID)}
+		if previous, ok := tags[key]; ok {
+			mixed[key] = mixed[key] || previous != event.AssetTag
+		} else {
+			tags[key] = event.AssetTag
+		}
+	}
 	latest := make(map[semanticCompactionKey]semanticCompactionLatest)
 	conflicted := make(map[semanticCompactionKey]bool)
 	keys := make([]semanticCompactionKey, len(events))
@@ -290,6 +316,9 @@ func compactSemanticEvents(events []Envelope, cfg CompactionConfig) ([]Envelope,
 
 	for index, event := range events {
 		key, replaceable, safe := semanticKey(event, cfg)
+		if mixed[lineage{event.NodeID, strings.TrimSpace(event.CoreInstanceID)}] {
+			safe = false
+		}
 		if replaceable && !safe {
 			unsafeSkipped++
 		}
@@ -360,8 +389,17 @@ func semanticKey(event Envelope, cfg CompactionConfig) (semanticCompactionKey, b
 		return semanticCompactionKey{
 			kind:           semanticCompactionFlowUpdate,
 			nodeID:         event.NodeID,
+			assetTag:       event.AssetTag,
 			coreInstanceID: instanceID,
 			flowID:         flowID,
+			// Changed cumulative counters are accounting facts: the consumer
+			// retains their rounded deltas. Pressure compaction may only
+			// supersede identical payloads within one accounting boundary.
+			principalKey:   event.PrincipalKey,
+			sourceID:       event.SourceID,
+			configRevision: event.ConfigRevision,
+			minute:         event.OccurredAt.Unix() / 60,
+			payloadHash:    sha256.Sum256(event.Payload),
 		}, true, true
 	case "stats.sampled":
 		if !cfg.MergeNodeStats {
@@ -370,6 +408,7 @@ func semanticKey(event Envelope, cfg CompactionConfig) (semanticCompactionKey, b
 		return semanticCompactionKey{
 			kind:           semanticCompactionNodeStats,
 			nodeID:         event.NodeID,
+			assetTag:       event.AssetTag,
 			coreInstanceID: instanceID,
 		}, true, true
 	default:

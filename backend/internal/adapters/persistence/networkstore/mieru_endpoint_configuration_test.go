@@ -49,8 +49,14 @@ func TestManagedPublicationInventoryReturnsStableTargets(t *testing.T) {
 		{ID: 3, NodeID: 20, Name: "hysteria", RuntimeKey: "00000000-0000-4000-8000-000000000003", Protocol: "Hysteria2", Address: "h.example", Port: 443, PublicPort: 443, OptionalConfig: "{}", Tags: "[]", IsActive: true},
 		{ID: 2, NodeID: 10, Name: "trojan", RuntimeKey: "00000000-0000-4000-8000-000000000002", Protocol: "trojan", Address: "t.example", Port: 443, PublicPort: 443, OptionalConfig: "{}", Tags: "[]", IsActive: true},
 		{ID: 4, NodeID: 30, Name: "vless", RuntimeKey: "00000000-0000-4000-8000-000000000004", Protocol: "vless", Address: "v.example", Port: 443, PublicPort: 443, OptionalConfig: "{}", Tags: "[]", IsActive: true},
+		{ID: 5, NodeID: 40, Name: "ready", RuntimeKey: "00000000-0000-4000-8000-000000000005", Protocol: "trojan", Address: "ready.example", Port: 443, PublicPort: 443, OptionalConfig: "{}", Tags: "[]", IsActive: true, ManagedPrincipalReady: true},
+		{ID: 6, NodeID: 50, Name: "disabled", RuntimeKey: "00000000-0000-4000-8000-000000000006", Protocol: "hysteria2", Address: "disabled.example", Port: 443, PublicPort: 443, OptionalConfig: "{}", Tags: "[]", IsActive: false},
 	}
 	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	// GORM applies the true default on create; explicitly persist disablement.
+	if err := db.Model(&model.ProtocolEndpoint{}).Where("id = ?", 6).Update("is_active", false).Error; err != nil {
 		t.Fatal(err)
 	}
 	targets, err := (ManagedPublicationInventory{DB: db}).ListManagedPublicationTargets(context.Background(), []string{"trojan", "hysteria2"})

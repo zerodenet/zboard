@@ -1,0 +1,374 @@
+{
+  "source": "1012bf56d78caf2e29420c8f56b5c3c72b5be585",
+  "run_id": 39551804875,
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39551804875",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 119062463589,
+      "name": "mysql",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T05:50:12Z",
+      "completed_at": "2026-10-21T06:10:23Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-go@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test actual MySQL migrations and transactions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-go@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 119062463760,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T05:50:12Z",
+      "completed_at": "2026-10-21T05:52:41Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run pnpm/action-setup@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Normalize package permissions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Typecheck and build",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run pnpm/action-setup@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 119062463835,
+      "name": "compose",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T05:50:12Z",
+      "completed_at": "2026-10-21T05:50:21Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare host directories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise nested bind permissions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify uploads survive container replacement",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate Compose configurations",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify upload mounts in every deployment layout",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify managed rule mount contract",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 119062463950,
+      "name": "contract",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T05:50:12Z",
+      "completed_at": "2026-10-21T05:50:29Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Pull redocly/cli:1.34.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check OpenAPI contract",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 119062464042,
+      "name": "zrs-compiler",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T05:50:12Z",
+      "completed_at": "2026-10-21T05:50:42Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@1.88.0",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Format",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build release binary",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 119062464137,
+      "name": "backend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-21T05:50:12Z",
+      "completed_at": "2026-10-21T05:56:03Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-go@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module files are tidy",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Format",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify plugin SDK submodule",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test offline node cleanup",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify pure-Go SQLite path",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-go@v5",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "mysql_package_lines": [
+    "2026-10-21T05:54:13.6773466Z ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t186.256s",
+    "2026-10-21T06:04:41.7367978Z ok  \tgithub.com/zerodenet/zboard/backend/internal/handler\t795.368s",
+    "2026-10-21T06:04:41.7369010Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t189.529s",
+    "2026-10-21T06:06:42.1849497Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore\t119.449s",
+    "2026-10-21T06:10:19.6698605Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore\t216.419s"
+  ],
+  "scope": "All six jobs on exact 1012bf5 observation-operations source, including current full backend/SDK/pure-Go SQLite/vet/build, frontend, actual MySQL8.4 core/jobstore/copy, contract, compose and zrs compiler. Not earlier c923 acceptance, no production migration, no P4 retention/P6 completion claim.",
+  "raw_mysql_log_bytes": 33745,
+  "raw_mysql_log_sha256": "cbc8c2bae58ed2a19b2521e213132ad1257cd775702cfd4e7183f4bd15703fd2"
+}

@@ -1,0 +1,34 @@
+{
+  "source_head": "e9e582f90b7f8058b5215bab2f91385cd3f2c26b",
+  "ci_failure": {
+    "run": "https://github.com/zerodenet/zboard/actions/runs/39473740869",
+    "job": 118804204720,
+    "test": "TestCommerceQuoteRealNativeAdmissionAndReconfiguration",
+    "expected": "context deadline exceeded",
+    "actual": "plugin service unavailable"
+  },
+  "before": {
+    "command": "go test -p 1 -overlay discount-deadline-overlay.json ./internal/plugins -run ^TestCommerceQuoteTransportDeadlineBeforeLocalTimer$ -count=1",
+    "exit_code": 1,
+    "failures": [
+      "DeadlineExceeded",
+      "Canceled"
+    ],
+    "overlay": "original e9e582f provider implementation; new regression test; no working-tree replacement"
+  },
+  "after": {
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/plugins -run ^TestCommerceQuote(TransportDeadlineBeforeLocalTimer|NativeResponseValidationAndDeadline|RealNativeAdmissionAndReconfiguration)$ -count=5 -timeout 3m",
+    "exit_code": 0,
+    "package_seconds": 19.391
+  },
+  "limits": [
+    "No timeout or error acceptance relaxed",
+    "Actual CI scheduling order is not proven by the deterministic transport stub",
+    "Full CI at new fix not yet run",
+    "No change to RPC authority, money, schema or external plugin"
+  ],
+  "private_log_sha256": {
+    "discount-deadline-before-failure.log": "a77e952cbf3973af6169b891a089e1fc58bd9dbf47381a04d53eb7e6add9e8ba",
+    "discount-deadline-transport.log": "24430f7cac2e7b72ffaf5a8b906987e3368861f4975c96dd00ff00b206ad0d2b"
+  }
+}

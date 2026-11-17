@@ -43,15 +43,14 @@ func (s ProxyPoolMutations) CommitProxyPoolMutation(ctx context.Context, actor u
 		return out, network.ErrProxyPoolMutationUnavailable
 	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var node model.Node
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, change.NodeID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+		if change.NodeID > 0 {
+			var node model.Node
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, change.NodeID).Error; err != nil {
 				return &network.ProxyPoolMutationValidation{Message: "节点不存在"}
 			}
-			return err
-		}
-		if node.LifecycleStatus == "deleting" {
-			return &network.ProxyPoolMutationValidation{Message: "节点正在删除"}
+			if network.NodeManagementClosed(node.LifecycleStatus) {
+				return &network.ProxyPoolMutationValidation{Message: "节点正在删除"}
+			}
 		}
 
 		var row model.NodeProxyPool
@@ -62,11 +61,11 @@ func (s ProxyPoolMutations) CommitProxyPoolMutation(ctx context.Context, actor u
 				}
 				return err
 			}
-			if row.NodeID != before.Pool.NodeID || row.Revision != before.Pool.Revision {
+			if row.Revision != before.Pool.Revision {
 				return network.ErrProxyPoolConflict
 			}
 		} else {
-			row.NodeID = change.NodeID
+			row.NodeID = 0
 			row.SyncIntervalSeconds = network.ProxyPoolDefaultSyncInterval
 		}
 		admin, err := providerAdmin(tx, actor)
@@ -85,11 +84,17 @@ func (s ProxyPoolMutations) CommitProxyPoolMutation(ctx context.Context, actor u
 			if count > 0 {
 				return &network.ProxyPoolMutationValidation{Message: fmt.Sprintf("仍有 %d 条前置服务引用该池，请先切换转发路径", count)}
 			}
+			if e := publishSharedProxyPool(tx, row.ID, actor); e != nil {
+				return e
+			}
+			if err := tx.Where("proxy_pool_id=?", row.ID).Delete(&model.NodeProxyPoolBinding{}).Error; err != nil {
+				return err
+			}
 			if err := tx.Delete(&row).Error; err != nil {
 				return err
 			}
 		} else {
-			row.NodeID, row.Name = change.NodeID, change.Name
+			row.Name = change.Name
 			if change.ReplaceConfig {
 				row.Config = change.ConfigCiphertext
 			}
@@ -101,20 +106,17 @@ func (s ProxyPoolMutations) CommitProxyPoolMutation(ctx context.Context, actor u
 			}
 			row.Revision++
 			if before == nil {
-				if err := tx.Create(&row).Error; err != nil {
+				if err := tx.Omit("NodeID").Create(&row).Error; err != nil {
 					return proxyPoolConstraintError(err)
 				}
-			} else if err := tx.Save(&row).Error; err != nil {
+			} else if err := tx.Omit("NodeID").Save(&row).Error; err != nil {
 				return proxyPoolConstraintError(err)
 			}
 			var entries []model.NetworkEntry
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("proxy_pool_id = ?", row.ID).Order("id").Find(&entries).Error; err != nil {
+			if err := tx.Clauses(currentResourceReadLock(tx)).Where("proxy_pool_id = ?", row.ID).Order("id").Find(&entries).Error; err != nil {
 				return err
 			}
 			for _, entry := range entries {
-				if entry.NodeID != row.NodeID {
-					return &network.ProxyPoolMutationValidation{Message: fmt.Sprintf("入口 %s: 请选择入口节点 A 自己的共享代理池", entry.Name)}
-				}
 				if entry.Network != "tcp" && !change.ConfigurationSupportsDatagram {
 					message := strings.TrimSpace(change.ConfigurationDatagramError)
 					if message == "" {
@@ -131,9 +133,15 @@ func (s ProxyPoolMutations) CommitProxyPoolMutation(ctx context.Context, actor u
 		}).Error; err != nil {
 			return err
 		}
-		if err := EnqueuePublication(tx, row.NodeID, 0, actor); err != nil {
+		if !change.Delete && change.NodeID > 0 {
+			if e := bindSharedProxyPool(tx, change.NodeID, row.ID); e != nil {
+				return e
+			}
+		}
+		if err := publishSharedProxyPool(tx, row.ID, actor); err != nil {
 			return err
 		}
+
 		out = proxyPoolRecordView(row)
 		return nil
 	})

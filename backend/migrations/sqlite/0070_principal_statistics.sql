@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS principal_statistics_state (id INTEGER NOT NULL PRIMARY KEY,legacy_upper_id INTEGER NOT NULL,legacy_after_id INTEGER NOT NULL,legacy_expected_rows INTEGER NOT NULL,legacy_projected_rows INTEGER NOT NULL,projected_head INTEGER NOT NULL,revision INTEGER NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL);
+CREATE TABLE IF NOT EXISTS principal_statistics_pending (observation_id INTEGER NOT NULL PRIMARY KEY,scope_type TEXT NOT NULL,scope_id INTEGER NOT NULL,observed_at DATETIME NOT NULL,created_at DATETIME NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_principal_stats_pending_scope ON principal_statistics_pending(scope_type,scope_id,observed_at,observation_id);
+CREATE TABLE IF NOT EXISTS principal_statistics_samples (observation_id INTEGER NOT NULL PRIMARY KEY,scope_type TEXT NOT NULL,scope_id INTEGER NOT NULL,event_id TEXT NOT NULL,observed_at DATETIME NOT NULL,active_flows INTEGER NOT NULL,source_digest TEXT NOT NULL,source_created_at DATETIME NOT NULL,review_at DATETIME NOT NULL,raw_retired_at DATETIME NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_principal_stats_sample_event ON principal_statistics_samples(scope_type,scope_id,event_id);
+CREATE INDEX IF NOT EXISTS idx_principal_stats_sample_time ON principal_statistics_samples(scope_type,scope_id,observed_at,observation_id);
+CREATE INDEX IF NOT EXISTS idx_principal_stats_sample_retention ON principal_statistics_samples(raw_retired_at,review_at,observation_id);
+CREATE TABLE IF NOT EXISTS principal_statistics_hourly (scope_type TEXT NOT NULL,scope_id INTEGER NOT NULL,hour_at DATETIME NOT NULL,peak INTEGER NOT NULL,sample_count INTEGER NOT NULL,PRIMARY KEY(scope_type,scope_id,hour_at));

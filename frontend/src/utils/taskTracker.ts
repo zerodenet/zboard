@@ -19,7 +19,8 @@ export const trackedTaskIDs = ref<number[]>(readTrackedIDs())
 export const trackedTaskSummaries = reactive<Record<number, AdminTask>>({})
 
 function persist() {
-  if (typeof window !== 'undefined') window.sessionStorage.setItem(storageKey, JSON.stringify(trackedTaskIDs.value))
+  if (typeof window === 'undefined') return
+  try { window.sessionStorage.setItem(storageKey, JSON.stringify(trackedTaskIDs.value)) } catch { /* Optional navigation hints must not block logout or identity isolation. */ }
 }
 
 export function trackAdminTask(task: AdminTask) {

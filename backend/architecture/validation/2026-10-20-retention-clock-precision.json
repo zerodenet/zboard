@@ -1,0 +1,11 @@
+{
+  "base": "7018e3e46698d5764a911ff79ab3c189e042c32b",
+  "scope": "Test clock matches persisted MySQL DATETIME(3) precision; production interval and accounting logic unchanged",
+  "before": {"method": "Overlay only the fixture clock with UTC second plus 999750 microseconds, retain exact 60-second evaluation assertion", "database": "isolated MySQL 8.4 random schema", "result": "expected failure: evaluation_interval_not_due after rounding into the next millisecond", "package_seconds": 4.164},
+  "after": {"command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^(TestMySQLFairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvaluation|TestFairUseObservationRetentionDoesNotChangeCommittedAccountingOrEvaluation)$' -count=3 -timeout 3m", "database": "SQLite and actual isolated MySQL 8.4", "result": "pass", "wall_seconds": 31.878},
+  "migration": "None; fixture-only change",
+  "rollback": "Source revert restores fractional-millisecond test flakiness",
+  "historical_failure": "Fixed clean 33b35d3 full MySQL run failed this assertion and later hit the original 15-minute handler timeout. The following copy suite was not executed.",
+  "limits": ["Targeted result does not replace new-head full backend or MySQL CI", "No timeout increase, interval relaxation, added exclusion or skipped boundary assertion"],
+  "production_migration_executed": false
+}

@@ -1,25 +1,13 @@
 <template>
-  <section v-if="!optional || !error" class="plugin-frame" :class="{ 'plugin-frame--slot': !!slot, 'plugin-frame--slot-pending': !!slot && !slotReady && !error }">
-    <div v-if="error" class="plugin-state" role="alert">
-      <div><strong>暂时无法显示此内容</strong><p>{{ error }}</p></div>
-      <UiButton variant="secondary" size="sm" @click="load">重新加载</UiButton>
+  <section class="plugin-frame" :class="{ 'plugin-frame--slot': !!slot, 'plugin-frame--managed': managed, 'plugin-frame--slot-pending': !!slot && !slotReady && !error }" :style="slot && !managed ? { '--plugin-slot-height': `${stableHeight}px` } : undefined">
+    <div v-if="slot && !managed" class="plugin-frame-toolbar"><span class="sr-only">{{ displayTitle }}</span><span v-if="pending.size" class="plugin-frame-working" role="status" aria-label="正在读取扩展数据"><UiIcon name="refresh" /></span><UiButton v-if="slotReady && !error" variant="ghost" size="sm" icon :aria-label="`重新加载${displayTitle || '扩展内容'}`" @click="load"><UiIcon name="refresh" /></UiButton><UiButton v-if="!error && slotReady" variant="ghost" size="sm" :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '收起' : '展开' }}</UiButton></div>
+    <div class="plugin-viewport" :class="{ 'plugin-viewport--expanded': expanded }">
+      <div v-if="error && !managed" class="plugin-state" role="alert"><div><strong>{{ displayTitle || '扩展内容' }}暂不可用</strong><p>{{ error }}</p></div><UiButton variant="secondary" size="sm" @click="load">重试</UiButton></div>
+      <div v-else-if="!slotReady && !managed" class="plugin-frame-placeholder" role="status" aria-label="正在加载扩展内容"><span /></div>
+      <div v-if="readError && !managed" class="plugin-read-error" role="status"><span>{{ displayTitle || '扩展内容' }}：{{ readError }}</span><UiButton variant="ghost" size="sm" @click="load">重新加载</UiButton></div>
+      <div v-if="connectionWarning && !managed" class="plugin-state plugin-state--connection" role="status"><p>连接暂时中断，已保留当前内容。</p><UiButton variant="secondary" size="sm" @click="verify">重试连接</UiButton></div>
+      <iframe v-if="session" ref="frame" :key="session.token" :src="session.url" :title="displayTitle || '插件页面'" sandbox="allow-scripts" referrerpolicy="no-referrer" :tabindex="managed ? -1 : undefined" :style="{ height: `${height}px` }" @load="onLoad" />
     </div>
-    <div v-else-if="!session && !slot" class="plugin-state" role="status">正在加载…</div>
-    <div v-if="connectionWarning && !optional" class="plugin-state plugin-state--connection" role="status">
-      <p>连接暂时中断，正在尝试恢复。</p>
-      <UiButton variant="secondary" size="sm" @click="verify">重试连接</UiButton>
-    </div>
-    <iframe
-      v-if="session"
-      ref="frame"
-      :key="session.token"
-      :src="session.url"
-      :title="title || '插件页面'"
-      sandbox="allow-scripts"
-      referrerpolicy="no-referrer"
-      :style="{ height: `${height}px` }"
-      @load="onLoad"
-    />
     <div v-if="passwordConfirmation" class="plugin-confirm-backdrop" role="presentation" @click.self="!confirming && cancelPasswordConfirmation()">
       <section class="plugin-confirm" role="dialog" aria-modal="true" aria-labelledby="plugin-confirm-title">
         <h2 id="plugin-confirm-title">确认账户密码</h2>
@@ -32,8 +20,11 @@
   </section>
 </template>
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { paymentSlots, paymentOptions, paymentStatus, type PaymentOption, type PaymentStatus } from "./checkout";
+import { pluginActionFailure } from '../utils/pluginActionError';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { accountConfirmation, clearAccountConfirmation, confirmAccountPassword } from "../api/accountSecurity";
+import UiIcon from '../components/UiIcon.vue';
 import UiButton from "../components/UiButton.vue";
 import { useAppStore } from "../stores/app";
 import {
@@ -54,8 +45,15 @@ const props = defineProps<{
   configuration?: boolean;
   title?: string;
   optional?: boolean;
+  managed?: boolean;
+  reservedHeight?: number;
+  beforeIdentityLogin?: () => boolean;
+  checkout?: { currency: string; order_id?: number };
 }>();
-const emit = defineEmits<{ ready: [] }>();
+const displayTitle = computed(() => props.title || props.slot?.title || '')
+const expanded = ref(false)
+const stableHeight = computed(() => Math.max(64, Math.min(480, props.reservedHeight || (['account.overview.cards','account.security.identities','admin.user.identities'].includes(props.slot?.slot || '') ? 224 : 120))))
+const emit = defineEmits<{ ready: []; checkoutOptions: [options: PaymentOption[]]; checkoutStatus: [status: PaymentStatus]; unavailable: [] }>();
 const app = useAppStore();
 const frame = ref<HTMLIFrameElement | null>(null),
   session = ref<PluginSession | null>(null),
@@ -69,7 +67,9 @@ let controller = new AbortController(),
   verifying = false,
   timer: ReturnType<typeof setInterval> | undefined,
   slotResizeTimer: ReturnType<typeof setTimeout> | undefined;
-const pending = new Set<string>();
+const pending = reactive(new Set<string>());
+const failedReads = reactive(new Set<string>());
+const readError = computed(() => failedReads.size ? "数据暂时无法读取，请重新加载。" : "");
 const passwordConfirmation = ref(false), confirmationPassword = ref(""), confirmationError = ref(""), confirming = ref(false);
 let passwordResolver: ((value: string) => void) | undefined,
   passwordRejecter: ((reason?: unknown) => void) | undefined;
@@ -105,7 +105,8 @@ function cancelPasswordConfirmation() {
   finishPasswordConfirmation();
   reject?.(new Error("confirmation cancelled"));
 }
-function clear() {
+function clear(notify = true) {
+  if (notify) emit("unavailable");
   if (slotResizeTimer) clearTimeout(slotResizeTimer);
   slotResizeTimer = undefined;
   if (passwordConfirmation.value) cancelPasswordConfirmation();
@@ -116,14 +117,19 @@ function clear() {
   session.value = null;
   connectionWarning.value = false;
   pending.clear();
+  failedReads.clear();
   loaded = false;
   slotReady.value = false;
   height.value = props.slot ? 160 : 400;
 }
 async function load() {
-  clear();
+  clear(false);
   error.value = "";
+  if (props.checkout) emit("checkoutStatus", { state: "loading" });
   const current = generation;
+  slotResizeTimer = setTimeout(() => {
+    if (current === generation && !slotReady.value) { clear(); error.value = '加载超时，请重试。' }
+  }, 8000);
   try {
     const value = props.slot
       ? await createPluginSlotSession(props.pluginId, props.slot, props.targetUserId || 0, controller.signal)
@@ -131,8 +137,12 @@ async function load() {
     if (current === generation) session.value = value;
     else void revokePluginSession(value).catch(() => {});
   } catch {
-    if (current === generation)
+    if (current === generation) {
+      if (slotResizeTimer) clearTimeout(slotResizeTimer);
+      slotResizeTimer = undefined;
       error.value = "扩展不可用、已停用或当前账户无权访问。";
+      emit('unavailable');
+    }
   }
 }
 function onLoad() {
@@ -141,19 +151,14 @@ function onLoad() {
     error.value = "扩展页面已导航，会话已关闭。";
   } else {
     loaded = true;
-    if (props.slot && !slotReady.value) {
-      slotResizeTimer = setTimeout(() => {
-        if (!slotReady.value) {
-          revealSlot();
-          slotResizeTimer = undefined;
-        }
-      }, 3000);
-    }
+    revealSlot();
   }
 }
 function revealSlot() {
   if (slotReady.value) return;
   slotReady.value = true;
+  if (slotResizeTimer) clearTimeout(slotResizeTimer);
+  slotResizeTimer = undefined;
   emit('ready');
 }
 async function receive(event: MessageEvent) {
@@ -179,7 +184,17 @@ async function receive(event: MessageEvent) {
     }
     return;
   }
-  if (message.type === "plugin.ready") return;
+  if (message.type === "plugin.ready") { revealSlot(); return; }
+  if (message.type === "checkout.status" && props.slot && paymentSlots.includes(props.slot.slot)) {
+    try { emit("checkoutStatus", paymentStatus(message)); }
+    catch { emit("unavailable"); }
+    return;
+  }
+  if (message.type === "checkout.options" && props.slot && paymentSlots.includes(props.slot.slot)) {
+    try { emit("checkoutOptions", paymentOptions(message.options)); revealSlot(); }
+    catch { emit("unavailable"); }
+    return;
+  }
   if (
     typeof message.request_id !== "string" ||
     !/^[a-zA-Z0-9_-]{1,80}$/.test(message.request_id) ||
@@ -188,7 +203,7 @@ async function receive(event: MessageEvent) {
   )
     return;
   if (
-    !["capabilities.list", "capabilities.invoke", "context.load", "config.revision", "config.load", "config.save", "config.test", "storage.head", "storage.get", "storage.put", "storage.delete", "page.call", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
+    !["checkout.context", "capabilities.list", "capabilities.invoke", "context.load", "config.revision", "config.load", "config.save", "config.test", "storage.head", "storage.get", "storage.put", "storage.delete", "page.call", "identity.providers.list", "identity.bindings.list", "identity.login.start", "identity.bind.start", "identity.binding.unlink"].includes(
       message.type,
     )
   )
@@ -208,7 +223,7 @@ async function receive(event: MessageEvent) {
       );
   };
   try {
-    if (message.type.startsWith("capabilities.") && (props.surface !== "account" || s.purpose !== "business")) throw new Error("denied");
+    if (message.type.startsWith("capabilities.") && (props.surface !== "account" || !["business", "slot"].includes(s.purpose))) throw new Error("denied");
     if (message.type.startsWith("config.") && s.purpose !== "configuration")
       throw new Error("denied");
     if (message.type.startsWith("storage.") && props.surface !== "admin") throw new Error("denied");
@@ -231,20 +246,40 @@ async function receive(event: MessageEvent) {
         ? { revision: message.revision, config: message.config }
         : {};
     if (JSON.stringify(payload).length > 65_536) throw new Error("too large");
+    if (message.type === "checkout.context") {
+      if (!props.slot || !paymentSlots.includes(props.slot.slot) || !props.checkout) throw new Error("denied");
+      const context = props.checkout.order_id
+        ? await pluginBridge(s, "checkout.context", { order_id: props.checkout.order_id }, controller.signal)
+        : { currency: props.checkout.currency, currency_precision: 2, order_id: null };
+      respond({ ok: true, result: { ...context, presentation: 'host' } }); return;
+    }
     const result = confirmedPassword
       ? await pluginBridge(s, message.type, payload, controller.signal, confirmedPassword)
       : await pluginBridge(s, message.type, payload, controller.signal);
+    if (current !== generation || session.value?.token !== s.token) return;
+    failedReads.delete(`${message.type}:${message.operation || ''}`);
     if (message.type === "identity.login.start" || message.type === "identity.bind.start") {
       const raw = typeof result.authorization_url === "string" ? result.authorization_url : "";
       const target = new URL(raw);
       const localHTTP = target.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname);
       if (target.username || target.password || (target.protocol !== "https:" && !localHTTP)) throw new Error("unsafe navigation");
+      if (message.type === "identity.login.start" && props.beforeIdentityLogin) {
+        if (props.surface !== "public" || props.slot?.slot !== "auth.login.methods") throw new Error("denied");
+        // Recovery is prepared only after the host has validated the actual
+        // provider URL, immediately before leaving the mounted editor.
+        if (!props.beforeIdentityLogin()) throw new Error("尚未离开当前页面，请先处理页面中的恢复提示。");
+      }
       window.location.assign(target.href);
     }
     respond({ ok: true, result });
   } catch (cause: any) {
     if (cause?.response?.status === 401) clearAccountConfirmation();
-    respond({ ok: false, error: cause?.response?.data?.message || "操作已取消或未完成，请重试。" });
+    const read = ['context.load','identity.providers.list','identity.bindings.list','capabilities.list'].includes(message.type) || message.type === 'capabilities.invoke' && ['metering.usage.query','subscriptions.owned.list','subscriptions.owned.get','messages.owned.list','messages.owned.get'].includes(message.operation);
+    if (read && !props.managed && current === generation) failedReads.add(`${message.type}:${message.operation || ''}`);
+    const failure = pluginActionFailure(cause);
+    respond(failure
+      ? { ok: false, error: failure.message, code: failure.code, source_kind: failure.source, plugin_code: failure.plugin_code, retryable: failure.retryable }
+      : { ok: false, error: cause?.response?.data?.message || "操作已取消或未完成，请重试。", code: cause?.response?.data?.error?.code || "temporary_unavailable" });
   } finally {
     if (current === generation) pending.delete(message.request_id);
   }
@@ -269,6 +304,27 @@ async function verify() {
     verifying = false;
   }
 }
+async function checkoutAction(orderId: number, action: string, payload: Record<string, unknown>) {
+  if (!session.value || error.value || !props.slot || !paymentSlots.includes(props.slot.slot)) throw new Error("支付扩展不可用，请重试加载。");
+  return currentSessionCall("checkout.call", { order_id: orderId, action, payload });
+}
+async function checkoutContext(orderId: number) {
+  if (!session.value || error.value) throw new Error("支付扩展不可用。");
+  return currentSessionCall("checkout.context", { order_id: orderId });
+}
+async function currentSessionCall(type: string, payload: Record<string, unknown>) {
+  const s = session.value, current = generation;
+  if (!s) throw new Error("扩展会话已失效，请重新加载。");
+  try {
+    const result = await pluginBridge(s, type, payload, controller.signal);
+    if (current !== generation || session.value?.token !== s.token) throw new Error("扩展会话已失效，请重新加载。");
+    return result;
+  } catch (cause) {
+    if (current !== generation || session.value?.token !== s.token) throw new Error("扩展会话已失效，请重新加载。");
+    throw cause;
+  }
+}
+defineExpose({ checkoutAction, checkoutContext });
 watch(
   () => [props.pluginId, props.pageId, props.slot?.id, props.slot?.slot, props.surface, props.configuration, props.targetUserId],
   load,
@@ -287,7 +343,7 @@ onMounted(() => {
   void load();
 });
 onBeforeUnmount(() => {
-  clear();
+  clear(false);
   if (timer) clearInterval(timer);
   window.removeEventListener("message", receive);
   window.removeEventListener("focus", verify);
@@ -304,11 +360,22 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-  color-scheme: light;
+  color-scheme: inherit;
 }
-:global(.dark) .plugin-frame iframe { color-scheme: dark; }
 .plugin-frame--slot iframe { border: 0; border-radius: 0; background: transparent; }
-.plugin-frame--slot-pending { height: 0; overflow: hidden; }
+.plugin-frame-toolbar { display: flex; align-items: center; gap: 4px; justify-content: flex-end; height: 28px; }
+.plugin-frame-working { display: grid; place-items: center; color: var(--muted-foreground); margin-right: auto; }
+.plugin-read-error { position: absolute; z-index: 2; inset: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line); color: var(--muted-foreground); font-size: 12px; }
+.plugin-frame-toolbar :deep(button) { height: 24px; font-size: 12px; }
+.plugin-viewport { position: relative; min-height: 400px; }
+.plugin-frame--slot:not(.plugin-frame--managed) .plugin-viewport { height: calc(var(--plugin-slot-height) - 28px); min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.plugin-frame--slot:not(.plugin-frame--managed) .plugin-viewport--expanded { height: min(70vh, 1000px); }
+.plugin-frame-placeholder { position: absolute; inset: 0; background: var(--surface-neutral); border-radius: 6px; }
+.plugin-viewport > .plugin-state { min-height: 100%; box-sizing: border-box; }
+.plugin-frame--managed { height: 0; min-height: 0; overflow: hidden; }
+.plugin-frame--managed iframe { visibility: hidden; pointer-events: none; }
+.plugin-frame--managed .plugin-viewport { min-height: 0; }
+.plugin-state--connection { position: absolute; z-index: 1; top: 0; left: 0; right: 0; }
 .plugin-frame--slot-pending iframe { visibility: hidden; pointer-events: none; }
 .plugin-state { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); }
 .plugin-state strong { color: var(--text); font-size: 14px; }

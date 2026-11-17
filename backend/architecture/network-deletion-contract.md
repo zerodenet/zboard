@@ -1,0 +1,27 @@
+# Network resource deletion contract
+
+Deletion ends management and delivery. Disabling remains reversible. Neither operation erases financial facts. The API and UI use 删除 and 禁用; terminal identity records are an implementation detail.
+
+| Resource | Current state removed | Dependencies that must be resolved | History retained |
+| --- | --- | --- | --- |
+| Server | Current topology and credentials; owned provider DNS follows the durable deletion job, independently of SSH | Running or unverified operations and shared resources follow the server deletion contract | Server and protocol identities, accounting facts, original foreign keys |
+| Protocol | Current direct/forward memberships, certificate bindings, and access grants; host configuration withdrawal queued | Business references are nonblocking impacts; only an actively deleting host owns a competing lifecycle transaction | Terminal protocol identity, original credentials, deployments and frozen targets, cumulative cursors, traffic records |
+| Forwarding entry | Entry and current memberships; entitlement reconciliation and managed forwarding withdrawal queued | Group/plan/subscription references and publication work are nonblocking impacts; competing host deletion remains serialized | Parent protocol identity and all financial ownership; immutable publication evidence |
+
+Servers and protocols have independent lifetimes. An administrator can delete the last protocol or entry used by a sold group without deleting the server, group, plan or subscription. The check warns that delivery will be empty and preserves those independent resources. Related standalone protocols survive with their parent association removed. Running publications retain their immutable evidence and lease; a newer withdrawal generation is queued rather than refusing local deletion.
+
+The read-only deletion check and the mutation share validation functions. The check returns resource ID/name, effects, nonblocking impact warnings, stable blocker codes, localized explanations and admin links. It is a preview, not a token authorizing a later mutation. The deletion transaction rechecks current administrator authority, takes parent/resource and group locks, then reads current dependency rows. Impact estimates do not lock billing rows or load subscriber IDs. Target and group locks protect current association cleanup; a changing warning estimate is not a reason to refuse deletion. Busy current resources fail closed and can be checked again.
+
+Only surviving usable paths count as alternatives: an active, undeleted protocol on an enabled current server, and for forwarding an enabled entry whose managed host is also current and enabled. All entries landing on a protocol disappear with that protocol and cannot count as alternatives to it. Historical rows and terminal failed/completed jobs do not block deletion. An expired nonempty publication lease still has an unverified result and is retained when queuing the next generation. A queued task does not prove remote execution; current-state checks and terminal protocol scope prevent it from restoring a deleted protocol.
+
+The operation dialog stays open while the mutation runs and after errors. It shows conflict reasons beside the selected resource, disables destructive submission while blocked or unchecked, and provides an explicit recheck. An already deleted protocol, including one inherited from a deleted server, is acknowledged idempotently without another audit, publication, or accounting rewrite. Current inventories, explicit ID selections, group filters, facets and detail reads exclude effective deletions.
+
+Protocol deletion is independent of historical volume: it never reads, rewrites or deletes traffic records or flow cursors. Late accounting can resolve an original deleted protocol identity through explicitly unscoped ownership reads; that does not restore current authentication. Existing history-retention jobs remain separate. Do not add a blind TTL or cascading deletion to accounting receipts, current cursors or financial records.
+
+Migration 0075 adds nullable protocol deletion metadata and its seek index. It performs no financial backfill. A recorded migration with lost metadata or its seek index fails startup/copy rather than fabricating active records. Interrupted unrecorded DDL resumes additively. Copy preserves terminal identity and original financial foreign keys. Down migration preserves the deletion fence.
+
+After the first standalone protocol deletion, writers older than this contract must not be used for rollback: they do not honor the terminal protocol marker. Preserve 0075 metadata and roll forward with a compatible writer. An image rollback alone is not a safe state rollback.
+
+Validation covers permission revocation after preview, stale dependency previews, direct and forwarded group dependencies, published plans and valid subscriptions, child protocols, node-wide publications triggered by other endpoints, expired leases, inherited deletion, repeated deletion, failed audit rollback, exact ledger/cursor/deployment preservation, migration/copy authority, inventory visibility and inline UI failures. Real MySQL verification is required because SQLite fixtures alone cannot prove production foreign-key behavior.
+
+Late entry acknowledgement and startup recovery project only extant entries while retaining the original frozen manifest byte for byte. They must not recreate a deleted entry confirmation or fail its obsolete entry foreign key.

@@ -1,0 +1,2 @@
+ALTER TABLE node_config_publishes ADD COLUMN reconciling BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE node_config_publishes ADD COLUMN suspended BOOLEAN NOT NULL DEFAULT FALSE;

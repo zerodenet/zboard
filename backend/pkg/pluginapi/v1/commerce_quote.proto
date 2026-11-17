@@ -1,0 +1,15 @@
+syntax = "proto3";
+package zboard.plugin.v1;
+option go_package = "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1;pluginv1";
+
+// Optional, independently admitted zboard.commerce.quote.provider.v1 service.
+// Pure evaluation only: no reserve, consume, commit or release operation exists.
+service CommerceQuoteProvider {
+  rpc EvaluateCommerceQuote(CommerceQuoteRequest) returns (CommerceQuoteResult);
+}
+message CommerceQuoteRequest {
+  bytes context_json = 1;
+  uint64 generation = 2;
+  uint64 config_revision = 3;
+}
+message CommerceQuoteResult { bytes offer_json = 1; }

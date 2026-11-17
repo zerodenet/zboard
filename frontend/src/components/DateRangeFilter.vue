@@ -147,7 +147,7 @@ defineExpose({ rangeError })
 .date-range-months { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:19px; }
 .date-range-month { min-width:0; }
 .date-range-month-heading { height:34px; display:grid; grid-template-columns:28px 1fr 28px; align-items:center; margin-bottom:5px; }
-.date-range-month-heading strong { font-size:13px; font-weight:650; text-align:center; }
+.date-range-month-heading strong { font-size:13px; font-weight: 600; text-align:center; }
 .date-range-month-nav { width:27px; height:27px; display:grid; place-items:center; padding:0; border:0; border-radius:5px; color:var(--text-secondary); background:transparent; cursor:pointer; }
 .date-range-month-nav:hover { color:var(--foreground); background:var(--surface-subtle); }
 .date-range-month-nav :deep(.ui-icon) { width:14px; height:14px; }

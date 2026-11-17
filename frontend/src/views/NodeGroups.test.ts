@@ -10,6 +10,7 @@ import UiTextarea from '../components/UiTextarea.vue'
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), detail: vi.fn(), create: vi.fn(), update: vi.fn() }))
 vi.mock('../api/client', () => ({ fetchNodeGroupsPage: mocks.list, fetchNodeGroupDetail: mocks.detail, createNodeGroup: mocks.create, updateNodeGroup: mocks.update }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 vi.mock('../utils/taskTracker', () => ({ trackAdminTask: vi.fn() }))
 vi.mock('../utils/feedback', () => ({ confirmAction: vi.fn(async () => true), notify: vi.fn() }))
 const group = { id: 1, name: '高级组', code: 'premium', description: '', is_enabled: true, revision: 3, updated_at: '', protocol_endpoint_count: 0, network_entry_count: 1, protocol_endpoint_ids: null, network_entry_ids: [7] }

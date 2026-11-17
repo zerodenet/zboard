@@ -7,6 +7,7 @@ import (
 )
 
 type OrderQuery struct {
+	ID                        uint
 	UserID                    uint
 	Search, OrderType, Status string
 	From, To                  time.Time
@@ -53,7 +54,7 @@ func (s OrderQueries) list(ctx context.Context, actor uint, admin bool, q OrderQ
 	}
 	if q.OrderType != "" {
 		switch q.OrderType {
-		case "new", "renewal", "upgrade", "traffic_pack", "traffic_reset":
+		case "new", "renewal", "upgrade", "traffic_pack", "traffic_reset", "topup":
 		default:
 			return OrderPage{}, &ValidationError{Message: "invalid order_type"}
 		}

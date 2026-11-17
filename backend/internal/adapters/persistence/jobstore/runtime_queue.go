@@ -12,14 +12,20 @@ import (
 type AdminRuntimeQueue struct{ DB *gorm.DB }
 
 func (s AdminRuntimeQueue) Summary(ctx context.Context, now time.Time) (out jobs.RuntimeQueueSummary, err error) {
+	var row struct {
+		jobs.RuntimeQueueSummary
+		DelayedCount int64 `gorm:"column:delayed_count"`
+	}
 	err = s.DB.WithContext(ctx).Model(&model.Task{}).Where("status IN ?", []int16{0, 1, 3}).Select(`
  COALESCE(SUM(CASE WHEN status = 0 AND scheduled_at IS NOT NULL AND scheduled_at <= ? THEN 1 ELSE 0 END),0) AS pending,
  COALESCE(SUM(CASE WHEN status = 1 AND locked_until > ? THEN 1 ELSE 0 END),0) AS running,
- COALESCE(SUM(CASE WHEN status = 0 AND scheduled_at > ? THEN 1 ELSE 0 END),0) AS delayed,
+ COALESCE(SUM(CASE WHEN status = 0 AND scheduled_at > ? THEN 1 ELSE 0 END),0) AS delayed_count,
  COALESCE(SUM(CASE WHEN status = 1 AND (locked_until IS NULL OR locked_until <= ?) THEN 1 ELSE 0 END),0) AS stale,
  COALESCE(SUM(CASE WHEN status = 0 AND scheduled_at IS NULL THEN 1 ELSE 0 END),0) AS drafts,
  COALESCE(SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END),0) AS failed,
- MIN(CASE WHEN status = 0 AND scheduled_at IS NOT NULL AND scheduled_at <= ? THEN created_at END) AS oldest_at`, now, now, now, now, now).Scan(&out).Error
+ MIN(CASE WHEN status = 0 AND scheduled_at IS NOT NULL AND scheduled_at <= ? THEN created_at END) AS oldest_at`, now, now, now, now, now).Scan(&row).Error
+	out = row.RuntimeQueueSummary
+	out.Delayed = row.DelayedCount
 	out.ID, out.Name = jobs.AdminRuntimeQueue, "运营任务"
 	return out, err
 }

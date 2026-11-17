@@ -1,0 +1,533 @@
+{
+  "source_parent": "28d3b60c8da10f7e8e8f6d9ddf0637f668920732",
+  "scope": "test preparation only; no production/schema/CI/resource/timeout/assertion/concurrency change",
+  "production_code_sha256": "dbcb6f7043e0963b3b2ede64c6dd431cb941cb4bfa195c718f7f1e7a6e7cbc88",
+  "production_identical_to_parent": true,
+  "changed_source": [
+    {
+      "path": "backend/internal/handler/consumption_refunds_test.go",
+      "before_sha256": "301e66a538a26ebd1756e6d38bbb7299512564ccb1398f9d4a506dddf634a193",
+      "after_sha256": "00a6acafa9b52bfe3106e1a060ef20ea90f946e19d4db9434e75581f474f00fd",
+      "constructors": [
+        {
+          "function": "TestMySQLConsumptionRefundFundingSourcesAndReplay",
+          "line": 76,
+          "before": "t.Run(fmt.Sprint(wallet), func(t *testing.T) { assertConsumptionRefundSources(t, newMySQLOrderFixture(t), wallet) })",
+          "after": "t.Run(fmt.Sprint(wallet), func(t *testing.T) { assertConsumptionRefundSources(t, newMySQLBusinessOrderFixture(t), wallet) })"
+        },
+        {
+          "function": "TestMySQLConsumptionRefundRetainsOtherOrderReservations",
+          "line": 149,
+          "before": "assertConsumptionRefundReservations(t, newMySQLOrderFixture(t))",
+          "after": "assertConsumptionRefundReservations(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLConsumptionRefundFailureRollsBackAllFacts",
+          "line": 221,
+          "before": "t.Run(target, func(t *testing.T) { assertConsumptionRefundRollback(t, newMySQLOrderFixture(t), target) })",
+          "after": "t.Run(target, func(t *testing.T) { assertConsumptionRefundRollback(t, newMySQLBusinessOrderFixture(t), target) })"
+        },
+        {
+          "function": "TestMySQLConsumptionRefundConcurrentReplayAndBudget",
+          "line": 266,
+          "before": "assertConsumptionRefundConcurrency(t, newMySQLOrderFixture(t))",
+          "after": "assertConsumptionRefundConcurrency(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLConsumptionRefundOldReplacementLeavesNewRightsUnchanged",
+          "line": 348,
+          "before": "assertConsumptionRefundOldReplacement(t, newMySQLOrderFixture(t))",
+          "after": "assertConsumptionRefundOldReplacement(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLConsumptionRefundProtectsConvertedAndUnprovenBudgets",
+          "line": 389,
+          "before": "assertConsumptionRefundBudgetProtection(t, newMySQLOrderFixture(t))",
+          "after": "assertConsumptionRefundBudgetProtection(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice",
+          "line": 422,
+          "before": "assertConsumptionRefundUnsubscribeRace(t, newMySQLOrderFixture(t))",
+          "after": "assertConsumptionRefundUnsubscribeRace(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/full_replacement_test.go",
+      "before_sha256": "c825844aed7cef6354e36d3fc8f02b04256375d44fabbff356cdd8bf3fa0c2ba",
+      "after_sha256": "3113dc04e82eeb6e03c9c3ba5ba4031a4739e5a031d7934a3e9721e16fe77035",
+      "constructors": [
+        {
+          "function": "TestMySQLFullReplacementApprovedResidualExamples",
+          "line": 124,
+          "before": "assertFullReplacementExample(t, newMySQLOrderFixture(t), item.shared, item.used, item.months, item.residual, item.surplus)",
+          "after": "assertFullReplacementExample(t, newMySQLBusinessOrderFixture(t), item.shared, item.used, item.months, item.residual, item.surplus)"
+        },
+        {
+          "function": "TestMySQLFullReplacementMixedPaymentAndCanceledLatePayment",
+          "line": 358,
+          "before": "t.Run(fmt.Sprint(cancel), func(t *testing.T) { assertFullReplacementMixedPayment(t, newMySQLOrderFixture(t), cancel) })",
+          "after": "t.Run(fmt.Sprint(cancel), func(t *testing.T) { assertFullReplacementMixedPayment(t, newMySQLBusinessOrderFixture(t), cancel) })"
+        },
+        {
+          "function": "TestMySQLFullReplacementConcurrentFinancialTransitions",
+          "line": 467,
+          "before": "f := newFullReplacementFixture(t, newMySQLOrderFixture(t), false, 0, 3)",
+          "after": "f := newFullReplacementFixture(t, newMySQLBusinessOrderFixture(t), false, 0, 3)"
+        },
+        {
+          "function": "TestMySQLFullReplacementAdministratorDiscountNeverBecomesBalance",
+          "line": 580,
+          "before": "assertReplacementAdministratorDiscount(t, newMySQLOrderFixture(t))",
+          "after": "assertReplacementAdministratorDiscount(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/renewal_value_continuity_test.go",
+      "before_sha256": "23464886a19e0e69cdfe26180cda0c7de0d39e70c0f65c8b6233a509bd494283",
+      "after_sha256": "7d1a72c8b081eb6b13f83e1b84dc16fb334b5651f4c81feec5a9db5b583b77b9",
+      "constructors": [
+        {
+          "function": "TestMySQLApprovedRenewalValueContinuityAndImmediateUnsubscribe",
+          "line": 105,
+          "before": "t.Run(name, func(t *testing.T) { assertRenewalValueContinuity(t, newMySQLOrderFixture(t), repeated) })",
+          "after": "t.Run(name, func(t *testing.T) { assertRenewalValueContinuity(t, newMySQLBusinessOrderFixture(t), repeated) })"
+        },
+        {
+          "function": "TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe",
+          "line": 160,
+          "before": "assertRenewalValueRace(t, newMySQLOrderFixture(t))",
+          "after": "assertRenewalValueRace(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/automatic_recurring_discount_test.go",
+      "before_sha256": "265ecda0ac91403743322c0125cae198d49542a52d1e6547ac35e2db01f217a1",
+      "after_sha256": "36e9539cec350830d117e9535c44c38170f44f63d91c4363b3f09b64f4a11551",
+      "constructors": [
+        {
+          "function": "TestMySQLAutomaticRecurringContinuousRenewalsKeepApprovalAndPaidSource",
+          "line": 128,
+          "before": "assertAutomaticRecurringContinuous(t, newMySQLOrderFixture(t))",
+          "after": "assertAutomaticRecurringContinuous(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLAutomaticRecurringStableWalletCompetition",
+          "line": 422,
+          "before": "assertAutomaticRecurringCompetition(t, newMySQLOrderFixture(t))",
+          "after": "assertAutomaticRecurringCompetition(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/automatic_recurring_native_acceptance_test.go",
+      "before_sha256": "51b948127e063afcb7e74c7d4304eff48d032650052464254e6cd8cd108a1d3b",
+      "after_sha256": "20093b17df2c4e8d097abcfc4faa8610294dcf45ccf1f754849c5f5a7915e2e0",
+      "constructors": [
+        {
+          "function": "TestMySQLAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits",
+          "line": 43,
+          "before": "assertAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits(t, newMySQLOrderFixture(t))",
+          "after": "assertAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/commerce_discount_acceptance_test.go",
+      "before_sha256": "0dc8e59369e935713503cff28fdfc776090044afb648410e19e5867c323342ca",
+      "after_sha256": "2720848908e84029d41018581190ca5a0dc8a7c1313ac8d1f8d7fb49912dfcf5",
+      "constructors": [
+        {
+          "function": "TestMySQLCommerceDiscountNativeHTTPWalletAndAutomaticRenewal",
+          "line": 73,
+          "before": "assertCommerceDiscountNativeHTTPWalletAndAutomaticRenewal(t, newMySQLOrderFixture(t))",
+          "after": "assertCommerceDiscountNativeHTTPWalletAndAutomaticRenewal(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/commerce_recurring_discount_acceptance_test.go",
+      "before_sha256": "7a148245520f920c7335a384e81f272a7b3a86ec48b287febe0b4ed09e411c3b",
+      "after_sha256": "5a771433a8bfd3fa349a5105a519e9f802d151a7048e8ae092b64886228a0e21",
+      "constructors": [
+        {
+          "function": "TestMySQLCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals",
+          "line": 130,
+          "before": "assertCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals(t, newMySQLOrderFixture(t))",
+          "after": "assertCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/automatic_renewal_expiry_race_test.go",
+      "before_sha256": "e575de0e6eae2cad63f5feb26dd5512373af3377fe99d26319e5b094378522e0",
+      "after_sha256": "276c595ae38804303ed26cb438115ddd56c985396f6b715ebe1b7b4a14a9f12d",
+      "constructors": [
+        {
+          "function": "TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks",
+          "line": 18,
+          "before": "f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))",
+          "after": "f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLAutomaticRenewalVersusCredentialExpiry",
+          "line": 47,
+          "before": "f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))",
+          "after": "f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait",
+          "line": 85,
+          "before": "f := expiredRecoveryFixture(t, newMySQLOrderFixture(t))",
+          "after": "f := expiredRecoveryFixture(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/payment_receipts_test.go",
+      "before_sha256": "b2059e8aa8ef0694060bc72f8647822854c0542f8987b4f5976a3de029bc93d9",
+      "after_sha256": "326f0696f1b22b57c7ad2ba774e144b193ac6ad896b62369e72da52e32969617",
+      "constructors": [
+        {
+          "function": "TestMySQLPaymentReceiptOwnsCashAcrossEventsAndChannels",
+          "line": 23,
+          "before": "assertPaymentReceipts(t, newMySQLOrderFixture(t))",
+          "after": "assertPaymentReceipts(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLPaymentReceiptPreservesLateRenewalCashWithoutRevival",
+          "line": 136,
+          "before": "assertLateRenewalReceipt(t, newMySQLOrderFixture(t))",
+          "after": "assertLateRenewalReceipt(t, newMySQLBusinessOrderFixture(t))"
+        },
+        {
+          "function": "TestMySQLPaymentReceiptManualHistoryRequiresTicketedResolution",
+          "line": 172,
+          "before": "assertReceiptResolution(t, newMySQLOrderFixture(t), \"paid\")",
+          "after": "assertReceiptResolution(t, newMySQLBusinessOrderFixture(t), \"paid\")"
+        },
+        {
+          "function": "TestMySQLPaymentReceiptLegacySuccessHistoryRequiresReview",
+          "line": 178,
+          "before": "assertReceiptResolution(t, newMySQLOrderFixture(t), \"success\")",
+          "after": "assertReceiptResolution(t, newMySQLBusinessOrderFixture(t), \"success\")"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/wallet_payments_test.go",
+      "before_sha256": "cba9c62f5525ccb2d015d96ac560d16c7c32095b9b95334be9ffa127ea82d0bf",
+      "after_sha256": "d0e4b6e541b8f846aa4759f97ad208698ced8b9318e01068937077a6bfeb21bf",
+      "constructors": [
+        {
+          "function": "TestMySQLWalletReservationsReleaseBeforeLateCash",
+          "line": 124,
+          "before": "t.Run(reason, func(t *testing.T) { assertFundingRelease(t, newMySQLOrderFixture(t), reason) })",
+          "after": "t.Run(reason, func(t *testing.T) { assertFundingRelease(t, newMySQLBusinessOrderFixture(t), reason) })"
+        }
+      ]
+    },
+    {
+      "path": "backend/internal/handler/entitlement_value_test.go",
+      "before_sha256": "1e180e083d58ca701bfac7c4deb44a486795b75ea5bb99486edc44be5f2067d6",
+      "after_sha256": "b5225f9c69804ccf852a135c73730c12482e9fa941f451d5b82ad58360f69238",
+      "constructors": [
+        {
+          "function": "TestMySQLActualEntitlementValueCapture",
+          "line": 29,
+          "before": "assertActualEntitlementValueCapture(t, newMySQLOrderFixture(t))",
+          "after": "assertActualEntitlementValueCapture(t, newMySQLBusinessOrderFixture(t))"
+        }
+      ]
+    }
+  ],
+  "benchmark_source": {
+    "path": "backend/internal/handler/mysql_business_preparation_bench_test.go",
+    "sha256": "c144ee73b2772479d043ac924137c3d31cd0b118e494d7b021f25ad0b7439360"
+  },
+  "preserved_run_MySQL_test_inventory": {
+    "count": 191,
+    "sha256": "e74095713b2dadbd3ac44fcc5eceed4b958c896377c72eebd3ee745347aef128",
+    "qualification": "all test names containing MySQL, matching -run MySQL; includes pure limit tests, not a count of actual DB invocations"
+  },
+  "untouched_original_expressions": [
+    "TestMySQLConsumptionRefundRejectsActiveAndUnknownSources",
+    "TestMySQLEntitlementValueSnapshotLossFailsBeforeRecreation",
+    "TestMySQLPaymentReceiptMigrationProtectsRecordedCash",
+    "TestMySQLPaymentReceiptMigrationRefusesLostFinancialColumn",
+    "TestMySQLWalletFundingCompletesUnrecordedDDLAndPreservesOrders",
+    "TestMySQLWalletFundingMigrationRetainsReservationsAndRefusesMissingEvidence",
+    "TestMySQLWalletFundingRefusesLostAccountWithExistingLedger"
+  ],
+  "benchmark": {
+    "checks": [
+      {
+        "name": "paired-preparation",
+        "cwd": "backend",
+        "command": [
+          "go",
+          "test",
+          "-v",
+          "-p",
+          "1",
+          "./internal/handler",
+          "-run",
+          "^$",
+          "-bench",
+          "^BenchmarkMySQLBusinessPreparation$",
+          "-benchtime=3x",
+          "-count=1",
+          "-timeout",
+          "15m"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 46.024,
+        "log": "benchmark-first1-paired-preparation.log",
+        "log_sha256": "dda213bb7d7fb68ba4a6efbbfa44f865bce40189344fe4dec999455c47f78766"
+      }
+    ],
+    "source_stable": true,
+    "summary": {
+      "all_samples_including_Go_calibration": [
+        {
+          "bench_n": 1,
+          "pair": 0,
+          "mode": "full",
+          "seconds": 3.737875753,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 1,
+          "pair": 0,
+          "mode": "business",
+          "seconds": 1.444172395,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 0,
+          "mode": "full",
+          "seconds": 3.747719982,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 0,
+          "mode": "business",
+          "seconds": 1.261352238,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 1,
+          "mode": "business",
+          "seconds": 1.121992733,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 1,
+          "mode": "full",
+          "seconds": 3.619722661,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 2,
+          "mode": "full",
+          "seconds": 3.443986343,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 2,
+          "mode": "business",
+          "seconds": 1.154628667,
+          "redo_capacity_bytes": 104857600
+        }
+      ],
+      "measured_n3": [
+        {
+          "bench_n": 3,
+          "pair": 0,
+          "mode": "full",
+          "seconds": 3.747719982,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 0,
+          "mode": "business",
+          "seconds": 1.261352238,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 1,
+          "mode": "business",
+          "seconds": 1.121992733,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 1,
+          "mode": "full",
+          "seconds": 3.619722661,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 2,
+          "mode": "full",
+          "seconds": 3.443986343,
+          "redo_capacity_bytes": 104857600
+        },
+        {
+          "bench_n": 3,
+          "pair": 2,
+          "mode": "business",
+          "seconds": 1.154628667,
+          "redo_capacity_bytes": 104857600
+        }
+      ],
+      "full_median_seconds": 3.619722661,
+      "business_median_seconds": 1.154628667,
+      "benchmark_summary": [
+        "BenchmarkMySQLBusinessPreparation-2   \t       3\t4783135795 ns/op\t         1.179 business_s/op\t         3.604 full_s/op\t         5.965 pair_wall_s/op\t 104857600 redo_capacity_bytes\t         4.478 template_bootstrap_s"
+      ],
+      "note": "Only preparation timed; each target full-schema/seed equivalence verified. Bootstrap, open/capture/drop/pair wall reported separately. No setting changed; this is not production or whole-suite acceptance."
+    }
+  },
+  "selected": {
+    "checks": [
+      {
+        "name": "business-and-contracts",
+        "cwd": "backend",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-p",
+          "1",
+          "./internal/handler",
+          "-run",
+          "^(TestMySQLConsumptionRefundFundingSourcesAndReplay|TestMySQLConsumptionRefundRetainsOtherOrderReservations|TestMySQLConsumptionRefundFailureRollsBackAllFacts|TestMySQLConsumptionRefundConcurrentReplayAndBudget|TestMySQLConsumptionRefundOldReplacementLeavesNewRightsUnchanged|TestMySQLConsumptionRefundProtectsConvertedAndUnprovenBudgets|TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice|TestMySQLFullReplacementApprovedResidualExamples|TestMySQLFullReplacementMixedPaymentAndCanceledLatePayment|TestMySQLFullReplacementConcurrentFinancialTransitions|TestMySQLFullReplacementAdministratorDiscountNeverBecomesBalance|TestMySQLApprovedRenewalValueContinuityAndImmediateUnsubscribe|TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe|TestMySQLAutomaticRecurringContinuousRenewalsKeepApprovalAndPaidSource|TestMySQLAutomaticRecurringStableWalletCompetition|TestMySQLAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits|TestMySQLCommerceDiscountNativeHTTPWalletAndAutomaticRenewal|TestMySQLCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals|TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks|TestMySQLAutomaticRenewalVersusCredentialExpiry|TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait|TestMySQLPaymentReceiptOwnsCashAcrossEventsAndChannels|TestMySQLPaymentReceiptPreservesLateRenewalCashWithoutRevival|TestMySQLPaymentReceiptManualHistoryRequiresTicketedResolution|TestMySQLPaymentReceiptLegacySuccessHistoryRequiresReview|TestMySQLWalletReservationsReleaseBeforeLateCash|TestMySQLActualEntitlementValueCapture|TestMySQLBusinessTemplatePreservesCompleteSchemaSeedsAndIsolation|TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks|TestMySQLBusinessTemplatePartialInstallDoesNotModifyOtherSchema|TestMySQLBusinessTemplateRejectsUnexpectedTrigger|TestBusinessTemplateRejectsForeignKeyCycles)$",
+          "-count=1",
+          "-timeout",
+          "15m"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 111.131,
+        "log": "selected-first1-business-and-contracts.log",
+        "log_sha256": "5914c6b7706bc51ef275ef6a4c0c6964fa831a8c4bd6c99853fa143d040b285d"
+      }
+    ],
+    "source_stable": true,
+    "summary": {
+      "top_level_passed": {
+        "TestMySQLAutomaticRecurringContinuousRenewalsKeepApprovalAndPaidSource": 7.16,
+        "TestMySQLAutomaticRecurringStableWalletCompetition": 1.96,
+        "TestMySQLAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits": 3.93,
+        "TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks": 1.81,
+        "TestMySQLAutomaticRenewalVersusCredentialExpiry": 1.97,
+        "TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait": 1.67,
+        "TestMySQLCommerceDiscountNativeHTTPWalletAndAutomaticRenewal": 3.64,
+        "TestMySQLCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals": 3.94,
+        "TestMySQLConsumptionRefundFundingSourcesAndReplay": 5.7,
+        "TestMySQLConsumptionRefundRetainsOtherOrderReservations": 1.83,
+        "TestMySQLConsumptionRefundFailureRollsBackAllFacts": 5.44,
+        "TestMySQLConsumptionRefundConcurrentReplayAndBudget": 1.86,
+        "TestMySQLConsumptionRefundOldReplacementLeavesNewRightsUnchanged": 1.8,
+        "TestMySQLConsumptionRefundProtectsConvertedAndUnprovenBudgets": 1.75,
+        "TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice": 1.85,
+        "TestMySQLActualEntitlementValueCapture": 2.98,
+        "TestMySQLFullReplacementApprovedResidualExamples": 5.98,
+        "TestMySQLFullReplacementMixedPaymentAndCanceledLatePayment": 3.78,
+        "TestMySQLFullReplacementConcurrentFinancialTransitions": 9.44,
+        "TestMySQLFullReplacementAdministratorDiscountNeverBecomesBalance": 1.86,
+        "TestMySQLBusinessTemplatePreservesCompleteSchemaSeedsAndIsolation": 10.84,
+        "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks": 1.65,
+        "TestMySQLBusinessTemplatePartialInstallDoesNotModifyOtherSchema": 1.86,
+        "TestMySQLBusinessTemplateRejectsUnexpectedTrigger": 1.51,
+        "TestBusinessTemplateRejectsForeignKeyCycles": 0,
+        "TestMySQLPaymentReceiptOwnsCashAcrossEventsAndChannels": 2.43,
+        "TestMySQLPaymentReceiptPreservesLateRenewalCashWithoutRevival": 1.66,
+        "TestMySQLPaymentReceiptManualHistoryRequiresTicketedResolution": 1.64,
+        "TestMySQLPaymentReceiptLegacySuccessHistoryRequiresReview": 1.74,
+        "TestMySQLApprovedRenewalValueContinuityAndImmediateUnsubscribe": 3.74,
+        "TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe": 1.72,
+        "TestMySQLWalletReservationsReleaseBeforeLateCash": 10.37
+      },
+      "actual_mysql_business_tests": [
+        "TestMySQLConsumptionRefundFundingSourcesAndReplay",
+        "TestMySQLConsumptionRefundRetainsOtherOrderReservations",
+        "TestMySQLConsumptionRefundFailureRollsBackAllFacts",
+        "TestMySQLConsumptionRefundConcurrentReplayAndBudget",
+        "TestMySQLConsumptionRefundOldReplacementLeavesNewRightsUnchanged",
+        "TestMySQLConsumptionRefundProtectsConvertedAndUnprovenBudgets",
+        "TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice",
+        "TestMySQLFullReplacementApprovedResidualExamples",
+        "TestMySQLFullReplacementMixedPaymentAndCanceledLatePayment",
+        "TestMySQLFullReplacementConcurrentFinancialTransitions",
+        "TestMySQLFullReplacementAdministratorDiscountNeverBecomesBalance",
+        "TestMySQLApprovedRenewalValueContinuityAndImmediateUnsubscribe",
+        "TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe",
+        "TestMySQLAutomaticRecurringContinuousRenewalsKeepApprovalAndPaidSource",
+        "TestMySQLAutomaticRecurringStableWalletCompetition",
+        "TestMySQLAutomaticRecurringSignedNativeHTTPWalletAndTwoAutomaticDebits",
+        "TestMySQLCommerceDiscountNativeHTTPWalletAndAutomaticRenewal",
+        "TestMySQLCommerceRecurringDiscountNativeHTTPWalletAndManualRenewals",
+        "TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks",
+        "TestMySQLAutomaticRenewalVersusCredentialExpiry",
+        "TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait",
+        "TestMySQLPaymentReceiptOwnsCashAcrossEventsAndChannels",
+        "TestMySQLPaymentReceiptPreservesLateRenewalCashWithoutRevival",
+        "TestMySQLPaymentReceiptManualHistoryRequiresTicketedResolution",
+        "TestMySQLPaymentReceiptLegacySuccessHistoryRequiresReview",
+        "TestMySQLWalletReservationsReleaseBeforeLateCash",
+        "TestMySQLActualEntitlementValueCapture"
+      ],
+      "additional_contracts": [
+        "TestBusinessTemplateRejectsForeignKeyCycles",
+        "TestMySQLBusinessTemplateEnforcesForeignKeysAndChecks",
+        "TestMySQLBusinessTemplatePartialInstallDoesNotModifyOtherSchema",
+        "TestMySQLBusinessTemplatePreservesCompleteSchemaSeedsAndIsolation",
+        "TestMySQLBusinessTemplateRejectsUnexpectedTrigger"
+      ],
+      "no_skips_or_failures": true,
+      "constructor_only_normalized_source_equal": true
+    }
+  },
+  "original_ci_failure": {
+    "source": "28d3b60c8da10f7e8e8f6d9ddf0637f668920732",
+    "run_id": 39954656048,
+    "job_id": 120417358269,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/39954656048/job/120417358269",
+    "raw_log_sha256": "cb91eb2f0127e6f0be7dfaa999c3a42d5630fef4498bfd673e427ffa8990a9a6",
+    "lines": [
+      "2026-10-23T12:41:14.7075243Z ok  \tgithub.com/zerodenet/zboard/backend/internal/datastore\t192.563s",
+      "2026-10-23T12:53:21.2098537Z panic: test timed out after 15m0s",
+      "2026-10-23T12:53:21.2098914Z \t\tTestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay (1s)",
+      "2026-10-23T12:53:21.2129547Z FAIL\tgithub.com/zerodenet/zboard/backend/internal/handler\t900.022s",
+      "2026-10-23T12:53:21.2129847Z ok  \tgithub.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore\t195.129s",
+      "2026-10-23T12:53:21.2130051Z ok  \tgithub.com/zerodenet/zboard/backend/internal/application\t25.565s",
+      "2026-10-23T12:53:21.4680607Z  2026-10-23T12:42:02.915449Z 0 [Warning] [MY-014089] [InnoDB] Redo log writer is waiting for a new redo log file. Consider increasing innodb_redo_log_capacity. The current log capacity is 104857600 bytes. The log capacity used is 104857600 bytes.",
+      "2026-10-23T12:53:21.4681315Z  2026-10-23T12:43:20.048182Z 0 [Warning] [MY-014089] [InnoDB] Redo log writer is waiting for a new redo log file. Consider increasing innodb_redo_log_capacity. The current log capacity is 104857600 bytes. The log capacity used is 104857600 bytes."
+    ],
+    "interpretation": "Package-total15m timeout, not evidence final test hung. Redo warnings are diagnostic clues only. Jobstore/copy not run by this failed CI command chain. Original15m/-p2/coverage remain unchanged."
+  },
+  "original_local_final_evidence": "2026-10-23-operation-discount-checkout-final.json",
+  "pending": [
+    "resulting exact commit full backend",
+    "resulting exact commit original three MySQL commands",
+    "resulting exact commit own six-job CI"
+  ],
+  "limits": [
+    "paired preparation result is not a production/whole-suite throughput or capacity guarantee",
+    "four real MySQL contracts and one pure contract are distinct; unchanged191 name inventory is not191 actual DB invocation proof",
+    "original physical disk gate and P4/P6/P7 outstanding work remain"
+  ]
+}

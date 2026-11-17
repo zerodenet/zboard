@@ -5,6 +5,14 @@ import { normalizeApiErrorMessage, normalizeApiErrorPayload, normalizeApiFormErr
 beforeEach(() => resetAuthSessionExpired())
 
 describe('normalizeApiFormError', () => {
+  it('translates known plugin failures only inside the plugin management scope', () => {
+    const payload = { message: 'plugin process failed to start', error: { version: 1, code: 'invalid_argument' } }
+    expect(normalizeApiErrorPayload(payload).message).toBe('')
+    expect(normalizeApiErrorPayload(payload, 'plugin-management').message).toContain('插件进程启动失败')
+    expect(normalizeApiErrorPayload({ message: 'database password=secret' }, 'plugin-management').message).toBe('')
+    expect(normalizeApiErrorPayload({ message: 'plugin process failed to start: secret' }, 'plugin-management').message).toBe('')
+    expect(normalizeApiErrorPayload({ message: '__proto__' }, 'plugin-management').message).toBe('')
+  })
   it('accepts versioned field errors and maps only declared form fields', () => {
     const result = normalizeApiFormError({ response: { data: {
       message: '用户信息校验失败。',
@@ -50,19 +58,19 @@ describe('normalizeApiFormError', () => {
     })
   })
 
-  it('marks the auth session expired for canonical 401 responses', () => {
+  it('normalizes canonical 401 without changing the login lifecycle', () => {
     expect(isAuthSessionExpired()).toBe(false)
     normalizeApiErrorPayload({
       code: 401,
       message: '登录状态已失效。',
       error: { version: 1, code: 'unauthenticated' },
     })
-    expect(isAuthSessionExpired()).toBe(true)
+    expect(isAuthSessionExpired()).toBe(false)
   })
 
-  it('also recognizes the stable unauthenticated code when the numeric envelope is absent', () => {
+  it('keeps plugin and other credential errors free of login side effects', () => {
     normalizeApiErrorPayload({ error: { version: 1, code: 'unauthenticated' } })
-    expect(isAuthSessionExpired()).toBe(true)
+    expect(isAuthSessionExpired()).toBe(false)
   })
 
   it('does not expire the session for validation or forbidden responses', () => {

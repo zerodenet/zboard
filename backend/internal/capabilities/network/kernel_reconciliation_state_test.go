@@ -86,6 +86,12 @@ func (s *kernelReconciliationRepositoryStub) FailKernelReconciliation(_ context.
 	return nil
 }
 
+func (s *kernelReconciliationRepositoryStub) DeferKernelReconciliation(_ context.Context, _ KernelOperation, failure error, _ time.Time) error {
+	s.failed = failure
+	s.failedPhase = "configuration_deferred"
+	return nil
+}
+
 func TestKernelReconciliationStateDelegatesLifecycle(t *testing.T) {
 	repository := &kernelReconciliationRepositoryStub{
 		operation: KernelOperation{ID: 7, NodeID: 4, Phase: "queued"},

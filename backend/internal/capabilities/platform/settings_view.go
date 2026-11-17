@@ -3,23 +3,26 @@ package platform
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/identity"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"strconv"
 	"time"
 )
 
 type SettingView struct {
-	ID          uint               `json:"id"`
-	ConfigKey   string             `json:"config_key"`
-	Name        string             `json:"name"`
-	Value       interface{}        `json:"value,omitempty"`
-	ValueType   string             `json:"value_type"`
-	Description string             `json:"description"`
-	IsPublic    bool               `json:"is_public"`
-	IsSecret    bool               `json:"is_secret"`
-	Configured  bool               `json:"configured"`
-	Revision    uint64             `json:"revision"`
-	UpdatedAt   time.Time          `json:"updated_at"`
-	Input       SettingInputSchema `json:"input"`
+	DefaultValue *int               `json:"default_value,omitempty"`
+	ID           uint               `json:"id"`
+	ConfigKey    string             `json:"config_key"`
+	Name         string             `json:"name"`
+	Value        interface{}        `json:"value,omitempty"`
+	ValueType    string             `json:"value_type"`
+	Description  string             `json:"description"`
+	IsPublic     bool               `json:"is_public"`
+	IsSecret     bool               `json:"is_secret"`
+	Configured   bool               `json:"configured"`
+	Revision     uint64             `json:"revision"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	Input        SettingInputSchema `json:"input"`
 }
 
 type SettingInputOption struct {
@@ -46,6 +49,10 @@ func SettingToView(config Setting) (SettingView, error) {
 		Configured: config.Configured, Revision: config.Revision, UpdatedAt: config.UpdatedAt,
 		Input: SettingInputSchemaFor(config),
 	}
+	if setting, ok := observability.RetentionSettingFor(config.ConfigKey); ok && !config.IsSecret {
+		value := setting.Default
+		view.DefaultValue = &value
+	}
 	if config.IsSecret {
 		return view, nil
 	}
@@ -58,6 +65,11 @@ func SettingToView(config Setting) (SettingView, error) {
 }
 
 func SettingInputSchemaFor(config Setting) SettingInputSchema {
+	if setting, ok := observability.RetentionSettingFor(config.ConfigKey); ok {
+		minimum, maximum, step := int64(0), int64(setting.Maximum), int64(1)
+		return SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
+	}
+
 	maxStringBytes := 100000
 	schema := SettingInputSchema{Control: "text", MaxBytes: &maxStringBytes}
 	switch config.ValueType {
@@ -79,6 +91,17 @@ func SettingInputSchemaFor(config Setting) SettingInputSchema {
 	}
 
 	switch config.ConfigKey {
+	case DefaultCurrencyKey:
+		schema = SettingInputSchema{Control: "select", Required: true, Options: DefaultCurrencyOptions()}
+	case "traffic_report_diagnostics":
+		maxBytes := 1024
+		schema = SettingInputSchema{Control: "json", MaxBytes: &maxBytes, Placeholder: `null 或 {"until":"RFC3339到期时间","reason":"采集原因"}`}
+	case "subscription_credential_compatibility_days":
+		minimum, maximum, step := int64(1), int64(365), int64(1)
+		schema = SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
+	case "subscription_renewal_grace_days":
+		minimum, maximum, step := int64(0), int64(3650), int64(1)
+		schema = SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
 	case "site_name":
 		maxBytes := 80
 		schema = SettingInputSchema{Control: "text", Required: true, MaxBytes: &maxBytes, Placeholder: "zboard"}
@@ -88,12 +111,18 @@ func SettingInputSchemaFor(config Setting) SettingInputSchema {
 	case "site_desc":
 		maxBytes := 500
 		schema = SettingInputSchema{Control: "textarea", MaxBytes: &maxBytes, Placeholder: "用于公开页面的简短站点说明"}
-	case "site_logo":
+	case "site_logo", "site_logo_dark", "site_favicon":
 		maxBytes := 2048
-		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "https://cdn.example.com/logo.png"}
+		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "填写 HTTP/HTTPS URL 或上传本地图片"}
 	case "subscribe_url":
 		maxBytes := 2048
-		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时使用站点地址生成"}
+		schema = SettingInputSchema{Control: "text", MaxBytes: &maxBytes, Placeholder: "旧配置，不再生成订阅入口"}
+	case identity.CleanupDaysKey:
+		minimum, maximum, step := int64(0), int64(36500), int64(1)
+		schema = SettingInputSchema{Control: "integer", Min: &minimum, Max: &maximum, Step: &step}
+	case SubscriptionPrefixKey:
+		maxBytes := 2048
+		schema = SettingInputSchema{Control: "text", MaxBytes: &maxBytes, Placeholder: "/自定义路径"}
 	case "subscription_camouflage_url":
 		maxBytes := 2048
 		schema = SettingInputSchema{Control: "url", MaxBytes: &maxBytes, Placeholder: "留空时跳转到站点公开访问地址"}

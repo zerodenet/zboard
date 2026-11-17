@@ -18,8 +18,10 @@ const (
 )
 
 type Envelope struct {
-	ID             string          `json:"id,omitempty"`
-	NodeID         uint64          `json:"node_id"`
+	ID     string `json:"id,omitempty"`
+	NodeID uint64 `json:"node_id"`
+	// Panel admission metadata, never copied from the Zero wire envelope.
+	AssetTag       string          `json:"asset_tag,omitempty"`
 	SourceID       string          `json:"source_id,omitempty"`
 	PrincipalKey   string          `json:"principal_key,omitempty"`
 	Type           string          `json:"type"`
@@ -57,6 +59,9 @@ type Checkpoint struct {
 type Batch struct {
 	Events []Envelope
 	Next   Checkpoint
+	// Positions are verified prefixes of this read window, not new durable rows.
+	// Consumers can acknowledge successful work without replaying the whole window.
+	Positions []Checkpoint
 }
 
 type CompactionResult struct {
@@ -79,6 +84,8 @@ func (r CompactionResult) BytesSaved() int64 {
 }
 
 type Status struct {
+	PendingUnknown            bool       `json:"pending_unknown,omitempty"`
+	ReadError                 string     `json:"read_error,omitempty"`
 	Driver                    string     `json:"driver"`
 	PendingEvents             int64      `json:"pending_events"`
 	PendingBytes              int64      `json:"pending_bytes"`
@@ -199,7 +206,7 @@ func DefaultConfig() Config {
 			MaxBatch: 256,
 		},
 		Consumer: ConsumerConfig{
-			CommitInterval: 5 * time.Second,
+			CommitInterval: time.Second,
 			MaxBatch:       2000,
 		},
 		Compression: CompressionConfig{

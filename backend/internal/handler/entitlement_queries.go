@@ -91,6 +91,9 @@ func (h *handlers) AdminSubscriptionGetHandler(w http.ResponseWriter, r *http.Re
 	OK(w, out)
 }
 func writeSubscriptionQueryError(w http.ResponseWriter, err error) {
+	if writeResourceBusy(w, err) {
+		return
+	}
 	var invalid *entitlements.QueryError
 	switch {
 	case errors.Is(err, entitlements.ErrAccessPermission) || errors.Is(err, entitlements.ErrAdministrativeRead):

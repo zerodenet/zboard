@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({ preview: vi.fn(), assign: vi.fn(), user: vi.fn
 vi.mock('../api/client', () => ({ previewAdminOrder: mocks.preview, assignAdminOrder: mocks.assign, fetchAdminUserDetail: mocks.user, fetchUsersPage: mocks.users, fetchSubscriptionsPage: mocks.targets, fetchPlanCatalogPage: mocks.plans, fetchPlanCatalogSKUs: mocks.skus }))
 const modal = defineComponent({ template: '<div><slot /><slot name="footer" /></div>' })
 const lookup = defineComponent({ props: ['modelValue', 'inputId', 'fetchPage'], emits: ['update:modelValue'], template: '<div />' })
-function render() { return mount(AdminOrderAssignmentDialog, { props: { open: true, userId: 7 }, global: { plugins: [], stubs: { ModalDialog: modal, AdminOrderLookup: lookup } } }) }
+function render(realLookups = false) { return mount(AdminOrderAssignmentDialog, { attachTo: realLookups ? document.body : undefined, props: { open: true, userId: 7 }, global: { plugins: [], stubs: { ModalDialog: modal, ...(realLookups ? {} : { AdminOrderLookup: lookup }) } } }) }
 function findLookup(wrapper: ReturnType<typeof render>, id: string) { return wrapper.findAllComponents(AdminOrderLookup).find(item => item.props('inputId') === id)! }
 async function fill(wrapper: ReturnType<typeof render>) {
   await flushPromises()
@@ -20,10 +20,48 @@ async function fill(wrapper: ReturnType<typeof render>) {
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.user.mockResolvedValue({ id: 7, email: 'buyer@example.com' })
+  mocks.preview.mockResolvedValue({ payable_amount: 1000, currency: 'CNY', quote_fingerprint: 'quote' })
   mocks.assign.mockResolvedValue({ id: 81, user_id: 7, payable_amount: 1500, status: 'pending' })
   for (const mock of [mocks.users, mocks.targets, mocks.plans, mocks.skus]) mock.mockResolvedValue({ items: [], total: 0 })
 })
 describe('administrator order assignment', () => {
+  it('browses users, scoped subscriptions, plans and SKUs without typing any keyword', async () => {
+    mocks.users.mockResolvedValue({ items: [{ id: 7, email: 'buyer@example.com' }, { id: 8, email: 'another@example.com' }], total: 2 })
+    mocks.targets.mockResolvedValue({ items: [{ id: 30, plan_id: 12, plan_name: 'Pass Iron', sku_name: '季付' }], total: 1 })
+    mocks.plans.mockResolvedValue({ items: [{ id: 12, name: 'Pass Iron' }], total: 1 })
+    mocks.skus.mockResolvedValue({ items: [{ id: 18, name: '重置流量', price_cents: 1000, currency: 'CNY' }], total: 1 })
+    const wrapper = render(true)
+    const open = async (id: string) => { await findLookup(wrapper, id).get('[aria-label="展开建议"]').trigger('click'); await flushPromises() }
+    const choose = async (index = 0) => { document.querySelectorAll<HTMLElement>('.ui-autocomplete-option')[index]!.click(); await flushPromises() }
+    try {
+      await flushPromises()
+      await open('assign-user')
+      expect(mocks.users).toHaveBeenLastCalledWith({ q: '', offset: 0, limit: 25, status: 'active' }, expect.anything())
+      expect(document.querySelectorAll('.ui-autocomplete-option')).toHaveLength(2)
+      await open('assign-user')
+      wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 'reset'); await flushPromises()
+      await open('assign-target')
+      expect(mocks.targets).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 7, eligibleFor: 'reset', q: '', offset: 0, limit: 25 }), expect.anything())
+      expect(findLookup(wrapper, 'assign-target').props('modelValue')).toBeNull()
+      await choose()
+      await open('assign-plan')
+      expect(mocks.plans).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'reset', planId: 12, q: '', offset: 0 }), expect.anything())
+      await choose()
+      await open('assign-sku')
+      expect(mocks.skus).toHaveBeenLastCalledWith(12, { q: '', offset: 0, limit: 25, operation: 'reset' }, expect.anything())
+      expect(document.querySelector('.ui-autocomplete-option')?.textContent).toContain('重置流量')
+      await choose()
+      expect(wrapper.getComponent(MoneyInput).props('modelValue')).toBe(1000)
+      expect(mocks.assign).not.toHaveBeenCalled()
+      await open('assign-user'); await choose(1)
+      expect(findLookup(wrapper, 'assign-target').props('modelValue')).toBeNull()
+      expect(findLookup(wrapper, 'assign-plan').props('modelValue')).toBeNull()
+      expect(findLookup(wrapper, 'assign-sku').props('modelValue')).toBeNull()
+      await open('assign-target')
+      expect(mocks.targets).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 8, q: '', eligibleFor: 'reset' }), expect.anything())
+    } finally { wrapper.unmount(); document.body.innerHTML = '' }
+  })
+
   it('prefills the recipient, defaults the SKU price and submits the edited amount without granting rights', async () => {
     const wrapper = render(); await fill(wrapper)
     expect(findLookup(wrapper, 'assign-user').props('modelValue')?.id).toBe(7)
@@ -91,4 +129,51 @@ describe('administrator order assignment', () => {
     expect(mocks.assign).toHaveBeenCalledTimes(1)
     resolve({ id: 81 }); await flushPromises(); wrapper.unmount()
   })
+})
+
+async function fillChange(wrapper: ReturnType<typeof render>) {
+  await flushPromises()
+  wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 'change'); await flushPromises()
+  findLookup(wrapper, 'assign-target').vm.$emit('update:modelValue', { id: 30, label: '原订阅', planId: 11 }); await flushPromises()
+  await fill(wrapper)
+}
+function createButton(wrapper: ReturnType<typeof render>) { return wrapper.findAll('button').find(button => button.text() === '创建待付款订单')! }
+it('does not display a price or waiting-for-payment state when the historical quote fails', async () => {
+  mocks.preview.mockRejectedValue({ response: { status: 400, data: { message: '原订阅的实付、周期或权益依据待核对，暂不能自动换购。' } } })
+  const wrapper = render(); await fillChange(wrapper)
+  expect(wrapper.text()).toContain('报价失败')
+  expect(wrapper.text()).not.toContain('等待用户付款')
+  expect(wrapper.findComponent(MoneyInput).exists()).toBe(false)
+  expect(createButton(wrapper).attributes('disabled')).toBeDefined()
+  await wrapper.get('form').trigger('submit'); expect(mocks.assign).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+it('blocks a stale successful quote during refresh and after failure, then uses the newly confirmed price', async () => {
+  const wrapper = render(); await fillChange(wrapper)
+  let reject!: (cause: unknown) => void
+  mocks.preview.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+  const retry = (wrapper.vm as any).loadQuote(); await flushPromises()
+  expect(wrapper.text()).toContain('正在计算应付金额')
+  expect(createButton(wrapper).attributes('disabled')).toBeDefined()
+  await wrapper.get('form').trigger('submit'); expect(mocks.assign).not.toHaveBeenCalled()
+  reject(new Error('offline')); await retry; await flushPromises()
+  expect(wrapper.findComponent(MoneyInput).exists()).toBe(false)
+  await wrapper.get('form').trigger('submit'); expect(mocks.assign).not.toHaveBeenCalled()
+  mocks.preview.mockResolvedValueOnce({ payable_amount: 800, currency: 'CNY', quote_fingerprint: 'fresh-quote' })
+  await wrapper.findAll('button').find(button => button.text() === '重新报价')!.trigger('click'); await flushPromises()
+  expect(wrapper.getComponent(MoneyInput).props('modelValue')).toBe(800)
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(mocks.assign).toHaveBeenCalledWith(expect.objectContaining({ payable_amount: 800, quote_fingerprint: 'fresh-quote' }))
+  wrapper.unmount()
+})
+it('ignores late quotes after selecting another SKU and blocks submission after closing', async () => {
+  let resolve!: (quote: unknown) => void
+  mocks.preview.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  const wrapper = render(); await fillChange(wrapper)
+  findLookup(wrapper, 'assign-sku').vm.$emit('update:modelValue', { id: 19, label: '年付', sku: { price_cents: 22000, currency: 'CNY' } }); await flushPromises()
+  resolve({ payable_amount: 999, currency: 'CNY', quote_fingerprint: 'old' }); await flushPromises()
+  expect(wrapper.getComponent(MoneyInput).props('modelValue')).toBe(1000)
+  await wrapper.setProps({ open: false }); await wrapper.get('form').trigger('submit')
+  expect(mocks.assign).not.toHaveBeenCalled()
+  wrapper.unmount()
 })

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 )
@@ -79,6 +80,55 @@ func TestProtocolEndpointUsageResetStartsNewPeriodWithoutChangingAccounting(t *t
 	}
 	if err := db.Model(&model.AuditLog{}).Where("action = ?", "protocol_endpoint.usage_reset").Count(&count).Error; err != nil || count != 2 {
 		t.Fatalf("audit count=%d err=%v", count, err)
+	}
+}
+
+func TestProtocolEndpointPendingUsageIsUnknownAndCannotResetAnIncompleteBaseline(t *testing.T) {
+	db, _ := administrationFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	admin := model.User{ID: 1, Email: "projection-admin@example.test", Status: "active", IsAdmin: true}
+	node := model.Node{ID: 3, Name: "node", Address: "node.example.test", Config: "{}"}
+	endpoint := model.ProtocolEndpoint{ID: 7, NodeID: node.ID, Name: "pending", Protocol: "vless", Address: node.Address, Port: 443, PublicPort: 443, ClientConfig: "{}", OptionalConfig: "{}", Tags: "[]"}
+	other := endpoint
+	other.ID, other.Name, other.RuntimeKey = 8, "independent", "independent-runtime"
+	for _, row := range []any{&admin, &node, &endpoint, &other} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	record := model.TrafficRecord{NodeID: node.ID, ProtocolEndpointID: endpoint.ID, ReportID: "pending-baseline", Nonce: "pending-baseline", At: now, UsedBytes: 17}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := meteringstore.EnqueueUsageProjections(db, []model.TrafficRecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	read := Inventory{DB: db}
+	usage, err := read.ProtocolUsage(ctx, []uint{endpoint.ID, other.ID}, now)
+	if err != nil || !usage[endpoint.ID].TrafficProjectionPending || usage[other.ID].TrafficProjectionPending {
+		t.Fatalf("pending leaked between selected endpoints or appeared complete: %+v %v", usage, err)
+	}
+	periods := ProtocolEndpointUsagePeriods{DB: db}
+	if _, err := periods.ResetProtocolEndpointUsage(ctx, admin.ID, endpoint.ID, "must wait", now); !errors.Is(err, network.ErrProtocolEndpointUsagePending) {
+		t.Fatalf("incomplete baseline reset accepted: %v", err)
+	}
+	for _, check := range []any{&model.ProtocolEndpointUsageReset{}, &model.AuditLog{}} {
+		var count int64
+		if err := db.Model(check).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("blocked reset wrote %T: %d %v", check, count, err)
+		}
+	}
+	if count, err := (meteringstore.UsageProjectionWorker{DB: db}).Drain(ctx, 100); err != nil || count != 1 {
+		t.Fatal(count, err)
+	}
+	usage, err = read.ProtocolUsage(ctx, []uint{endpoint.ID}, now)
+	if err != nil || usage[endpoint.ID].TrafficProjectionPending || usage[endpoint.ID].UsedBytesTotal != 17 {
+		t.Fatalf("recovered endpoint not complete: %+v %v", usage, err)
+	}
+	reset, err := periods.ResetProtocolEndpointUsage(ctx, admin.ID, endpoint.ID, "complete baseline", now)
+	if err != nil || reset.PeriodUsedBytes != 17 {
+		t.Fatal(reset, err)
 	}
 }
 

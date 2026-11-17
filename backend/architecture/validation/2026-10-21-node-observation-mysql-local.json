@@ -1,0 +1,59 @@
+{
+  "source": "ae2aadb3d9d5fc50c2fd9706b25815e17578376a",
+  "checkout": "/workspace/zboard-observation-credential-final-verify",
+  "phase": "mysql",
+  "started_utc": "2026-10-21T04:18:55.685565+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 1,
+      "wall_seconds": 957.895,
+      "log": "private recovery-validation/mysql-core-ae2aadb-final.log",
+      "raw_log_bytes": 927437,
+      "raw_log_sha256": "b7b25aa50140626e6836abbede049d5e1c2ec4ba37b4d54d978a12dcc84973ac",
+      "datastore_seconds": 169.24,
+      "handler_seconds": 900.019,
+      "networkstore_seconds": 168.592,
+      "timeout_running": "TestMySQLBufferedReceiptCannotUndoStopWithinSameMillisecond (2s)",
+      "last_stack": "newMySQLPublishHandlers -> datastore.RunMigrations",
+      "assertion_failures": []
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 120.078,
+      "log": "private recovery-validation/mysql-jobstore-ae2aadb-final.log",
+      "raw_log_bytes": 89,
+      "raw_log_sha256": "9a9c0cce02cf93b043cd004f1404a7bed8bff966a15f434cba83b00b77cbf3cd"
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 216.211,
+      "log": "private recovery-validation/mysql-copy-ae2aadb-final.log",
+      "raw_log_bytes": 94,
+      "raw_log_sha256": "1f97323361c28dbbccc58ef94a190e3fabc48ab2e15b1e326ba0aee947083c24"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T04:40:29.870649+00:00",
+  "limits": [
+    "Original isolated three commands executed sequentially, no concurrent Go/SQL/load.",
+    "Independent jobstore and copy really executed after failed core; this differs from skipped later CI steps.",
+    "Last2s fixture stack is not cumulative timeout cause proof.",
+    "ae2 new CI six-job success and local timeout are retained separately.",
+    "Metadata24bd247 has its own failed MySQL CI, not covered by ae2 green.",
+    "No timeout/skip/permission/session/constraint weakening or production migration."
+  ]
+}

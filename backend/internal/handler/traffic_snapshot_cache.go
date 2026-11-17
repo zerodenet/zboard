@@ -100,3 +100,13 @@ func (c *trafficSnapshotCache[T]) get(ctx context.Context, key [32]byte, load fu
 		return entry.value, entry.err
 	}
 }
+
+// Expire the owned entry without detaching an in-flight leader or its waiters.
+// Its completion cannot republish a fresh expiry after a pending read invalidates it.
+func (c *trafficSnapshotCache[T]) invalidate(key [32]byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if entry := c.entries[key]; entry != nil {
+		entry.expires = time.Time{}
+	}
+}

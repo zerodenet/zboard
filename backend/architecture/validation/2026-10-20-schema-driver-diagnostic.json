@@ -1,0 +1,193 @@
+{
+  "status": "PASS_diagnostic_only",
+  "head": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "clone": "/workspace/zboard-current-verify",
+  "original_fixture_unchanged": true,
+  "external_module_overlay": false,
+  "original_sources": {
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+    "/workspace/zboard-current-verify/backend/internal/datastore/mysql_traffic_hourly_test.go": "ddcb062fc3184903ed3f49c2c2585d2724a0fbd284c7ef035fdb90be98d15252",
+    "/workspace/zboard-current-verify/backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416",
+    "/workspace/toolchains/gopath/pkg/mod/github.com/go-sql-driver/mysql@v1.8.1/connection.go": "7ecd2b93a13e3d23d91e9102b9ac1615232068b2f367357a96292ad74c9df10f",
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go": "4a76b7a3c2ec1c1325a971777ec2a1d2ec38e5505d3aa75055b9acb4cb5541a5"
+  },
+  "setup_difference": "Original hourlyMySQLFixture provisions the same fresh schema/account and stays unchanged. A same-DSN GORM pool with copied GORM/MySQL configs and only custom DriverName is initialized outside timer; original fixture pool remains idle. Extra VERSION/ping outside timer are not counted. The benchmark later enforces the same one-connection policy on the wrapped pool.",
+  "metric_semantics": "Driver call/consume/prepare blocking spans, not original Scan body or original source performance. Rows lifetime includes caller gaps and overlaps query/consume spans; never sum with them. ErrSkip attempts are separate, actual fallback statement execution counted once. All unknown SQL is other.",
+  "uncovered": "Pool wait, argument conversion, GORM build/model parsing/logger work, driver Columns/ColumnTypes accessors and wrapper classification/atomic allocation overhead are not individual SQL blocking spans. Wrapper overhead stays inside whole instrumented benchmark.",
+  "private_files": {
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/benchmark.go.overlay": "7d43645af928f35099d653e3330780cee41c5189aa151ae229a10f6c669080da",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/overlay.json": "717955e3b86beb3b71611c13e7bfb083b6a163ab043dc73085d594160c200f8b",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/instrumentation.patch": "c09682bbfb02ddbbe1d5a99c0caf83a212e65f5aebcbd2b419620a6324685856"
+  },
+  "draft_review": [
+    "Only one overlay mapping, to the existing ZBoard benchmark file. No GOMODCACHE mapping.",
+    "Original fixture invocation, before/after session counters, ReportMetrics and single production Prepare retained.",
+    "Five metadata SQL shapes plus ALTER/CREATE_TABLE/CREATE_INDEX/other categories.",
+    "Conn+Stmt direct/context query and exec, ErrSkip separated; prepare/statement close included.",
+    "Rows column metadata and optional interface shape pinned/forwarded; lifetime archived once on Close.",
+    "Transactions/session reset forwarded and counted as other; Ping/Validator/NamedValueChecker remain delegated.",
+    "Draft gofmt parses, but not compiled, run, type-checked or behavior-tested."
+  ],
+  "original_hashes_still_match": true,
+  "clone_status": "",
+  "files_before": {
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+    "/workspace/zboard-current-verify/backend/internal/datastore/mysql_traffic_hourly_test.go": "ddcb062fc3184903ed3f49c2c2585d2724a0fbd284c7ef035fdb90be98d15252",
+    "/workspace/zboard-current-verify/backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416",
+    "/workspace/toolchains/gopath/pkg/mod/github.com/go-sql-driver/mysql@v1.8.1/connection.go": "7ecd2b93a13e3d23d91e9102b9ac1615232068b2f367357a96292ad74c9df10f",
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go": "4a76b7a3c2ec1c1325a971777ec2a1d2ec38e5505d3aa75055b9acb4cb5541a5"
+  },
+  "private_files_before": {
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/benchmark.go.overlay": "7d43645af928f35099d653e3330780cee41c5189aa151ae229a10f6c669080da",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/overlay.json": "717955e3b86beb3b71611c13e7bfb083b6a163ab043dc73085d594160c200f8b",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/instrumentation.patch": "c09682bbfb02ddbbe1d5a99c0caf83a212e65f5aebcbd2b419620a6324685856"
+  },
+  "command": [
+    "go",
+    "test",
+    "-overlay",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/overlay.json",
+    "-p",
+    "1",
+    "./internal/datastore",
+    "-run",
+    "^$",
+    "-bench",
+    "^BenchmarkMySQLSchemaPreparation$",
+    "-benchtime=1x",
+    "-count=3",
+    "-v"
+  ],
+  "recorded_utc": "2026-10-20T22:35:32.395589+00:00",
+  "status_before": "clean",
+  "round_limit": 1,
+  "started_utc": "2026-10-20T22:35:34.892106+00:00",
+  "wall_seconds": 14.65377792900108,
+  "finished_utc": "2026-10-20T22:35:49.545903+00:00",
+  "exit_code": 0,
+  "files_after": {
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+    "/workspace/zboard-current-verify/backend/internal/datastore/mysql_traffic_hourly_test.go": "ddcb062fc3184903ed3f49c2c2585d2724a0fbd284c7ef035fdb90be98d15252",
+    "/workspace/zboard-current-verify/backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416",
+    "/workspace/toolchains/gopath/pkg/mod/github.com/go-sql-driver/mysql@v1.8.1/connection.go": "7ecd2b93a13e3d23d91e9102b9ac1615232068b2f367357a96292ad74c9df10f",
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go": "4a76b7a3c2ec1c1325a971777ec2a1d2ec38e5505d3aa75055b9acb4cb5541a5"
+  },
+  "private_files_after": {
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/benchmark.go.overlay": "7d43645af928f35099d653e3330780cee41c5189aa151ae229a10f6c669080da",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/overlay.json": "717955e3b86beb3b71611c13e7bfb083b6a163ab043dc73085d594160c200f8b",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/instrumentation.patch": "c09682bbfb02ddbbe1d5a99c0caf83a212e65f5aebcbd2b419620a6324685856"
+  },
+  "private_hashes_unchanged": true,
+  "file_hashes_unchanged": true,
+  "status_after": "",
+  "head_after": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "runner_sha256": "3e7bd1771ce86dc7b5618814646b48c66ade40d06e861ed99c7f455c19fdcef1",
+  "raw_log_sha256": "80bc02739d0c9102a931defbdb23481d6b643559ad370ef52fcaadd75f1ea3a2",
+  "samples_sha256": "aa1c2dee0c71418d0bfbbde4293077f0f053d8d0a6bd25386c5e1dba1e1f9699",
+  "buckets_csv_sha256": "010f0df17b5c27e35922e1354ac8ac9d45443e7346f60da1a25cda81347839a2",
+  "execution_outcome": {
+    "command_attempts": 1,
+    "fresh_schema_samples": 3,
+    "original_fixture_unchanged": true,
+    "session_ids": [
+      21523,
+      21527,
+      21531
+    ],
+    "open_rows": [
+      0,
+      0,
+      0
+    ],
+    "same_session_within_each_sample": "Original benchmark before/after connection-ID assertions passed.",
+    "whole_seconds": [
+      4.027388035,
+      3.782094217,
+      3.849676769
+    ],
+    "original_alter_create_index_select_metrics": [
+      [
+        75.0,
+        15.0,
+        2068.0
+      ],
+      [
+        75.0,
+        15.0,
+        2068.0
+      ],
+      [
+        75.0,
+        15.0,
+        2068.0
+      ]
+    ],
+    "sql_queries_excluding_trailing_probe": [
+      2067,
+      2067,
+      2067
+    ],
+    "query_reconciliation": "2067 actual instrumented queries +1 original benchmark trailing connection-ID query =2068 Com_select; no extra timed SQL added.",
+    "all_driver_failures_zero": true,
+    "all_rows_lifetimes_once": "Each successful query returned one Rows object; sum archived lifetime calls equals2067 in each sample, openRows=0.",
+    "original_pool_idle": "Original fixture pool is not called after probeDatabase except cleanup; no services/workers are constructed by this fixture. This was structurally preserved, not an extra SQL probe."
+  },
+  "findings": {
+    "database_name_sql_calls": 622,
+    "direct_non_gorm_database_name_sql_calls": 1,
+    "direct_non_gorm_call_source": "backend/internal/datastore/mysql_traffic_hourly.go:36",
+    "schemata_resolver_calls": 621,
+    "gorm_table_column_index_count_calls": [
+      295,
+      168,
+      61
+    ],
+    "name_probe_driver_seconds": [
+      0.375371026,
+      0.354683665,
+      0.315014207
+    ],
+    "ddl_driver_seconds": [
+      2.866168109,
+      2.674599384,
+      2.846805143
+    ],
+    "category_scope": "SQL shape classification, not Go-method stack attribution. Name bucket includes the one intentional direct database-name query.",
+    "interpretation": "Measured DDL driver spans dominate these instrumented samples (~70.7–73.9% whole); database-name+SCHEMATA spans are~8.2–9.4%. This is not a candidate speedup, Scan timing, unchanged-source timing or CI timeout causal finding."
+  },
+  "instrumentation_limitations": [
+    "Whole ns/op includes custom driver wrapper, category classification, closure/Rows wrapping, atomics and allocations; no paired uninstrumented cost measurement was run here.",
+    "Query/exec time excludes database/sql pool acquisition, argument conversion and GORM build/parse/logger work. Session-reset liveness and transactions are separately in other; Ping/Validator and column accessors are forwarded without individual timing.",
+    "Rows lifetime includes caller gaps/conversion between driver calls and overlaps query/consume; it is not added into disjoint totals and is not original GORM Scan-body timing.",
+    "ErrSkip attempts are separate, never treated as an executed SQL; actual fallback statement execution/prepare/close are measured.",
+    "Counters report driver calls and SQL shape, not packet capture, statement table-name attribution or migration version.",
+    "Same-DSN wrapped-pool VERSION/ping initialization is extra setup outside timer. The existing fixture/account/schema/DSN flags and one production Prepare are unchanged.",
+    "Old external-module overlay remains blocked and was not retried or bypassed. No dependency source/cache/GO environment changes."
+  ],
+  "failed_or_unexecuted": {
+    "this_round_failures": [],
+    "unexecuted": [
+      "No candidate metadata SQL/DDL optimization or A/B measurement.",
+      "No full suite/race/capacity/CI gate run in this task."
+    ],
+    "separate_prior_failure": "gorm-metadata-probe-31 receipt retains the Go GOMODCACHE-overlay rejection; it is not replaced by this successful different metric."
+  },
+  "private_receipt_sha256": "632ddb83d349c7988dbfe974e4d9f082a8b4f8cbfe756e60efe03b75f399fb0b",
+  "pre_execution_proposal_command": [
+    "go",
+    "test",
+    "-overlay",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/driver-wrapper-probe-31/overlay.json",
+    "-p",
+    "1",
+    "./internal/datastore",
+    "-run",
+    "^$",
+    "-bench",
+    "^BenchmarkMySQLSchemaPreparation$",
+    "-benchtime=1x",
+    "-count=3",
+    "-v"
+  ],
+  "public_receipt_note": "The pre-execution draft command is historical; command and execution_outcome record the completed three-sample diagnostic. Original private receipt remains immutable and hash-bound."
+}

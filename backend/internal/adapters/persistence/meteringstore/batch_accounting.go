@@ -12,6 +12,7 @@ import (
 )
 
 type BatchAccounting struct {
+	Quota               *QuotaIdentity
 	Cipher              metering.CredentialDecryptor
 	EnqueuePublications func(*gorm.DB, uint, uint) error
 }
@@ -20,6 +21,13 @@ type BatchAccounting struct {
 // Batch caches never escape this call or survive a commit/rollback.
 func (s BatchAccounting) Apply(tx *gorm.DB, events []metering.FlowSample) ([]metering.FlowAccountingResult, error) {
 	batch := newFlowBatch(tx)
+	batch.expectedQuota = s.Quota
+	if err := batch.lockAuthorities(tx, s.Cipher, events); err != nil {
+		return nil, err
+	}
+	if err := validateFlowWindowReports(tx, events); err != nil {
+		return nil, err
+	}
 	if err := batch.loadReports(tx, events); err != nil {
 		return nil, err
 	}
@@ -61,10 +69,17 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if err != nil {
 		return result, err
 	}
+	if err := metering.ValidateCredentialIngress(flow.InboundTag, credential.ProtocolEndpointID); err != nil {
+		return result, err
+	}
 	flow.PrincipalKey = credential.PrincipalKey
 	result.ProtocolEndpointID = credential.ProtocolEndpointID
 
 	subscription, err := batch.subscription(tx, credential.SubscriptionID)
+	if err != nil {
+		return result, err
+	}
+	subscription, currentEpoch, err := batch.quotaSubscription(tx, credential, subscription)
 	if err != nil {
 		return result, err
 	}
@@ -77,7 +92,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if err != nil {
 		return result, err
 	}
-	usage, found, legacy, err := LoadFlowUsage(tx, result.NodeID, event.CoreInstanceID, flow.FlowID, credential.ID, flow.Revision, metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown})
+	usage, found, legacy, err := batch.loadUsage(tx, in, credential.ID, metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown})
 	if err != nil {
 		return result, err
 	}
@@ -85,7 +100,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		return result, nil
 	}
 	if found && !legacy {
-		if usage.ProtocolCredentialID != credential.ID {
+		if usage.ProtocolCredentialID != credential.ID || (usage.ProtocolEndpointID != 0 && usage.ProtocolEndpointID != credential.ProtocolEndpointID) {
 			return result, errors.New("flow principal changed during its runtime generation")
 		}
 		if metering.RuntimeScopedFlow(usage.FlowID) && usage.Revision > 0 && event.Sequence > 0 && event.Sequence <= usage.Revision {
@@ -102,7 +117,11 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		previousUpload = usage.UploadBytes
 		previousDownload = usage.DownloadBytes
 	}
-	charge, err := metering.CalculateCharge(metering.FlowCounters{Raw: cumulativeRaw, Upload: flow.BytesUp, Download: flow.BytesDown}, metering.FlowCounters{Raw: previousRaw, Upload: previousUpload, Download: previousDownload}, endpoint.MultiplierMilli, subscription.FlowTotal, subscription.FlowUsed)
+	cursorSequence := uint64(0)
+	if found && !legacy && metering.RuntimeScopedFlow(usage.FlowID) {
+		cursorSequence = usage.Revision
+	}
+	charge, err := metering.ChargeSample(in, metering.FlowCounters{Raw: previousRaw, Upload: previousUpload, Download: previousDownload}, cursorSequence, subscription.TrafficCalcMode, endpoint.MultiplierMilli, subscription.FlowTotal, subscription.FlowUsed)
 	if err != nil {
 		return result, err
 	}
@@ -112,7 +131,8 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if recordAt.IsZero() {
 		recordAt = now
 	}
-	record := model.TrafficRecord{
+	record := model.TrafficRecord{CreatedAt: tx.NowFunc().UTC(),
+		EntitlementEpoch:        credential.EntitlementEpoch,
 		UserID:                  subscription.UserID,
 		SubscriptionID:          subscription.ID,
 		NodeID:                  result.NodeID,
@@ -129,9 +149,9 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		ProtocolMultiplierMilli: endpoint.MultiplierMilli,
 		UsedBytes:               charged,
 		At:                      recordAt,
-		Meta:                    fmt.Sprintf(`{"source_id":%q,"core_instance_id":%q,"sequence":%d,"credential_id":%q,"buffered":true}`, event.SourceID, event.CoreInstanceID, event.Sequence, credential.CredentialID),
+		Meta:                    fmt.Sprintf(`{"accounting_samples":%d,"rounding_numerator":%d}`, charge.AccountingSamples, charge.RoundingNumerator),
 	}
-	if err := batch.appendRecord(tx, record); err != nil {
+	if err := batch.appendRecord(tx, record, subscription.StartAt); err != nil {
 		return result, err
 	}
 
@@ -139,12 +159,19 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		subscription.FlowUsed += charged
 		if subscription.FlowUsed >= subscription.FlowTotal {
 			subscription.FlowUsed = subscription.FlowTotal
-			result.Exhausted = true
+			result.Exhausted = currentEpoch
 		}
-		*subscription = model.Subscription(entitlements.RecordQuotaExhaustion(entitlements.Subscription(*subscription), now))
-		batch.dirtySubscriptions[subscription.ID] = now
+		if currentEpoch {
+			*subscription = model.Subscription(entitlements.RecordQuotaExhaustion(entitlements.Subscription(*subscription), now))
+			batch.dirtySubscriptions[subscription.ID] = now
+		} else {
+			key := entitlementQuotaKey{subscription.ID, credential.EntitlementEpoch}
+			batch.closed[key].FlowUsed = subscription.FlowUsed
+			batch.dirtyClosed[key] = now
+		}
 	}
 
+	previousUsageKey := usage.FlowID
 	usageKey := metering.FlowUsageKey(event.CoreInstanceID, flow.FlowID)
 	usage.ProtocolCredentialID = credential.ID
 	usage.NodeID = result.NodeID
@@ -164,15 +191,11 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	usage.LastEventID = event.EventID
 	usage.LastSeenAt = recordAt
 	usage.CompletedAt = nil
-	if found {
-		if err := tx.Save(&usage).Error; err != nil {
-			return result, err
-		}
-	} else if err := tx.Create(&usage).Error; err != nil {
+	if err := saveFlowUsage(tx, &usage, found, previousUsageKey, !currentEpoch); err != nil {
 		return result, err
 	}
 
-	batch.touched[credential.ID] = now
+	batch.rememberUsage(previousUsageKey, usage)
 	if result.Exhausted {
 		if s.EnqueuePublications == nil {
 			return result, errors.New("subscription publication capability unavailable")

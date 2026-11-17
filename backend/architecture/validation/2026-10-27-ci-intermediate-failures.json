@@ -1,0 +1,151 @@
+{
+  "scope": "Intermediate failures are retained; later results must bind their own exact source.",
+  "failures": [
+    {
+      "head": "c023ffde0834b27103fb4c80c6a4d37a5bea3239",
+      "run": 40440210245,
+      "job": 121978488117,
+      "job_name": "backend",
+      "conclusion": "failure",
+      "other_jobs": "five succeeded",
+      "test": "TestRepositoryContractInventoryIsComplete",
+      "reason": "New worker goroutine/timers had no exact capability owner.",
+      "fix": "160c2a5b1ded72e4862111388867e239b8f95f29 adds exact jobs ownership and retains rejection of unknown future paths.",
+      "fix_target_result": "74 inventory/architecture test events passed, source unchanged."
+    },
+    {
+      "head": "160c2a5b1ded72e4862111388867e239b8f95f29",
+      "run": 40442694217,
+      "job": 121986518911,
+      "job_name": "mysql",
+      "conclusion": "failure",
+      "other_jobs": "five succeeded",
+      "test": "TestMySQLRecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote",
+      "assertion": "commerce_recurring_discount_mysql_test.go:88: payment missed canonical source lock hook: <nil>",
+      "handler_seconds": 808.349,
+      "datastore_seconds": 303.196,
+      "networkstore_seconds": 218.531,
+      "application_seconds": 47.356,
+      "timeout": "Original 15 minute per-package threshold retained; this was an assertion failure, not a timeout.",
+      "diagnosis": "The old synchronization hook expected target_subscription_id in a range-lock query; source locks now use bounded exact primary-key queries.",
+      "fix_status": "Actual primary-key source-lock barrier adapted. Original wait/NOWAIT/stale quote/funds assertions and 5s/2s limits retained; real MySQL targeted suite 15 passed, no skips, 28.879s, unchanged source. Exact fix CI still pending."
+    },
+    {
+      "head": "d00478f9cfbf7a5950fc3d8ca6a4c68ed477f418",
+      "source": "local complete backend first",
+      "test": "TestTrafficRecordsCountsAndSumsInOneScan",
+      "test_result": {
+        "pass": 3369,
+        "skip": 421,
+        "fail": 1,
+        "wall_seconds": 496.742,
+        "source_unchanged": true
+      },
+      "reason": "Old full-read SQL count omitted the newly required bounded byte preflight.",
+      "fix": "Separate exact summary/full SQL shape, owner/time scope, pagination, metadata-before-body and concurrent snapshot tests. Target suite passed.",
+      "not_executed_after_failure": [
+        "go vet ./...",
+        "go build ./cmd/zboard",
+        "CGO_ENABLED=0 SQLite"
+      ]
+    },
+    {
+      "head": "d00478f9cfbf7a5950fc3d8ca6a4c68ed477f418",
+      "run": 40444640340,
+      "job": 121992885431,
+      "job_name": "mysql",
+      "conclusion": "failure",
+      "additional_actual_failure": "TestMySQLAutomaticRenewalVersusManualVerifiedCash",
+      "assertion": "automatic_renewal_test.go:312: concurrent renewal failed subscription value quote changed",
+      "diagnosis_status": "Prepared source scope can become stale before trusted-cash persistence; bounded retry before any financial callback and exact order/source lock union are being prepared. Real quote failures must remain errors.",
+      "fix_status": "Canonical scope retry before financial callback and sorted current/source lock union applied. Target 14 passed/noSkip/19.988s; original MySQL cash-race count10 passed/22.967s; unchanged source. Full MySQL/new exact CI still pending."
+    },
+    {
+      "head": "7eee8e3f3efa1d9a42fccbe70893ad89ecee3c3f",
+      "run": 40453489740,
+      "job": 122021353355,
+      "job_name": "contract",
+      "conclusion": "failure",
+      "test": "Redocly 1.34.3 OpenAPI structural validation",
+      "assertion": "CommerceDiscountQuote.offer.redemption: property payment is blocked until confirmed is not expected",
+      "reason": "An unquoted comma in the new YAML flow-map description parsed as an unintended schema property. YAML syntax parsing alone did not reject the shape.",
+      "fix": "Quote the description. Keep the structural lint, all existing warnings and failure policy unchanged. New exact head CI must verify the fix.",
+      "full_job_log": "Retained privately with SHA; no ignored errors added."
+    },
+    {
+      "head": "ff3b14751bad44acb4e02ab3c82fbbf9883250f7",
+      "run": 40453759289,
+      "job": 122022208235,
+      "job_name": "mysql",
+      "conclusion": "failure",
+      "other_jobs": "five succeeded, including the quoted OpenAPI contract fix",
+      "test": "complete handler package timeout after original15m",
+      "handler_seconds": 900.016,
+      "last_running_test": "TestMySQLBufferedReceiptsDoNotWaitForExhaustedPool (1s)",
+      "interpretation": "The last test had only run1s and is not established as root cause. Full job log retained.",
+      "other_core_package_seconds": {
+        "datastore": 346.08,
+        "networkstore": 225.686,
+        "application": 43.583
+      },
+      "not_executed": [
+        "complete jobstore",
+        "complete platformstore copy"
+      ],
+      "baseline_exact_ci_34": {
+        "run": 40447992632,
+        "handler_seconds": 824.707,
+        "datastore_seconds": 305.859,
+        "networkstore_seconds": 211.07,
+        "application_seconds": 45.87,
+        "jobstore_seconds": 141.114,
+        "copy_seconds": 238.861
+      },
+      "fix_status": "call-local metadata roundtrip optimization under review; no timeout/parallelism/coverage changes"
+    },
+    {
+      "head": "8fbcb1ddbe4e0f825419a7938a3e632b11674dcc",
+      "run": 40457547026,
+      "job": 122034293738,
+      "job_name": "mysql",
+      "conclusion": "failure",
+      "independent_assertion_failure": "TestMySQLAutomaticFiniteRevokeDuringReserveWithoutHistoricalValuation: fixture purchase_snapshot exceeds actual MySQL TEXT (Error1406)",
+      "fix": "UseUse the strict core limit60KiB+1024=62464 ASCII bytes, greater than decoder limit and within TEXT65535; keep1200 unpaid rows, revoke/cancel/release/balance/retained body assertions and exact real schema. No widening or exclusion.",
+      "fix_status": "Applied; real MySQL rerun must bind new exact head.",
+      "later_package_timeout_seconds": 900.02,
+      "separate_auxiliary_issue": "Repeated fair-use coverage core_instance_id Error1406 for previously accepted190-byte runtime IDs;0068/0069 adapter/schema compatibility fix is separately prepared. It is not blamed as the sole timeout cause."
+    }
+  ],
+  "later_verified_checkpoint": {
+    "head": "34cec8d91173477a260b4f8925ad7de186b7bba6",
+    "ci_run": 40447992632,
+    "ci_all_six": "success",
+    "original_cash_race_count10": {
+      "passed": true,
+      "wall_seconds": 22.967,
+      "skipped": 0
+    },
+    "local_full_mysql": {
+      "core_packages": {
+        "datastore_seconds": 223.673,
+        "handler_seconds": 669.72,
+        "networkstore_seconds": 158.643,
+        "application_seconds": 37.799,
+        "test_pass_events": 495,
+        "skip_events": 0,
+        "wall_seconds_including_cold_compile": 1199.927
+      },
+      "jobstore": {
+        "test_pass_events": 40,
+        "skip_events": 0,
+        "wall_seconds": 149.776
+      },
+      "copy": {
+        "test_pass_events": 78,
+        "skip_events": 0,
+        "wall_seconds": 244.666
+      }
+    },
+    "scope": "This resolves the original source-scope race only for 34cec8d. It does not certify new 0065/0066 sources."
+  }
+}

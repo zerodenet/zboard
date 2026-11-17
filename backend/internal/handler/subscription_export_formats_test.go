@@ -127,10 +127,10 @@ func TestManualSelectionGroupsKeepDirectAndRejectPermanent(t *testing.T) {
 	if err := json.Unmarshal([]byte(zeroRendered), &zeroDocument); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(zeroDocument.OutboundGroups[0].Outbounds, "DIRECT") || !slices.Contains(zeroDocument.OutboundGroups[0].Outbounds, "REJECT") {
+	if !slices.Contains(zeroDocument.OutboundGroups[0].Outbounds, "direct") || !slices.Contains(zeroDocument.OutboundGroups[0].Outbounds, "block") {
 		t.Fatalf("Zero selector permanent targets = %#v", zeroDocument.OutboundGroups[0].Outbounds)
 	}
-	if slices.Contains(zeroDocument.OutboundGroups[1].Outbounds, "DIRECT") || slices.Contains(zeroDocument.OutboundGroups[1].Outbounds, "REJECT") {
+	if slices.Contains(zeroDocument.OutboundGroups[1].Outbounds, "direct") || slices.Contains(zeroDocument.OutboundGroups[1].Outbounds, "block") {
 		t.Fatalf("Zero url-test contains non-probe targets: %#v", zeroDocument.OutboundGroups[1].Outbounds)
 	}
 
@@ -165,11 +165,11 @@ func TestManualSelectionGroupsKeepDirectAndRejectPermanent(t *testing.T) {
 	for _, outbound := range singDocument.Outbounds {
 		switch outbound.Type {
 		case "selector":
-			if !slices.Contains(outbound.Outbounds, "DIRECT") || slices.Contains(outbound.Outbounds, "REJECT") {
+			if !slices.Contains(outbound.Outbounds, "direct") || slices.Contains(outbound.Outbounds, "block") {
 				t.Fatalf("sing-box selector special targets = %#v", outbound.Outbounds)
 			}
 		case "urltest":
-			if slices.Contains(outbound.Outbounds, "DIRECT") || slices.Contains(outbound.Outbounds, "REJECT") {
+			if slices.Contains(outbound.Outbounds, "direct") || slices.Contains(outbound.Outbounds, "block") {
 				t.Fatalf("sing-box urltest contains non-probe targets: %#v", outbound.Outbounds)
 			}
 		}
@@ -198,18 +198,18 @@ func TestRenderZnetSinkSubscriptionProducesZeroConfig(t *testing.T) {
 	if err := json.Unmarshal([]byte(rendered), &document); err != nil {
 		t.Fatalf("rendered ZNet Sink output is not JSON: %v\n%s", err, rendered)
 	}
-	if len(document.Outbounds) != 10 {
-		t.Fatalf("outbounds count = %d, want 10", len(document.Outbounds))
+	if len(document.Outbounds) != 8 {
+		t.Fatalf("outbounds count = %d, want 8", len(document.Outbounds))
 	}
-	if document.Outbounds[0].Protocol["type"] != "direct" || document.Outbounds[4].Protocol["type"] != "vless" {
+	if document.Outbounds[0].Protocol["type"] != "direct" || document.Outbounds[2].Protocol["type"] != "vless" {
 		t.Fatalf("unexpected zero outbounds = %#v", document.Outbounds)
 	}
-	if document.Outbounds[4].Protocol["server"] != "vless.example.com" || document.Outbounds[4].Protocol["port"] != float64(443) {
-		t.Fatalf("VLESS server contract = %#v", document.Outbounds[4].Protocol)
+	if document.Outbounds[2].Protocol["server"] != "vless.example.com" || document.Outbounds[2].Protocol["port"] != float64(443) {
+		t.Fatalf("VLESS server contract = %#v", document.Outbounds[2].Protocol)
 	}
-	zeroReality, ok := document.Outbounds[4].Protocol["reality"].(map[string]interface{})
+	zeroReality, ok := document.Outbounds[2].Protocol["reality"].(map[string]interface{})
 	if !ok || zeroReality["client_fingerprint"] != "firefox" {
-		t.Fatalf("Zero VLESS Reality = %#v", document.Outbounds[4].Protocol["reality"])
+		t.Fatalf("Zero VLESS Reality = %#v", document.Outbounds[2].Protocol["reality"])
 	}
 	if len(document.OutboundGroups) != 2 || document.OutboundGroups[0].Type != "selector" || len(document.OutboundGroups[0].Outbounds) != 9 || document.OutboundGroups[1].Type != "url_test" {
 		t.Fatalf("outbound_groups = %#v", document.OutboundGroups)
@@ -306,8 +306,8 @@ func TestRenderSingBoxSubscriptionConvertsAndOmitsUnsupportedMieru(t *testing.T)
 	if err := json.Unmarshal([]byte(rendered), &document); err != nil {
 		t.Fatalf("rendered sing-box output is not JSON: %v\n%s", err, rendered)
 	}
-	if len(document.Outbounds) != 9 {
-		t.Fatalf("outbounds count = %d, want 9", len(document.Outbounds))
+	if len(document.Outbounds) != 8 {
+		t.Fatalf("outbounds count = %d, want 8", len(document.Outbounds))
 	}
 	for _, outbound := range document.Outbounds {
 		if outbound["type"] == "mieru" {

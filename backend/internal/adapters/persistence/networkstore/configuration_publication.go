@@ -19,7 +19,7 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, request.NodeID).Error; err != nil {
 			return err
 		}
-		if node.LifecycleStatus == "deleting" {
+		if network.NodeManagementClosed(node.LifecycleStatus) {
 			return network.ErrKernelResourceDeleting
 		}
 		if request.TriggerEndpointID != 0 {
@@ -28,6 +28,75 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 				return err
 			}
 		}
+		if state, err := lockOrCreateKernelState(tx, node.ID); err != nil {
+			return err
+		} else if state.ActiveOperationID != nil && *state.ActiveOperationID != request.KernelOperationID {
+			var owner model.NodeOperation
+			if err := tx.First(&owner, *state.ActiveOperationID).Error; err != nil {
+				return err
+			}
+			if owner.Status == "running" {
+				// A configure attempt is bounded by the ten-minute kernel
+				// operation budget plus cleanup. After panel exit, release
+				// only this expired configuration owner into reconciliation.
+				if owner.OperationType != "configure" || now.Sub(owner.UpdatedAt) <= network.KernelReconciliationTimeout+time.Minute {
+					return network.ErrKernelOperationRunning
+				}
+				if err := tx.Model(&owner).Updates(map[string]interface{}{"status": "reconciling", "phase": "awaiting_configuration"}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Model(&state).Update("active_operation_id", nil).Error; err != nil {
+				return err
+			}
+		}
+		// Reuse unresolved intent after timeouts or a panel crash. A restarted
+		// worker must reconcile it before creating a new remote transaction.
+		var active model.ProtocolDeployment
+		if err := tx.Select("id").Where("node_id = ? AND status = ? AND started_at > ?", node.ID, "running", now.Add(-network.PublicationLease)).Limit(1).Find(&active).Error; err != nil {
+			return err
+		}
+		if active.ID != 0 {
+			return network.ErrKernelOperationRunning
+		}
+		// An intent without a persisted digest never reached remote execution.
+		// End all such drafts before choosing the newest real transaction, so a
+		// newer empty draft cannot hide an older unknown configuration result.
+		if err := tx.Model(&model.ProtocolDeployment{}).Where("node_id = ? AND status IN ? AND COALESCE(desired_config_sha256,'') = ''", node.ID, []string{"running", "reconciling"}).Updates(map[string]interface{}{"status": "interrupted", "finished_at": now}).Error; err != nil {
+			return err
+		}
+		var pending model.ProtocolDeployment
+		if err := tx.Where("node_id = ? AND status IN ?", node.ID, []string{"running", "reconciling"}).Order("id DESC").Limit(1).Find(&pending).Error; err != nil {
+			return err
+		}
+		if pending.ID != 0 {
+			if pending.Status == "running" && pending.StartedAt != nil && now.Sub(*pending.StartedAt) < network.PublicationLease {
+				return network.ErrKernelOperationRunning
+			}
+			if pending.DesiredConfigSHA256 != "" {
+				if pending.Status == "running" {
+					if err := tx.Model(&pending).Update("status", "reconciling").Error; err != nil {
+						return err
+					}
+					pending.Status = "reconciling"
+				}
+				out.Deployment = configurationDeploymentView(pending)
+				var later model.ProtocolDeployment
+				if err := tx.Where("node_id = ? AND id > ? AND status = ? AND desired_config_sha256 <> '' AND applied_config_sha256 = desired_config_sha256", node.ID, pending.ID, "succeeded").Order("id DESC").Limit(1).Find(&later).Error; err != nil {
+					return err
+				}
+				if later.ID != 0 {
+					view := configurationDeploymentView(later)
+					out.LaterCompleted = &view
+				}
+				return nil
+			}
+			// No desired digest was persisted; remote execution could not start.
+			if err := tx.Model(&pending).Updates(map[string]interface{}{"status": "interrupted", "finished_at": now}).Error; err != nil {
+				return err
+			}
+		}
+
 		requestedBy := optionalUint(request.RequestedBy)
 		row := model.ProtocolDeployment{
 			ProtocolEndpointID: request.TriggerEndpointID, NodeID: node.ID, ConfigRevision: uint64(now.UnixNano()),
@@ -48,21 +117,37 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 	return
 }
 
-func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx context.Context, deployment network.ConfigurationDeployment, configSHA string) (out network.ConfigurationDeployment, err error) {
+func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx context.Context, deployment network.ConfigurationDeployment, configSHA string, manifests ...string) (out network.ConfigurationDeployment, err error) {
+	if len(manifests) > 1 {
+		return out, network.ErrCredentialDeliveryManifest
+	}
+	manifest := ""
+	if len(manifests) == 1 {
+		manifest = manifests[0]
+		if _, err := network.DecodeCredentialDeliveryManifest(manifest); err != nil {
+			return out, err
+		}
+	}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row, err := lockConfigurationDeployment(tx, deployment)
 		if err != nil {
 			return err
 		}
+		// A deployment identity names one immutable remote configuration intent.
+		// Replaying that intent is safe; replacing its digest would let an old
+		// completion claim a different target after acknowledgement loss.
+		if row.DesiredConfigSHA256 != "" && (row.DesiredConfigSHA256 != configSHA || row.CredentialTargets != manifest) {
+			return network.ErrConfigurationDeploymentLost
+		}
 		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&row).Update("desired_config_sha256", configSHA).Error; err != nil {
+		if err := tx.Model(&row).Updates(map[string]any{"desired_config_sha256": configSHA, "credential_targets": manifest}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&state).Updates(map[string]interface{}{
-			"status": "publishing", "phase": "applying_config", "desired_config_sha256": configSHA, "last_error": "",
+			"phase": "applying_config", "desired_config_sha256": configSHA,
 		}).Error; err != nil {
 			return err
 		}
@@ -89,7 +174,12 @@ func (s ConfigurationPublicationState) RestoreConfigurationConnectorCredential(c
 		if _, err := lockConfigurationDeployment(tx, deployment); err != nil {
 			return err
 		}
-		return restoreConnectorSnapshot(tx, deployment.NodeID, snapshot)
+		// Config publication never restarts the process. Restore only credential
+		// state; concurrent heartbeat/traffic observations remain authoritative.
+		return tx.Model(&model.Node{}).Where("id = ?", deployment.NodeID).Updates(map[string]interface{}{
+			"node_credential": snapshot.Credential.Ciphertext, "node_credential_prefix": snapshot.Credential.Prefix,
+			"node_credential_revoked_at": snapshot.RevokedAt,
+		}).Error
 	})
 }
 
@@ -98,6 +188,12 @@ func (s ConfigurationPublicationState) CompleteConfigurationPublication(ctx cont
 		row, err := lockConfigurationDeployment(tx, deployment)
 		if err != nil {
 			return err
+		}
+		// Health and an extant deployment ID do not prove the desired config.
+		// Check both the caller's frozen intent and its reported result before
+		// any readiness, applied-state or node timestamp can be committed.
+		if row.DesiredConfigSHA256 == "" || deployment.DesiredConfigSHA256 != row.DesiredConfigSHA256 || completion.ConfigSHA != row.DesiredConfigSHA256 {
+			return network.ErrConfigurationDeploymentLost
 		}
 		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
 		if err != nil {
@@ -132,12 +228,16 @@ func (s ConfigurationPublicationState) CompleteConfigurationPublication(ctx cont
 			}
 		}
 		if err := tx.Model(&model.ProtocolEndpoint{}).
-			Where("node_id = ? AND LOWER(protocol) IN ?", deployment.NodeID, []string{"trojan", "hysteria2"}).
+			Where("node_id = ? AND LOWER(protocol) IN ?", deployment.NodeID, []string{"vless", "vmess", "shadowsocks", "trojan", "hysteria2", "mieru"}).
 			Update("managed_principal_ready", completion.ManagedPrincipalAccess).Error; err != nil {
+			return err
+		}
+		if err := confirmCredentialDelivery(tx, row, now); err != nil {
 			return err
 		}
 		if err := tx.Model(&state).Updates(map[string]interface{}{
 			"status": "healthy", "phase": "idle", "desired_config_sha256": completion.ConfigSHA,
+			"recommended_action":    network.ConfirmedConfigurationAction(state.RecommendedAction),
 			"applied_config_sha256": completion.ConfigSHA, "service_status": "active", "control_status": "healthy",
 			"last_error": "", "last_healthy_at": completion.LastHealthyAt,
 		}).Error; err != nil {
@@ -171,6 +271,31 @@ func (s ConfigurationPublicationState) FailConfigurationPublication(ctx context.
 			return err
 		}
 		row.Status, row.Output, row.Error, row.FinishedAt = "failed", output, message, &now
+		out = configurationDeploymentView(row)
+		return nil
+	})
+	return
+}
+
+func (s ConfigurationPublicationState) DeferConfigurationPublication(ctx context.Context, deployment network.ConfigurationDeployment, message, output string, now time.Time) (out network.ConfigurationDeployment, err error) {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row, err := lockConfigurationDeployment(tx, deployment)
+		if err != nil {
+			return err
+		}
+		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&row).Updates(map[string]interface{}{"status": "deferred", "output": output, "error": message, "finished_at": now}).Error; err != nil {
+			return err
+		}
+		// Desired intent remains pending. Applied digest, health, readiness and
+		// node timestamps describe the unchanged runtime and must stay intact.
+		if err := tx.Model(&state).Update("phase", "configuration_deferred").Error; err != nil {
+			return err
+		}
+		row.Status, row.Output, row.Error, row.FinishedAt = "deferred", output, message, &now
 		out = configurationDeploymentView(row)
 		return nil
 	})

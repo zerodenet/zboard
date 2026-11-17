@@ -2,6 +2,9 @@ package handler
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -66,7 +69,7 @@ func TestDNSDeletionRemovesLocalRecordWithoutUsingExpiredProviderCredentials(t *
 	}
 }
 
-func TestNodeDeletionClearsRelationsWithoutSSHOrProviderAccess(t *testing.T) {
+func TestNodeArchivalClearsCurrentRelationsWithoutSSHOrProviderAccess(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
 	entry := saveEntryForTest(t, f, a, b, "")
 	group := model.NodeGroup{Name: "assigned", Code: "assigned"}
@@ -89,24 +92,40 @@ func TestNodeDeletionClearsRelationsWithoutSSHOrProviderAccess(t *testing.T) {
 	calls := 0
 	mockDeletionDNS(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(403) })
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
+	f.h.backgroundJobs()
+	f.h.services.Jobs.Detach(network.NodeRetirementHandler)
 	w := httptest.NewRecorder()
 	f.h.NodeCascadeDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/nodes/%d", b.NodeID), f.admin, ""))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remote_zero_stopped":false`) {
+	if w.Code != http.StatusAccepted {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
+	executor := jobs.Executor{Store: jobstore.New(f.h.db), Worker: "delete-http-test", Timeout: time.Minute, Handlers: map[string]jobs.Handler{network.NodeRetirementHandler: f.h.services.NodeRetirement(f.h).Execute}}
+	if err := executor.RunOne(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	for _, query := range []*gorm.DB{
-		f.h.db.Model(&model.Node{}).Where("id = ?", b.NodeID),
-		f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", b.ID),
 		f.h.db.Model(&model.NetworkEntry{}).Where("id = ?", entry.ID),
 		f.h.db.Model(&model.NodeGroupNetworkEntry{}).Where("node_group_id = ?", group.ID),
 		f.h.db.Model(&model.NodeGroupEndpoint{}).Where("node_group_id = ?", group.ID),
-		f.h.db.Model(&model.NodeProxyPool{}).Where("node_id = ?", b.NodeID),
 	} {
 		var count int64
 		if err := query.Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("local cleanup count=%d err=%v", count, err)
 		}
 	}
+	var archived model.Node
+	if err := f.h.db.First(&archived, b.NodeID).Error; err != nil || archived.LifecycleStatus != "archived" || archived.ArchivedAt == nil || archived.IsEnabled || archived.NodeCredentialRevokedAt == nil || archived.TrafficSecretRevokedAt == nil {
+		t.Fatal("archive authority missing", archived, err)
+	}
+	var endpoint model.ProtocolEndpoint
+	if err := f.h.db.First(&endpoint, b.ID).Error; err != nil || endpoint.IsActive {
+		t.Fatal("historical endpoint identity lost or enabled", endpoint, err)
+	}
+	var retainedPool model.NodeProxyPool
+	if err := f.h.db.First(&retainedPool, pool.ID).Error; err != nil || retainedPool.AutoSync || retainedPool.Config != "{}" {
+		t.Fatal("current proxy configuration survived archive", retainedPool, err)
+	}
+
 	var surviving model.Node
 	if err := f.h.db.First(&surviving, a.ID).Error; err != nil {
 		t.Fatal("entry node was removed")

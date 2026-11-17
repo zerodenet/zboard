@@ -22,7 +22,8 @@ func orderAccess(t *testing.T, f orderFixture, id uint, token string) (*httptest
 }
 
 func TestAdminOrderAccessUsesFulfilledSubscriptionAndAuditsWithoutCredentials(t *testing.T) {
-	f := newOrderFixture(t)
+	f := newOrderAccessFixture(t)
+
 	buyer := assignmentBuyer(t, f)
 	_, order := assignOrder(t, f, assignmentRequest(f, buyer.ID))
 	if _, v := orderAccess(t, f, order.ID, f.token); v.Configured {
@@ -43,7 +44,7 @@ func TestAdminOrderAccessUsesFulfilledSubscriptionAndAuditsWithoutCredentials(t 
 	var audit []model.AuditLog
 	f.h.db.Where("action = ?", "order.subscription_access").Find(&audit)
 	b, _ := json.Marshal(audit)
-	if len(audit) != 2 || strings.Contains(string(b), strings.TrimPrefix(v.SubscriptionURL, "/api/v1/client/subscription/")) {
+	if len(audit) != 2 || strings.Contains(string(b), strings.TrimPrefix(v.SubscriptionURL, "/test-feed/")) {
 		t.Fatal("missing audit or leaked credential")
 	}
 	if w, _ := orderAccess(t, f, order.ID, ""); w.Code != 401 {
@@ -64,7 +65,7 @@ func TestAdminOrderAccessUsesFulfilledSubscriptionAndAuditsWithoutCredentials(t 
 func TestAdminOrderAccessRejectsMismatchedOwnerAndInactiveSubscription(t *testing.T) {
 	for _, change := range []string{"owner", "expired", "disabled", "exhausted"} {
 		t.Run(change, func(t *testing.T) {
-			f := newOrderFixture(t)
+			f := newOrderAccessFixture(t)
 			buyer := assignmentBuyer(t, f)
 			_, order := assignOrder(t, f, assignmentRequest(f, buyer.ID))
 			paid := f.paid(t, order.ID)
@@ -91,7 +92,7 @@ func TestAdminOrderAccessRejectsMismatchedOwnerAndInactiveSubscription(t *testin
 }
 
 func TestAdminOrderAccessKeepsEachPurchasedSubscriptionSeparate(t *testing.T) {
-	f := newOrderFixture(t)
+	f := newOrderAccessFixture(t)
 	buyer := assignmentBuyer(t, f)
 	urls := map[string]bool{}
 	ids := map[uint]bool{}
@@ -108,7 +109,7 @@ func TestAdminOrderAccessKeepsEachPurchasedSubscriptionSeparate(t *testing.T) {
 }
 
 func TestAdminOrderAccessRollsBackProvisioningWhenAuditFails(t *testing.T) {
-	f := newOrderFixture(t)
+	f := newOrderAccessFixture(t)
 	buyer := assignmentBuyer(t, f)
 	_, order := assignOrder(t, f, assignmentRequest(f, buyer.ID))
 	paid := f.paid(t, order.ID)
@@ -122,5 +123,24 @@ func TestAdminOrderAccessRollsBackProvisioningWhenAuditFails(t *testing.T) {
 	var count int64
 	if err := f.h.db.Model(&model.SubscriptionToken{}).Where("subscription_id = ?", paid.SubscriptionID).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("credential was not rolled back: count=%d err=%v", count, err)
+	}
+}
+
+func newOrderAccessFixture(t *testing.T) orderFixture {
+	t.Helper()
+	f := newOrderFixture(t)
+	if err := f.h.db.Create(&model.SystemConfig{ConfigKey: "subscription_url_prefix", Name: "订阅前缀", Value: "/test-feed", ValueType: "string"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+func TestAdminOrderAccessWithoutConfiguredDeliveryHasNoLegacyFallback(t *testing.T) {
+	f := newOrderFixture(t)
+	buyer := assignmentBuyer(t, f)
+	_, order := assignOrder(t, f, assignmentRequest(f, buyer.ID))
+	f.paid(t, order.ID)
+	w, v := orderAccess(t, f, order.ID, f.token)
+	if w.Code != 200 || v.Configured || v.DeliveryConfigured || v.SubscriptionURL != "" || v.Token != "" || v.Notice == "" {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }

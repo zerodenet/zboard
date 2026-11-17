@@ -1,0 +1,76 @@
+{
+  "source": "376a3cfd684c0f7d960fc6f7aff05ca09ad4a41e",
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39707391997",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 119590523541,
+      "name": "zrs-compiler",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T01:44:12Z",
+      "completed_at": "2026-10-22T01:44:54Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39707391997/job/119590523541"
+    },
+    {
+      "id": 119590523640,
+      "name": "contract",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T01:44:12Z",
+      "completed_at": "2026-10-22T01:44:30Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39707391997/job/119590523640"
+    },
+    {
+      "id": 119590523677,
+      "name": "mysql",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T01:44:12Z",
+      "completed_at": "2026-10-22T02:04:38Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39707391997/job/119590523677"
+    },
+    {
+      "id": 119590523723,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T01:44:12Z",
+      "completed_at": "2026-10-22T01:48:08Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39707391997/job/119590523723"
+    },
+    {
+      "id": 119590523781,
+      "name": "compose",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T01:44:12Z",
+      "completed_at": "2026-10-22T01:44:18Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39707391997/job/119590523781"
+    },
+    {
+      "id": 119590523840,
+      "name": "backend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T01:44:12Z",
+      "completed_at": "2026-10-22T01:52:13Z",
+      "html_url": "https://github.com/zerodenet/zboard/actions/runs/39707391997/job/119590523840"
+    }
+  ],
+  "scope": "Exact376 only; shared composition candidate not covered. Local SQLite/MySQL, simulation, external sandbox and production remain separate.",
+  "raw_mysql_log": {
+    "private_path": "/workspace/zboard/.codex-local-artifacts/recovery-validation/mysql-ci-376a3cf-success.log",
+    "bytes": 34184,
+    "sha256": "b7af0af91ca30e0a7ba2a9936df48218483d5d250d8107e121b3d39595a91baa"
+  },
+  "actual_mysql_package_seconds": {
+    "datastore": 176.576,
+    "handler": 807.318,
+    "networkstore": 176.737,
+    "application": 20.371,
+    "jobstore": 125.401,
+    "platformstore": 222.494
+  }
+}

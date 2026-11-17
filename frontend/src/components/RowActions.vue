@@ -33,11 +33,12 @@ export default defineComponent({
   },
   setup(props, { slots }) {
     return () => {
+      const primary = collectActions(slots.primary?.() || [])
       const actions = collectActions(slots.default?.() || [])
-      if (!actions.length) return null
+      if (!actions.length && !primary.length) return null
 
-      const mode = actions.length === 1 ? 'single' : 'menu'
-      const content = mode === 'single'
+      const mode = !actions.length ? 'primary' : actions.length === 1 && !primary.length ? 'single' : 'menu'
+      const content = !actions.length ? [] : mode === 'single'
         ? actions
         : [
             h(
@@ -52,8 +53,8 @@ export default defineComponent({
       return h('div', {
         class: 'cell-actions row-actions',
         'data-row-action-mode': mode,
-        'data-row-action-count': actions.length,
-      }, content)
+        'data-row-action-count': actions.length + primary.length,
+      }, [...primary, ...content])
     }
   },
 })

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -77,20 +78,21 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		}
 
 		type credentialRow struct {
-			ID                    uint
-			SubscriptionID        uint
-			ProtocolEndpointID    uint
-			PrincipalKey          string
-			Secret                string
-			ListenPort            int
-			PublicPort            int
-			SubscriptionUpdatedAt time.Time
-			SpeedLimitMbps        int
-			DeviceLimit           int
+			MaterialVersion    uint16
+			ID                 uint
+			SubscriptionID     uint
+			ProtocolEndpointID uint
+			PrincipalKey       string
+			Secret             string
+			ListenPort         int
+			PublicPort         int
+			PolicyRevision     uint64
+			SpeedLimitMbps     int
+			DeviceLimit        int
 		}
 		var credentials []credentialRow
-		if err := tx.Table("protocol_credentials").
-			Select("protocol_credentials.id, protocol_credentials.subscription_id, protocol_credentials.protocol_endpoint_id, protocol_credentials.principal_key, protocol_credentials.secret, protocol_credentials.listen_port, protocol_credentials.public_port, subscriptions.updated_at AS subscription_updated_at, subscriptions.speed_limit_mbps, subscriptions.device_limit").
+		if err := credentialstore.Bindings(tx, now).
+			Select("protocol_credentials.material_version, protocol_credentials.id, protocol_credentials.subscription_id, protocol_credentials.protocol_endpoint_id, protocol_credentials.principal_key, protocol_credentials.secret, protocol_credentials.listen_port, protocol_credentials.public_port, subscriptions.kernel_policy_revision AS policy_revision, subscriptions.speed_limit_mbps, subscriptions.device_limit").
 			Joins("JOIN subscriptions ON subscriptions.id = protocol_credentials.subscription_id").
 			Joins(CredentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id")).
 			Where("protocol_credentials.protocol_endpoint_id IN ?", endpointIDs).
@@ -114,8 +116,8 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		}
 		var credentialCounts []credentialCountRow
 		if len(subscriptionIDs) > 0 {
-			if err := tx.Table("protocol_credentials").
-				Select("protocol_credentials.subscription_id, COUNT(*) AS count").
+			if err := credentialstore.Bindings(tx, now).
+				Select("protocol_credentials.subscription_id, COUNT(DISTINCT protocol_credentials.protocol_endpoint_id) AS count").
 				Joins("JOIN protocol_endpoints ON protocol_endpoints.id = protocol_credentials.protocol_endpoint_id").
 				Where("protocol_credentials.subscription_id IN ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionIDs, "active", now).
 				Where("LOWER(protocol_endpoints.protocol) IN ?", credentialProtocols).
@@ -130,8 +132,8 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		credentialsByEndpoint := make(map[uint][]network.RuntimeConfigurationCredential)
 		for _, row := range credentials {
 			credentialsByEndpoint[row.ProtocolEndpointID] = append(credentialsByEndpoint[row.ProtocolEndpointID], network.RuntimeConfigurationCredential{
-				ID: row.ID, SubscriptionID: row.SubscriptionID, PrincipalKey: row.PrincipalKey, Secret: row.Secret,
-				ListenPort: row.ListenPort, PublicPort: row.PublicPort, SubscriptionUpdatedAt: row.SubscriptionUpdatedAt,
+				MaterialVersion: row.MaterialVersion, ID: row.ID, SubscriptionID: row.SubscriptionID, PrincipalKey: row.PrincipalKey, Secret: row.Secret,
+				ListenPort: row.ListenPort, PublicPort: row.PublicPort, PolicyRevision: row.PolicyRevision,
 				SpeedLimitMbps: row.SpeedLimitMbps, DeviceLimit: row.DeviceLimit,
 				SoleActiveCredential: activeCredentialCount[row.SubscriptionID] == 1,
 			})
@@ -140,8 +142,9 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		for _, endpoint := range endpoints {
 			item := network.RuntimeConfigurationEndpoint{
 				ID: endpoint.ID, NodeID: endpoint.NodeID, Protocol: endpoint.Protocol, Address: endpoint.Address,
-				Port: endpoint.Port, PublicPort: endpoint.PublicPort, MieruPrincipalReady: endpoint.MieruPrincipalReady,
-				ServerConfig: endpoint.ServerConfig, EgressConfig: endpoint.EgressConfig, ActiveSubscriptionCount: activeSubscriptionCount[endpoint.ID],
+				ListenAddress: endpoint.ListenAddress,
+				Port:          endpoint.Port, PublicPort: endpoint.PublicPort, MieruPrincipalReady: endpoint.MieruPrincipalReady,
+				ServerConfig: endpoint.ServerConfig, ClientConfig: endpoint.ClientConfig, EgressConfig: endpoint.EgressConfig, ActiveSubscriptionCount: activeSubscriptionCount[endpoint.ID],
 				Credentials: credentialsByEndpoint[endpoint.ID],
 			}
 			if certificate, exists := certificateByEndpoint[endpoint.ID]; exists {
@@ -198,7 +201,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		result.NetworkEntries = make([]network.RuntimeConfigurationNetworkEntry, 0, len(entries))
 		for _, entry := range entries {
 			item := network.RuntimeConfigurationNetworkEntry{
-				ID: entry.ID, NodeID: entry.NodeID, EndpointID: entry.EndpointID, Network: entry.Network,
+				Address: entry.Address, PublicPort: entry.PublicPort, ID: entry.ID, NodeID: entry.NodeID, EndpointID: entry.EndpointID, Network: entry.Network, ListenAddress: entry.ListenAddress,
 				Port: entry.Port, ProxyPoolID: entry.ProxyPoolID, PathConfig: entry.PathConfig,
 			}
 			if landing, exists := landingByID[entry.EndpointID]; exists {

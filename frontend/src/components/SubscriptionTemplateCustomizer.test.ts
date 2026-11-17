@@ -1,9 +1,38 @@
 import { mount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { defaultSubscriptionCustomization } from '../utils/subscriptionTemplateEditor'
 import SubscriptionTemplateCustomizer from './SubscriptionTemplateCustomizer.vue'
+import UiSelect from './UiSelect.vue'
+import { subscriptionPolicyGroupDefaultTarget, setSubscriptionPolicyGroupSpecialTarget } from '../utils/subscriptionTemplateEditor'
 
 describe('SubscriptionTemplateCustomizer', () => {
+  it('offers a default even when no other policy group exists', () => {
+    const customization = defaultSubscriptionCustomization('clash')
+    customization.policy_groups = [{ id: 'main', name: '支付服务', type: 'select', include_groups: [] }]
+    const wrapper = mount(SubscriptionTemplateCustomizer, { props: { renderer: 'clash', modelValue: customization } })
+    const picker = wrapper.findAllComponents(UiSelect).find(select => (select.props('options') || []).some(option => option.label === '第一个成员'))!
+    expect((picker.props('options') || []).some(option => option.value === 'direct')).toBe(true)
+    wrapper.unmount()
+  })
+  it.each(['clash', 'sing-box', 'znet-sink'] as const)('selects DIRECT as the default member for %s and clears it when excluded', async renderer => {
+    const customization = reactive(defaultSubscriptionCustomization(renderer))
+    const wrapper = mount(SubscriptionTemplateCustomizer, { props: { renderer, modelValue: customization } })
+    const main = customization.policy_groups[0]
+    const picker = wrapper.findAllComponents(UiSelect).find(select => (select.props('options') || []).some(option => option.label === '第一个成员'))!
+    expect(picker).toBeDefined()
+    expect(picker.props('options')).toEqual(expect.arrayContaining([{ label: 'DIRECT · 直连', value: 'direct' }]))
+    if (renderer === 'sing-box') expect((picker.props('options') || []).some(option => option.value === 'reject')).toBe(false)
+    picker.vm.$emit('update:modelValue', 'direct')
+    await wrapper.vm.$nextTick()
+    expect(subscriptionPolicyGroupDefaultTarget(main)).toBe('direct')
+    expect(main.default_group).toBe('')
+    setSubscriptionPolicyGroupSpecialTarget(main, 'direct', false)
+    await wrapper.vm.$nextTick()
+    expect(subscriptionPolicyGroupDefaultTarget(main)).toBe('')
+    expect((picker.props('options') || []).some(option => option.value === 'direct')).toBe(false)
+    wrapper.unmount()
+  })
   it('hides the desktop proxy setter for TUN clients even when an older template enabled it', async () => {
     const customization = defaultSubscriptionCustomization('sing-box')
     customization.system_proxy = true
@@ -16,7 +45,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     await enable!.trigger('click')
     expect(customization.tun.enabled).toBe(true)
     expect(customization.system_proxy).toBe(true)
-    expect(wrapper.text()).toContain('已提供客户端 HTTP 代理开关')
+    expect(wrapper.get('[role="status"]').text()).toBe('客户端 HTTP 代理已启用')
     expect(wrapper.text()).not.toContain('自动设置系统 HTTP 代理（桌面命令行）')
     const tun = wrapper.findAll('label.setting-switch').find(label => label.text().includes('启用 TUN 全局接管'))!
     await tun.find('[role="switch"]').trigger('click')
@@ -30,7 +59,7 @@ describe('SubscriptionTemplateCustomizer', () => {
       props: { renderer: 'sing-box', modelValue: customization },
       global: { plugins: [] },
     })
-    expect(wrapper.text()).toContain('Rule（规则）、Direct（直连）、Global（全局）')
+    expect(customization.mode).toBe('rule')
     const enable = wrapper.findAll('button').find(button => button.text() === '启用客户端 HTTP 代理开关')
     expect(enable).toBeDefined()
     await enable!.trigger('click')
@@ -38,7 +67,7 @@ describe('SubscriptionTemplateCustomizer', () => {
     expect(customization.tun.enabled).toBe(true)
     expect(customization.dns.enabled).toBe(true)
     expect(customization.system_proxy).toBe(false)
-    expect(wrapper.text()).toContain('已提供客户端 HTTP 代理开关')
+    expect(wrapper.get('[role="status"]').text()).toBe('客户端 HTTP 代理已启用')
     expect(wrapper.findAll('button').some(button => button.text() === '启用客户端 HTTP 代理开关')).toBe(false)
   })
 
@@ -78,7 +107,7 @@ describe('SubscriptionTemplateCustomizer', () => {
 
     const raw = wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('Raw 模型'))
     await raw?.trigger('mousedown', { button: 0, ctrlKey: false })
-    expect(wrapper.text()).toContain('Raw 模型与可视化双向同步')
+    expect(wrapper.text()).toContain('模板 JSON')
     const rawEditor = wrapper.find('[aria-label="Raw 订阅模板 JSON"]')
     expect(rawEditor.exists()).toBe(true)
     await rawEditor.setValue(JSON.stringify({ ...customization, mode: 'global', system_proxy: false }))

@@ -1,0 +1,244 @@
+{
+  "source": "35d20df3d63c40d4977b42cfed38990f2cbc8649",
+  "backend_tree": "f43573ed283efb588e6394bef5e1cddb37128e76",
+  "clean_before": true,
+  "clean_after": true,
+  "binary_sha256": "2a0d9b8a81a0f5b12996654b3d9c8416d4e6f5faee68c112b20130c5298f443b",
+  "command": [
+    "accounting-sql-35d20df.test",
+    "-test.run=^$",
+    "-test.bench=^BenchmarkZeroAccounting$",
+    "-test.benchtime=100x",
+    "-test.count=5",
+    "-test.timeout=5m"
+  ],
+  "started_utc": "2026-10-20T19:17:38.547439+00:00",
+  "seconds": 8.633,
+  "exit_code": 0,
+  "gomaxprocs": 1,
+  "cpu_max": "400000 100000",
+  "memory_max": "17179869184",
+  "max_rss_kib": 56624,
+  "user_seconds": 7.791355,
+  "system_seconds": 0.8305699999999999,
+  "resource_scope": "benchmark subprocess including untimed fixtures; cloud4CPU16GiB; no concurrent local test or load",
+  "first_attempt": "all benchmarks passed but parser rejected separate benchmark heading; raw log retained; this independent rerun records resource usage before parsing",
+  "samples": [
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 8382631.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 115.5,
+        "SQL-p95-upper-us": 400.0,
+        "SQL-reads/batch": 17.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 56.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 3817.0,
+        "expected-read-misses/batch": 0.01,
+        "p95-ms/batch": 11.32,
+        "p99-ms/batch": 14.78,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1352740.0,
+        "allocs/op": 13387.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 7760334.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 106.7,
+        "SQL-p95-upper-us": 400.0,
+        "SQL-reads/batch": 17.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 56.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 4124.0,
+        "expected-read-misses/batch": 0.01,
+        "p95-ms/batch": 10.2,
+        "p99-ms/batch": 11.35,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1352346.0,
+        "allocs/op": 13382.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 7928953.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 109.9,
+        "SQL-p95-upper-us": 400.0,
+        "SQL-reads/batch": 17.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 56.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 4036.0,
+        "expected-read-misses/batch": 0.01,
+        "p95-ms/batch": 10.77,
+        "p99-ms/batch": 12.15,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1352438.0,
+        "allocs/op": 13383.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 8425471.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 113.8,
+        "SQL-p95-upper-us": 400.0,
+        "SQL-reads/batch": 17.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 56.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 3798.0,
+        "expected-read-misses/batch": 0.01,
+        "p95-ms/batch": 11.55,
+        "p99-ms/batch": 16.75,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1352450.0,
+        "allocs/op": 13384.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 9145666.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 126.7,
+        "SQL-p95-upper-us": 500.0,
+        "SQL-reads/batch": 17.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 56.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 3499.0,
+        "expected-read-misses/batch": 0.01,
+        "p95-ms/batch": 14.92,
+        "p99-ms/batch": 26.7,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1352393.0,
+        "allocs/op": 13383.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 172498.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 43.54,
+        "SQL-p95-upper-us": 100.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 185510.0,
+        "expected-read-misses/batch": 0.0,
+        "p95-ms/batch": 0.332,
+        "p99-ms/batch": 0.4128,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 43190.0,
+        "allocs/op": 478.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 205631.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 50.8,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 155619.0,
+        "expected-read-misses/batch": 0.0,
+        "p95-ms/batch": 0.3801,
+        "p99-ms/batch": 0.458,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42653.0,
+        "allocs/op": 477.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 177699.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 45.28,
+        "SQL-p95-upper-us": 100.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 180079.0,
+        "expected-read-misses/batch": 0.0,
+        "p95-ms/batch": 0.3209,
+        "p99-ms/batch": 0.4996,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42526.0,
+        "allocs/op": 477.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 299242.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 66.27,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 106937.0,
+        "expected-read-misses/batch": 0.0,
+        "p95-ms/batch": 0.5804,
+        "p99-ms/batch": 2.085,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42651.0,
+        "allocs/op": 478.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 172348.0,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 46.9,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 185671.0,
+        "expected-read-misses/batch": 0.0,
+        "p95-ms/batch": 0.3359,
+        "p99-ms/batch": 0.4453,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42526.0,
+        "allocs/op": 477.0
+      }
+    }
+  ],
+  "limits": [
+    "Microbenchmark, not sustained HTTP capacity or independent-worker benefit",
+    "GORM client durations, not server-only SQL latency",
+    "Logical affected DML rows, not physical bytes",
+    "Different quiet window from 7b baseline; observer expected-read-miss classification changed; no latency guarantee"
+  ]
+}

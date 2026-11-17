@@ -16,7 +16,7 @@ func TestExternalForwardEntryGrantDeliveryAndRemoval(t *testing.T) {
 	verifyExternalForwardClosure(t, f, a, b)
 }
 func TestMySQLExternalForwardEntryGrantDeliveryAndRemoval(t *testing.T) {
-	h, _ := newMySQLPublishHandlers(t)
+	h, _ := newMySQLBusinessHandlers(t)
 	user := model.User{ID: 1, Email: "external-forward-admin@example.test", Password: "hash", Status: userStatusActive, IsAdmin: true}
 	if err := h.db.Create(&user).Error; err != nil {
 		t.Fatal(err)
@@ -85,6 +85,7 @@ func verifyExternalForwardClosure(t *testing.T, f trafficReadFixture, a model.No
 	if err := f.h.ensureCredentialsForSubscriptions([]model.Subscription{sub}); err != nil {
 		t.Fatal(err)
 	}
+	confirmTestCredentialConfiguration(t, f.h, b.NodeID)
 	if err := f.h.db.Where("1=1").Delete(&model.NodeConfigPublish{}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +149,19 @@ func verifyExternalForwardClosure(t *testing.T, f trafficReadFixture, a model.No
 	}
 	if err := f.h.db.Model(&model.NetworkEntry{}).Where("id = ? AND node_id IS NULL", entry.ID).Count(&nullNode).Error; err != nil || nullNode != 1 {
 		t.Fatalf("external edit invented an A node: %v %d", err, nullNode)
+	}
+	// Sold plans and active subscribers are impact information, not deletion
+	// prerequisites. An administrator may remove the final route independently.
+	w = httptest.NewRecorder()
+	f.h.NetworkEntryDeletionCheckHandler(w, announcementRequest(http.MethodGet, fmt.Sprintf("/api/v1/admin/network-entries/%d/deletion-check", entry.ID), f.admin, ""))
+	var assessment struct {
+		Data struct {
+			Blockers []any
+			Warnings []any
+		}
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &assessment); err != nil || w.Code != 200 || len(assessment.Data.Blockers) != 0 || len(assessment.Data.Warnings) == 0 {
+		t.Fatalf("missing nonblocking impact: %d %s %v", w.Code, w.Body.String(), err)
 	}
 	w = httptest.NewRecorder()
 	f.h.NetworkEntriesHandler(w, announcementRequest(http.MethodDelete, fmt.Sprintf("/api/v1/admin/network-entries/%d", entry.ID), f.admin, ""))

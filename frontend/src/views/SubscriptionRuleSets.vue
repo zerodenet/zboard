@@ -1,18 +1,17 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="规则集" description="由 ZBoard 维护统一规则源并发布适配客户端的规则产物；订阅模板只引用稳定规则地址并选择命中后的路由动作。" eyebrow="订阅模板">
+    <PageHeader title="规则集">
       <template #actions>
         <PageRefreshButton label="刷新规则集" :loading="loading" @click="load" />
         <UiButton type="button" @click="openCreate"><UiIcon name="plus" />新建规则集</UiButton>
       </template>
     </PageHeader>
 
-    <PageAlert tone="info" title="统一规则源">
-      远端规则会完整保存在 ZBoard，再按客户端生成规则地址。包含进程匹配的规则集支持 Clash / sing-box，不能绑定 Zero 模板。
-    </PageAlert>
+    <details><summary>格式兼容说明</summary><p>按应用名称或路径分流的规则（进程匹配）可用于 Clash、sing-box。Zero 订阅格式暂不支持，不能忽略这些规则后发布。</p></details>
 
     <TransientFeedback :success="message" :error="feedbackError" success-title="规则集操作已完成" error-title="规则集操作失败" />
 
+    <PageAlert v-if="ruleDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ ruleDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="ruleDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
         <WorkbenchFilterBar :active="Boolean(search || activeFilter)" @clear="resetFilters">
@@ -83,7 +82,7 @@
       </DataTable>
 
       <EmptyState
-        v-else-if="!loading"
+        v-else-if="!loading && !error"
         icon="audit"
         :title="search || activeFilter ? '没有匹配规则集' : '还没有规则集'"
         :description="search || activeFilter ? '调整或清除筛选条件后重试。' : '创建规则集后，ZBoard 会保存规范化的 Zero Rule IR，并按客户端格式发布稳定地址。'"
@@ -233,6 +232,8 @@ import { useRemoteTable } from '../composables/useRemoteTable'
 import { useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
 import { isCharacterLengthInRange, isHttpUrl } from '../utils/validation'
 import { confirmAction } from '../utils/feedback'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { ruleSetRecoveryFields, ruleSetRecoveryDraft, type RuleSetRecoveryFields } from '../utils/subscriptionEditorRecovery'
 
 const route = useRoute()
 const router = useRouter()
@@ -296,6 +297,8 @@ const emptyForm = () => ({
 })
 const form = reactive(emptyForm())
 const initialSnapshot = ref('')
+const ruleRecoveryBaseline = ref<RuleSetRecoveryFields | null>(null)
+const ruleOriginalSourceURL = ref<string | undefined>(undefined)
 const editorOpen = ref(false)
 const saving = ref(false)
 const editingID = ref(0)
@@ -318,7 +321,7 @@ for (const field of ['name', 'tag', 'description', 'content', 'source_url', 'sou
 }
 watch(() => form.mode, () => editorErrors.clear())
 
-const { items: ruleSets, total, loading, refreshing, error, load } = useRemoteTable<ManagedRuleSet>({
+const { items: ruleSets, total, loading, refreshing, error, load, hasLoaded: ruleListLoaded } = useRemoteTable<ManagedRuleSet>({
   offset,
   limit,
   fetchPage: ({ signal }) => fetchManagedRuleSetsPage({
@@ -331,6 +334,32 @@ const { items: ruleSets, total, loading, refreshing, error, load } = useRemoteTa
   onOffsetCorrected: () => syncURL(true),
 })
 const feedbackError = computed(() => operationError.value || error.value)
+const ruleDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.subscription-rule-sets.editor', permission: 'admin', ready: () => ruleListLoaded.value && !editingID.value,
+  read: () => editorOpen.value ? { id: form.id, revision: form.revision, fields: ruleSetRecoveryFields(form, ruleOriginalSourceURL.value, true), baseline: ruleRecoveryBaseline.value } : null,
+  sanitize: ruleSetRecoveryDraft,
+  restore: async (value, context) => {
+    let latest: ManagedRuleSet | undefined, source: Awaited<ReturnType<typeof fetchManagedRuleSetContent>> | undefined
+    if (value.id) {
+      try { [latest, source] = await Promise.all([fetchManagedRuleSet(value.id), fetchManagedRuleSetContent(value.id)]) }
+      catch (cause: any) { if (cause?.response?.status !== 404) throw cause }
+      if (!context.isCurrent()) return false
+    }
+    if (!context.isCurrent()) return false
+    const freshForm = latest && source ? { ...emptyForm(), id: latest.id, name: latest.name, description: latest.description || '', tag: latest.tag,
+      mode: latest.source_url ? 'remote' as const : 'manual' as const, source_url: latest.source_url || '', source_format: latest.source_format || 'zero_rule_ir', content: source.content || defaultContent,
+      sync_interval: latest.interval, is_active: latest.is_active, revision: source.revision, rule_count: source.rule_count, content_bytes: source.content_bytes, usage_count: latest.usage_count, updated_at: latest.updated_at } : undefined
+    const current = freshForm ? ruleSetRecoveryFields(freshForm, freshForm.source_url, true) : undefined
+    const conflict = value.id > 0 && (!latest || !source || latest.id !== value.id || source.id !== value.id || latest.revision !== value.revision || source.revision !== value.revision || JSON.stringify(current) !== JSON.stringify(value.baseline))
+    Object.assign(form, emptyForm(), freshForm || {})
+    setSnapshot()
+    Object.assign(form, value.fields, { id: value.id, revision: value.revision, source_url: value.fields.source_url === null ? latest?.source_url || '' : value.fields.source_url })
+    ruleOriginalSourceURL.value = value.id ? latest?.source_url || '' : undefined
+    ruleRecoveryBaseline.value = value.baseline
+    editorErrors.clear(); revisionConflict.value = conflict; editorOpen.value = true
+  },
+})
+
 
 function setSnapshot() {
   initialSnapshot.value = JSON.stringify(form)
@@ -343,6 +372,7 @@ function clearEditorErrors() {
 
 function resetEditorState() {
   Object.assign(form, emptyForm())
+  ruleRecoveryBaseline.value = null; ruleOriginalSourceURL.value = undefined
   clearEditorErrors()
   setSnapshot()
 }
@@ -391,6 +421,7 @@ async function openEdit(item: ManagedRuleSet) {
       fetchManagedRuleSet(item.id),
       fetchManagedRuleSetContent(item.id),
     ])
+    if (latest.id !== item.id || source.id !== item.id || latest.revision !== source.revision) throw new Error('规则集读取期间版本已变化，请重新加载。')
     Object.assign(form, {
       id: latest.id,
       name: latest.name,
@@ -408,6 +439,8 @@ async function openEdit(item: ManagedRuleSet) {
       usage_count: latest.usage_count,
       updated_at: latest.updated_at,
     })
+    ruleOriginalSourceURL.value = form.source_url
+    ruleRecoveryBaseline.value = ruleSetRecoveryFields(form, form.source_url, true) || null
     clearEditorErrors()
     setSnapshot()
     editorOpen.value = true
@@ -419,8 +452,7 @@ async function openEdit(item: ManagedRuleSet) {
 }
 
 async function reloadEditor() {
-  const item = ruleSets.value.find(candidate => candidate.id === form.id)
-  if (item) await openEdit(item)
+  if (form.id) await openEdit({ id: form.id } as ManagedRuleSet)
 }
 
 function closeEditor() {

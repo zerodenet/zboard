@@ -16,6 +16,17 @@ func reconcileSQLiteTrafficHourly(db *gorm.DB) error {
 	if err := db.Model(&schemaMigration{}).Where("version = ?", version).Count(&count).Error; err != nil || count > 0 {
 		return err
 	}
+	if db.Migrator().HasColumn(usageProjectionTable, "hourly_pending") {
+		// A recorded post-0054 database can lose the older derived migration
+		// marker during recovery. Never reinstall its synchronous triggers or
+		// include facts which are still owned by the asynchronous worker.
+		return db.Transaction(func(tx *gorm.DB) error {
+			if err := RebuildTrafficHourly(tx); err != nil {
+				return err
+			}
+			return tx.Create(&schemaMigration{Version: version, AppliedAt: time.Now().UTC()}).Error
+		})
+	}
 	payload, err := migrations.Files.ReadFile("sqlite/0024_traffic_usage_hourly.sql")
 	if err != nil {
 		return err

@@ -33,7 +33,10 @@ describe('infrastructure detail density policy', () => {
     expect(drawer).toContain(':error="detailError"')
     expect(nodes).toContain("detailError.value = e?.response?.data?.message || 'SSH 验证失败。'")
     expect(nodes).toContain("detailError.value = e?.response?.data?.message || 'Zero 内核检测失败。'")
-    expect(nodes).toContain("detailError.value = e?.response?.data?.message || '计费倍率保存失败。'")
+    expect(drawer).toContain('<ProtocolMultiplierCell')
+    const multiplier = readFileSync(join(root, 'components', 'ProtocolMultiplierCell.vue'), 'utf8')
+    expect(multiplier).toContain('role="alert"')
+    expect(multiplier).toContain('倍率保存失败，请重试。')
   })
 
   it('separates provider accounts and managed DNS into independent infrastructure pages', () => {
@@ -55,7 +58,7 @@ describe('infrastructure detail density policy', () => {
     expect(layout).toContain('<AdminNavigation')
     const infrastructure = adminNavigation.find(domain => domain.id === 'infrastructure')
     const accessPages = infrastructure?.sections.find(section => section.label === '兼容接入配置')?.pages
-    expect(accessPages).toEqual(expect.arrayContaining([
+    expect(accessPages?.map(({to,label}) => ({to,label}))).toEqual(expect.arrayContaining([
       { to: '/admin/providers', label: '外部供应商' },
       { to: '/admin/dns-records', label: 'DNS 解析' },
     ]))
@@ -78,7 +81,7 @@ describe('infrastructure detail density policy', () => {
     const nodes = readFileSync(join(views, 'Nodes.vue'), 'utf8')
 
     expect(nodes).toContain('v-model="selectedReleaseVersion"')
-    expect(nodes).toContain('fetchZeroReleases()')
+    expect(nodes).toContain('fetchZeroReleases({ signal })')
     expect(nodes).toContain('const latestPublishedRelease = computed(() => zeroReleases.value[0] || null)')
     expect(nodes).toContain('selectedReleaseVersion.value = zeroReleases.value.find(releaseCompatible)?.version ||')
     expect(nodes).not.toContain('没有可安装的稳定版本')
@@ -93,6 +96,6 @@ describe('infrastructure detail density policy', () => {
     expect(nodes).toContain('<template #footer><UiButton type="button" @click="closeSecretModal">完成</UiButton></template>')
     expect(nodes).toContain('node_credential_prefix: result.api_key_prefix')
     expect(nodes).toContain('traffic_secret_prefix: result.secret_prefix')
-    expect(nodes).toContain('selectedNode.value = await fetchNode(nodeID)')
+    expect(nodes).toContain('await detailResource.load()')
   })
 })

@@ -84,7 +84,7 @@ func (collector *nodeAddressCandidateCollector) add(rawAddress, source string) b
 func (collector *nodeAddressCandidateCollector) response(nodeID uint, sshProbeStatus string, warnings []string) nodeAddressCandidatesResponse {
 	result := nodeAddressCandidatesResponse{
 		NodeID: nodeID, Policy: nodeAddressCandidatePolicy,
-		IPv4: collector.ipv4, IPv6: collector.ipv6,
+		IPv4: append([]nodeAddressCandidate{}, collector.ipv4...), IPv6: append([]nodeAddressCandidate{}, collector.ipv6...),
 		SSHProbeStatus: sshProbeStatus, Warnings: warnings,
 	}
 	if len(result.IPv4) > 0 {

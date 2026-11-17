@@ -2,6 +2,11 @@
 
 `backend/` stores all server-side capabilities of zboard.
 
+Native plugins implement signed, admitted public HTTP routes through the
+[`pluginapi/v1` request contract](pkg/pluginapi/v1/http.md). The route owner receives
+the original query, body, multi-value headers and connection metadata and owns
+parsing, authentication, signature verification and its business response.
+
 ## Start backend
 
 The example config intentionally contains no datasource, JWT secret, or credential-encryption key.
@@ -38,6 +43,66 @@ advertises a protocol minimum version.
 An rc.4-or-newer `native-local` artifact enables the same Mieru behavior
 automatically. The panel's stable `credential_id` is database metadata and is
 never serialized into Zero user configuration.
+
+## Local uploads and external URLs
+
+Site Logo, dark Logo and favicon accept external HTTP/HTTPS URLs or local image
+uploads. Uploading fills the image field; save the settings group to publish it.
+PNG, JPEG, GIF, WebP, ICO and non-active SVG are supported, up to 2 MiB each.
+
+New tickets and user/admin replies accept up to five attachments per message.
+Attach local images, PDF, UTF-8 TXT/LOG or ZIP files up to 5 MiB each, or add
+external HTTP/HTTPS links. External links are retained without server-side fetch.
+Local files are associated with the message in the same transaction; invalid,
+foreign or already-used references reject the entire message. Downloads verify
+current ticket ownership/admin status and use private no-store responses.
+
+`POST /api/v1/files` accepts multipart `file` and `purpose=site|ticket`; only
+administrators may upload public site images. Images use public `/media/{id}`
+URLs. Ticket files use authenticated `GET /api/v1/files/{id}` and never appear
+on the public image route. `DELETE /api/v1/files/{id}` removes unused uploads;
+files referenced by a ticket or current site setting cannot be deleted.
+Quotas are 100 MiB per uploader and 1 GiB overall. Draft attachments removed or
+discarded in the editor are deleted; submitted ticket evidence is retained.
+
+Set `file_storage_dir` or `ZBOARD_FILE_STORAGE_DIR` to a writable persistent
+directory (default `/var/lib/zboard/files`). Docker compositions bind
+`ZBOARD_FILE_HOST_DIR` (default `./files`) there; blue/green services share it.
+Backups/restores must include both the database metadata and this directory.
+For standalone development, a project-local directory can be configured. Reverse
+proxies must forward `/media/` and allow 6 MiB requests to `/api/v1/files`.
+
+## Protocol listen addresses
+
+Protocol service creation/editing exposes `listen_address` separately from the
+public subscription `address`. Use `0.0.0.0` for IPv4 wildcard listening, `::` for
+IPv6 wildcard listening, or a specific local IPv4/IPv6 address assigned to the VPS.
+IPv6 wildcard dual-stack behavior follows the node's OS socket configuration.
+Domains, ports, CIDRs and scoped IPv6 addresses are rejected.
+
+Old records and creates without the field retain `0.0.0.0`. Updates that omit it
+preserve the current bind; an explicitly empty value restores the legacy default.
+Changing it queues node runtime publication without changing client addresses,
+ports or credentials. The renderer brackets IPv6 in Zero's `listen.address` for
+compatibility with the current kernel's address/port joining. Bootstrap control
+listening remains local. Direct outbound address-family policy is independent.
+
+## Reality domain probing
+
+The VLESS Reality editor exposes **探测伪装域名** beside the SNI field.
+`POST /api/v1/admin/protocol-endpoints/reality-probe` accepts a selected `node_id`
+and up to 12 candidate `domains`; an empty list uses maintained candidates.
+It uses the node's verified SSH channel to make concurrent TLS handshakes to
+port 443, checking TLS 1.3, X25519, h2 ALPN and certificate/hostname verification.
+The VPS needs OpenSSL with TLS 1.3 and GNU coreutils (`timeout` and `date`).
+The operation runs without system privileges or software installation, with a
+five-second deadline per candidate and a twenty-second overall SSH deadline.
+
+Results contain the source node, sample time, candidate domain, status and elapsed
+milliseconds. Selecting a passing domain fills only the draft SNI and preserves
+key material. Static scenario templates remain available separately. The public
+node entrance address is not implicitly used as the Reality target. Probing does
+not save or publish configuration; client connectivity still requires validation.
 
 With an empty database the backend remains available in installation mode. Open the
 frontend `/setup` route to configure the site and first administrator. The database,
@@ -258,6 +323,8 @@ subscription.
 
 基础设施删除只清理面板数据库及关联，不以 SSH、CA 或供应商 API 成功为前提。协议运行配置撤除会排队重试，不能把“数据库已删除”理解为“远端已停止”。在节点资产的“内核与运维”可下载无凭据的离线脚本；新安装或更新内核时会安装 `/usr/local/sbin/zboard-zero-cleanup`。完整范围和操作见 [节点清理说明](https://docs.zerodenet.org/projects/zboard/guides/node-cleanup)。
 
+选择节点远端清理时，卸载任务同时移除 `/var/lib/zerodenet` 中的事件队列、所属标记与历史备份；仅移除面板管理仍保留远端资源。首次初始化会为事件状态记录接收地址与节点身份的所属摘要：不属于当前节点或来源不明的旧队列先在停机后移入本次安装备份，不参与新节点投递；安装失败时随旧内核一并恢复。同一节点更新保留待上报事件，已上报过的旧版节点可在升级时接管没有所属标记的队列。离线脚本的 `--keep-state` 仅供明确需要保留事件的人工卸载使用。
+
 ## 订阅邮件告警
 
 在管理员「设置 → 邮件 → 订阅告警」分别开启余量不足、流量耗尽、即将到期和已到期提醒，四类默认关闭。收件人是状态正常的订阅所有者，不重复通知家庭成员；还需启用运营邮件并配置有效的 SMTP。
@@ -271,3 +338,150 @@ subscription.
 频率限制也检查实际发送尝试，防止积压任务集中投递；失败或结果不确定的尝试也会保守占用间隔。同一个未接收任务可遵循原有流程重试，接收结果不确定必须先人工核验。取消提醒记为 `delivery_state=suppressed`，渠道尝试记录为 `not_accepted`，不伪造邮件已接收。最终 SMTP 提交在数据库事务之外，提交开始后的状态变化无法撤回邮件。
 
 MySQL 使用追加迁移 `0029_subscription_alerts`；SQLite 在模型清单中建立对应表并登记同一版本。启动时补齐七个私有设置且保留管理员原值，迁移不会自动开启提醒。任务入队、SMTP 接收与实际到达收件箱是不同状态，真实投递和线上数据库升级须另行验收。
+
+## Historical zero-payment subscription value
+
+Missing old purchase/value snapshots do not make free subscriptions permanently
+unswitchable. On a commerce preview/read, the owning transaction can capture one
+`legacy_value_baseline` quota event per entitlement epoch. It records current
+instance rights, current plan name and a hash of original order evidence, with
+zero monetary value and zero quota delta. Original order/payment snapshots,
+quota, consumed traffic, expiry and reset policy remain unchanged. Startup does
+not scan or rewrite historical subscriptions.
+
+A later zero-price order never erases still-effective paid value. Mixed old
+purchase/extension history is eligible only if its dated grants and original
+quota-event balances prove every positive paid period already expired. Transfers,
+refunds, contradictory captured payments and unproven adjustments still require
+reconciliation. Later verified purchases keep their own source budgets; event
+order identifies fulfillment even when a pending order has an older creation ID.
+Plan changes reuse the normal full-replacement settlement at the target price,
+with zero credit for the migrated free rights. Today's catalog price is never
+used as historical cash.
+
+The focused integration cases are `TestLegacyZero*` and `TestMySQLLegacyZero*`
+in `internal/handler/legacy_zero_value_test.go`; MySQL uses the existing isolated
+`ZBOARD_TEST_MYSQL_DSN` fixture and never tests against a production schema.
+
+## Metering transaction ownership
+
+MySQL ingestion commits bounded, contiguous partitions of one subscription and
+entitlement epoch (at most 64 samples), preserving original event order and the
+column collation's duplicate-report precedence. The input spool is acknowledged
+only after all partitions commit. A later partition failure leaves the complete
+source replayable; exact receipts skip already committed contributions. Receipt,
+cumulative floor, capped charge, result and observation handoff commit together
+inside each partition. A whole input batch is no longer one financial transaction.
+SQLite retains its serialized writer/cohort path.
+
+Current-epoch accounting owns only its subscription quota row. Closed epochs own
+their closed quota and keep cumulative floors directly in the existing compact
+store: recreating hot flow rows would implicitly acquire a current-subscription
+FK lock. Historical budgets, per-report rounding, replay identities and quota caps
+are unchanged. Mutable user-profile rows are not accounting parents. Credential
+ownership uses short shared, revalidated fences; replaceable last-use hints are
+coalesced to a minute after commit and skipped when credentials are busy. A hint
+failure cannot turn a committed payment/charge into a failed request. Native MySQL
+transactions use READ COMMITTED without changing global isolation.
+
+Migration 0090 adds one metering identity fence per historically seen node, with
+no FK to the mutable management asset. Hot/cold transfers exclusively own that
+fence; financial readers share it. They no longer use the live node row as their
+conversion mutex, so cold maintenance cannot block heartbeat or wallet grants.
+Payment resource conflicts retry only after complete rollback, with the original
+order/funding identity, at most five attempts and 300 ms total backoff. Persistent
+configuration edits remain a retryable error, never an implied successful payment.
+
+Observation task discovery has separate indexed pending and expired-lease
+queries. It fetches bounded metadata without row locks, then locks only exact
+candidate primary keys, skips busy rows and rechecks the current state/lease.
+Migration 0089 adds the expired-lease index. LIMIT on a combined OR/filesort
+locking scan is not a bound on locked rows.
+
+Cold identity maintenance reads a consistent unlocked snapshot, prepares merged
+and split compressed pages outside the owning write transaction, then commits
+one node at a time. It rechecks checkpoint/source values and every touched
+page's exact header/payload before writing. Page/root updates, original identity
+removal and progress advancement are atomic; stale preparation retries without
+advancing, corrupt evidence remains held, and SQL failures roll back. No
+compression or decompression runs while the maintenance identity fence is held.
+Ledger retention skips busy subscription parents before touching ledger rows;
+it revisits them during its existing scheduled pass.
+
+Focused real MySQL coverage: `TestMySQLQuotaPartition*`,
+`TestMySQLObservationClaim*`, `TestMySQLColdPreparation*`,
+`TestMySQLLedgerRetentionSkips*`, `TestMySQLColdCommit*`,
+`TestMySQLHistoricalQuota*`, `TestMySQLWalletPaymentRetries*`, and the native-minute/history replay tests.
+Use an isolated `ZBOARD_TEST_MYSQL_DSN`; production is never a test fixture.
+
+Maintenance pacing: cold identity conversion, ledger retention, observation apply
+and observation material retention complete one bounded batch per configured
+interval. Remaining backlog stays durable in each capability's readiness check;
+these scans do not request the scheduler's accelerated 100 ms continuation path.
+The low-latency financial consumer and usage projection keep their existing
+continuation policy. This separates a successful batch from an empty backlog.
+
+Public business references: orders expose `order_no` as `DD`, the immutable
+creation timestamp (`YYYYMMDDhhmmss`, fixed UTC+8), and an at-least-six-digit numeric
+ID suffix; tickets expose `ticket_no` with the same `TK` format. Only D, T and K
+appear in generated public prefixes. Concurrent creations in the same second
+remain unique; changes to clocks or display timezone never regenerate a number.
+ID-only references have a DD/TK short alias for older association payloads. These
+references expand without truncation and need no sequence table, global lock or
+startup backfill. Migration 0091 only widens ticket_no to 64 characters; SQLite's
+existing TEXT already accommodates it. Creation replaces a private
+INSERT seed with the final number in the same transaction, before checkout or
+notifications. Numbers may have gaps after rollback; they are not credentials.
+
+Existing payment-bound `trade_no` values are preserved; historical orders still
+expose a stable `order_no`. Old ticket numbers remain searchable aliases without
+rewriting stored records. Public DD/TK references and numeric IDs resolve only in
+their own domains and retain all existing ownership/authorization checks. Raw
+order evidence hashing explicitly bypasses public JSON enrichment so historical
+financial verification remains byte-compatible.
+
+Subscription recovery windows also bound live-service retention. At expiry the
+existing worker first stops access; renewable services remain recoverable only
+until their ended_at + configured grace. At the exact boundary, or immediately
+for 0 days, it hard-deletes the live subscription, tokens, memberships, automatic
+renewal agreement and quota-operation state. Canceled and legacy ended instances
+join the same cleanup without reopening a renewal window. Changing the setting
+cannot resurrect a deleted instance.
+
+Closure snapshots/cancels current orders and releases existing wallet holds
+before deletion. The same transaction freezes the final quota in the existing
+closed_entitlements accounting table, revokes/wipes credential secrets, retains
+the indexed principal identity and replay floor, and commits deletion + audit.
+Late traffic updates the closed accounting budget only and never recreates a
+service; late verified payments follow the existing wallet-credit path. No new
+archive/shadow-subscription table or telemetry-history scan is introduced.
+Migration 0092 detaches only four historical subscription FK edges, retaining
+other financial constraints and runtime-child integrity. One last-entitlement-end
+scalar per account preserves inactivity cleanup timing after the live service
+and shared memberships are removed. All cleanup uses the existing bounded
+subscription worker; failed financial/publication/audit operations roll back.
+
+Retention settings are managed under **System settings → Runtime → Logs and
+cleanup**. Built-in defaults are audit 30 days, operation history 14 days,
+operational tasks 7 days, successful periodic runs 7 days, failed periodic runs 30
+days, deleted-node cursors 7 days, observation material 7 days, and completed
+observation cleanup records 1 day. Administrator values survive upgrades. The
+settings response includes `default_value`; restoring a default changes the
+editor draft and still requires Save.
+
+`history_cleanup_interval_minutes` defaults to 5 (0 disables automatic log/task
+history cleanup, 1–60 selects UTC minute slots). Retention days accept0–3650;
+0 explicitly retains that category indefinitely. Observation cleanup has its
+existing bounded executor and reads its own two lifetimes on each invocation.
+Shortening a lifetime revisits older future review dates through the existing
+bounded cursor sweep, never a full-table rewrite in the settings request.
+Active leases, referenced node state and unfinished material deletion remain
+protected; expired completed auxiliary history does not need its old source
+proof to be kept forever. Metering receipts, cumulative traffic and financial
+summaries are independent and are not deleted by observation cleanup.
+
+Deleting old rows allows InnoDB to reuse allocated pages; it does not necessarily
+shrink `.ibd` files. Do not run a full-table rebuild on every cleanup cycle.
+One-off online space reclamation needs measured working space, a bounded metadata
+lock wait and a disk-space guard. Host/container log rotation and shared MySQL
+binlog retention are deployment settings, not application retention controls.

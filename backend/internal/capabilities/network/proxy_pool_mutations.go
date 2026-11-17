@@ -101,12 +101,12 @@ func (s ProxyPoolMutations) Save(ctx context.Context, actor uint, request ProxyP
 		if request.Delete {
 			return s.Repository.CommitProxyPoolMutation(ctx, actor, before, ProxyPoolMutationChange{Delete: true, NodeID: snapshot.Pool.NodeID, Now: s.now()})
 		}
-		if request.NodeID != snapshot.Pool.NodeID || request.ExpectedRevision != snapshot.Pool.Revision {
+		if request.ExpectedRevision != snapshot.Pool.Revision {
 			return ProxyPoolRecord{}, ErrProxyPoolConflict
 		}
 	}
-	if request.Delete || request.NodeID == 0 || request.Name == "" || len(request.Name) > 80 {
-		return ProxyPoolRecord{}, &ProxyPoolMutationValidation{Message: "请选择节点并填写 1–80 字节的代理池名称"}
+	if request.Delete || request.Name == "" || len(request.Name) > 80 {
+		return ProxyPoolRecord{}, &ProxyPoolMutationValidation{Message: "请填写 1–80 字节的代理池名称"}
 	}
 	if before == nil && request.Config == nil {
 		return ProxyPoolRecord{}, &ProxyPoolMutationValidation{Message: "请配置代理池成员或订阅地址"}

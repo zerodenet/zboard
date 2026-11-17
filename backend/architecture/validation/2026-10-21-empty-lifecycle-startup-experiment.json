@@ -1,0 +1,377 @@
+{
+  "status": "NOT_INTEGRATED_NO_REPEATABLE_LATENCY_GAIN",
+  "source_base": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+  "candidate_source_sha256": {
+    "backend/internal/datastore/migrations.go": "ac256cdefdd17b108129acc1691a182241ff91e74864cc62f821976deb2eafb6",
+    "backend/internal/datastore/mysql_empty_lifecycle_migration.go": "dde82b2ebc0780cdb5d606619f173f5631fa4cdabace4da7a073e2433fe826c4",
+    "backend/internal/datastore/mysql_empty_lifecycle_migration_test.go": "a40c02c08822f00b8ffc7184f023876043f2a9188f0d8e2675ae3da771373780",
+    "backend/internal/datastore/mysql_empty_lifecycle_integration_test.go": "7a220626b2566e126cf3ef33ff4567a4e86e1c8fd05acbb972dc0eb33afe0a93"
+  },
+  "scope": "Actual empty-business-table0023 ADD coalescing; published migration files unchanged; not a whole-handler or production benchmark",
+  "source_unchanged_through_tests": true,
+  "results": [
+    {
+      "status": "PASS",
+      "stage": "pure",
+      "source_base": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+      "source_sha256": {
+        "backend/internal/datastore/migrations.go": "ac256cdefdd17b108129acc1691a182241ff91e74864cc62f821976deb2eafb6",
+        "backend/internal/datastore/mysql_empty_lifecycle_migration.go": "dde82b2ebc0780cdb5d606619f173f5631fa4cdabace4da7a073e2433fe826c4",
+        "backend/internal/datastore/mysql_empty_lifecycle_migration_test.go": "a40c02c08822f00b8ffc7184f023876043f2a9188f0d8e2675ae3da771373780",
+        "backend/internal/datastore/mysql_empty_lifecycle_integration_test.go": "7a220626b2566e126cf3ef33ff4567a4e86e1c8fd05acbb972dc0eb33afe0a93"
+      },
+      "environment": {
+        "GOMAXPROCS": 1,
+        "p": 1,
+        "mysql": "UNSET"
+      },
+      "cases": [
+        {
+          "name": "pure",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^(TestEmptyLifecycleDDLRetainsEveryPublishedClauseAndDataUpdate|TestEmptyLifecycleGuardRequiresReliableEmptyBusinessTables)$",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:42:23.269209+00:00",
+          "exit_code": 0,
+          "wall_seconds": 16.866,
+          "raw_sha256": "028e68afd0bfad8fc3756530c12cab14e1209880ef4e853cc20d1c1016dbf727",
+          "finished_utc": "2026-10-21T02:42:40.135948+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestEmptyLifecycleDDLRetainsEveryPublishedClauseAndDataUpdate",
+            "TestEmptyLifecycleGuardRequiresReliableEmptyBusinessTables"
+          ],
+          "status": "PASS",
+          "source_unchanged": true
+        }
+      ],
+      "private_receipt_sha256": "51715b1c78813b1c8a96cf42f00a347e3baa1f1be736d3c149c2e7dbcbfafac1"
+    },
+    {
+      "status": "PASS",
+      "stage": "mysql-contract",
+      "source_base": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+      "source_sha256": {
+        "backend/internal/datastore/migrations.go": "ac256cdefdd17b108129acc1691a182241ff91e74864cc62f821976deb2eafb6",
+        "backend/internal/datastore/mysql_empty_lifecycle_migration.go": "dde82b2ebc0780cdb5d606619f173f5631fa4cdabace4da7a073e2433fe826c4",
+        "backend/internal/datastore/mysql_empty_lifecycle_migration_test.go": "a40c02c08822f00b8ffc7184f023876043f2a9188f0d8e2675ae3da771373780",
+        "backend/internal/datastore/mysql_empty_lifecycle_integration_test.go": "7a220626b2566e126cf3ef33ff4567a4e86e1c8fd05acbb972dc0eb33afe0a93"
+      },
+      "environment": {
+        "GOMAXPROCS": 1,
+        "p": 1,
+        "mysql": "actual isolated8.4; DSN private child environment"
+      },
+      "cases": [
+        {
+          "name": "mysql-contract",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMySQLEmptyLifecycleDDLMatchesOriginalForEmptyAndOccupied$",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:43:11.906477+00:00",
+          "exit_code": 0,
+          "wall_seconds": 1.55,
+          "raw_sha256": "98e4c3c2885f00d0167433e3806a8459a0b14bd799ac57526afd4f043f2e7431",
+          "finished_utc": "2026-10-21T02:43:13.456937+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestMySQLEmptyLifecycleDDLMatchesOriginalForEmptyAndOccupied"
+          ],
+          "status": "PASS",
+          "source_unchanged": true
+        }
+      ],
+      "private_receipt_sha256": "7bf89aedc1b982a5adacd43df66f08f31d7b90e73878b1809933c3f41e5db58b"
+    },
+    {
+      "status": "PASS",
+      "stage": "paired-startup",
+      "source_base": "68176675bd3b4f7c759ec266f563d350d44bfd3b",
+      "source_sha256": {
+        "backend/internal/datastore/migrations.go": "ac256cdefdd17b108129acc1691a182241ff91e74864cc62f821976deb2eafb6",
+        "backend/internal/datastore/mysql_empty_lifecycle_migration.go": "dde82b2ebc0780cdb5d606619f173f5631fa4cdabace4da7a073e2433fe826c4",
+        "backend/internal/datastore/mysql_empty_lifecycle_migration_test.go": "a40c02c08822f00b8ffc7184f023876043f2a9188f0d8e2675ae3da771373780",
+        "backend/internal/datastore/mysql_empty_lifecycle_integration_test.go": "7a220626b2566e126cf3ef33ff4567a4e86e1c8fd05acbb972dc0eb33afe0a93"
+      },
+      "environment": {
+        "GOMAXPROCS": 1,
+        "p": 1,
+        "mysql": "actual isolated8.4; DSN private child environment"
+      },
+      "cases": [
+        {
+          "name": "pair1-baseline",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/migrations.go.json",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkMySQLFreshStartupLifecycleDDL$",
+            "-benchtime=1x",
+            "-v",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:43:54.322197+00:00",
+          "exit_code": 0,
+          "wall_seconds": 12.832,
+          "raw_sha256": "7e1e3e0e4e0ad8e8e2f2065bca33dcc6b583fd47ff9724d419518360ef4cf278",
+          "finished_utc": "2026-10-21T02:44:07.155168+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [],
+          "schema_elapsed": "3.534533415s",
+          "session_command_delta": {
+            "Com_alter_table": 70,
+            "Com_create_index": 15,
+            "Com_create_table": 117,
+            "Com_select": 1739
+          },
+          "status": "PASS",
+          "source_unchanged": true
+        },
+        {
+          "name": "pair1-candidate",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkMySQLFreshStartupLifecycleDDL$",
+            "-benchtime=1x",
+            "-v",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:44:07.156845+00:00",
+          "exit_code": 0,
+          "wall_seconds": 4.855,
+          "raw_sha256": "b1c67ba4e5d48009384afbb999b18e97be55ebfe448b1cfd201b3cd506447eb7",
+          "finished_utc": "2026-10-21T02:44:12.012964+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [],
+          "schema_elapsed": "3.429657263s",
+          "session_command_delta": {
+            "Com_alter_table": 64,
+            "Com_create_index": 15,
+            "Com_create_table": 117,
+            "Com_select": 1740
+          },
+          "status": "PASS",
+          "source_unchanged": true
+        },
+        {
+          "name": "pair2-candidate",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkMySQLFreshStartupLifecycleDDL$",
+            "-benchtime=1x",
+            "-v",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:44:12.014182+00:00",
+          "exit_code": 0,
+          "wall_seconds": 4.637,
+          "raw_sha256": "679df841e68a7b42845c64cfbefd89a55f04efaa95ef3d47075c6d18eaa8babb",
+          "finished_utc": "2026-10-21T02:44:16.652079+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [],
+          "schema_elapsed": "3.245769847s",
+          "session_command_delta": {
+            "Com_alter_table": 64,
+            "Com_create_index": 15,
+            "Com_create_table": 117,
+            "Com_select": 1740
+          },
+          "status": "PASS",
+          "source_unchanged": true
+        },
+        {
+          "name": "pair2-baseline",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/migrations.go.json",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkMySQLFreshStartupLifecycleDDL$",
+            "-benchtime=1x",
+            "-v",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:44:16.654386+00:00",
+          "exit_code": 0,
+          "wall_seconds": 4.654,
+          "raw_sha256": "1ed91cababe8ca06eb4aaf3478ac0231c89280629129fb0b0a7a4bcdd85fb8ba",
+          "finished_utc": "2026-10-21T02:44:21.309423+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [],
+          "schema_elapsed": "3.252400102s",
+          "session_command_delta": {
+            "Com_alter_table": 70,
+            "Com_create_index": 15,
+            "Com_create_table": 117,
+            "Com_select": 1739
+          },
+          "status": "PASS",
+          "source_unchanged": true
+        },
+        {
+          "name": "pair3-baseline",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/migrations.go.json",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkMySQLFreshStartupLifecycleDDL$",
+            "-benchtime=1x",
+            "-v",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:44:21.311631+00:00",
+          "exit_code": 0,
+          "wall_seconds": 4.653,
+          "raw_sha256": "78788fd9a3c46ad80f30a7c918c69b8135fb96b130d9905ef198eaa8f77c2a69",
+          "finished_utc": "2026-10-21T02:44:25.965866+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [],
+          "schema_elapsed": "3.250251961s",
+          "session_command_delta": {
+            "Com_alter_table": 70,
+            "Com_create_index": 15,
+            "Com_create_table": 117,
+            "Com_select": 1739
+          },
+          "status": "PASS",
+          "source_unchanged": true
+        },
+        {
+          "name": "pair3-candidate",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^$",
+            "-bench",
+            "^BenchmarkMySQLFreshStartupLifecycleDDL$",
+            "-benchtime=1x",
+            "-v",
+            "./internal/datastore"
+          ],
+          "started_utc": "2026-10-21T02:44:25.968235+00:00",
+          "exit_code": 0,
+          "wall_seconds": 5.817,
+          "raw_sha256": "4f1623cd89bf494f32eb6e840e550ed1a7c988b411bf9e277d6dc3c48708efb2",
+          "finished_utc": "2026-10-21T02:44:31.786242+00:00",
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [],
+          "schema_elapsed": "4.281068475s",
+          "session_command_delta": {
+            "Com_alter_table": 64,
+            "Com_create_index": 15,
+            "Com_create_table": 117,
+            "Com_select": 1740
+          },
+          "status": "PASS",
+          "source_unchanged": true
+        }
+      ],
+      "private_receipt_sha256": "31cfa3e492cc99d3d15015131d99f58fae5aaeb706e8f126afe0247641c3449f"
+    }
+  ],
+  "paired_schema_seconds": {
+    "baseline": [
+      3.534533415,
+      3.252400102,
+      3.250251961
+    ],
+    "candidate": [
+      3.429657263,
+      3.245769847,
+      4.281068475
+    ],
+    "baseline_median": 3.252400102,
+    "candidate_median": 3.429657263
+  },
+  "count_results": {
+    "baseline": {
+      "ALTER": 70,
+      "CREATE_INDEX": 15,
+      "CREATE_TABLE": 117,
+      "SELECT": 1739
+    },
+    "candidate": {
+      "ALTER": 64,
+      "CREATE_INDEX": 15,
+      "CREATE_TABLE": 117,
+      "SELECT": 1740
+    },
+    "method": "actual single-connection MySQL SESSION commands, not GORM trace count; no cross-method comparison with earlier2031 trace SELECTs"
+  },
+  "decision": "Park candidate unchanged; two smaller elapsed times and one substantially larger time, overlapping distributions. Counts alone do not justify changing the migration execution path or claiming900s fixed. No repeated/tuned rerun.",
+  "limits": [
+    "n3 paired schema-only times; provisioning/build/status sampling excluded, not server-only SQL p95",
+    "Dedicated empty/nonempty actual0023 equivalence and pure query/scan/iteration/close failures pass",
+    "No integrated full backend, fullMySQL, capacity, newCI or production migration for this parked candidate",
+    "Four candidate files, exact baseline overlay and all raw outputs preserved in original cloud/private recovery artifacts",
+    "All151 migration SQL files at681 remain unchanged; main production source unchanged"
+  ]
+}

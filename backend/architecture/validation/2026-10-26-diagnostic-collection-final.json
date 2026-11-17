@@ -1,0 +1,263 @@
+{
+  "source": "8ea73fb0b1f5f4a3d87e6637c4a291d204b0d4fe",
+  "scope": "Exact source final validation; does not certify later worker implementation or overall P0-P7 completion",
+  "backend": [
+    {
+      "name": "full-go",
+      "command": "go test -p 1 ./...",
+      "exit_code": 0,
+      "wall_seconds": 590.789,
+      "log_sha256": "22a60fde7f9886951d880e400ec49bea945a66afb1e05398cfe21cdc5404a39e"
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 1 ./...",
+      "exit_code": 0,
+      "wall_seconds": 20.722,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "exit_code": 0,
+      "wall_seconds": 1.97,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 1 ./internal/datastore -run SQLite -count=1",
+      "exit_code": 0,
+      "wall_seconds": 62.995,
+      "log_sha256": "8b0ff9ed3d0c1d11fd875f69c841c53f2fd62a05c764eb9bf1965e093c1ab551"
+    }
+  ],
+  "mysql": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 1 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+      "exit_code": 0,
+      "wall_seconds": 1022.326,
+      "log_sha256": "3b80148ca78395053357895725e78c3d901c4c3504b385844524f45706d341a0"
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 1 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "exit_code": 0,
+      "wall_seconds": 127.866,
+      "log_sha256": "7716d410d52d3a204cfbbea26c82450d4d0f659ee1817f5e880b3c980d4f8a65"
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 1 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "exit_code": 0,
+      "wall_seconds": 244.883,
+      "log_sha256": "8719d5b5d49f502f69475240d83cd158f49ec94600ab1801f52c3037ad0e1412"
+    }
+  ],
+  "mysql_finished_utc": "2026-10-26T07:17:59.488541+00:00",
+  "pending": [],
+  "ci": {
+    "run_id": 40281286664,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/40281286664",
+    "exact_head_verified": true,
+    "all_six_success": true,
+    "mysql_package_seconds": {
+      "datastore": 212.322,
+      "handler": 612.335,
+      "networkstore": 168.594,
+      "application": 18.479,
+      "jobstore": 101.118,
+      "platformstore": 190.287
+    },
+    "redo_wait_warnings": 8
+  },
+  "capacity": {
+    "parameters": {
+      "NODES": "2",
+      "SUBSCRIPTIONS": "20",
+      "HISTORY_RECORDS": "2000",
+      "DURATION_SECONDS": "60",
+      "EVENT_RATE": "20",
+      "READERS": "4"
+    },
+    "profile": {
+      "cpu": 1,
+      "memory_bytes": 1073741824,
+      "physical_spool_reserve_bytes": 268435456,
+      "minimum_free_bytes_after_reserve": 1677721600
+    },
+    "exit_code": 0,
+    "wall_seconds": 200.125,
+    "hash_binding": {
+      "checkout_commit_unchanged": true,
+      "checkout_still_clean": true,
+      "source_before_after_equal": true,
+      "source-sha256.txt_matches_observer": true,
+      "source-after-build-sha256.txt_matches_observer": true,
+      "zboard_binary_before_after_equal": true,
+      "acceptance_binary_before_after_equal": true,
+      "acceptance-load.py_copy_matches_source": true,
+      "acceptance-report.py_copy_matches_source": true
+    },
+    "preexisting_resources_preserved": true,
+    "result": {
+      "passed": true,
+      "failures": [],
+      "latencies": [
+        {
+          "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 157,
+          "errors": 0,
+          "p50_ms": 1,
+          "p95_ms": 18,
+          "p99_ms": 45,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 157,
+          "errors": 0,
+          "p50_ms": 2,
+          "p95_ms": 13,
+          "p99_ms": 34,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/subscriptions/1",
+          "budget_ms": 250,
+          "count": 157,
+          "errors": 0,
+          "p50_ms": 2,
+          "p95_ms": 19,
+          "p99_ms": 41,
+          "passed": true
+        },
+        {
+          "path": "/api/zero/events",
+          "budget_ms": 250,
+          "count": 1274,
+          "errors": 0,
+          "p50_ms": 12,
+          "p95_ms": 22,
+          "p99_ms": 37,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 157,
+          "errors": 0,
+          "p50_ms": 9,
+          "p95_ms": 23,
+          "p99_ms": 41,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/trends",
+          "budget_ms": 1000,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 1,
+          "p95_ms": 21,
+          "p99_ms": 36,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+          "budget_ms": 1000,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 3,
+          "p95_ms": 14,
+          "p99_ms": 35,
+          "passed": true
+        }
+      ],
+      "sampled_peak_working_set_mib": 40.94,
+      "resource_samples": 15,
+      "minimum_disk_free_bytes": 2064658432,
+      "spool_pressure_levels": [
+        "normal"
+      ],
+      "runtime_diagnostics": {
+        "samples": 7,
+        "last_consumer": {
+          "batches": 47,
+          "processed_envelopes": 1255,
+          "projected_flow_samples": 868,
+          "coalesced_flow_updates": 387,
+          "failures": 0,
+          "processing_seconds": 1.677995998,
+          "missing_receive_time": 0,
+          "latency_samples": 1255,
+          "latency_bucket_ms": 100,
+          "p95_upper_ms": 2000,
+          "maximum_ms": 2125
+        },
+        "maximum_sampled_pending_events": 37,
+        "database_wait_deltas": {
+          "accounting_db": {
+            "wait_count": 1988,
+            "wait_seconds": 2.988082362
+          },
+          "traffic_read_db": {
+            "wait_count": 0,
+            "wait_seconds": 0
+          }
+        }
+      },
+      "drain_seconds": 6,
+      "note": "Client-observed HTTP latency includes Docker loopback transport; this short run does not prove 24h stability."
+    },
+    "rss": {
+      "samples": 22,
+      "errors": [
+        "CalledProcessError"
+      ],
+      "available": true,
+      "first_rss_kib": 56612,
+      "last_rss_kib": 64488,
+      "sampled_peak_rss_kib": 65844
+    },
+    "sqlite_space": {
+      "available": true,
+      "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+      "page_size": 4096,
+      "page_count": 1958,
+      "freelist_pages": 0,
+      "allocated_bytes": 8019968,
+      "objects": {
+        "index": {
+          "bytes": 4661248,
+          "pages": 1138
+        },
+        "internal": {
+          "bytes": 131072,
+          "pages": 32
+        },
+        "table": {
+          "bytes": 3227648,
+          "pages": 788
+        }
+      }
+    },
+    "observer_log_sha256": "81655c160061abd20d374b265e606abd2d711253fccc48c2a15805df3e186776"
+  },
+  "history_preserved": [
+    "Original hourly HTTP 112/157 errors",
+    "28d handler timeout 900.022s",
+    "4a handler timeout 900.016s",
+    "Earlier diagnostic fixture and counterfactual failures in diagnostic-collection.json"
+  ],
+  "not_verified": [
+    "Long duration growth and capacity ceiling",
+    "MySQL mixed HTTP capacity",
+    "External native delivery/stop confirmation",
+    "External coupon lifecycle",
+    "Independent worker benefit and autoscaling",
+    "Full integrated upgrade from 7c baseline",
+    "Production acceptance"
+  ]
+}

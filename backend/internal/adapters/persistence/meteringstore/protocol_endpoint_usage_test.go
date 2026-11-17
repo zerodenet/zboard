@@ -81,7 +81,7 @@ func TestEndpointUsageProjectionGeneratesMySQLAtomicUpsert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(capture.statement, "ON DUPLICATE KEY UPDATE") || !strings.Contains(capture.statement, "used_bytes + 17") {
+	if !strings.Contains(capture.statement, "ON DUPLICATE KEY UPDATE") || !strings.Contains(capture.statement, "used_bytes + VALUES(used_bytes)") {
 		t.Fatalf("MySQL projection write is not an atomic increment: %s", capture.statement)
 	}
 }

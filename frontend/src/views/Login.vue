@@ -1,5 +1,6 @@
 <template>
   <div class="auth-shell">
+    <AppearanceSwitch floating />
     <aside class="auth-aside">
       <RouterLink class="auth-brand" to="/"><img v-if="store.siteProfile.logoDark || store.siteProfile.logo" class="auth-logo" :src="store.siteProfile.logoDark || store.siteProfile.logo" :alt="store.siteName" /><span v-else class="brand-mark">{{ store.siteName.charAt(0).toUpperCase() || 'Z' }}</span><span>{{ store.siteName }}</span></RouterLink>
       <div class="auth-copy"><p class="page-eyebrow">WELCOME BACK</p><h1>继续管理你的<br />订阅与连接。</h1><p>登录后查看套餐、订单、订阅配置与流量使用，重要信息都在一个地方。</p></div>
@@ -8,6 +9,7 @@
     <main class="auth-main">
       <form ref="formElement" class="auth-card stack" novalidate @submit.prevent="submit">
         <div><p class="page-eyebrow">欢迎回来</p><h2>登录账户</h2><p>使用你的邮箱和密码继续。</p></div>
+        <PageAlert v-if="route.query.reason === 'session-expired'" tone="warning" title="登录已过期">请重新登录以继续操作，登录后会返回刚才的页面。</PageAlert>
         <FormField v-slot="{ controlAttrs }" label="邮箱地址" name="login-email" :error="formErrors.fields.email" required full><UiInput v-model.trim="email" v-bind="controlAttrs" type="email" autocomplete="email" placeholder="name@example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="密码" name="login-password" hint="密码长度为 12–72 个 UTF-8 字节。" :error="formErrors.fields.password" required full><UiInput v-model="password" v-bind="controlAttrs" type="password" minlength="12" maxlength="72" autocomplete="current-password" placeholder="请输入密码" /></FormField>
         <PageAlert v-if="formErrors.formError.value" tone="danger" title="登录未完成">{{ formErrors.formError.value }}</PageAlert>
@@ -22,6 +24,7 @@
 </template>
 
 <script setup lang="ts">
+import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import { ref, watch } from 'vue'
 import PluginSlot from '../plugins/PluginSlot.vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -32,6 +35,8 @@ import PageAlert from '../components/PageAlert.vue'
 import { useFormErrors } from '../composables/useFormState'
 import { useAppStore } from '../stores/app'
 import { collectFieldErrors, isEmail, isUtf8LengthInRange } from '../utils/validation'
+import { consumeAuthReturnPath, hasAuthReturnPath } from '../utils/authReturnPath'
+import { safeReauthenticationRoute } from '../utils/reauthenticationDrafts'
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -52,13 +57,15 @@ async function submit() {
   loading.value = true
   try {
     const result = await login(email.value, password.value)
-    store.setToken(result.auth.token); store.setUser(result.user)
+    await store.acceptAuthenticatedSession(result.auth.token)
+    const hadOwnedReturn = hasAuthReturnPath()
+    const ownedReturn = consumeAuthReturnPath(store.user.id, store.isAdmin)
     await store.loadSystemStatus(true).catch(() => undefined)
-    const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    const requested = hadOwnedReturn ? ownedReturn : safeReauthenticationRoute(typeof route.query.redirect === 'string' ? route.query.redirect : '')
     const accountRequest = requested === '/account' || requested.startsWith('/account/')
     const adminRequest = requested === '/admin' || requested.startsWith('/admin/')
-    const safeRequested = accountRequest || (result.user.is_admin && adminRequest)
-    await router.push(safeRequested ? requested : result.user.is_admin ? '/admin/dashboard' : '/account')
+    const safeRequested = accountRequest || (store.isAdmin && adminRequest)
+    await router.push(safeRequested ? requested : store.isAdmin ? '/admin/dashboard' : '/account')
   } catch (e: any) { await formErrors.applyApiError(e, '登录失败，请检查邮箱和密码。', formElement, { email: 'email', password: 'password' }) }
   finally { loading.value = false }
 }

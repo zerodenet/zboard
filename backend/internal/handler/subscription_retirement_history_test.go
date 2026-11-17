@@ -36,7 +36,7 @@ func TestCleanedSingleUseSubscriptionKeepsAccountOrderHistoryAndCannotBeRecreate
 	if err := f.h.db.Model(&sub).Update("flow_used", sub.FlowTotal).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), time.Now().UTC(), 10); err != nil {
+	if _, err := f.h.services.CredentialExpiry(f.h.credentialCipher).ExpireDue(context.Background(), time.Now().UTC(), 10); err != nil {
 		t.Fatal(err)
 	}
 	var page struct {
@@ -75,7 +75,7 @@ func TestCleanedSingleUseSubscriptionKeepsAccountOrderHistoryAndCannotBeRecreate
 	var count int64
 	f.h.db.Model(&model.Subscription{}).Count(&count)
 	if count != 0 {
-		t.Fatal("late payment created a replacement instance")
+		t.Fatal("late payment recreated a deleted subscription")
 	}
 }
 
@@ -133,14 +133,15 @@ func checkLegacyFixedRetirement(t *testing.T, f orderFixture) {
 	if code := f.get(t, fmt.Sprintf("/api/v1/subscriptions?paged=true&subscription_id=%d&status=active", fixed.SubscriptionID), f.h.SubscriptionsHandler, &removed); code != 200 || removed.Total != 0 {
 		t.Fatal("terminal target selected", code, removed)
 	}
-	if _, err := f.h.services.CredentialExpiry().ExpireDue(context.Background(), time.Now().UTC(), 10); err != nil {
+	if _, err := f.h.services.CredentialExpiry(f.h.credentialCipher).ExpireDue(context.Background(), time.Now().UTC(), 10); err != nil {
 		t.Fatal(err)
 	}
 	var count int64
 	f.h.db.Model(&model.Subscription{}).Where("id = ?", fixed.SubscriptionID).Count(&count)
 	if count != 0 {
-		t.Fatal("instance not cleaned")
+		t.Fatal("terminal live subscription retained")
 	}
+	requireSubscriptionDeleted(t, f.h.db, fixed.SubscriptionID)
 	var order model.Order
 	if err := f.h.db.First(&order, fixed.ID).Error; err != nil || order.SubscriptionEndReason != "exhausted" || order.SubscriptionEndedAt == nil || order.SubscriptionFinalFlowUsed != 1024 || order.Status != "paid" {
 		t.Fatal("history lost", order, err)

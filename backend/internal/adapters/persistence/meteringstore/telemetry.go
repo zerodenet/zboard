@@ -2,6 +2,7 @@ package meteringstore
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -20,7 +21,7 @@ func (s Telemetry) Read(ctx context.Context, actor, subscription uint, connectio
 		var err error
 		out, err = loadTelemetry(tx, subscription, connectionWindow, nodeWindow, now)
 		return err
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return metering.TelemetryMetrics{}, err
 	}
@@ -32,7 +33,7 @@ func (s Telemetry) Sample(ctx context.Context, subscription uint, connectionWind
 		var err error
 		out, err = loadTelemetry(tx, subscription, connectionWindow, nodeWindow, now)
 		return err
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return metering.TelemetryMetrics{}, err
 	}
@@ -70,28 +71,27 @@ func loadTelemetry(db *gorm.DB, subscriptionID uint, connectionWindow, workingNo
 	}
 
 	connectionCutoff := now.Add(-time.Duration(connectionWindow) * time.Second)
-	if err := db.Model(&FlowStartRecord{}).
-		Where("subscription_id = ? AND occurred_at >= ? AND occurred_at <= ?", subscription.ID, connectionCutoff, now).
-		Count(&metrics.ConnectionStarts.Count).Error; err != nil {
+	count, _, err := flowStatisticsWindow(db, subscription.ID, "occurred", connectionCutoff, now)
+	if err != nil {
 		return metrics, err
 	}
-	if err := db.Model(&FlowStartRecord{}).
-		Where("subscription_id = ? AND received_at >= ? AND received_at <= ?", subscription.ID, connectionCutoff, now).
-		Count(&metrics.ReceivedConnectionStarts.Count).Error; err != nil {
+	metrics.ConnectionStarts.Count = count
+	count, _, err = flowStatisticsWindow(db, subscription.ID, "received", connectionCutoff, now)
+	if err != nil {
 		return metrics, err
 	}
-
-	workingNodeCutoff := now.Add(-time.Duration(workingNodeWindow) * time.Second)
-	if err := db.Model(&FlowStartRecord{}).
-		Where("subscription_id = ? AND occurred_at >= ? AND occurred_at <= ?", subscription.ID, workingNodeCutoff, now).
-		Distinct("node_id").Count(&metrics.WorkingNodes.Count).Error; err != nil {
+	metrics.ReceivedConnectionStarts.Count = count
+	nodeCutoff := now.Add(-time.Duration(workingNodeWindow) * time.Second)
+	_, nodes, err := flowStatisticsWindow(db, subscription.ID, "occurred", nodeCutoff, now)
+	if err != nil {
 		return metrics, err
 	}
-	if err := db.Model(&FlowStartRecord{}).
-		Where("subscription_id = ? AND received_at >= ? AND received_at <= ?", subscription.ID, workingNodeCutoff, now).
-		Distinct("node_id").Count(&metrics.ReceivedWorkingNodes.Count).Error; err != nil {
+	metrics.WorkingNodes.Count = nodes
+	_, nodes, err = flowStatisticsWindow(db, subscription.ID, "received", nodeCutoff, now)
+	if err != nil {
 		return metrics, err
 	}
+	metrics.ReceivedWorkingNodes.Count = nodes
 
 	var current PrincipalFlowScopeCurrent
 	currentErr := db.Where("scope_type = ? AND scope_id = ?", ScopeSubscription, subscription.ID).First(&current).Error
@@ -104,7 +104,7 @@ func loadTelemetry(db *gorm.DB, subscriptionID uint, connectionWindow, workingNo
 	}
 
 	var latest FlowStartRecord
-	latestErr := db.Where("subscription_id = ?", subscription.ID).Order("occurred_at desc, id desc").First(&latest).Error
+	latestErr := db.Select("id,occurred_at,received_at").Where("subscription_id = ?", subscription.ID).Order("occurred_at desc, id desc").First(&latest).Error
 	switch {
 	case latestErr == nil:
 		occurred := latest.OccurredAt.UTC()

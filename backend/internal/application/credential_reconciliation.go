@@ -23,3 +23,7 @@ func (s *Services) CredentialPreparation(cipher zeroadapter.Cipher, mieru bool) 
 		DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru},
 	}}
 }
+
+func (s *Services) CredentialMigration(cipher zeroadapter.Cipher, mieru bool) entitlements.CredentialMigration {
+	return entitlements.CredentialMigration{Repository: entitlementstore.CredentialMigration{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
+}

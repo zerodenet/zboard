@@ -16,13 +16,14 @@ type TrafficTrendAggregate struct {
 }
 
 type TrafficTrendPoint struct {
-	Date            string `json:"date"`
-	Label           string `json:"label"`
-	UploadBytes     int64  `json:"upload_bytes"`
-	DownloadBytes   int64  `json:"download_bytes"`
-	UsedBytes       int64  `json:"used_bytes"`
-	PeakConnections *int64 `json:"peak_connections"`
-	RecordCount     int64  `json:"record_count"`
+	ConnectionResolutionSeconds int64  `json:"connection_resolution_seconds,omitempty"`
+	Date                        string `json:"date"`
+	Label                       string `json:"label"`
+	UploadBytes                 int64  `json:"upload_bytes"`
+	DownloadBytes               int64  `json:"download_bytes"`
+	UsedBytes                   int64  `json:"used_bytes"`
+	PeakConnections             *int64 `json:"peak_connections"`
+	RecordCount                 int64  `json:"record_count"`
 }
 
 func BuildTrafficTrendPoints(from time.Time, days int, rows []TrafficTrendAggregate) ([]TrafficTrendPoint, int64) {
@@ -64,9 +65,22 @@ type TrafficTrendReference struct {
 	DisplayName, Secondary, Status string
 }
 type TrafficTrendData struct {
+	History       *HistoryCoverage
 	Snapshot      TrafficTrendSnapshot
 	Subscriptions []TrafficTrendReference
 }
+
+// TrafficTrendScope identifies the authorized calendar view, independently of
+// whether its asynchronous statistics are currently complete.
+type TrafficTrendScope struct {
+	Administrative     bool   `json:"administrative"`
+	UserID             uint   `json:"user_id"`
+	SubscriptionID     uint   `json:"subscription_id"`
+	NodeID             uint   `json:"node_id"`
+	ProtocolEndpointID uint   `json:"protocol_endpoint_id"`
+	TimeZone           string `json:"time_zone"`
+}
+
 type TrafficTrendQuery struct {
 	Administrative                                     bool
 	UserID, SubscriptionID, NodeID, ProtocolEndpointID uint
@@ -76,6 +90,15 @@ type TrafficTrendQuery struct {
 	Timezone                                           string
 	Buckets                                            []TrendBucket
 }
+
+func (q TrafficTrendQuery) Scope(actor uint) TrafficTrendScope {
+	userID := q.UserID
+	if !q.Administrative {
+		userID = actor
+	}
+	return TrafficTrendScope{Administrative: q.Administrative, UserID: userID, SubscriptionID: q.SubscriptionID, NodeID: q.NodeID, ProtocolEndpointID: q.ProtocolEndpointID, TimeZone: q.Timezone}
+}
+
 type TrafficTrendCache interface {
 	Get(context.Context, [32]byte, func() (TrafficTrendSnapshot, error)) (TrafficTrendSnapshot, error)
 }

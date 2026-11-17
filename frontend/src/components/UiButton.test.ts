@@ -1,8 +1,20 @@
 import { mount } from '@vue/test-utils'
+import { h } from 'vue'
 import { describe, expect, it } from 'vitest'
 import UiButton from './UiButton.vue'
 
 describe('UiButton', () => {
+  it('styles a real navigation anchor without nesting a button or changing its destination', () => {
+    const wrapper = mount(UiButton, {
+      props: { asChild: true, variant: 'secondary', size: 'sm' },
+      slots: { default: () => h('a', { href: '/admin/orders?user_id=7', target: '_blank', rel: 'noopener' }, '查看订单') },
+    })
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.get('a').attributes('href')).toBe('/admin/orders?user_id=7')
+    expect(wrapper.get('a').attributes('target')).toBe('_blank')
+    expect(wrapper.get('a').attributes('type')).toBeUndefined()
+    expect(wrapper.get('a').attributes('data-variant')).toBe('secondary')
+  })
   it('uses explicit variants and prevents duplicate submission while loading', () => {
     const wrapper = mount(UiButton, {
       props: { variant: 'danger', size: 'sm', loading: true },

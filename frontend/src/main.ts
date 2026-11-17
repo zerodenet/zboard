@@ -2,9 +2,12 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHistory, isNavigationFailure, NavigationFailureType, type RouteLocationNormalized } from 'vue-router'
 import App from './App.vue'
+import { preparePluginComposition } from './plugins/composition'
+import { useAppearance } from './theme/appearance'
 import { routes } from './router'
 import { useAppStore } from './stores/app'
-import { AUTH_SESSION_EXPIRED_EVENT, resetAuthSessionExpired } from './utils/authSession'
+import { installAuthSessionNavigation } from './utils/authSessionNavigation'
+import { installFrontendLoadRecovery } from './utils/frontendLoadRecovery'
 import { applySiteMetadata } from './utils/siteProfile'
 import { accountPurchaseRoute } from './utils/commerceNavigation'
 import { finishNavigationProgress, navigationProgressGeneration, startNavigationProgress, waitForPagePaint } from './composables/navigationProgress'
@@ -32,6 +35,8 @@ import UiTabs from './components/UiTabs.vue'
 import FormField from './components/FormField.vue'
 import TimeBadge from './components/TimeBadge.vue'
 
+useAppearance()
+
 const router = createRouter({
   history: createWebHistory(),
   routes,
@@ -55,6 +60,7 @@ app.component('FormField', FormField)
 app.component('TimeBadge', TimeBadge)
 const pinia = createPinia()
 app.use(pinia)
+installFrontendLoadRecovery(router)
 app.use(router)
 
 const resolveMeta = (to: RouteLocationNormalized) => {
@@ -68,22 +74,7 @@ const resolveMeta = (to: RouteLocationNormalized) => {
 
 const roleLanding = (store: ReturnType<typeof useAppStore>) => store.isAdmin ? '/admin/dashboard' : '/account'
 
-window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, () => {
-  const store = useAppStore(pinia)
-  const current = router.currentRoute.value
-  store.clear()
-
-  // Initial navigation is still covered by the route guard below. For an already
-  // mounted protected route, move immediately instead of leaving a dead screen
-  // that only recovers after a manual refresh.
-  if (!current.meta.requiresAuth) {
-    resetAuthSessionExpired()
-    return
-  }
-
-  void router.replace({ path: '/login', query: { redirect: current.fullPath } })
-    .finally(resetAuthSessionExpired)
-})
+installAuthSessionNavigation(router, () => useAppStore(pinia).clear(), () => useAppStore(pinia).suspendSession())
 
 router.beforeEach((to, from) => {
   if (from.matched.length && to.fullPath !== from.fullPath) startNavigationProgress()
@@ -91,6 +82,7 @@ router.beforeEach((to, from) => {
 
 router.beforeEach(async (to) => {
   const store = useAppStore(pinia)
+  if (store.reauthRequired) return false
   try {
     await store.loadSetupStatus()
   } catch (_) {
@@ -104,7 +96,7 @@ router.beforeEach(async (to) => {
     return store.isAuthenticated ? roleLanding(store) : '/login'
   }
   if (store.token && !store.user.email) {
-    await store.loadMe()
+    await store.loadMe().catch(() => undefined)
   }
 	try { await store.loadSystemStatus() } catch (_) { /* API calls retain the last known state. */ }
 
@@ -123,6 +115,12 @@ router.beforeEach(async (to) => {
 	return '/account'
   }
 	if (meta.requiresRegistration && !store.installation?.allow_registration) return '/login'
+
+  if (store.isInstalled) {
+    const surface = to.path.startsWith('/admin') ? 'admin' : to.path.startsWith('/account') ? 'account' : 'public'
+    await preparePluginComposition(surface, false, store.token)
+    if (surface !== 'public') void preparePluginComposition('public')
+  }
 
   return true
 })

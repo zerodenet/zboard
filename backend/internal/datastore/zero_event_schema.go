@@ -73,7 +73,9 @@ func ReconcileZeroEventSchema(db *gorm.DB) error {
 			UNIQUE KEY uk_principal_flow_observation_revision (node_id, core_instance_id, session_registry_revision, principal_key),
 			KEY idx_principal_flow_observation_user_time (user_id, observed_at),
 			KEY idx_principal_flow_observation_subscription_time (subscription_id, observed_at),
-			KEY idx_principal_flow_observation_principal_time (node_id, principal_key, observed_at)
+			KEY idx_principal_flow_observation_principal_time (node_id, principal_key, observed_at),
+			KEY idx_principal_flow_observation_user_timeline (user_id, node_id, principal_key, observed_at, id),
+			KEY idx_principal_flow_observation_subscription_timeline (subscription_id, node_id, principal_key, observed_at, id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 		},
 		{
@@ -93,7 +95,8 @@ func ReconcileZeroEventSchema(db *gorm.DB) error {
 			PRIMARY KEY (node_id, principal_key),
 			KEY idx_principal_flow_current_user (user_id),
 			KEY idx_principal_flow_current_subscription (subscription_id),
-			KEY idx_principal_flow_current_instance (node_id, core_instance_id)
+			KEY idx_principal_flow_current_instance (node_id, core_instance_id),
+			KEY idx_principal_flow_current_endpoint_usage (protocol_endpoint_id, active_flows, user_id, observed_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 		},
 		{
@@ -122,7 +125,8 @@ func ReconcileZeroEventSchema(db *gorm.DB) error {
 			created_at datetime(3) NOT NULL,
 			PRIMARY KEY (id),
 			UNIQUE KEY uk_principal_flow_scope_event (scope_type, scope_id, event_id),
-			KEY idx_principal_flow_scope_time (scope_type, scope_id, observed_at)
+			KEY idx_principal_flow_scope_time (scope_type, scope_id, observed_at),
+			KEY idx_principal_flow_scope_boundary_timeline (scope_type, scope_id, source, node_id, observed_at, id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 		},
 	}

@@ -159,12 +159,19 @@ func (h *handlers) runFairUseEvaluationCycleContext(ctx context.Context, now tim
 	if h.backgroundWorkPaused() {
 		return nil
 	}
+	var failures []error
+	retained, retentionErr := h.services.FairUseObservationRetention.Run(ctx, now)
+	if retentionErr != nil {
+		log.Printf("fair use observation retention failed: raw_deleted=%d evaluation_deleted=%d error=%v", retained.FlowStarts, retained.EvaluationEvents, retentionErr)
+		failures = append(failures, retentionErr)
+	} else if retained.FlowStarts != 0 || retained.EvaluationEvents != 0 {
+		log.Printf("fair use observation retention completed: raw_deleted=%d evaluation_deleted=%d", retained.FlowStarts, retained.EvaluationEvents)
+	}
 	subscriptionIDs, err := h.services.FairUseEvaluationSource.Candidates(ctx, now)
 	if err != nil {
 		log.Printf("fair use evaluation policy scan failed: %v", err)
-		return err
+		return errors.Join(append(failures, err)...)
 	}
-	var failures []error
 	for _, subscriptionID := range subscriptionIDs {
 		if err := ctx.Err(); err != nil {
 			return errors.Join(append(failures, err)...)

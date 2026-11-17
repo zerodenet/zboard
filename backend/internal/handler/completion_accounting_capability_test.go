@@ -42,6 +42,7 @@ func TestCompletionCapabilityRollsBackExhaustionAndReplays(t *testing.T) {
 		t.Fatal("exhaustion did not suspend credentials", current.Status, err)
 	}
 	var usage model.ProtocolEndpointUsageDaily
+	drainUsageProjections(t, h.db)
 	if err := h.db.First(&usage, "protocol_endpoint_id = ?", credential.ProtocolEndpointID).Error; err != nil || usage.UsedBytes != 20 || usage.RecordCount != 1 {
 		t.Fatalf("completion usage projection: %+v %v", usage, err)
 	}
@@ -74,10 +75,10 @@ func TestSingleUseAccountingFreezesRenewalDeadlineBeforeWorkerRuns(t *testing.T)
 		t.Fatal(sub, err)
 	}
 	ended := *sub.EndedAt
-	if due, err := h.services.CredentialExpiry().HasDue(context.Background(), ended.Add(time.Hour)); err != nil || !due {
+	if due, err := h.services.CredentialExpiry(h.credentialCipher).HasDue(context.Background(), ended.Add(time.Hour)); err != nil || !due {
 		t.Fatal("terminal snapshot not scheduled", due, err)
 	}
-	if _, err := h.services.CredentialExpiry().ExpireDue(context.Background(), ended.Add(time.Hour), 10); err != nil {
+	if _, err := h.services.CredentialExpiry(h.credentialCipher).ExpireDue(context.Background(), ended.Add(time.Hour), 10); err != nil {
 		t.Fatal(err)
 	}
 	sub = model.Subscription{}
@@ -87,7 +88,7 @@ func TestSingleUseAccountingFreezesRenewalDeadlineBeforeWorkerRuns(t *testing.T)
 	if err := h.db.First(&order, order.ID).Error; err != nil || order.SubscriptionEndedAt == nil || !order.SubscriptionEndedAt.Equal(ended) || order.SubscriptionFinalFlowUsed != 20 {
 		t.Fatal("terminal snapshot missing", order, err)
 	}
-	if due, err := h.services.CredentialExpiry().HasDue(context.Background(), ended.Add(time.Hour)); err != nil || due {
+	if due, err := h.services.CredentialExpiry(h.credentialCipher).HasDue(context.Background(), ended.Add(time.Hour)); err != nil || due {
 		t.Fatal("worker did not converge", due, err)
 	}
 }

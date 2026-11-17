@@ -3,6 +3,7 @@
     <form id="plugin-json-form" ref="formElement" novalidate @submit.prevent="save">
       <PageAlert v-if="formErrors.formError.value" tone="danger">{{ formErrors.formError.value }}</PageAlert>
       <PageAlert v-if="error" tone="danger">{{ error }}<template #actions><UiButton variant="secondary" @click="load">重试</UiButton></template></PageAlert>
+      <PageAlert v-if="dirty || saving" tone="warning" title="插件配置不能暂存到第三方登录页">完整 JSON 可能包含密钥，系统不会把它写入浏览器草稿。请留在本页使用邮箱密码重新认证，或自行安全另存、明确放弃修改后再打开第三方登录；当前内容不会自动保存或提交。</PageAlert>
       <PageAlert tone="warning">保存将完整替换旧配置，请包含需要保留的全部提供方和密钥。系统不会回显已有密钥。</PageAlert>
       <p v-if="loading" role="status">正在读取配置版本…</p>
       <p v-else-if="config">{{ config.configured ? '已有配置' : '尚未配置' }} · 修订 {{ config.revision }}</p>
@@ -27,11 +28,20 @@ import UiButton from '../components/UiButton.vue'
 import { fetchPluginConfig, savePluginConfig, type ConfigView } from '../api/plugins'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
 const props = defineProps<{ pluginId: string }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const text = ref(''), saving = ref(false), formElement = ref<HTMLElement | null>(null)
 const formErrors = useFormErrors()
 const { dirty, markClean, confirmDiscard } = useDirtyForm(() => text.value)
+// Register only a blocker. Never read, parse, sanitize, hash or persist JSON
+// through the recovery system. Clean or closed dialogs contribute no draft.
+useReauthenticationDraft({
+  scope: 'admin.plugin-config.blocker', permission: 'admin', ready: () => false,
+  read: () => dirty.value || saving.value ? { blocked: true } : null,
+  sanitize: () => undefined,
+  restore: () => false,
+})
 useUnsavedChangesGuard(() => saving.value || dirty.value, () => saving.value ? false : confirmDiscard())
 onBeforeRouteUpdate(() => saving.value ? false : confirmDiscard())
 let disposed = false

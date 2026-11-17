@@ -1,29 +1,30 @@
 <template>
-  <ModalDialog :open="open" title="分配订单" description="为指定用户选择商品和规格，创建订单并保留分配记录。" :busy="saving" @close="emit('close')">
-    <form id="assign-order-form" ref="formElement" class="modal-form" novalidate @submit.prevent="submit">
+  <ModalDialog :open="open" title="分配订单" description="为用户创建待付款订单。" :busy="saving" @close="emit('close')">
+    <form id="assign-order-form" ref="formElement" class="assignment-form" novalidate @submit.prevent="submit">
       <PageAlert v-if="formErrors.formError.value" tone="danger" title="订单分配失败">{{ formErrors.formError.value }}</PageAlert>
       <FormField v-slot="{ controlId }" label="用户" name="assign-user" required full :error="fields.user_id">
-        <AdminOrderLookup v-model="user" :input-id="controlId" label="用户" placeholder="输入邮箱搜索用户" :fetch-page="loadUsers" :disabled="saving || userLoading" />
+        <AdminOrderLookup v-model="user" :input-id="controlId" label="用户" placeholder="选择用户，或输入邮箱搜索" :fetch-page="loadUsers" :disabled="saving || userLoading" />
         <small v-if="userLoading">正在加载用户…</small>
       </FormField>
       <FormField v-slot="{ controlAttrs }" label="权益操作" name="assign-operation" full>
         <UiSelect v-model="operation" v-bind="controlAttrs" :options="operationOptions" :disabled="saving" />
       </FormField>
       <FormField v-if="operation !== 'purchase'" v-slot="{ controlId }" label="目标订阅" name="assign-target" required full :error="fields.target_subscription_id">
-        <AdminOrderLookup :key="`target-${user?.id || 0}-${operation}`" v-model="target" :input-id="controlId" label="目标订阅" placeholder="搜索该用户的订阅" :fetch-page="loadTargets" :disabled="saving || !user" />
+        <AdminOrderLookup :key="`target-${user?.id || 0}-${operation}`" v-model="target" :input-id="controlId" label="目标订阅" placeholder="选择该用户的订阅，或输入关键词搜索" :fetch-page="loadTargets" :disabled="saving || !user" />
       </FormField>
       <FormField v-slot="{ controlId }" label="商品" name="assign-plan" required full :error="fields.plan_id">
-        <AdminOrderLookup :key="`plan-${operation}-${target?.id || 0}`" v-model="plan" :input-id="controlId" label="商品" placeholder="输入商品名称搜索" :fetch-page="loadPlans" :disabled="saving || (operation !== 'purchase' && !target)" />
+        <AdminOrderLookup :key="`plan-${operation}-${target?.id || 0}`" v-model="plan" :input-id="controlId" label="商品" placeholder="选择商品，或输入名称搜索" :fetch-page="loadPlans" :disabled="saving || (operation !== 'purchase' && !target)" />
       </FormField>
       <FormField v-slot="{ controlId }" label="销售规格" name="assign-sku" required full :error="fields.plan_sku_id">
         <AdminOrderLookup :key="`sku-${plan?.id || 0}-${operation}`" v-model="sku" :input-id="controlId" label="销售规格" placeholder="选择销售规格" :fetch-page="loadSKUs" :disabled="saving || !plan" />
       </FormField>
-      <FormField v-slot="{ controlAttrs }" label="应付金额" name="assign-amount" required full :error="fields.payable_amount" :hint="sku?.sku ? `规格原价 ${formatCurrency(sku.sku.price_cents, sku.sku.currency)}；可调整本笔订单的付款金额。` : '请先选择销售规格。'">
+      <p v-if="quoteLoading" class="assignment-quote-status" role="status">正在计算应付金额…</p>
+      <FormField v-if="!needsQuote || quoteReady" v-slot="{ controlAttrs }" label="应付金额" name="assign-amount" required full :error="fields.payable_amount" :hint="sku?.sku ? `规格原价 ${formatCurrency(sku.sku.price_cents, sku.sku.currency)}；可调整本笔订单的付款金额。` : '请先选择销售规格。'">
         <MoneyInput v-model="payableAmount" v-bind="controlAttrs" :currency="sku?.sku?.currency || 'CNY'" :min-cents="0" :max-cents="Number.MAX_SAFE_INTEGER" :step-cents="1" :disabled="saving || !sku || quoteLoading" />
       </FormField>
-      <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="quoteResource.load()">重新报价</UiButton></PageAlert>
-      <p v-if="quote && operation === 'change'">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}，默认应付 {{ formatCurrency(quote.payable_amount, quote.currency) }}。</p>
-      <PageAlert tone="info" title="等待用户付款">订单会出现在该用户的订单列表，付款确认后开通权益。<span v-if="sku?.sku">应付 {{ formatCurrency(payableAmount, sku.sku.currency) }}。</span></PageAlert>
+      <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="loadQuote">重新报价</UiButton></PageAlert>
+      <p v-if="quoteReady && quote?.change_mode === 'full_term' && operation === 'change'">完整新套餐价格 {{ formatCurrency(quote.payable_amount, quote.currency) }}；旧权益结算 {{ formatWalletMoney(quote.settlement_amount ?? '0', quote.currency) }}，结余 {{ formatWalletMoney(quote.surplus_amount ?? '0', quote.currency) }} 入余额。最终资金分配和履约会重新核对。</p>
+      <p v-else-if="quoteReady && quote && operation === 'change'">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}，默认应付 {{ formatCurrency(quote.payable_amount, quote.currency) }}。</p>
       <FormField v-slot="{ controlAttrs }" label="分配原因" name="assign-note" required full :error="fields.note" hint="记录在管理员订单详情与审计日志中。">
         <UiTextarea v-model="note" v-bind="controlAttrs" :disabled="saving" :maxlength="500" rows="3" placeholder="例如：按客户要求代下单，选择月付规格" />
       </FormField>
@@ -46,6 +47,7 @@ import AdminOrderLookup from './AdminOrderLookup.vue'
 import type { AssignmentChoice } from '../utils/adminOrderAssignment'
 import { commerceErrorMessage } from '../utils/commerceErrors'
 import { useFormErrors } from '../composables/useFormState'
+import { formatWalletMoney } from '../utils/walletMoney'
 import { formatCurrency } from '../utils/format'
 const props = defineProps<{ open: boolean; userId?: number }>()
 const emit = defineEmits<{ close: []; assigned: [order: AdminOrderDetail] }>()
@@ -59,25 +61,32 @@ const quoteResource = useRemoteResource<OrderPreview | null>({
   errorMessage: '报价失败，请重新选择目标订阅和规格。',
 })
 const { data: quote, loading: quoteLoading, error: quoteError } = quoteResource
+const quoteKey = computed(() => props.open && needsQuote.value && user.value && target.value && sku.value ? `${user.value.id}:${target.value.id}:${sku.value.id}:${operation.value}` : '')
+const quotedKey = ref('')
+const quoteReady = computed(() => Boolean(quoteKey.value && quotedKey.value === quoteKey.value && quote.value && !quoteLoading.value && !quoteError.value))
+async function loadQuote() {
+  const key = quoteKey.value
+  if (!key) return
+  if (await quoteResource.load() && key === quoteKey.value) { quotedKey.value = key; payableAmount.value = quote.value!.payable_amount }
+}
 const saving = ref(false), userLoading = ref(false)
 const formElement = ref<HTMLElement | null>(null)
 const formErrors = useFormErrors()
 const { fields, formError, clear: clearErrors, applyValidation, applyApiError } = formErrors
 const operationOptions = [{ label: '新开订阅', value: 'purchase' }, { label: '续费 / 补充额度', value: 'renew' }, { label: '切换套餐', value: 'change' }, { label: '添加流量包', value: 'addon' }, { label: '重置流量', value: 'reset' }]
-const canSubmit = computed(() => !saving.value && !userLoading.value && (!needsQuote.value || Boolean(quote.value)) && !!user.value && !!plan.value && !!sku.value && !!note.value.trim() && Number.isSafeInteger(payableAmount.value) && payableAmount.value >= 0 && (operation.value === 'purchase' || !!target.value))
+const canSubmit = computed(() => props.open && !saving.value && !userLoading.value && (!needsQuote.value || quoteReady.value) && !!user.value && !!plan.value && !!sku.value && !!note.value.trim() && Number.isSafeInteger(payableAmount.value) && payableAmount.value >= 0 && (operation.value === 'purchase' || !!target.value))
 let hydration: AbortController | null = null
 let attempt: { signature: string; id: string } | null = null
-watch(user, () => { target.value = null; clearErrors('user_id') })
-watch(operation, () => { target.value = null; plan.value = null })
-watch(target, () => { plan.value = null; clearErrors('target_subscription_id') })
-watch(plan, () => { sku.value = null; clearErrors('plan_id') })
-watch(() => [sku.value?.id, user.value?.id, target.value?.id, operation.value], async () => {
-  quoteResource.reset()
-  payableAmount.value = sku.value?.sku?.price_cents || 0
+watch(user, () => { target.value = null; clearErrors('user_id') }, { flush: 'sync' })
+watch(operation, () => { target.value = null; plan.value = null }, { flush: 'sync' })
+watch(target, () => { plan.value = null; clearErrors('target_subscription_id') }, { flush: 'sync' })
+watch(plan, () => { sku.value = null; clearErrors('plan_id') }, { flush: 'sync' })
+watch(() => [sku.value?.id, user.value?.id, target.value?.id, operation.value, props.open], () => {
+  quoteResource.reset(); quotedKey.value = ''
+  payableAmount.value = needsQuote.value ? 0 : sku.value?.sku?.price_cents || 0
   clearErrors('plan_sku_id')
-  if (needsQuote.value && user.value && sku.value && target.value && await quoteResource.load()) payableAmount.value = quote.value!.payable_amount
-})
-watch(quote, value => { if (value) payableAmount.value = value.payable_amount })
+  if (quoteKey.value) void loadQuote()
+}, { flush: 'sync' })
 watch(payableAmount, () => clearErrors('payable_amount'))
 watch(note, () => clearErrors('note'))
 watch(() => [props.open, props.userId] as const, async ([open, id]) => {
@@ -109,7 +118,7 @@ async function loadSKUs(q: string, offset: number, signal: AbortSignal) {
   return { ...page, items: page.items.map(item => ({ id: item.id, label: `${item.name} · ${formatCurrency(item.price_cents, item.currency)} · #${item.id}`, sku: item })) }
 }
 async function submit() {
-  if (saving.value || userLoading.value || (needsQuote.value && !quote.value)) return
+  if (!props.open || saving.value || userLoading.value || (needsQuote.value && !quoteReady.value)) return
   const validation: Record<string, string> = {}
   if (!user.value) validation.user_id = '请选择用户。'
   if (!plan.value) validation.plan_id = '请选择商品。'
@@ -126,9 +135,15 @@ async function submit() {
   try { const order = await assignAdminOrder({ ...payload, request_id: attempt.id }); emit('assigned', order) }
   catch (cause: any) {
     await applyApiError(cause, commerceErrorMessage(cause, '订单分配失败，请重试。'), formElement)
-    if (needsQuote.value && cause?.response?.status === 400) { quoteResource.reset(); void quoteResource.load() }
+    if (needsQuote.value && cause?.response?.status === 400) { quoteResource.reset(); quotedKey.value = ''; void loadQuote() }
   }
   finally { saving.value = false }
 }
 onBeforeUnmount(() => hydration?.abort())
 </script>
+
+<style scoped>
+.assignment-form { display: grid; gap: 16px; }
+.assignment-form :deep(.page-alert) { margin: 0; }
+.assignment-quote-status { margin: 0; font-size: 13px; color: var(--muted-foreground); }
+</style>

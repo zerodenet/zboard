@@ -7,9 +7,8 @@
     <div class="storefront-detail__layout">
       <div class="storefront-detail__main">
         <header class="storefront-detail__hero">
-          <span>{{ plan.slug }}</span>
           <h1>{{ plan.name }}</h1>
-          <p>{{ plan.summary || '稳定、透明的订阅服务。' }}</p>
+          <p v-if="plan.summary">{{ plan.summary }}</p>
         </header>
 
         <div class="storefront-entitlement-grid">
@@ -43,15 +42,14 @@
           </template>
         </div>
 
-        <section v-if="plan.description?.trim()" class="storefront-plan-description" aria-label="商品描述">
-          <h2>商品描述</h2>
+        <section v-if="plan.description?.trim()" class="storefront-plan-description" aria-label="套餐说明">
+          <h2>套餐说明</h2>
           <p>{{ plan.description }}</p>
         </section>
 
         <section class="storefront-specifications">
           <div class="storefront-section-heading">
             <div>
-              <span>{{ operationLabel }}</span>
               <h2>选择规格</h2>
             </div>
             <small v-if="skuTotal">{{ skuTotal }} 个可用规格</small>
@@ -74,7 +72,7 @@
               <span class="storefront-sku-grid__check"><UiIcon name="check" /></span>
               <div>
                 <strong>{{ sku.name }}</strong>
-                <small :title="billingLabel(sku)">{{ billingLabel(sku) }}</small>
+                <small v-overflow-title="billingLabel(sku)">{{ billingLabel(sku) }}</small>
               </div>
               <b>{{ formatCurrency(sku.price_cents, sku.currency) }}</b>
               <p v-if="mode === 'addon' && sku.grant_traffic_bytes > 0">
@@ -92,8 +90,7 @@
       </div>
 
       <aside class="storefront-order-summary">
-        <span>订单摘要</span>
-        <h2>{{ plan.name }}</h2>
+        <h2>订单摘要</h2>
         <dl>
           <div v-if="targetName"><dt>目标订阅</dt><dd>{{ targetName }}</dd></div>
           <div><dt>操作</dt><dd>{{ operationLabel }}</dd></div>
@@ -102,9 +99,16 @@
           <div v-if="mode === 'renew'"><dt>再次购买效果</dt><dd>{{ selectedSku ? renewalEffectLabel(selectedSku) : '—' }}</dd></div>
         </dl>
         <div class="storefront-order-summary__total">
-          <span>应付金额</span>
-          <strong>{{ mode === 'change' || mode === 'reset' ? (quote ? formatCurrency(quote.payable_amount, quote.currency) : '正在核算…') : selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
-          <p v-if="mode === 'change' && quote">原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}；按剩余时间和剩余流量价值取较小值，抵扣最多为新规格价格，到期时间保持不变。</p>
+          <span>{{ quote?.change_mode === 'full_term' ? '新套餐完整价格' : '应付金额' }}</span>
+          <strong>{{ mode === 'renew' || mode === 'change' || mode === 'reset' ? (quote ? formatCurrency(quote.payable_amount, quote.currency) : '正在核算…') : selectedSku ? formatCurrency(selectedSku.price_cents, selectedSku.currency) : '—' }}</strong>
+          <p v-if="mode === 'renew' && quote?.requires_price_acceptance">此币种或付费周期尚无购买锁价；继续即确认本次显示的新报价，成交后按本次基础价锁定该周期续费。原周期锁价仍保留。</p>
+          <p v-else-if="mode === 'renew'">续费按已购币种和周期的基础价报价；规格列表显示当前目录参考价。</p>
+          <template v-if="mode === 'change' && quote?.change_mode === 'full_term'">
+            <p>旧权益结算 {{ formatWalletMoney(quote.settlement_amount ?? '0', quote.currency) }}（当前周期 {{ formatWalletMoney(quote.current_residual ?? '0', quote.currency) }}，未来周期 {{ formatWalletMoney(quote.future_residual ?? '0', quote.currency) }}）。</p>
+            <p>用于本单 {{ formatCurrency(quote.credit_amount, quote.currency) }}，结余入余额 {{ formatWalletMoney(quote.surplus_amount ?? '0', quote.currency) }}，另需支付 {{ formatWalletMoney(quote.additional_amount ?? '0', quote.currency) }}。</p>
+            <p>履约成功时旧权益终止，新套餐获得完整新期间和流量；保留订阅地址，旧剩余时间及流量不再叠加。上方为新套餐完整价格。</p>
+          </template>
+          <p v-else-if="mode === 'change' && quote">历史报价：原套餐抵扣 {{ formatCurrency(quote.credit_amount, quote.currency) }}，保留原到期时间。</p>
           <p v-if="mode === 'reset'">恢复一整份本周期套餐流量，剩余额度不会叠加。</p>
         </div>
         <PageAlert v-if="quoteError" tone="danger" title="报价失败">{{ quoteError }}<UiButton variant="secondary" @click="$emit('retry-quote')">重新报价</UiButton></PageAlert>
@@ -121,7 +125,7 @@
             <span>我已阅读并同意以上与本次购买相关的服务规则</span>
           </label>
         </div>
-        <UiButton type="button" :disabled="loading || quoteLoading || Boolean(quoteError) || ((mode === 'change' || mode === 'reset') && !quote) || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
+        <UiButton type="button" :disabled="loading || quoteLoading || Boolean(quoteError) || ((mode === 'renew' || mode === 'change' || mode === 'reset') && !quote) || Boolean(error) || !selectedSku || (hasPurchasePolicies && !purchasePoliciesAccepted)" @click="$emit('continue')">
           {{ continueLabel }}<UiIcon name="chevron" />
         </UiButton>
       </aside>
@@ -138,9 +142,11 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, ref, watch } from 'vue'
 import type { PlanCatalogItem, PlanSKU, OrderPreview } from '../api/client'
 import { useAppStore } from '../stores/app'
+import { formatWalletMoney } from '../utils/walletMoney'
 import { formatBytes, formatCurrency } from '../utils/format'
 import { policyDocumentsFor } from '../utils/siteProfile'
 import LegalContentDialog from './LegalContentDialog.vue'
@@ -159,6 +165,7 @@ const props = withDefaults(defineProps<{
   selectedSkuId?: number
   operationLabel?: string
   mode?: 'purchase' | 'renew' | 'change' | 'addon' | 'reset'
+  renewalRecovering?: boolean
   quote?: OrderPreview | null
   quoteLoading?: boolean
   quoteError?: string
@@ -221,6 +228,8 @@ function billingLabel(sku: PlanSKU) {
 }
 
 function renewalEffectLabel(sku: PlanSKU) {
+  if (props.renewalRecovering) return '恢复服务，并开始新的套餐周期和流量额度'
+  if (sku.billing_unit !== 'once') return '只延长有效期，保留当前用量和流量重置日期'
   return ({
     none: '不适用',
     extend_only: '只延长有效期，流量不叠加',
@@ -236,7 +245,7 @@ function renewalEffectLabel(sku: PlanSKU) {
 .storefront-policy-links > strong :deep(.ui-icon) { color: var(--warning); font-size: 17px; }
 .storefront-policy-links p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
 .storefront-policy-links > div { display: grid; gap: 7px; }
-.storefront-policy-links button { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 38px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--primary); font-size: 12px; font-weight: 700; cursor: pointer; text-align: left; }
+.storefront-policy-links button { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 38px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--primary); font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; }
 .storefront-policy-links button:hover { border-color: var(--primary-border); background: var(--primary-soft); }
-.storefront-policy-consent { display: flex; align-items: flex-start; gap: 9px; padding-top: 10px; border-top: 1px solid var(--warning-border); color: var(--text); font-size: 12px; font-weight: 700; line-height: 1.5; cursor: pointer; }
+.storefront-policy-consent { display: flex; align-items: flex-start; gap: 9px; padding-top: 10px; border-top: 1px solid var(--warning-border); color: var(--text); font-size: 12px; font-weight: 600; line-height: 1.5; cursor: pointer; }
 </style>

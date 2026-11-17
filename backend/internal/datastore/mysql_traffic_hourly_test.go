@@ -1,6 +1,7 @@
 package datastore_test
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -24,7 +25,7 @@ const hourlyAppVersion = "0025_traffic_hourly_application.up.sql"
 
 // Never touch the supplied schema: root is used only to provision a disposable
 // schema and an account with ALL on that schema, without any global privilege.
-func hourlyMySQLFixture(t *testing.T) (*gorm.DB, *sql.DB) {
+func hourlyMySQLFixture(t testing.TB) (*gorm.DB, *sql.DB) {
 	t.Helper()
 	dsn := os.Getenv("ZBOARD_TEST_MYSQL_DSN")
 	if dsn == "" {
@@ -243,6 +244,9 @@ func verifyHourlyAccounting(t *testing.T, db *gorm.DB) {
 	}
 	if err := db.Transaction(write); err != nil {
 		t.Fatal(err)
+	}
+	if count, err := (meteringstore.UsageProjectionWorker{DB: db}).Drain(context.Background(), 200); err != nil || count != 2 {
+		t.Fatal(count, err)
 	}
 	assertHourlyTotals(t, db, 5, 156, 62, 94, 94)
 	// A duplicate fails before the projection; the transaction cannot add twice.

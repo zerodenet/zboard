@@ -34,8 +34,16 @@ managed_pids() {
     done
 }
 
+read_load_state() {
+    if cleanup_load=$(ctl show "$cleanup_unit" --property=LoadState --value); then :
+    else [ "$cleanup_load" = not-found ] || fail 'cannot query systemd'; fi
+}
 verify_unit() {
-    cleanup_command=$(ctl show "$cleanup_unit" --property=ExecStart --value) || fail 'cannot query systemd'
+    read_load_state
+    cleanup_command=''
+    if [ "$cleanup_load" != not-found ]; then
+        cleanup_command=$(ctl show "$cleanup_unit" --property=ExecStart --value) || fail 'cannot query systemd'
+    fi
     if [ -n "$cleanup_command" ]; then
         printf '%s\n' "$cleanup_command" | grep -Eq '(^|[[:space:]=])/usr/local/bin/zero([[:space:];]|$)' || fail 'service uses another binary'
         printf '%s\n' "$cleanup_command" | grep -Eq '(^|[[:space:]])/etc/zerodenet/current[.]json([[:space:];}]|$)' || fail 'service uses another configuration'
@@ -62,7 +70,7 @@ wait_managed_processes() {
 }
 stop_zero() {
     verify_unit
-    cleanup_load=$(ctl show "$cleanup_unit" --property=LoadState --value) || fail 'cannot query systemd'
+    read_load_state
     if [ "$cleanup_load" != not-found ]; then
         ctl disable "$cleanup_unit" >/dev/null || fail 'could not disable service startup'
         ctl stop "$cleanup_unit" >/dev/null 2>&1 || :
@@ -79,7 +87,8 @@ stop_zero() {
         wait_managed_processes
     done
     [ -z "$(managed_pids)" ] || fail 'managed processes remain; files have not been removed'
-    if service_active; then fail 'service remains active; files have not been removed'; fi
+    read_load_state
+    if [ "$cleanup_load" != not-found ] && service_active; then fail 'service remains active; files have not been removed'; fi
     printf '%s\n' 'Zero stopped; service autostart disabled. Configuration and queues retained.'
 }
 
@@ -97,7 +106,8 @@ check_path() {
 }
 uninstall_zero() {
     set -- "$cleanup_root/etc/systemd/system/zero.service" "$cleanup_root/etc/systemd/system/zero.service.d" \
-        "$cleanup_root$cleanup_binary" "$cleanup_root/etc/zerodenet" "$cleanup_root/var/lib/zerodenet" "$cleanup_root/run/zerodenet"
+        "$cleanup_root$cleanup_binary" "$cleanup_root/etc/zerodenet" "$cleanup_root/run/zerodenet"
+    if [ "$cleanup_keep_state" = no ]; then set -- "$@" "$cleanup_root/var/lib/zerodenet"; fi
     if [ "$cleanup_certificates" = yes ]; then
         set -- "$@" "$cleanup_root/etc/zboard/certificates"
         for cleanup_section in live archive renewal; do
@@ -124,6 +134,7 @@ uninstall_zero() {
     done
     ctl daemon-reload || fail 'files removed, but daemon-reload failed'
     printf '%s\n' 'Managed Zero files removed. The cleanup utility is retained for reuse.'
+    if [ "$cleanup_keep_state" = yes ]; then printf '%s\n' 'Persistent event state retained at /var/lib/zerodenet.'; fi
     if [ "$cleanup_certificates" = yes ]; then
         printf '%s\n' 'ZBoard certificate files removed locally; CA revocation and provider DNS were not changed.'
     fi
@@ -142,6 +153,7 @@ main() {
     cleanup_action=status
     cleanup_yes=no
     cleanup_certificates=no
+    cleanup_keep_state=no
     cleanup_action_set=no
     for cleanup_arg in "$@"; do
         case "$cleanup_arg" in
@@ -150,14 +162,16 @@ main() {
                 cleanup_action=$cleanup_arg; cleanup_action_set=yes;;
             --yes) cleanup_yes=yes;;
             --certificates) cleanup_certificates=yes;;
+            --keep-state) cleanup_keep_state=yes;;
             --help|-h)
-                printf '%s\n' 'Usage: sh cleanup-zero-node.sh [status|stop|uninstall] [--yes] [--certificates]'
+                printf '%s\n' 'Usage: sh cleanup-zero-node.sh [status|stop|uninstall] [--yes] [--certificates] [--keep-state]'
                 self_removal_help
                 return 0;;
             *) fail "unknown argument: $cleanup_arg";;
         esac
     done
     [ "$cleanup_certificates" = no ] || [ "$cleanup_action" = uninstall ] || fail '--certificates requires uninstall'
+    [ "$cleanup_keep_state" = no ] || [ "$cleanup_action" = uninstall ] || fail '--keep-state requires uninstall'
     if [ "$cleanup_action" != status ]; then
         [ "$cleanup_yes" = yes ] && [ "$(id -u)" = 0 ] || fail 'stop/uninstall requires root and --yes'
     fi

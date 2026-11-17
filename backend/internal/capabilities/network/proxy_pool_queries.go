@@ -12,22 +12,28 @@ var (
 )
 
 type ProxyPoolRecord struct {
-	ID                        uint       `json:"id"`
-	NodeID                    uint       `json:"node_id"`
-	Name                      string     `json:"name"`
-	SubscriptionFormat        string     `json:"subscription_format,omitempty"`
-	AutoSync                  bool       `json:"auto_sync"`
-	SyncIntervalSeconds       int        `json:"sync_interval_seconds"`
-	SubscriptionNodeCount     int        `json:"subscription_node_count"`
-	LastSyncAt                *time.Time `json:"last_sync_at,omitempty"`
-	NextSyncAt                *time.Time `json:"next_sync_at,omitempty"`
-	LastSyncError             string     `json:"last_sync_error,omitempty"`
-	Revision                  uint64     `json:"revision"`
-	CreatedAt                 time.Time  `json:"created_at"`
-	UpdatedAt                 time.Time  `json:"updated_at"`
-	ConfigCiphertext          string     `json:"-"`
-	SubscriptionURLCiphertext string     `json:"-"`
-	SubscriptionUserAgent     string     `json:"-"`
+	ID                        uint            `json:"id"`
+	NodeID                    uint            `json:"node_id"`
+	Name                      string          `json:"name"`
+	SubscriptionFormat        string          `json:"subscription_format,omitempty"`
+	AutoSync                  bool            `json:"auto_sync"`
+	SyncIntervalSeconds       int             `json:"sync_interval_seconds"`
+	SubscriptionNodeCount     int             `json:"subscription_node_count"`
+	LastSyncAt                *time.Time      `json:"last_sync_at,omitempty"`
+	NextSyncAt                *time.Time      `json:"next_sync_at,omitempty"`
+	LastSyncError             string          `json:"last_sync_error,omitempty"`
+	Revision                  uint64          `json:"revision"`
+	CreatedAt                 time.Time       `json:"created_at"`
+	UpdatedAt                 time.Time       `json:"updated_at"`
+	ConfigCiphertext          string          `json:"-"`
+	SubscriptionURLCiphertext string          `json:"-"`
+	SubscriptionUserAgent     string          `json:"-"`
+	Nodes                     []ProxyPoolNode `json:"nodes"`
+}
+
+type ProxyPoolNode struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
 }
 
 type ProxyPool struct {
@@ -56,7 +62,7 @@ type ProxyPoolQueries struct {
 }
 
 func (q ProxyPoolQueries) List(ctx context.Context, actor, nodeID uint) ([]ProxyPool, error) {
-	if q.Repository == nil || actor == 0 || nodeID == 0 {
+	if q.Repository == nil || actor == 0 {
 		return nil, ErrProxyPoolQueryUnavailable
 	}
 	return q.Repository.ListProxyPools(ctx, actor, nodeID)

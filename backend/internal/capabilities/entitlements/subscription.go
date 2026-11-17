@@ -3,10 +3,16 @@ package entitlements
 import "time"
 
 type Subscription struct {
+	CredentialMaterialMode  uint8  `json:"credential_material_mode,omitempty"`
+	EntitlementEpoch        uint64 `json:"-"`
+	KernelPolicyRevision    uint64 `json:"-"`
+	KernelPolicyFingerprint string `json:"-"`
+
 	Lifecycle             string     `json:"lifecycle"`
 	EndsOnQuotaExhaustion bool       `json:"ends_on_quota_exhaustion"`
 	EndedAt               *time.Time `json:"ended_at,omitempty"`
 	EndReason             string     `json:"end_reason,omitempty"`
+	RetirementRetryAt     *time.Time `json:"-"`
 
 	ID                uint       `json:"id"`
 	UserID            uint       `json:"user_id"`

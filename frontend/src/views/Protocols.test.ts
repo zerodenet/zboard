@@ -1,13 +1,16 @@
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Protocols from './Protocols.vue'
+import ProtocolMultiplierCell from '../components/ProtocolMultiplierCell.vue'
 import FormField from '../components/FormField.vue'
 import NodeGroupMembershipEditor from '../components/NodeGroupMembershipEditor.vue'
 import NodeGroupLookup from '../components/NodeGroupLookup.vue'
 import WorkbenchFilterLookup from '../components/WorkbenchFilterLookup.vue'
-import { fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchProtocolEndpointsPage, getVersion, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpointsBatch } from '../api/client'
+import RealityDomainProbe from '../components/RealityDomainProbe.vue'
+import { deployProtocolEndpoint, fetchProtocolEndpoint, fetchProtocolEndpointUsageResets, fetchProtocolEndpointsPage, getVersion, resetProtocolEndpointUsage, saveNetworkEntry, updateProtocolEndpointsBatch } from '../api/client'
 import { trackedTaskSummaries } from '../utils/taskTracker'
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), order: vi.fn(), saveOrder: vi.fn() }))
@@ -21,11 +24,13 @@ vi.mock('../api/client', async (importOriginal) => ({
   fetchProtocolDeployments: vi.fn(async () => ({ items: [], total: 0 })),
   fetchNodesPage: vi.fn(async () => ({ items: [{ id: 1, name: 'Fixture VPS', address: '192.0.2.1', is_enabled: true, kernel_state: { installed_version: '0.0.1-rc.1' } }] })),
   fetchManagedCertificatesPage: vi.fn(async () => ({ items: [] })),
+  generateRealityKeyPair: vi.fn(async () => ({ private_key: 'private-fixture', public_key: 'public-fixture', short_id: '0123456789abcdef' })),
   fetchNodeGroupsPage: vi.fn(async () => ({ items: [], total: 0 })),
   createProtocolEndpoint: mocks.create,
   fetchSubscriptionDeliveryOrder: mocks.order,
   updateSubscriptionDeliveryOrder: mocks.saveOrder,
   saveNetworkEntry: vi.fn(),
+  deployProtocolEndpoint: vi.fn(),
   updateProtocolEndpointsBatch: vi.fn(),
 }))
 vi.mock('../utils/feedback', () => ({ confirmAction: vi.fn(async () => true), notify: vi.fn() }))
@@ -34,9 +39,9 @@ const Button = defineComponent({ template: '<button><slot /></button>' })
 const Select = defineComponent({ name: 'UiSelect', props: ['modelValue', 'options'], emits: ['update:modelValue'], template: '<select />' })
 const Checkbox = defineComponent({ name: 'UiCheckbox', props: ['modelValue'], emits: ['update:modelValue'], template: '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', !modelValue)" />' })
 const Dialog = defineComponent({ props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" :requestClose="() => {}" /></div>' })
-async function render() {
+async function render(query: Record<string, string> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: Protocols }] })
-  await router.push('/')
+  await router.push({ path: '/', query })
   await router.isReady()
   const wrapper = shallowMount(Protocols, { global: { plugins: [router], renderStubDefaultSlot: true, stubs: {
     FormField, NodeGroupMembershipEditor, NodeGroupLookup, UiButton: Button, ModalDialog: Dialog, UiInput: true, UiSelect: Select, UiTextarea: true, UiCheckbox: Checkbox, PageRefreshButton: true, TimeBadge: true,
@@ -67,6 +72,33 @@ describe('Protocol creation and actionable errors', () => {
     vi.mocked(getVersion).mockResolvedValue({ protocol_capabilities: {} } as any)
     mocks.create.mockResolvedValue({ protocol_endpoint: { id: 10 }, publish_status: 'queued', timing: {} })
   })
+
+  it('saves constrained Direct egress without proxy server or credential fields', async () => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务'); await click(wrapper, '实际协议监听')
+    wrapper.findAllComponents({ name: 'UiInput' })[0].vm.$emit('update:modelValue', 'IPv6 Direct')
+    await click(wrapper, '下一步')
+    const state = (wrapper.vm as any).$.setupState
+    Object.assign(state.egress, { enabled: true, protocol: 'direct', address_family: 'only_ipv6', interface: 'eth1', source_ip: '2001:db8::5' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('出站地址族')
+    expect(wrapper.text()).not.toContain('出口服务器')
+    await click(wrapper, '下一步'); await wrapper.get('#protocol-form').trigger('submit'); await flushPromises()
+    expect(JSON.parse(mocks.create.mock.calls[0][0].egress_config)).toEqual({ type: 'direct', dial: { address_family: 'only_ipv6', interface: 'eth1', source_ip: '2001:db8::5' } })
+    wrapper.unmount()
+  })
+
+  it('suggests IPv6 listening for a newly selected IPv6 VPS', async () => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务'); await click(wrapper, '实际协议监听')
+    const state = (wrapper.vm as any).$.setupState
+    state.handleNodeSelect({ id: 1, name: 'IPv6 VPS', address: '2001:db8::8' })
+    expect(state.form.listen_address).toBe('::')
+    state.form.listen_address = '2001:db8::9'
+    state.handleNodeSelect({ id: 1, name: 'IPv6 VPS', address: '2001:db8::8' })
+    expect(state.form.listen_address).toBe('2001:db8::9')
+    wrapper.unmount()
+  })
   it('allows Mieru on reset release numbers even when an older API advertises a minimum', async () => {
     vi.mocked(getVersion).mockResolvedValue({ protocol_capabilities: { mieru: { supported: true, minimum_zero_version: '0.0.15-rc.4' } } } as any)
     const wrapper = await render()
@@ -79,11 +111,11 @@ describe('Protocol creation and actionable errors', () => {
     expect(wrapper.find('page-alert-stub[title="当前内核不支持所选协议"]').exists()).toBe(false)
     await wrapper.get('#protocol-form').trigger('submit')
     await flushPromises()
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'mieru', is_active: true }))
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'mieru', is_active: true, listen_address: '0.0.0.0' }))
     wrapper.unmount()
   })
   it('copies to an enabled draft and lets the user select groups before saving', async () => {
-    const source = { id: 7, node_id: 1, name: 'Source', protocol: 'vless', address: '192.0.2.1', port: 443, public_port: 443, is_active: true, kernel_supported: true }
+    const source = { id: 7, node_id: 1, name: 'Source', protocol: 'vless', address: '192.0.2.1', listen_address: '::', port: 443, public_port: 443, is_active: true, kernel_supported: true }
     vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [source], total: 1 } as any)
     vi.mocked(fetchProtocolEndpoint).mockResolvedValue({ ...source, config: '{"type":"vless","users":[]}', client_config: '{"type":"vless"}', node_group_memberships: [{ ...membership, node_group_id: 3 }] } as any)
     const wrapper = await render()
@@ -105,7 +137,24 @@ describe('Protocol creation and actionable errors', () => {
     await flushPromises()
     await wrapper.get('#protocol-form').trigger('submit')
     await flushPromises()
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Source 副本', is_active: true, node_group_membership_changes: [{ node_group_id: 9, expected_revision: 7, member: true }] }))
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Source 副本', is_active: true, listen_address: '::', node_group_membership_changes: [{ node_group_id: 9, expected_revision: 7, member: true }] }))
+    wrapper.unmount()
+  })
+  it.each(['::', '[::]'])('saves IPv6 listen address %s independently from the public endpoint', async (listenAddress) => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务')
+    await click(wrapper, '实际协议监听')
+    wrapper.findAllComponents({ name: 'UiInput' })[0].vm.$emit('update:modelValue', 'IPv6 fixture')
+    const field = wrapper.findAllComponents(FormField).find(item => item.props('name') === 'protocol-listen-address')!
+    field.getComponent({ name: 'UiInput' }).vm.$emit('update:modelValue', listenAddress)
+    await flushPromises()
+    await click(wrapper, '下一步')
+    await click(wrapper, '下一步')
+    expect(wrapper.text()).toContain('[::]:443')
+    expect(wrapper.text()).not.toContain('[[::]]')
+    await wrapper.get('#protocol-form').trigger('submit')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ listen_address: listenAddress, address: '192.0.2.1', port: 443, public_port: 443 }))
     wrapper.unmount()
   })
   it('saves the reviewed protocol together with the selected node group', async () => {
@@ -138,6 +187,28 @@ describe('Protocol creation and actionable errors', () => {
       protocol: 'vless',
       egress_config: JSON.stringify({ type: 'socks5', server: 'proxy.example', port: 1080, username: 'user', password: 'pass' }, null, 2),
     }))
+    wrapper.unmount()
+  })
+  it('opens VPS domain probing from the SNI field and preserves key material on selection', async () => {
+    const wrapper = await render()
+    await click(wrapper, '创建协议服务')
+    await click(wrapper, '实际协议监听')
+    await click(wrapper, '下一步')
+    const state = wrapper.vm as any
+    state.structured.security = 'reality'
+    await flushPromises()
+    expect(state.structured.reality_server_name).toBe('')
+    const keys = { privateKey: state.structured.reality_private_key, publicKey: state.structured.reality_public_key, shortID: state.structured.reality_short_id }
+    await click(wrapper, '探测伪装域名')
+    const probe = wrapper.getComponent(RealityDomainProbe)
+    expect(probe.props('nodeId')).toBe(1)
+    probe.vm.$emit('select', 'verified.example')
+    await flushPromises()
+    expect(state.structured.reality_server_name).toBe('verified.example')
+    expect({ privateKey: state.structured.reality_private_key, publicKey: state.structured.reality_public_key, shortID: state.structured.reality_short_id }).toEqual(keys)
+    probe.vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.findComponent(RealityDomainProbe).exists()).toBe(false)
     wrapper.unmount()
   })
   it('shows the specific field failure and keeps the group selection for correction', async () => {
@@ -313,4 +384,81 @@ it('allows editing Shadowsocks ports and resets only the selected service measur
   await click(wrapper, '确认重置')
   expect(resetProtocolEndpointUsage).toHaveBeenCalledWith(8, '更换端口')
   wrapper.unmount()
+})
+
+it('shows pending traffic statistics as unknown and waits before resetting the period', async () => {
+  const endpoint = { id: 8, service_kind: 'listener', node_id: 1, name: '统计积压入口', protocol: 'vless', address: 'edge.example.test', port: 443, public_port: 443, is_active: true, kernel_supported: true, usage: { active_users: 2, active_flows: 4, used_bytes_today: null, used_bytes_total: null, traffic_projection_pending: true } }
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [endpoint], total: 1 } as any)
+  vi.mocked(fetchProtocolEndpoint).mockResolvedValue({ ...endpoint, config: '{}', client_config: '{}', node_group_memberships: [] } as any)
+  vi.mocked(fetchProtocolEndpointUsageResets).mockResolvedValue([])
+  const wrapper = await render()
+  expect(wrapper.text()).toContain('统计更新中')
+  await wrapper.get('button[aria-label="查看协议服务 统计积压入口"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('已结算流量不受影响')
+  const reset = wrapper.findAll('button').find(button => button.text().includes('重置统计'))
+  expect(reset?.attributes('disabled')).toBeDefined()
+  expect(resetProtocolEndpointUsage).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+
+it('shows capability deferral as preserved runtime rather than publication failure', async () => {
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [{ id: 8, service_kind: 'listener', node_id: 1, name: 'IPv6 入口', protocol: 'vless', is_active: true, kernel_supported: true, latest_deployment: { id: 9, status: 'deferred', has_error: true }, publication: { status: 'deferred', attempts: 0, has_error: true } }], total: 1 } as any)
+  vi.mocked(deployProtocolEndpoint).mockResolvedValue({ deployment: { status: 'deferred', error: 'only_ipv6 尚不可用' }, latency_ms: 0 })
+  const wrapper = await render()
+  expect(wrapper.find('button[aria-label="发布协议服务 IPv6 入口"]').attributes('disabled')).toBeUndefined()
+  await wrapper.get('button[aria-label="发布协议服务 IPv6 入口"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('新设置暂未生效，节点保持当前配置')
+  expect(wrapper.getComponent({ name: 'TransientFeedback' }).props('success')).toBe('')
+  expect(wrapper.find('router-link-stub').exists()).toBe(true)
+  expect(wrapper.text()).not.toContain('发布失败')
+  wrapper.unmount()
+})
+
+it('keeps applied configuration separate from pending existing connection revocation', async () => {
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: [{ id: 8, service_kind: 'listener', node_id: 1, name: '原生流控', protocol: 'vless', address: 'node.example', port: 443, is_active: true, kernel_supported: true, latest_deployment: { id: 9, status: 'succeeded' }, publication: { status: 'connections_pending', attempts: 0, has_error: true } }], total: 1 } as any)
+  const wrapper = await render()
+  expect(wrapper.text()).toContain('配置已应用；旧连接撤权待核验')
+  expect(wrapper.text()).not.toContain('发布失败')
+  expect(vi.mocked(deployProtocolEndpoint)).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+
+it('opens the dashboard failure link with a visible filter and can clear it', async () => {
+  const wrapper = await render({ deployment: 'failed' })
+  expect(fetchProtocolEndpointsPage).toHaveBeenLastCalledWith(expect.objectContaining({ deploymentStatus: 'failed' }), expect.anything())
+  const filter = wrapper.findAllComponents({ name: 'WorkbenchFilterSelect' }).find(item => item.attributes('label') === '配置发布' || item.props('label') === '配置发布')
+  expect(filter).toBeTruthy()
+  const state = (wrapper.vm as any).$.setupState
+  expect(state.filters.deployment).toBe('failed')
+  await state.resetFilters()
+  await flushPromises()
+  expect(vi.mocked(fetchProtocolEndpointsPage).mock.calls.at(-1)![0]).not.toHaveProperty('deploymentStatus')
+  expect(wrapper.vm.$route.query.deployment).toBeUndefined()
+  wrapper.unmount()
+})
+
+it('keeps forward multipliers read-only and synchronizes them after editing the parent without id collisions', async () => {
+  const rows = [
+    { id: 21, service_kind: 'listener', name: 'Parent', node_id: 1, protocol: 'shadowsocks', multiplier_milli: 2000 },
+    { id: 3, service_kind: 'forward', name: 'Forward', parent_protocol_id: 21, node_id: 2, protocol: 'shadowsocks', multiplier_milli: 2000 },
+    { id: 3, service_kind: 'listener', name: 'Unrelated', node_id: 3, protocol: 'vless', multiplier_milli: 7000 },
+  ]
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValueOnce({ items: rows, total: 3 } as any)
+  const view = await render()
+  const cells = view.findAllComponents(ProtocolMultiplierCell)
+  expect(cells.map(cell => cell.props('endpointId'))).toEqual([21, 3])
+  expect(view.get('.protocol-multiplier-readonly').text()).toBe('2')
+  expect(view.get('.protocol-multiplier-readonly').find('button').exists()).toBe(false)
+  expect(view.get('.protocol-multiplier-readonly').attributes('tabindex')).toBeUndefined()
+  vi.mocked(fetchProtocolEndpointsPage).mockResolvedValue({ items: rows.map((row, index) => index < 2 ? { ...row, multiplier_milli: 2500 } : row), total: 3 } as any)
+  const before = vi.mocked(fetchProtocolEndpointsPage).mock.calls.length
+  cells[0].vm.$emit('saved', { id: 21, multiplier_milli: 2500 }); await flushPromises()
+  expect(fetchProtocolEndpointsPage).toHaveBeenCalledTimes(before + 1)
+  expect(view.findAllComponents(ProtocolMultiplierCell).map(cell => cell.props('multiplierMilli'))).toEqual([2500, 7000])
+  expect(view.get('.protocol-multiplier-readonly').text()).toBe('2.5')
+  view.unmount()
 })

@@ -1,0 +1,268 @@
+{
+  "source": "7b10068a42b44c4e566d06184178b76c8e87919f",
+  "backend_tree": "7f24a334b9289bc3850fd1cf2866c254fa76cccb",
+  "clean_before": true,
+  "clean_after": true,
+  "binary_sha256": "aa816c9dfd95c0ce52457ded129a3b5fc039fab44bd7fb72260cc8ceab9092d3",
+  "command": [
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/accounting-sql-7b10068.test",
+    "-test.run=^$",
+    "-test.bench=^BenchmarkZeroAccounting$",
+    "-test.benchtime=100x",
+    "-test.count=5",
+    "-test.timeout=5m"
+  ],
+  "started_utc": "2026-10-20T18:45:54.798155+00:00",
+  "seconds": 9.15,
+  "exit_code": 0,
+  "gomaxprocs": 1,
+  "resource_scope": "direct benchmark subprocess including fixtures and assertions, not compiler; shared cloud cgroup, not constrained HTTP container",
+  "cpu_max": "400000 100000",
+  "memory_max": "17179869184",
+  "max_rss_kib": 58056,
+  "user_seconds": 8.38424,
+  "system_seconds": 0.751648,
+  "private_log_sha256": "21d88373c7634f6fc94114b14afa8f2460506a24d9e1c1d1c98604a00254475e",
+  "limits": [
+    "microbenchmark, not sustained HTTP capacity or independent-worker benefit",
+    "client GORM durations, not server-only SQL latency",
+    "logical DML affected rows, not physical bytes",
+    "observer formatting overhead included; old observer results not a matched comparison"
+  ],
+  "samples": [
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 9867954,
+        "SQL-errors/batch": 0.01,
+        "SQL-mean-us": 91.39,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 48.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 87.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 3243.0,
+        "p95-ms/batch": 12.54,
+        "p99-ms/batch": 13.06,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1649705.0,
+        "allocs/op": 16514.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 10397055,
+        "SQL-errors/batch": 0.01,
+        "SQL-mean-us": 96.28,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 48.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 87.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 3078.0,
+        "p95-ms/batch": 13.74,
+        "p99-ms/batch": 16.13,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1648844.0,
+        "allocs/op": 16506.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 10116820,
+        "SQL-errors/batch": 0.01,
+        "SQL-mean-us": 92.4,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 48.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 87.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 3163.0,
+        "p95-ms/batch": 14.11,
+        "p99-ms/batch": 16.1,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1648604.0,
+        "allocs/op": 16507.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 10323797,
+        "SQL-errors/batch": 0.01,
+        "SQL-mean-us": 95.46,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 48.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 87.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 3100.0,
+        "p95-ms/batch": 15.07,
+        "p99-ms/batch": 16.18,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1648597.0,
+        "allocs/op": 16505.0
+      }
+    },
+    {
+      "mode": "FullBatch",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 11005692,
+        "SQL-errors/batch": 0.01,
+        "SQL-mean-us": 101.6,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 48.0,
+        "SQL-writes/batch": 39.0,
+        "SQL/batch": 87.0,
+        "affected-write-rows/batch": 101.0,
+        "events/s": 2908.0,
+        "p95-ms/batch": 17.15,
+        "p99-ms/batch": 18.75,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 1648760.0,
+        "allocs/op": 16508.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 162902,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 41.26,
+        "SQL-p95-upper-us": 100.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 196438.0,
+        "p95-ms/batch": 0.2979,
+        "p99-ms/batch": 0.4061,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42530.0,
+        "allocs/op": 477.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 223233,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 73.43,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 143348.0,
+        "p95-ms/batch": 0.3711,
+        "p99-ms/batch": 2.236,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42550.0,
+        "allocs/op": 478.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 186529,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 45.99,
+        "SQL-p95-upper-us": 100.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 171555.0,
+        "p95-ms/batch": 0.3258,
+        "p99-ms/batch": 0.471,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42578.0,
+        "allocs/op": 477.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 212029,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 52.59,
+        "SQL-p95-upper-us": 200.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 150923.0,
+        "p95-ms/batch": 0.3808,
+        "p99-ms/batch": 0.7331,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42548.0,
+        "allocs/op": 478.0
+      }
+    },
+    {
+      "mode": "CoverageOnly",
+      "iterations": 100,
+      "metrics": {
+        "ns/op": 140783,
+        "SQL-errors/batch": 0.0,
+        "SQL-mean-us": 36.22,
+        "SQL-p95-upper-us": 100.0,
+        "SQL-reads/batch": 1.0,
+        "SQL-writes/batch": 1.0,
+        "SQL/batch": 2.0,
+        "affected-write-rows/batch": 1.0,
+        "events/s": 227301.0,
+        "p95-ms/batch": 0.2465,
+        "p99-ms/batch": 0.3634,
+        "unknown-write-rows/batch": 0.0,
+        "B/op": 42526.0,
+        "allocs/op": 476.0
+      }
+    }
+  ],
+  "normal_read_miss_followup": {
+    "source": "7b10068 plus test-only read-miss classification patch",
+    "purpose": "classify one initial absent node cursor; not a quiet performance comparison",
+    "command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^TestAccountingBenchmarkObserverCountsOnlyNumericEvidence$' -bench '^BenchmarkZeroAccounting/FullBatch$' -benchtime=100x -count=1 -timeout=3m",
+    "exit_code": 0,
+    "package_seconds": 1.408,
+    "sql_errors_per_batch": 0,
+    "expected_read_misses_per_batch": 0.01,
+    "sql_per_batch": 87,
+    "private_log_sha256": "4530376de392b827d51c03fa7bd44654b46e52d9c06ae00000375bbe3454daf4"
+  },
+  "scope": "single-subscription SQLite microbenchmark, five independent FullBatch and CoverageOnly repetitions; no production services/remote nodes",
+  "sql_breakdown": {
+    "select": {
+      "principal_prepare": 2,
+      "report_batch": 1,
+      "lookup_prepared": 4,
+      "ownership_and_parent_revalidation": 5,
+      "subscription_endpoint": 2,
+      "flow_cursor": 32,
+      "node_cursor": 1,
+      "coverage": 1
+    },
+    "dml": {
+      "sqlite_write_boundary": 1,
+      "flow_cursor_save_create": 32,
+      "ledger_batch": 1,
+      "projection_intent_batch": 1,
+      "subscription_and_credential": 2,
+      "node_cursor": 1,
+      "coverage": 1
+    },
+    "logical_affected_rows": 101
+  }
+}

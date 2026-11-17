@@ -7,21 +7,20 @@ import (
 	"strconv"
 
 	"github.com/zerodenet/zboard/backend/internal/plugins"
+	pluginv1 "github.com/zerodenet/zboard/backend/pkg/pluginapi/v1"
 )
 
 func (h *handlers) PluginPublicRouteHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.RawQuery != "" {
-		http.Error(w, "query parameters are not supported", http.StatusBadRequest)
-		return
-	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, plugins.MaxPublicRouteBodyBytes))
 	if err != nil {
 		http.Error(w, "request body is too large", http.StatusRequestEntityTooLarge)
 		return
 	}
-	response, err := h.pluginManager.HandlePublicRoute(r.Context(), r.Method, r.URL.Path, r.Header.Get("Content-Type"), body)
+	response, err := h.pluginManager.HandlePublicRoute(r.Context(), pluginv1.NewHTTPRequest(r, body))
 	if err != nil {
 		switch {
+		case errors.Is(err, plugins.ErrRouteRequestTooLarge):
+			http.Error(w, "request metadata is too large", http.StatusRequestEntityTooLarge)
 		case errors.Is(err, plugins.ErrRouteNotFound):
 			http.NotFound(w, r)
 		case errors.Is(err, plugins.ErrConflict), errors.Is(err, plugins.ErrUnavailable):

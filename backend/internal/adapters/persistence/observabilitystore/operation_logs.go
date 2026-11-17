@@ -97,6 +97,9 @@ func (s OperationLogs) ListSource(ctx context.Context, q observability.Operation
 			page.Items = append(page.Items, observability.OperationLogItem{ID: row.ID, Source: q.Source, Action: "node.kernel." + row.OperationType, Status: row.Status, TargetType: "node", TargetID: row.NodeID, NodeID: row.NodeID, Summary: row.ResultSummary, HasError: row.Error != "", StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, CreatedAt: row.CreatedAt})
 		}
 	case "task":
+		if q.Status == "deferred" {
+			return page, nil
+		}
 		query := base(&model.Task{})
 		if q.Status != "" {
 			query = query.Where("status = ?", operationTaskStatus(q.Status))

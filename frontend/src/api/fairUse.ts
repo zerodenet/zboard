@@ -1,4 +1,4 @@
-import { API_BASE, getAuthToken } from './client'
+import { authenticatedAPI } from './client'
 
 export type FairUseObservationRange = '1d' | '3d' | '7d' | '15d'
 
@@ -124,23 +124,22 @@ export interface FairUseEvent {
 }
 
 async function requestFairUse<T>(path: string, options: { signal?: AbortSignal; method?: string; body?: unknown } = {}): Promise<T> {
-  const headers = new Headers({ Accept: 'application/json' })
-  const token = getAuthToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  if (options.body !== undefined) headers.set('Content-Type', 'application/json')
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers,
-    signal: options.signal,
-    method: options.method || 'GET',
-    ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
-  })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    const error = new Error(payload?.message || `HTTP ${response.status}`) as Error & { status?: number }
-    error.status = response.status
-    throw error
+  try {
+    const response = await authenticatedAPI.request({
+      url: path, method: options.method || 'GET', signal: options.signal,
+      headers: { Accept: 'application/json', ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      ...(options.body !== undefined ? { data: options.body } : {}),
+    })
+    return response.data?.data as T
+  } catch (cause: any) {
+    // Preserve the view's HTTP message/status contract and the shared transport's
+    // session/cancellation code. Never wrap a blocked request in a plain Error.
+    if (cause?.response) {
+      cause.status = cause.response.status
+      cause.message = cause.response.data?.message || `HTTP ${cause.response.status}`
+    }
+    throw cause
   }
-  return payload?.data as T
 }
 
 export function fetchFairUseMetrics(subscriptionID: number, signal?: AbortSignal) {

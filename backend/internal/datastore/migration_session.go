@@ -87,6 +87,20 @@ func WithCopyDestination(ctx context.Context, db *gorm.DB, fn func(*gorm.DB) err
 		if _, err := connection.ExecContext(ctx, disable); err != nil {
 			return err
 		}
-		return session.Transaction(fn)
+		return session.Transaction(func(tx *gorm.DB) error {
+			prepared, err := captureCopiedObservationBudgetProof(tx)
+			if err != nil {
+				return err
+			}
+			statistics, err := capturePrincipalStatisticsCopyProof(prepared)
+			if err != nil {
+				return err
+			}
+			flowStatistics, err := captureFlowStartStatisticsCopyProof(statistics)
+			if err != nil {
+				return err
+			}
+			return fn(flowStatistics)
+		})
 	})
 }

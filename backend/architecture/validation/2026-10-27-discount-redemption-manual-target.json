@@ -1,0 +1,153 @@
+{
+  "date": "2026-10-27",
+  "scope": "0065 manual discount reservation and explicit original-payment recovery; no real external provider acceptance",
+  "source": "uncommitted 0065/P5 sources on b8bf14a9bff90c3154d962201ebdab4979eb98d9; test hash below; final commit and complete checks recorded separately",
+  "manual_target": {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-p",
+      "1",
+      "./internal/adapters/persistence/commercestore",
+      "./internal/capabilities/commerce",
+      "./internal/datastore",
+      "./internal/handler",
+      "./internal/plugins",
+      "./internal/application",
+      "./tools/capabilityinventory",
+      "-run",
+      "DiscountRedemption|DiscountReservation|CommerceRedemption|RepositoryContractInventory",
+      "-count=1",
+      "-timeout",
+      "15m"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 146.352,
+    "source_before": "a53327226fd4b827077eba15f0101a1920c5caebe75cc16af92c0aecad2b434d",
+    "source_after": "a53327226fd4b827077eba15f0101a1920c5caebe75cc16af92c0aecad2b434d",
+    "source_unchanged": true,
+    "events": {
+      "pass": 33
+    },
+    "failures": [],
+    "build_failures": []
+  },
+  "frontend": {
+    "toolchain": {
+      "node": "22.23.0",
+      "pnpm": "11.9.0"
+    },
+    "source_before": "44b3393bf21e21d56b6f581bbf24d294cd6f78d8b61a10f6a98b5ac2859d9c1c",
+    "source_after": "44b3393bf21e21d56b6f581bbf24d294cd6f78d8b61a10f6a98b5ac2859d9c1c",
+    "source_unchanged": true,
+    "test_files_pass": 3,
+    "tests_pass": 35,
+    "steps": [
+      {
+        "command": [
+          "pnpm",
+          "install",
+          "--frozen-lockfile",
+          "--package-import-method=copy"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.783,
+        "log_sha256": "c60726299302c6e5afa35f841373abe655533237c5524154bdc9666a91b7b719"
+      },
+      {
+        "command": [
+          "pnpm",
+          "test",
+          "--no-file-parallelism",
+          "src/plugins/CheckoutPayment.test.ts",
+          "src/components/OrderFundingReservation.test.ts",
+          "src/components/OrderFundingPayment.test.ts"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 5.004,
+        "log_sha256": "204a5dd40a28d986f6d603e4badd47f50b959d9b4e353847e25b86ade249b19a"
+      },
+      {
+        "command": [
+          "pnpm",
+          "build"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 31.097,
+        "log_sha256": "956b5f834b63ca52d9f6e24b0fd96e9df54c4c288968b722d8a906a5ea7e74e2"
+      }
+    ]
+  },
+  "retained_failed_target_attempts": [
+    {
+      "attempt": "first",
+      "exit_code": 1,
+      "wall_seconds": 64.873,
+      "source_unchanged": true,
+      "events": {
+        "pass": 24,
+        "fail": 5
+      },
+      "failures": [
+        "TestMySQLDiscountRedemptionSchemaReplayCopyAndAuthorityLoss",
+        "TestMySQLDiscountRedemptionAbsentAuthorityUsesSemanticBoundedSnapshotScan",
+        "TestDiscountRedemptionManualWalletReceiptLifecycle",
+        "TestMySQLDiscountRedemptionManualWalletReceiptLifecycle",
+        "TestRepositoryContractInventoryIsComplete"
+      ],
+      "build_failures": [
+        "github.com/zerodenet/zboard/backend/internal/plugins [github.com/zerodenet/zboard/backend/internal/plugins.test]"
+      ]
+    },
+    {
+      "attempt": "second",
+      "exit_code": 1,
+      "wall_seconds": 51.442,
+      "source_unchanged": true,
+      "events": {
+        "pass": 31,
+        "fail": 2
+      },
+      "failures": [
+        "TestDiscountRedemptionManualWalletReceiptLifecycle",
+        "TestMySQLDiscountRedemptionManualWalletReceiptLifecycle"
+      ],
+      "build_failures": []
+    },
+    {
+      "attempt": "third",
+      "exit_code": 1,
+      "wall_seconds": 49.835,
+      "source_unchanged": true,
+      "events": {
+        "pass": 31,
+        "fail": 2
+      },
+      "failures": [
+        "TestDiscountRedemptionManualWalletReceiptLifecycle",
+        "TestMySQLDiscountRedemptionManualWalletReceiptLifecycle"
+      ],
+      "build_failures": []
+    },
+    {
+      "attempt": "fourth",
+      "exit_code": 0,
+      "wall_seconds": 51.055,
+      "source_unchanged": true,
+      "events": {
+        "pass": 33
+      },
+      "failures": [],
+      "build_failures": []
+    }
+  ],
+  "not_completed": [
+    "0066 automatic finite-discount staged renewal",
+    "complete backend checks for this source",
+    "complete MySQL checks for this source",
+    "exact new head CI",
+    "real provider durable hold and restart acceptance",
+    "production acceptance"
+  ]
+}

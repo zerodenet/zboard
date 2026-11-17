@@ -4,6 +4,7 @@ package application
 
 import (
 	"context"
+	"github.com/zerodenet/zboard/backend/internal/adapters/hostmetrics"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/commercestore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/entitlementstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/experiencestore"
@@ -11,11 +12,13 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/messagingstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	zeroadapter "github.com/zerodenet/zboard/backend/internal/adapters/zero"
+	"github.com/zerodenet/zboard/backend/internal/batchsql"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/experience"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/messaging"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/navigation"
 	"log"
 	"sync"
@@ -25,6 +28,7 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observabilitystore"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
@@ -34,94 +38,119 @@ import (
 )
 
 type Services struct {
-	Navigation                   navigation.Service
-	MessageTemplates             messaging.Templates
-	PrincipalCollection          metering.PrincipalCollection
-	FairUseObservationSeries     metering.ObservationSeriesService
-	FairUseFlowCollection        metering.FlowCollection
-	FairUseEvaluationRequests    metering.EvaluationRequests
-	FairUseEvaluator             metering.Evaluator
-	FairUseTelemetry             metering.Telemetry
-	FairUseEvaluationSource      metering.EvaluationSource
-	FairUseObservations          metering.Observations
-	FairUsePolicies              metering.Policies
-	DeliveryOrder                network.DeliveryOrder
-	ProtocolEndpointMultiplier   network.ProtocolEndpointMultiplier
-	ProxyPoolQueries             network.ProxyPoolQueries
-	NetworkEntryQueries          network.NetworkEntryQueries
-	NodeGroupMutations           network.NodeGroupMutations
-	NodeAdministration           network.NodeAdministration
-	NetworkInventory             network.Inventory
-	ManagedPublicationInventory  network.ManagedPublicationInventory
-	NativeOperationStatus        network.NativeOperationStatus
-	DNSDeletion                  network.DNSDeletion
-	NodeActivity                 network.NodeActivity
-	NodeCleanupGuard             network.NodeCleanupGuard
-	EventCredentials             network.EventCredentials
-	SSHHostTrust                 network.SSHHostTrust
-	ProtocolEndpointRemoval      network.ProtocolEndpointRemoval
-	PublicationRequests          network.PublicationRequests
-	CertificateLifecycle         network.CertificateLifecycle
-	CertificateInventory         network.CertificateInventory
-	SubscriptionQueries          entitlements.SubscriptionQueries
-	SubscriptionTemplates        entitlements.SubscriptionTemplates
-	SubscriptionProjection       entitlements.SubscriptionProjection
-	NetworkEntryProjection       entitlements.NetworkEntryProjection
-	Announcements                experience.Announcements
-	Tickets                      experience.Tickets
-	OrderQueries                 commerce.OrderQueries
-	OrderAssignment              commerce.OrderAssignment
-	OrderCancellation            commerce.OrderCancellation
-	OrderCreation                commerce.OrderCreation
-	PlanListing                  commerce.PlanListing
-	PlanDetails                  commerce.PlanDetails
-	SKUQueries                   commerce.SKUQueries
-	PlanCreation                 commerce.PlanCreation
-	PlanUpdate                   commerce.PlanUpdate
-	SKUCreation                  commerce.SKUCreation
-	SKUUpdate                    commerce.SKUUpdate
-	CatalogDeletion              commerce.CatalogDeletion
-	Settings                     platform.Settings
-	SiteSettings                 platform.SiteSettings
-	SiteCustomizationDefaults    platform.SiteCustomizationDefaults
-	SubscriptionPresentation     platform.SubscriptionPresentation
-	SystemConfigDefaults         platform.SystemConfigDefaults
-	Installation                 platform.Installation
-	Maintenance                  platform.Maintenance
-	Identity                     Identity
-	Jobs                         *jobs.Runtime
-	JobSubmissions               jobs.Submissions
-	JobHistory                   jobs.HistoryQueries
-	JobCancellations             jobs.CancellationService
-	JobResourceFence             jobs.ResourceFence
-	BatchRequests                jobs.BatchRequests
-	JobReviews                   jobs.ReviewService
-	OperationHistory             network.OperationHistory
-	HistoryRetention             observability.HistoryRetention
-	Audit                        observability.Audit
-	AuditDirectory               observability.AuditDirectory
-	Dashboard                    observability.Dashboard
-	EntityReferences             observability.EntityReferences
-	OperationLogs                observability.OperationLogs
-	ProtocolEndpointOrder        network.ProtocolEndpointOrder
-	ProtocolEndpointUsagePeriods network.ProtocolEndpointUsagePeriods
-	ProviderDirectory            network.ProviderDirectory
-	ResourceRemoval              network.ResourceRemoval
-	TopologyRemoval              network.TopologyRemoval
-	lifecycle                    atomic.Uint32
-	maintenance                  maintenanceCache
-	installation                 installationCache
-	trafficReadMu                sync.RWMutex
-	trafficReadDB                *gorm.DB
+	RuntimeMonitor                   *platform.RuntimeMonitor
+	nativeBatchSQL                   batchsql.Metrics
+	commerceDiscountQuoter           commerce.DiscountQuoter
+	DiscountProviders                commerce.DiscountProviderChoices
+	Navigation                       navigation.Service
+	MessageTemplates                 messaging.Templates
+	PrincipalCollection              metering.PrincipalCollection
+	DiagnosticMaterialRetention      metering.DiagnosticMaterialRetention
+	NodeObservationMaterialRetention network.ObservationMaterialRetention
+	NodeObservations                 network.ObservationProjections
+	ObservationIntents               network.ObservationIntentOperations
+	UsageProjections                 metering.UsageProjections
+	FairUseObservationSeries         metering.ObservationSeriesService
+	FairUseObservationRetention      metering.ObservationRetention
+	FairUseFlowCollection            metering.FlowCollection
+	FairUseEvaluationRequests        metering.EvaluationRequests
+	FairUseEvaluator                 metering.Evaluator
+	FairUseTelemetry                 metering.Telemetry
+	FairUseEvaluationSource          metering.EvaluationSource
+	FairUseObservations              metering.Observations
+	FairUsePolicies                  metering.Policies
+	DeliveryOrder                    network.DeliveryOrder
+	ProtocolEndpointMultiplier       network.ProtocolEndpointMultiplier
+	ProxyPoolQueries                 network.ProxyPoolQueries
+	NetworkEntryQueries              network.NetworkEntryQueries
+	NodeGroupMutations               network.NodeGroupMutations
+	NodeAdministration               network.NodeAdministration
+	NetworkInventory                 network.Inventory
+	ManagedPublicationInventory      network.ManagedPublicationInventory
+	NativeOperationStatus            network.NativeOperationStatus
+	DNSDeletion                      network.DNSDeletion
+	NodeActivity                     network.NodeActivity
+	NodeCleanupGuard                 network.NodeCleanupGuard
+	EventCredentials                 network.EventCredentials
+	SSHHostTrust                     network.SSHHostTrust
+	ProtocolEndpointRemoval          network.ProtocolEndpointRemoval
+	PublicationRequests              network.PublicationRequests
+	CertificateLifecycle             network.CertificateLifecycle
+	CertificateInventory             network.CertificateInventory
+	SubscriptionQueries              entitlements.SubscriptionQueries
+	SubscriptionTemplates            entitlements.SubscriptionTemplates
+	SubscriptionProjection           entitlements.SubscriptionProjection
+	NetworkEntryProjection           entitlements.NetworkEntryProjection
+	Announcements                    experience.Announcements
+	Tickets                          experience.Tickets
+	Files                            experience.Files
+	OrderQueries                     commerce.OrderQueries
+	OrderAssignment                  commerce.OrderAssignment
+	OrderCancellation                commerce.OrderCancellation
+	OrderCreation                    commerce.OrderCreation
+	Wallet                           commerce.Wallet
+	SubscriptionValues               commerce.SubscriptionValues
+	SubscriptionTermination          commerce.SubscriptionTermination
+	WalletAdjustments                commerce.WalletAdjustments
+	ConsumptionRefunds               commerce.ConsumptionRefunds
+	PaymentCheckout                  commerce.PaymentCheckout
+	PaymentReceipts                  commerce.PaymentReceipts
+	PlanListing                      commerce.PlanListing
+	PlanDetails                      commerce.PlanDetails
+	SKUQueries                       commerce.SKUQueries
+	PlanCreation                     commerce.PlanCreation
+	PlanUpdate                       commerce.PlanUpdate
+	SKUCreation                      commerce.SKUCreation
+	SKUUpdate                        commerce.SKUUpdate
+	CatalogDeletion                  commerce.CatalogDeletion
+	Settings                         platform.Settings
+	SiteSettings                     platform.SiteSettings
+	SiteCustomizationDefaults        platform.SiteCustomizationDefaults
+	SubscriptionPresentation         platform.SubscriptionPresentation
+	SystemConfigDefaults             platform.SystemConfigDefaults
+	Installation                     platform.Installation
+	Maintenance                      platform.Maintenance
+	Identity                         Identity
+	Jobs                             *jobs.Runtime
+	JobSubmissions                   jobs.Submissions
+	JobHistory                       jobs.HistoryQueries
+	JobCancellations                 jobs.CancellationService
+	JobResourceFence                 jobs.ResourceFence
+	BatchRequests                    jobs.BatchRequests
+	JobReviews                       jobs.ReviewService
+	OperationHistory                 network.OperationHistory
+	HistoryRetention                 observability.HistoryRetention
+	Audit                            observability.Audit
+	AuditDirectory                   observability.AuditDirectory
+	Dashboard                        observability.Dashboard
+	EntityReferences                 observability.EntityReferences
+	OperationLogs                    observability.OperationLogs
+	ProtocolEndpointOrder            network.ProtocolEndpointOrder
+	ProtocolEndpointUsagePeriods     network.ProtocolEndpointUsagePeriods
+	ProviderDirectory                network.ProviderDirectory
+	ResourceRemoval                  network.ResourceRemoval
+	TopologyRemoval                  network.TopologyRemoval
+	lifecycle                        atomic.Uint32
+	maintenance                      maintenanceCache
+	installation                     installationCache
+	trafficReadMu                    sync.RWMutex
+	trafficReadDB                    *gorm.DB
 }
 
 func New(db *gorm.DB, secret string) *Services {
 	s := &Services{Identity: NewIdentity(db, secret), JobReviews: jobs.ReviewService{Repository: networkstore.JobReviews{DB: db}}}
+	s.nativeBatchSQL.Configure(batchsql.Install(db))
 	s.trafficReadDB = db
 	s.Navigation = navigation.Service{Repository: menustore.Store{DB: db}}
 	s.MessageTemplates = messaging.Templates{Repository: messagingstore.Templates{DB: db}}
 	s.PrincipalCollection = metering.PrincipalCollection{Repository: meteringstore.PrincipalCollection{DB: db}}
+	s.NodeObservations = network.ObservationProjections{Repository: observationstore.Worker{DB: db}}
+	s.NodeObservationMaterialRetention = network.ObservationMaterialRetention{Repository: observationstore.MaterialRetention{DB: db}}
+	s.DiagnosticMaterialRetention = metering.DiagnosticMaterialRetention{Repository: meteringstore.DiagnosticMaterialRetention{DB: db}}
+	s.ObservationIntents = network.ObservationIntentOperations{Repository: networkstore.ObservationIntentOperations{DB: db}}
+	s.UsageProjections = metering.UsageProjections{Repository: meteringstore.UsageProjectionWorker{DB: db}}
 	s.FairUseObservationSeries = metering.ObservationSeriesService{Repository: meteringstore.ObservationSeries{DB: db}}
+	s.FairUseObservationRetention = metering.ObservationRetention{Repository: meteringstore.ObservationRetention{DB: db}}
 	s.FairUseFlowCollection = metering.FlowCollection{Repository: meteringstore.FlowCollection{DB: db}}
 	s.FairUseEvaluationRequests = metering.EvaluationRequests{Repository: meteringstore.EvaluationRequests{DB: db}}
 	s.FairUseEvaluator = metering.Evaluator{Source: meteringstore.EvaluationSource{DB: db}, Sampler: meteringstore.Telemetry{DB: db}, Repository: meteringstore.EvaluationWriter{DB: db}}
@@ -153,10 +182,18 @@ func New(db *gorm.DB, secret string) *Services {
 	s.NetworkEntryProjection = entitlements.NetworkEntryProjection{Repository: entitlementstore.NetworkEntryProjection{DB: db}}
 	s.Announcements = experience.Announcements{Repository: experiencestore.Announcements{DB: db}}
 	s.Tickets = experience.Tickets{Repository: experiencestore.Tickets{DB: db}}
+	s.Files = experience.Files{Repository: experiencestore.Files{DB: db}}
 	s.OrderQueries = commerce.OrderQueries{Repository: commercestore.OrderQueries{DB: db}}
 	s.OrderAssignment = commerce.OrderAssignment{Repository: commercestore.OrderAssignment{DB: db}}
 	s.OrderCancellation = commerce.OrderCancellation{Repository: commercestore.OrderCancellation{DB: db}}
 	s.OrderCreation = commerce.OrderCreation{Repository: commercestore.OrderCreation{DB: db}}
+	s.Wallet = commerce.Wallet{Repository: commercestore.Wallet{DB: db}}
+	s.SubscriptionValues = commerce.SubscriptionValues{Repository: commercestore.SubscriptionValues{DB: db}}
+	s.SubscriptionTermination = commerce.SubscriptionTermination{Repository: commercestore.SubscriptionTermination{DB: db}}
+	s.WalletAdjustments = commerce.WalletAdjustments{Repository: commercestore.WalletAdjustments{DB: db}}
+	s.ConsumptionRefunds = commerce.ConsumptionRefunds{Repository: commercestore.ConsumptionRefunds{DB: db}}
+	s.PaymentCheckout = commerce.PaymentCheckout{Repository: commercestore.PaymentCheckout{DB: db}}
+	s.PaymentReceipts = commerce.PaymentReceipts{Repository: commercestore.PaymentReceipts{DB: db}}
 	s.PlanListing = commerce.PlanListing{Repository: commercestore.PlanListing{DB: db}}
 	s.PlanDetails = commerce.PlanDetails{Repository: commercestore.PlanDetails{DB: db}}
 	s.SKUQueries = commerce.SKUQueries{Repository: commercestore.SKUQueries{DB: db}}
@@ -187,6 +224,9 @@ func New(db *gorm.DB, secret string) *Services {
 	s.BatchRequests = jobs.BatchRequests{Repository: jobstore.BatchRequests{DB: db}}
 	s.JobSubmissions = jobs.Submissions{Repository: jobstore.New(db)}
 	s.JobHistory = jobs.HistoryQueries{Repository: jobstore.New(db)}
+	if db != nil {
+		s.RuntimeMonitor = platform.NewRuntimeMonitor(hostmetrics.New(), platformstore.SystemMetricHistory{DB: db})
+	}
 	s.Jobs = jobs.NewGatedRuntime(jobstore.New(db), uuid.NewString(), s.isReady, s.WorkPaused, func(err error) { log.Printf("job runtime: %v", err) })
 	s.JobCancellations = jobs.CancellationService{Repository: jobstore.New(db), Active: s.Jobs}
 	s.JobResourceFence = jobs.ResourceFence{Repository: jobstore.New(db)}
@@ -204,8 +244,18 @@ func (s *Services) DatabaseReady(ctx context.Context) error {
 }
 
 // StartWork opens the bootstrap gate after every startup step and registration.
-func (s *Services) StartWork() { s.lifecycle.CompareAndSwap(0, 1) }
-func (s *Services) Close()     { s.lifecycle.Store(2); s.Jobs.Close() }
+func (s *Services) StartWork() {
+	if s.lifecycle.CompareAndSwap(0, 1) && s.RuntimeMonitor != nil {
+		s.RuntimeMonitor.Start()
+	}
+}
+func (s *Services) Close() {
+	s.lifecycle.Store(2)
+	if s.RuntimeMonitor != nil {
+		s.RuntimeMonitor.Close()
+	}
+	s.Jobs.Close()
+}
 
 // Matches prevents a legacy transport adapter from pairing a capability set
 // with a different authority database or signing configuration.
@@ -253,16 +303,22 @@ func (s *Services) MieruEndpointConfigurations(cipher network.ProviderCredential
 	return network.MieruEndpointConfigurations{Repository: networkstore.MieruEndpointConfigurations{DB: s.Identity.db}, Cipher: cipher}
 }
 
-func (s *Services) NodeRemoval(cipher network.ProviderCredentialCipher) network.NodeRemoval {
-	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db, Cipher: cipher}}
+func (s *Services) NodeRemoval() network.NodeRemoval {
+	return network.NodeRemoval{Store: networkstore.NodeRemoval{DB: s.Identity.db}}
+}
+
+func (s *Services) NodeRetirement(remote network.RetirementRemote) network.NodeRetirement {
+	return network.NodeRetirement{Repository: networkstore.NodeRetirement{DB: s.Identity.db}, Remote: remote}
 }
 
 func (s *Services) SubscriptionRuleSets(content entitlements.RuleSetContentStore) entitlements.SubscriptionRuleSets {
 	return entitlements.SubscriptionRuleSets{Repository: entitlementstore.SubscriptionRuleSets{DB: s.Identity.db, Content: content}}
 }
 
-func (s *Services) CredentialExpiry() entitlements.CredentialExpiry {
-	return entitlements.CredentialExpiry{Repository: entitlementstore.CredentialExpiry{DB: s.Identity.db, Publish: networkstore.EnqueueNodePublication}}
+func (s *Services) CredentialExpiry(cipher zeroadapter.Cipher) entitlements.CredentialExpiry {
+	return entitlements.CredentialExpiry{Repository: entitlementstore.CredentialExpiry{DB: s.Identity.db, Cipher: cipher, Publish: networkstore.EnqueueNodePublication, BeforeRetire: commercestore.CancelRetiredSubscriptionOrders, PrepareScope: func(ctx context.Context, subscriptions []model.Subscription) (entitlementstore.CredentialExpiryScope, error) {
+		return commercestore.PrepareLifecycleClosureScope(s.Identity.db.WithContext(ctx), subscriptions)
+	}}}
 }
 
 func RequestNodePublication(tx *gorm.DB, nodeID, endpointID, actor uint) error {
@@ -270,6 +326,13 @@ func RequestNodePublication(tx *gorm.DB, nodeID, endpointID, actor uint) error {
 }
 func (s *Services) OrderSettlement(cipher zeroadapter.Cipher, mieru bool) commerce.OrderSettlement {
 	return commerce.OrderSettlement{Repository: commercestore.OrderSettlement{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
+}
+func (s *Services) WalletPayments(cipher zeroadapter.Cipher, mieru bool) commerce.WalletPayments {
+	return commerce.WalletPayments{Repository: commercestore.WalletPayments{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}}}
+}
+
+func (s *Services) AutomaticRenewals(cipher zeroadapter.Cipher, mieru bool) commerce.AutomaticRenewals {
+	return commerce.AutomaticRenewals{Repository: commercestore.AutomaticRenewals{DB: s.Identity.db, Issuer: zeroadapter.Issuer{Cipher: cipher, Mieru: mieru}, Discounts: s.commerceDiscountQuoter}}
 }
 
 func (s *Services) OrderAccess(cipher zeroadapter.Cipher) commerce.OrderAccess {

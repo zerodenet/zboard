@@ -1,0 +1,64 @@
+{
+  "source": "e9021b2b698cbb06d402a20b7ead28c696a8befa",
+  "checkout": "/workspace/zboard-source-material-verify",
+  "phase": "backend",
+  "started_utc": "2026-10-20T23:08:04.738809+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "full-go",
+      "command": "go test -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 284.126,
+      "log": "full-go-e9021b2-final.log"
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 3.58,
+      "log": "vet-e9021b2-final.log"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 1.9,
+      "log": "build-e9021b2-final.log"
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "environment_additions": {
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 22.278,
+      "log": "pure-go-sqlite-e9021b2-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-20T23:13:16.625593+00:00",
+  "raw_logs_sha256": {
+    "full-go-e9021b2-final.log": "205522ccea1d9de8276157e462845cff5367838960146c5e3dd9565bd612aad2",
+    "vet-e9021b2-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build-e9021b2-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pure-go-sqlite-e9021b2-final.log": "aca32a972d71be69bc6a745b20abc6bfbc84859f5a0696f20d711c8443f4c207"
+  },
+  "not_executed_for_this_source": [
+    "original full local MySQL",
+    "original capacity"
+  ],
+  "limits": [
+    "CI e902 still in progress when this receipt was written",
+    "No old CI used for e902",
+    "MySQL/capacity will target next source if another production patch is integrated first; this receipt is backend-only"
+  ]
+}

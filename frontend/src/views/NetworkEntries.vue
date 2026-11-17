@@ -1,7 +1,7 @@
 <template>
   <section class="standard-page">
-    <PageHeader v-if="!embedded" title="前置转发服务" description="组合 A 入口与 B 落地协议，作为独立线路分配给节点组。用户鉴权与流量结算由 B 承载。">
-      <template #actions><UiButton variant="secondary" :loading="loading" @click="load">刷新</UiButton><UiButton @click="edit()">创建入口</UiButton></template>
+    <PageHeader v-if="!embedded" title="前置转发服务">
+      <template #actions><PageRefreshButton label="刷新前置转发" :loading="loading" @click="load" /><UiButton @click="edit()">创建入口</UiButton></template>
     </PageHeader>
     <TransientFeedback :success="message" :error="error" />
     <section v-if="!editorOnly" class="panel">
@@ -25,9 +25,10 @@
         <p v-if="formError" class="entry-error" role="alert">{{ formError }}</p>
         <FormField label="入口名称" required full hint="客户端订阅直接显示此名称，不再追加落地协议名称。展示位置可在「订阅展示顺序」中调整。"><UiInput v-model.trim="form.name" maxlength="80" placeholder="例如：香港入口" /></FormField>
         <FormField label="转发部署方式" full><UiSelect v-model="form.deployment_mode" :options="[{label:'外部已部署转发',value:'external'},{label:'面板托管 Zero 转发',value:'managed'}]" /></FormField>
-        <FormField v-if="form.deployment_mode === 'managed'" label="入口节点 A" required><NodeLookup v-model="form.node_id" @select="node => { if(node && !editing) form.address = node.address || '' }" /></FormField>
+        <FormField v-if="form.deployment_mode === 'managed'" label="入口节点 A" required><NodeLookup v-model="form.node_id" @select="node => { if(node && !editing) { form.address = node.address || ''; form.listen_address = String(node.address || '').includes(':') ? '::' : '0.0.0.0' } }" /></FormField>
         <FormField label="落地节点 B" required><NodeLookup v-model="landingNode" /></FormField>
         <FormField label="父协议（B 的实际协议）" required full :hint="endpointError || '入口继承父协议的握手参数与用户凭据，交付范围独立管理。'"><UiSelect v-model="form.endpoint_id" :options="endpointOptions" :disabled="!landingNode || endpointLoading" placeholder="选择落地协议" /></FormField>
+        <FormField v-if="form.deployment_mode === 'managed'" label="入口本地监听地址" hint="0.0.0.0 监听 IPv4；:: 监听 IPv6。IPv6 通配是否同时接收 IPv4 取决于节点系统。" required full><UiInput v-model.trim="form.listen_address" placeholder="0.0.0.0 或 ::" /></FormField>
         <FormField label="客户端入口地址" required full :hint="form.deployment_mode === 'external' ? '填写外部转发的客户端地址，面板不部署入口服务器。' : '客户端连接的 IP 或域名，面板会发布 A 的转发配置。'"><UiInput v-model.trim="form.address" placeholder="entry.example.com" /></FormField>
         <FormField v-if="form.deployment_mode === 'managed'" label="A 的监听端口" required><PortInput v-model="form.port" /></FormField>
         <FormField label="客户端入口端口" required hint="存在端口映射时填写映射后的端口。"><PortInput v-model="form.public_port" /></FormField>
@@ -40,12 +41,14 @@
       </div>
       <template #footer><UiButton variant="secondary" @click="open = false">取消</UiButton><UiButton :loading="saving" @click="save">{{ form.deployment_mode === 'external' ? '保存入口' : '保存并发布' }}</UiButton></template>
     </ModalDialog>
+    <ResourceDeletionDialog :target="deletionTarget" kind="entry" @close="deletionTarget = null" @deleted="entryDeleted" />
   </section>
 </template>
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { fetchNetworkEntries, saveNetworkEntry, deleteNetworkEntry, fetchProtocolEndpoints, fetchNodeProxyPools, type NetworkEntry, type ProtocolEndpointNodeGroupMembership } from '../api/client'
-import { confirmAction } from '../utils/feedback'
+import ResourceDeletionDialog from '../components/ResourceDeletionDialog.vue'
+import PageRefreshButton from '../components/PageRefreshButton.vue'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import EndpointAddress from '../components/EndpointAddress.vue'
@@ -68,7 +71,7 @@ const emit=defineEmits<{saved:[]}>()
 const entries = ref<NetworkEntry[]>([]), loading = ref(false), saving = ref(false), open = ref(false)
 const error = ref(''), message = ref(''), formError = ref(''), endpointError = ref(''), endpointLoading = ref(false)
 const editing = ref<NetworkEntry | null>(null), landingNode = ref(0), endpointOptions = ref<{label: string; value: number}[]>([])
-const form = reactive({deployment_mode: 'external' as 'external' | 'managed', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', port: 10000, public_port: 10000, enabled: true})
+const form = reactive({deployment_mode: 'external' as 'external' | 'managed', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', listen_address: '0.0.0.0', port: 10000, public_port: 10000, enabled: true})
 const pathMode = ref('direct')
 const poolID=ref(0),poolLoading=ref(false),poolError=ref(''),poolOptions=ref<{label:string;value:number}[]>([])
 const memberships=ref<ProtocolEndpointNodeGroupMembership[]>([]),originalMemberships=ref<ProtocolEndpointNodeGroupMembership[]>([])
@@ -87,7 +90,7 @@ watch(landingNode, async id => {
 })
 function edit(entry?: NetworkEntry) {
   editing.value = entry || null; landingNode.value = entry?.landing_node_id || 0; formError.value = ''; pathMode.value = entry?.proxy_pool_id ? 'pool' : entry?.has_path ? 'keep' : 'direct';poolID.value=entry?.proxy_pool_id||0;memberships.value=(entry?.node_group_memberships||[]).map(item=>({...item}));originalMemberships.value=memberships.value.map(item=>({...item}))
-  Object.assign(form, entry ? {deployment_mode: entry.deployment_mode || 'managed', network: entry.network || 'tcp_udp', name: entry.name, node_id: entry.node_id, endpoint_id: entry.endpoint_id, address: entry.address, port: entry.port, public_port: entry.public_port, enabled: entry.enabled} : {deployment_mode: 'external', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', port: 10000, public_port: 10000, enabled: true})
+  Object.assign(form, entry ? {deployment_mode: entry.deployment_mode || 'managed', network: entry.network || 'tcp_udp', name: entry.name, node_id: entry.node_id, endpoint_id: entry.endpoint_id, address: entry.address, listen_address: entry.listen_address || '0.0.0.0', port: entry.port, public_port: entry.public_port, enabled: entry.enabled} : {deployment_mode: 'external', network: 'tcp_udp', name: '', node_id: 0, endpoint_id: 0, address: '', listen_address: '0.0.0.0', port: 10000, public_port: 10000, enabled: true})
   open.value = true
 }
 async function save() {
@@ -101,10 +104,14 @@ async function save() {
     await saveNetworkEntry(editing.value?.id || 0, payload); open.value = false; message.value = '已保存服务和节点组关联。'; emit('saved'); if(!props.editorOnly) await load()
   } catch(cause) { formError.value = failure(cause) } finally { saving.value = false }
 }
-async function remove(entry: NetworkEntry) {
-  if(!await confirmAction({title: '删除前置入口', message: `删除「${entry.name}」及节点组关联。${entry.deployment_mode === 'external' ? '外部转发由您自行停止。' : '面板将撤除入口服务器的转发配置。'}父协议及单独授权的直连线路保留；仅依赖此入口的授权会撤回。`, confirmText: '删除入口', tone: 'danger'})) return
-  try { await deleteNetworkEntry(entry.id); message.value = entry.deployment_mode === 'external' ? '已删除入口并撤回关联授权。' : '已删除入口，正在撤回关联授权和转发配置。'; emit('saved'); if(!props.editorOnly) await load() } catch(cause) { error.value = failure(cause) }
+const deletionTarget = ref<NetworkEntry | null>(null)
+function remove(entry: NetworkEntry) { deletionTarget.value = entry }
+async function entryDeleted() {
+  deletionTarget.value = null
+  message.value = '入口已删除，历史账本保留；运行配置撤除结果请查看发布任务。'
+  emit('saved'); if (!props.editorOnly) await load()
 }
+
 let poolSequence=0
 watch(()=>form.node_id,async (id,previous)=>{const seq=++poolSequence;poolOptions.value=[];poolError.value='';if(previous && id !== editing.value?.node_id)poolID.value=0;if(!id)return;poolLoading.value=true;try{const pools=await fetchNodeProxyPools(id);if(seq===poolSequence)poolOptions.value=pools.map(pool=>({label:pool.name,value:pool.id}))}catch(cause){if(seq===poolSequence)poolError.value=failure(cause)}finally{if(seq===poolSequence)poolLoading.value=false}})
 defineExpose({edit,load,remove})

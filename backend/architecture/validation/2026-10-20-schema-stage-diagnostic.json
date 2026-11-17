@@ -1,0 +1,581 @@
+{
+  "recorded_utc": "2026-10-20T22:11:15.123929+00:00",
+  "clone": "/workspace/zboard-current-verify",
+  "head": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "tree": "4946c24153d9c2b307e7c5a7e59aa411d0770c28",
+  "status_before": "clean",
+  "files_before": {
+    "/workspace/zboard-current-verify/backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/database.go.overlay": "cfe7d6e7aa23b7cae6c9f7318f3f359a275632e1e4b8ef70d802315ef3d09c23",
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/fixed-31-stage-measurement/overlay.json": "9c798bfcf13d277b736e8e2bfb2d826f95215f048528aba65a107af26881fbb7"
+  },
+  "status": "completed",
+  "command": [
+    "go",
+    "test",
+    "-overlay",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/fixed-31-stage-measurement/overlay.json",
+    "-p",
+    "1",
+    "./internal/datastore",
+    "-run",
+    "^$",
+    "-bench",
+    "^BenchmarkMySQLSchemaPreparation$",
+    "-benchtime=1x",
+    "-count=3",
+    "-v"
+  ],
+  "started_utc": "2026-10-20T22:11:18.519674+00:00",
+  "wall_seconds": 15.45273791100044,
+  "finished_utc": "2026-10-20T22:11:33.972431+00:00",
+  "exit_code": 0,
+  "files_after": {
+    "/workspace/zboard-current-verify/backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/database.go.overlay": "cfe7d6e7aa23b7cae6c9f7318f3f359a275632e1e4b8ef70d802315ef3d09c23",
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/fixed-31-stage-measurement/overlay.json": "9c798bfcf13d277b736e8e2bfb2d826f95215f048528aba65a107af26881fbb7"
+  },
+  "file_hashes_unchanged": true,
+  "status_after": "",
+  "head_after": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "samples_file": "samples.json",
+  "samples_sha256": "968e4d7cb1dff1de26130481e316b0e32cff8c96c2353a5e0cc6cbeef80c2324",
+  "raw_log_sha256": "cf7939a1305519e82d29a66193e236a084cf3887b5efbcf82917ead363fe35b7",
+  "runner_sha256": "c23b0662af82fb0841915269c97e73a6301c2a96ebb8dca5cc32b7e5e95d5346",
+  "conclusion": "Versioned-migrations stage dominates this fresh complete Prepare sample. No per-reconciler or per-SQL latency attribution, no CI timeout causal finding, no optimization or full-suite acceptance.",
+  "measurement_caveats": [
+    "Stage times exclude own before/after counter samples; outer s/prepare includes all probe/logging overhead.",
+    "Each raw stage Com_select includes one after-probe CONNECTION_ID SELECT.",
+    "Whole Com_select includes all sixteen stage CONNECTION_ID probes and the benchmark trailing CONNECTION_ID probe.",
+    "Complete Prepare includes final inventory absent from actual handler fixture.",
+    "Session counters count statements, not per-statement latency or wait causes."
+  ],
+  "failed_or_unexecuted": {
+    "failed_commands": [],
+    "unexecuted": [
+      "No Go test suite, race, capacity or original CI gate run by this task.",
+      "No next-level RunMigrations profiling executed."
+    ]
+  },
+  "source_changes": "None: fixed clone clean before and after; source, overlay and benchmark SHA256 unchanged.",
+  "samples": {
+    "status": "PASS",
+    "samples": [
+      {
+        "sample": 1,
+        "session": 21503,
+        "stage_seconds_sum": 4.0573518260000005,
+        "stages": [
+          {
+            "name": "versioned migrations",
+            "session": 21503,
+            "seconds": 3.790065391,
+            "counters_raw": {
+              "Com_alter_table": 69,
+              "Com_create_index": 15,
+              "Com_create_table": 103,
+              "Com_delete": 1,
+              "Com_drop_table": 3,
+              "Com_drop_trigger": 12,
+              "Com_insert": 95,
+              "Com_select": 1722,
+              "Com_update": 24
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "commerce",
+            "session": 21503,
+            "seconds": 0.010056173,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 1,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 15,
+              "Com_update": 3
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "subscription access",
+            "session": 21503,
+            "seconds": 0.042175565,
+            "counters_raw": {
+              "Com_alter_table": 5,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 1,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "event projections",
+            "session": 21503,
+            "seconds": 0.055911077,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 6,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 1,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "traffic read models",
+            "session": 21503,
+            "seconds": 0.020069402,
+            "counters_raw": {
+              "Com_alter_table": 1,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 15,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "operations",
+            "session": 21503,
+            "seconds": 0.006227677,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 2,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "fair use telemetry",
+            "session": 21503,
+            "seconds": 0.008298344,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 5,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "required-table inventory",
+            "session": 21503,
+            "seconds": 0.124548197,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 301,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          }
+        ],
+        "whole_benchmark_metrics": {
+          "ns/op": 4070511863.0,
+          "ALTER/op": 75.0,
+          "CREATE_INDEX/op": 15.0,
+          "SELECT/op": 2084.0,
+          "s/prepare": 4.071
+        },
+        "probe_and_outer_overhead_seconds": 0.01316003699999957,
+        "whole_seconds_from_nsop": 4.070511863,
+        "versioned_fraction_of_stage_seconds": 0.9341229337600953,
+        "stage_raw_select_sum": 2075,
+        "stage_selects_excluding_known_after_id_probes": 2067
+      },
+      {
+        "sample": 2,
+        "session": 21506,
+        "stage_seconds_sum": 3.767701673,
+        "stages": [
+          {
+            "name": "versioned migrations",
+            "session": 21506,
+            "seconds": 3.505052803,
+            "counters_raw": {
+              "Com_alter_table": 69,
+              "Com_create_index": 15,
+              "Com_create_table": 103,
+              "Com_delete": 1,
+              "Com_drop_table": 3,
+              "Com_drop_trigger": 12,
+              "Com_insert": 95,
+              "Com_select": 1722,
+              "Com_update": 24
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "commerce",
+            "session": 21506,
+            "seconds": 0.007524415,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 1,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 15,
+              "Com_update": 3
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "subscription access",
+            "session": 21506,
+            "seconds": 0.054705881,
+            "counters_raw": {
+              "Com_alter_table": 5,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 1,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "event projections",
+            "session": 21506,
+            "seconds": 0.049931647,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 6,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 1,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "traffic read models",
+            "session": 21506,
+            "seconds": 0.021598558,
+            "counters_raw": {
+              "Com_alter_table": 1,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 15,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "operations",
+            "session": 21506,
+            "seconds": 0.005443527,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 2,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "fair use telemetry",
+            "session": 21506,
+            "seconds": 0.008476831,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 5,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "required-table inventory",
+            "session": 21506,
+            "seconds": 0.114968011,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 301,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          }
+        ],
+        "whole_benchmark_metrics": {
+          "ns/op": 3776919873.0,
+          "ALTER/op": 75.0,
+          "CREATE_INDEX/op": 15.0,
+          "SELECT/op": 2084.0,
+          "s/prepare": 3.777
+        },
+        "probe_and_outer_overhead_seconds": 0.009218200000000287,
+        "whole_seconds_from_nsop": 3.776919873,
+        "versioned_fraction_of_stage_seconds": 0.9302893666231095,
+        "stage_raw_select_sum": 2075,
+        "stage_selects_excluding_known_after_id_probes": 2067
+      },
+      {
+        "sample": 3,
+        "session": 21509,
+        "stage_seconds_sum": 3.7348915430000003,
+        "stages": [
+          {
+            "name": "versioned migrations",
+            "session": 21509,
+            "seconds": 3.492523878,
+            "counters_raw": {
+              "Com_alter_table": 69,
+              "Com_create_index": 15,
+              "Com_create_table": 103,
+              "Com_delete": 1,
+              "Com_drop_table": 3,
+              "Com_drop_trigger": 12,
+              "Com_insert": 95,
+              "Com_select": 1722,
+              "Com_update": 24
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "commerce",
+            "session": 21509,
+            "seconds": 0.009770735,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 1,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 15,
+              "Com_update": 3
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "subscription access",
+            "session": 21509,
+            "seconds": 0.038378244,
+            "counters_raw": {
+              "Com_alter_table": 5,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 1,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "event projections",
+            "session": 21509,
+            "seconds": 0.049345722,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 6,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 1,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "traffic read models",
+            "session": 21509,
+            "seconds": 0.019787659,
+            "counters_raw": {
+              "Com_alter_table": 1,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 15,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "operations",
+            "session": 21509,
+            "seconds": 0.004962232,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 2,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "fair use telemetry",
+            "session": 21509,
+            "seconds": 0.007249609,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 5,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 7,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          },
+          {
+            "name": "required-table inventory",
+            "session": 21509,
+            "seconds": 0.112873464,
+            "counters_raw": {
+              "Com_alter_table": 0,
+              "Com_create_index": 0,
+              "Com_create_table": 0,
+              "Com_delete": 0,
+              "Com_drop_table": 0,
+              "Com_drop_trigger": 0,
+              "Com_insert": 0,
+              "Com_select": 301,
+              "Com_update": 0
+            },
+            "after_probe_select": 1,
+            "error": "<nil>"
+          }
+        ],
+        "whole_benchmark_metrics": {
+          "ns/op": 3746530291.0,
+          "ALTER/op": 75.0,
+          "CREATE_INDEX/op": 15.0,
+          "SELECT/op": 2084.0,
+          "s/prepare": 3.747
+        },
+        "probe_and_outer_overhead_seconds": 0.011638747999999755,
+        "whole_seconds_from_nsop": 3.746530291,
+        "versioned_fraction_of_stage_seconds": 0.9351071745431939,
+        "stage_raw_select_sum": 2075,
+        "stage_selects_excluding_known_after_id_probes": 2067
+      }
+    ],
+    "caveats": [
+      "Stage times exclude own before/after counter samples; outer s/prepare includes all probe/logging overhead.",
+      "Each raw stage Com_select includes one after-probe CONNECTION_ID SELECT.",
+      "Whole Com_select includes all sixteen stage CONNECTION_ID probes and the benchmark trailing CONNECTION_ID probe.",
+      "Complete Prepare includes final inventory absent from actual handler fixture.",
+      "Session counters count statements, not per-statement latency or wait causes."
+    ],
+    "summary": {
+      "versioned_seconds": [
+        3.790065391,
+        3.505052803,
+        3.492523878
+      ],
+      "versioned_seconds_median": 3.505052803,
+      "whole_seconds_from_nsop": [
+        4.070511863,
+        3.776919873,
+        3.746530291
+      ],
+      "all_sample_counters_equal": true,
+      "next_action": "Proposal only: subdivide RunMigrations without skipping, caching, reordering or changing any original work. No further diagnostic executed."
+    }
+  },
+  "scope": "Diagnostic overlay only; actual complete Prepare with original function order and tail. No production optimization or gate acceptance.",
+  "reproduce_limit": "Exact diagnostic overlay is retained in private cloud evidence at its recorded hash; tracked BenchmarkMySQLSchemaPreparation reproduces the whole uninstrumented boundary. This is investigative stage evidence, not a public reusable tool or whole-suite acceptance."
+}

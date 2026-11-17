@@ -7,6 +7,21 @@ import AccountOrders from './AccountOrders.vue'
 vi.mock('../../api/client', () => ({ cancelOrder: vi.fn(), fetchAccountOrdersPage: vi.fn() }))
 
 describe('account order terminal subscription history', () => {
+  it('redirects legacy payment returns to the matching order detail without mounting payment on the list', async () => {
+    vi.mocked(fetchAccountOrdersPage).mockResolvedValue({
+      items: [{ id: 1, status: 'pending', created_at: '', amount_cents: 100, currency: 'CNY' }, { id: 2, status: 'pending', created_at: '', amount_cents: 100, currency: 'CNY' }],
+      total: 2, offset: 0, limit: 25,
+      page: { offset: 0, limit: 25, total: 2, next_cursor: null, previous_cursor: null }, aggregates: {}, facets: {},
+    } as any)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/account/orders', component: AccountOrders }, { path: '/account/orders/:id', component: { template: '<div />' } }] })
+    await router.push('/account/orders?payment_order=1&payment_plugin=old.plugin'); await router.isReady()
+    const wrapper = mount(AccountOrders, { global: { plugins: [router], stubs: { CheckoutPayment: true } } }); await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/account/orders/1')
+    expect(router.currentRoute.value.query).toEqual({ payment_plugin: 'old.plugin' })
+    expect(wrapper.find('checkout-payment-stub').exists()).toBe(false)
+    expect(wrapper.findAll('a').find(link => link.text() === '继续支付' && link.attributes('href') === '/account/orders/2')).toBeDefined()
+    wrapper.unmount()
+  })
   it('shows the final service state after its instance has been cleaned', async () => {
     vi.mocked(fetchAccountOrdersPage).mockResolvedValue({
       items: [{
@@ -37,6 +52,22 @@ describe('account order terminal subscription history', () => {
     expect(wrapper.text()).toContain('最终用量')
     expect(wrapper.text()).toContain('已支付')
     expect(wrapper.text()).toContain('¥5.00')
+    expect(wrapper.find('[data-plugin-slot]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/account/orders/1"]').exists()).toBe(true)
     wrapper.unmount()
   })
+  it('accepts a circulated order number as an account-scoped filter and restores it in the URL', async () => {
+    vi.mocked(fetchAccountOrdersPage).mockResolvedValue({items: [], total:0, offset:0, limit:25} as any)
+    const router = createRouter({history:createMemoryHistory(), routes:[{path:'/account/orders',component:AccountOrders}]})
+    await router.push('/account/orders?number=DD0000000027&status=paid'); await router.isReady()
+    const wrapper = mount(AccountOrders, {global:{plugins:[router]}}); await flushPromises()
+    expect(fetchAccountOrdersPage).toHaveBeenLastCalledWith(expect.objectContaining({id:'DD0000000027',status:'paid'}), expect.any(Object))
+    expect(wrapper.text()).toContain('DD0000000027')
+    const filters = wrapper.findComponent({name:'WorkbenchFilterBar'})
+    filters.vm.$emit('clear'); await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(fetchAccountOrdersPage).toHaveBeenLastCalledWith(expect.objectContaining({id:undefined,status:undefined}), expect.any(Object))
+    wrapper.unmount()
+  })
+
 })

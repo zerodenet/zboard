@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"text/scanner"
 )
 
 const ownershipLedgerPath = "architecture/capability-ownership.json"
@@ -294,23 +295,75 @@ func findContractEvidence(items []contractEvidence, name string) contractEvidenc
 	return contractEvidence{}
 }
 
-var rpcPattern = regexp.MustCompile(`\brpc\s+([A-Za-z][A-Za-z0-9_]*)\s*\(`)
 var pluginCapabilityPattern = regexp.MustCompile(`^zboard(?:\.[a-z][a-z0-9_-]*)+\.v[1-9][0-9]*$`)
 
 func scanPluginRPCs(root string) ([]contractEvidence, error) {
-	rel := "pkg/pluginapi/v1/control.proto"
-	payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	paths, err := filepath.Glob(filepath.Join(root, "pkg", "pluginapi", "v1", "*.proto"))
 	if err != nil {
 		return nil, err
 	}
 	result := []contractEvidence{}
-	text := string(payload)
-	for _, match := range rpcPattern.FindAllStringSubmatchIndex(text, -1) {
-		line := 1 + strings.Count(text[:match[0]], "\n")
-		result = append(result, contractEvidence{Name: "PluginControl." + text[match[2]:match[3]], Source: rel, Line: line})
+	for _, path := range paths {
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil, err
+		}
+		var tokens scanner.Scanner
+		tokens.Init(strings.NewReader(string(payload)))
+		tokens.Filename = rel
+		tokens.Mode = scanner.ScanIdents | scanner.ScanStrings | scanner.ScanRawStrings | scanner.ScanComments | scanner.SkipComments
+		var scanErr error
+		tokens.Error = func(s *scanner.Scanner, message string) { scanErr = fmt.Errorf("%s: %s", s.Position, message) }
+		depth, serviceDepth := 0, 0
+		declarationStart := true
+		service, pendingService := "", ""
+		for tok := tokens.Scan(); tok != scanner.EOF; tok = tokens.Scan() {
+			switch {
+			case tok == scanner.Ident && tokens.TokenText() == "service" && depth == 0 && declarationStart:
+				if tokens.Scan() != scanner.Ident {
+					return nil, fmt.Errorf("%s: expected service name", tokens.Position)
+				}
+				pendingService = tokens.TokenText()
+				declarationStart = false
+			case tok == '{':
+				depth++
+				if pendingService != "" {
+					service, serviceDepth, pendingService = pendingService, depth, ""
+				}
+			case tok == '}':
+				if depth == serviceDepth {
+					service, serviceDepth = "", 0
+				}
+				depth--
+				if depth == 0 {
+					declarationStart = true
+				}
+			case tok == scanner.Ident && tokens.TokenText() == "rpc" && service != "" && depth == serviceDepth:
+				line := tokens.Position.Line
+				if tokens.Scan() != scanner.Ident {
+					return nil, fmt.Errorf("%s: expected RPC name", tokens.Position)
+				}
+				name := tokens.TokenText()
+				if tokens.Scan() != '(' {
+					return nil, fmt.Errorf("%s: expected RPC request", tokens.Position)
+				}
+				result = append(result, contractEvidence{Name: service + "." + name, Source: filepath.ToSlash(rel), Line: line})
+			default:
+				if depth == 0 {
+					declarationStart = tok == ';'
+				}
+			}
+		}
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		if depth != 0 || pendingService != "" {
+			return nil, fmt.Errorf("%s: unbalanced protobuf declarations", rel)
+		}
 	}
 	return result, nil
 }

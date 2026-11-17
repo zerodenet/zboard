@@ -13,6 +13,9 @@ type CertificateInventory struct{ DB *gorm.DB }
 
 func (s CertificateInventory) ListCertificates(ctx context.Context, input network.CertificateInventoryQuery) (network.CertificateInventoryPage, error) {
 	query := s.DB.WithContext(ctx).Model(&model.ManagedCertificate{})
+	if input.NodeID == 0 {
+		query = query.Where("node_id NOT IN (?)", s.DB.Model(&model.Node{}).Select("id").Where("lifecycle_status = ?", "archived"))
+	}
 	if input.NodeID != 0 {
 		query = query.Where("node_id = ?", input.NodeID)
 	}

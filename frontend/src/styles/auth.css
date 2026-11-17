@@ -1,5 +1,5 @@
 .auth-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(360px, .9fr) minmax(520px, 1.1fr); background: var(--surface); }
-.auth-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 48px; color: var(--info-soft-alt); background: var(--sidebar); }
+.auth-aside { position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 48px; color: var(--info-soft-alt); background: var(--auth-aside-background); }
 .auth-aside::before { content: ''; position: absolute; inset: 0; opacity: .28; background-image: linear-gradient(var(--auth-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--auth-grid-line) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom right, var(--color-black), transparent 76%); }
 .auth-aside::after { content: ''; position: absolute; width: 420px; height: 420px; right: -180px; bottom: -160px; border: 1px solid var(--auth-ring); border-radius: 50%; box-shadow: 0 0 0 70px var(--auth-halo), 0 0 0 140px var(--auth-halo-soft); }
 .auth-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; color: var(--text-inverse); font-weight: 750; }

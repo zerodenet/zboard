@@ -1,7 +1,7 @@
 <template>
   <div class="membership-editor">
     <div class="membership-add">
-      <NodeGroupLookup v-model="candidateID" :disabled="!canAdd" placeholder="搜索并选择要关联的节点组" @select="addSelectedGroup" />
+      <NodeGroupLookup v-model="candidateID" :disabled="!canAdd" placeholder="选择要关联的节点组（可搜索）" @select="addSelectedGroup" />
     </div>
     <p v-if="!canAdd" class="membership-note">协议服务停用时不能新增节点组关联；已有关联仍可移除。</p>
     <p v-else class="membership-note">选中后立即加入下方关联列表，保存协议服务时生效。</p>
@@ -46,5 +46,5 @@ function remove(id: number) { emit('update:modelValue', props.modelValue.filter(
 </script>
 
 <style scoped>
-.membership-editor{display:grid;gap:10px}.membership-add{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:8px}.membership-list{display:grid;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.membership-list article{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px}.membership-list article+article{border-top:1px solid var(--line)}.membership-list strong,.membership-list small{display:block}.membership-list strong{font-size:11px}.membership-list small,.membership-note,.membership-empty{margin:0;color:var(--muted);font-size:9px}.membership-empty{padding:10px;border:1px dashed var(--line-strong);border-radius:9px;background:var(--surface-soft)}@media(max-width:640px){.membership-add{grid-template-columns:1fr}}
+.membership-editor{display:grid;gap:10px}.membership-add{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:8px}.membership-list{display:grid;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.membership-list article{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px}.membership-list article+article{border-top:1px solid var(--line)}.membership-list strong,.membership-list small{display:block}.membership-list strong{font-size:11px}.membership-list small,.membership-note,.membership-empty{margin:0;color:var(--muted);font-size: 12px}.membership-empty{padding:10px;border:1px dashed var(--line-strong);border-radius:9px;background:var(--surface-soft)}@media(max-width:640px){.membership-add{grid-template-columns:1fr}}
 </style>

@@ -1,0 +1,51 @@
+{
+  "source": "01ebcde72befca5f491e96c9b4c8b03fe125118a",
+  "run_id": 39515537970,
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39515537970",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 118946679096,
+      "name": "compose",
+      "conclusion": "success"
+    },
+    {
+      "id": 118946679364,
+      "name": "contract",
+      "conclusion": "success"
+    },
+    {
+      "id": 118946679366,
+      "name": "mysql",
+      "conclusion": "success"
+    },
+    {
+      "id": 118946679429,
+      "name": "zrs-compiler",
+      "conclusion": "success"
+    },
+    {
+      "id": 118946679443,
+      "name": "backend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118946679594,
+      "name": "frontend",
+      "conclusion": "success"
+    }
+  ],
+  "mysql_seconds": {
+    "datastore": 136.742,
+    "handler": 759.718,
+    "networkstore": 89.451,
+    "jobstore": 97.168,
+    "platformstore_copy": 89.123
+  },
+  "raw_log_sha256": "843edad232733d374f7cb1d0e8170852cd90e2886a32687eddca27f9b02818bd",
+  "limits": [
+    "Current exact01eb CI all6 jobs pass; e902900s failure remains.",
+    "No stable latency margin or causal startup/CI fix inferred.",
+    "Original unchanged commands, timeout and existing exclusions."
+  ]
+}

@@ -23,6 +23,7 @@ func TestRealZeroNodeExhaustionRevokesDataPlane(t *testing.T) {
 	}
 	control := f.paid(t, f.create(t, 0).ID)
 	secret, controlSecret := realZeroSecret(t, f, paid.SubscriptionID), realZeroSecret(t, f, control.SubscriptionID)
+	initializeRealZeroNode(t, f, endpoint)
 	f.h.StartNodePublishWorker()
 	t.Cleanup(f.h.CloseNodePublishWorker)
 	waitRealZero(t, 90*time.Second, "initial quota publication", func() error { return realZeroEcho(secret) })

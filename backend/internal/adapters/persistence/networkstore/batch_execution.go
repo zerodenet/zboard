@@ -141,7 +141,7 @@ func commitNodeLifecycle(tx *gorm.DB, action network.BatchResourceAction) error 
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&node, action.NodeID).Error; err != nil {
 		return err
 	}
-	if node.LifecycleStatus == "deleting" {
+	if network.NodeManagementClosed(node.LifecycleStatus) {
 		return network.ErrBatchResourceDeleting
 	}
 	enabled := action.Lifecycle == "active"

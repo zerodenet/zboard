@@ -9,8 +9,8 @@ const nodesSource = readFileSync(
 
 describe('node Connector status semantics', () => {
   it('does not label Connector reachability as Zero health', () => {
-    expect(nodesSource).toContain('<th>Connector</th>')
-    expect(nodesSource).toContain('label="Connector"')
+    expect(nodesSource).toContain('<th>连接</th>')
+    expect(nodesSource).toContain('label="节点连接"')
     expect(nodesSource).toContain('label="Zero 内核"')
     expect(nodesSource).not.toContain('<th>Zero</th>')
   })

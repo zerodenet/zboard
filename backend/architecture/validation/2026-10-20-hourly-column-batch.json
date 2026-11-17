@@ -1,0 +1,158 @@
+{
+  "scope": "MySQL 0054 owned reconciler only: batch this invocation's missing columns into one ALTER using unmodified published column definitions; SQLite remains separate per-column execution. CREATE INDEX, explicit DROP TRIGGER, authority preflight, recovery and receipt order retained.",
+  "files": {
+    "internal/datastore/hourly_projection_schema.go": "99d54ad4fab29d8cd1a802c59955c1e2fdc1aee3ae9a16588d486db40c9c2dda",
+    "internal/datastore/hourly_projection_batch_mysql_test.go": "6bf91e1013b7584ed13fd8b20e18b8a60474580dcb0956050a1c3a86738a1f3a",
+    "internal/datastore/schema_preparation_mysql_benchmark_test.go": "3c6ea7b9a750e5430f7442edad03f58804d1644b43bfce4b6f2bbe82bf11ff99"
+  },
+  "old_source_sha256": "1691a25a4b7d70def477949d9c2731df19d668f4076b02385579e97f845fcacc",
+  "published_0054_sha256": "4395aaba4562b992ea1ca3909305e6eab6c439f8b2c35ff47dc044b8356e6cb4",
+  "published_sql_unchanged": true,
+  "measured_source_unchanged": true,
+  "environment": {
+    "go": "1.26.8",
+    "GOMAXPROCS": "1",
+    "parallel_packages": "-p 1",
+    "database": "existing isolated MySQL 8.4 instance; each fresh benchmark gets a random schema/disposable schema-only account",
+    "dsn": "existing literal loaded via AST into child environment; not printed or copied",
+    "quiet_window": "parent reported no other Go/MySQL/Chromium/capacity load; all agent commands ran sequentially. Parent completed old-cache cleanup before normal compilation/targeted warm-up; no cleanup during benchmark."
+  },
+  "checks": [
+    {
+      "command": "go test -p 1 ./internal/datastore -run ^TestSQLiteHourlyProjection(CutoverPreservesHistoricalAndPendingBoundaries|PendingStorageSample)$ -count=1 -v",
+      "result": "PASS",
+      "package_seconds": 0.155,
+      "log": "fixed-sqlite.log"
+    },
+    {
+      "scope": "First old-source real MySQL attempt",
+      "result": "FAIL: expected batching mismatch plus new fixture parsing defect",
+      "log": "before-mysql.log",
+      "reason": "Naive fixture SQL split encountered a semicolon inside a published -- comment; test fixture corrected by excluding standalone comment lines before simulating prefixes. Production and published SQL unchanged; failed attempt retained."
+    },
+    {
+      "command": "go test -p 1 -overlay before-overlay.json ./internal/datastore -run ^TestMySQLHourlyProjectionBatchesMissingColumnsWithoutChangingCutover$ -count=1 -timeout 3m -v",
+      "result": "expected FAIL only DDL batch counts",
+      "package_seconds": 10.228,
+      "log": "before-mysql-corrected-fixture.log",
+      "actual": "Five missing columns performed five ALTERs; three missing performed three. All remaining preservation, recovery, types, indexes, receipt, permission and pending-authority assertions completed without failures."
+    },
+    {
+      "command": "go test -p 1 ./internal/datastore ./internal/handler -run ^(TestMySQLHourlyProjectionBatchesMissingColumnsWithoutChangingCutover|TestMySQLHourlyUpgradeRejectsHiddenLegacyTrigger|TestMySQLHourlyProjectionSchemaResumesPartialDDLAndRefusesLostCoverage|TestMySQLHourlyProjectionFailureAndRebuildPreservePendingCheckpoint|TestMySQLSlowHourlyProjectionDoesNotHoldCoreIntentInsertGap)$ -count=1 -timeout 3m -v",
+      "result": "PASS all five",
+      "package_seconds": {
+        "datastore": 16.147,
+        "handler": 14.837
+      },
+      "log": "fixed-mysql.log"
+    },
+    {
+      "command": "go test -p 1 [-overlay before-overlay.json for old source only] ./internal/datastore -run ^$ -bench ^BenchmarkMySQLSchemaPreparation$ -benchtime=1x -count=3 -v",
+      "result": "PASS old and fixed; identical measurement source; each repetition exactly one real complete application.PrepareDatabaseSchema",
+      "logs": [
+        "before-prepare-benchmark.log",
+        "fixed-prepare-benchmark.log"
+      ]
+    },
+    {
+      "command": "gofmt; git diff --check; sha256sum -c published-0054.sha256; sha256sum -c benchmark-source.before.sha256",
+      "result": "PASS"
+    }
+  ],
+  "behavior": "One random MySQL schema through real RunMigrations; fresh and resumed zero/two/five-column prefixes, missing indexes and repeat runs. Same session counters, exact nullable/default/type/precision/index order, legacy false vs current true hourly completion, immutable source Meta/settled values and exact hourly/daily sums. Missing ALTER privilege surfaces 1142 without a fake receipt or columns; regrant resumes. Incomplete active hourly coverage with missing receipt is rejected before adding a defaulted scope. Existing hidden-trigger permission rejection and slow-projection/core-gap tests retained and passed.",
+  "benchmark": {
+    "samples": {
+      "before": {
+        "raw": [
+          {
+            "ns_per_prepare": 3965290294,
+            "session_alter_statements": 79,
+            "session_create_index_statements": 15,
+            "connection_id": 18509
+          },
+          {
+            "ns_per_prepare": 3794787349,
+            "session_alter_statements": 79,
+            "session_create_index_statements": 15,
+            "connection_id": 18512
+          },
+          {
+            "ns_per_prepare": 3548811768,
+            "session_alter_statements": 79,
+            "session_create_index_statements": 15,
+            "connection_id": 18515
+          }
+        ],
+        "prepare_seconds": {
+          "min": 3.548811768,
+          "median": 3.794787349,
+          "max": 3.965290294
+        }
+      },
+      "fixed": {
+        "raw": [
+          {
+            "ns_per_prepare": 4075810787,
+            "session_alter_statements": 75,
+            "session_create_index_statements": 15,
+            "connection_id": 18518
+          },
+          {
+            "ns_per_prepare": 4006580145,
+            "session_alter_statements": 75,
+            "session_create_index_statements": 15,
+            "connection_id": 18521
+          },
+          {
+            "ns_per_prepare": 3706202978,
+            "session_alter_statements": 75,
+            "session_create_index_statements": 15,
+            "connection_id": 18524
+          }
+        ],
+        "prepare_seconds": {
+          "min": 3.706202978,
+          "median": 4.006580145,
+          "max": 4.075810787
+        }
+      }
+    },
+    "conclusion": "Four fewer ALTER statements (79 to 75); CREATE INDEX remains 15. Three samples per source did not show a startup latency improvement: fixed median is higher. No CI15-minute/HTTP/capacity success claim.",
+    "limits": [
+      "Old group then fixed group, three samples per source, no statistical confidence claim.",
+      "Timed operation excludes compilation, fixture provisioning, counter queries and cleanup.",
+      "Startup must retain explicit TRIGGER permission checks; metadata visibility cannot prove a legacy writer absent.",
+      "Only the disposable fixture account's own schema ALTER permission changed in the regression; no global MySQL/security settings or actual credentials changed."
+    ]
+  },
+  "not_run": [
+    "new-source whole backend suite",
+    "original 15-minute real MySQL core suite and sequential copy suite",
+    "new-source capacity profile",
+    "new CI run"
+  ],
+  "base": "00f85fb9aa619d405882216b1a5f765bbeae32c8",
+  "migration": "No new version or published asset edit. Current owned0054 reconciler merges only missing ADD COLUMN fragments; indexes/explicit trigger drops/receipt and authority preflight unchanged.",
+  "rollback": "Source revert restores separate column statements; retain all pending flags, receipts, immutable facts and derived sums. No destructive data operation.",
+  "full_backend_prior_source": {
+    "source": "58f0748e4fcdf3800f6632ff2698c7cee15b1c20",
+    "go_seconds": 286.586,
+    "vet_seconds": 3.611,
+    "build_seconds": 1.881,
+    "pure_go_sqlite_seconds": 19.505,
+    "qualification": "Passed before this schema change, not its final full validation"
+  },
+  "ci_history": {
+    "c4a0fbf": "all6success",
+    "four_e1a78d": {
+      "run": 39495150934,
+      "five_jobs": "pass",
+      "mysql": "original15m timeout, handler900.016s; AccountingBatchReplay test4s at timeout; no individual assertion failure; later jobstore/copy unexecuted"
+    },
+    "one_9149cf": {
+      "run": 39496002709,
+      "result": "all6success",
+      "qualification": "New schema change remains unaccepted by this earlier result"
+    }
+  }
+}

@@ -14,7 +14,7 @@ func TestCommerceSKUQueriesVisibilityAndAuthority(t *testing.T) {
 		t.Run(engine, func(t *testing.T) {
 			var h *handlers
 			if engine == "mysql" {
-				h, _ = newMySQLPublishHandlers(t)
+				h, _ = newMySQLBusinessHandlers(t)
 			} else {
 				h, _ = newAnnouncementTestHandlers(t)
 			}

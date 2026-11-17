@@ -23,8 +23,10 @@ type NodeDeleteCleanup struct {
 type NodeRemoved struct {
 	ID                             uint              `json:"id"`
 	Deleted                        bool              `json:"deleted"`
+	Archived                       bool              `json:"archived"`
+	HistoryPreserved               bool              `json:"history_preserved"`
 	Cleanup                        NodeDeleteCleanup `json:"cleanup"`
-	TrafficRecordsRetained         int64             `json:"traffic_records_retained"`
+	TrafficRecordsRetained         int64             `json:"traffic_records_retained,omitempty"`
 	RemoteZeroRetained             bool              `json:"remote_zero_retained"`
 	RemoteZeroStopped              bool              `json:"remote_zero_stopped"`
 	RemoteCertificateFilesRetained bool              `json:"remote_certificate_files_retained"`
@@ -53,5 +55,5 @@ func (s NodeRemoval) Remove(ctx context.Context, actor, id uint) (NodeRemoved, e
 	if err != nil {
 		return NodeRemoved{}, err
 	}
-	return NodeRemoved{ID: id, Deleted: true, Cleanup: facts.Cleanup, TrafficRecordsRetained: facts.TrafficRecordsRetained, RemoteZeroRetained: true, RemoteCertificateFilesRetained: true, ProviderDNSRecordsRetained: true, RemoteCleanupRunID: facts.RemoteCleanupRunID}, nil
+	return NodeRemoved{ID: id, Archived: true, HistoryPreserved: true, Cleanup: facts.Cleanup, TrafficRecordsRetained: facts.TrafficRecordsRetained, RemoteZeroRetained: true, RemoteCertificateFilesRetained: true, ProviderDNSRecordsRetained: true, RemoteCleanupRunID: facts.RemoteCleanupRunID}, nil
 }

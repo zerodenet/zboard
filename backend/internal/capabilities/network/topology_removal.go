@@ -16,3 +16,15 @@ func (s TopologyRemoval) Entry(ctx context.Context, actor, id uint) error {
 	}
 	return s.Store.RemoveEntry(ctx, actor, id)
 }
+
+func (s TopologyRemoval) Check(ctx context.Context, actor, id uint) (DeletionCheck, error) {
+	if actor == 0 {
+		return DeletionCheck{}, ErrResourcePermission
+	}
+	if store, ok := s.Store.(interface {
+		CheckEntryDeletion(context.Context, uint, uint) (DeletionCheck, error)
+	}); ok {
+		return store.CheckEntryDeletion(ctx, actor, id)
+	}
+	return DeletionCheck{}, ErrProtocolEndpointRemovalUnavailable
+}

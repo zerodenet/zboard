@@ -42,7 +42,10 @@ func BilledTrafficBytes(raw, multiplier int64) (int64, error) {
 type FlowCounters struct{ Raw, Upload, Download int64 }
 type ChargeDelta struct {
 	FlowCounters
-	Charged int64
+	Charged           int64
+	AccountingSamples uint64
+	FirstSequence     uint64
+	RoundingNumerator uint64
 }
 
 func CalculateCharge(current, previous FlowCounters, multiplier, total, used int64) (ChargeDelta, error) {

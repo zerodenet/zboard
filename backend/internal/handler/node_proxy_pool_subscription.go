@@ -165,22 +165,29 @@ func (h *handlers) CloseProxyPoolSubscriptionWorker() { h.closeScheduledJob("pro
 
 func (h *handlers) syncDueProxyPools(ctx context.Context, now time.Time) error {
 	service := h.services.ProxyPoolSubscriptions(h.credentialCipher, proxyPoolMutationInspector{h: h})
-	claims, err := service.ClaimDue(ctx, now, 10)
-	if err != nil {
-		log.Printf("proxy pool subscription scan failed: %v", err)
-		return err
-	}
 	var failures []error
-	for _, claim := range claims {
+	// Claim just before fetching. Reserving a whole batch makes the last pool's
+	// lease age while earlier subscriptions are slow or unavailable.
+	for i := 0; i < 10; i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		claims, err := service.ClaimDue(ctx, now, 1)
+		if err != nil {
+			return err
+		}
+		if len(claims) == 0 {
+			break
+		}
+		claim := claims[0]
 		expected := claim.Revision
 		if _, err := h.syncNodeProxyPoolSubscription(ctx, claim.ID, &expected, nil); err != nil && !errors.Is(err, networkcap.ErrProxyPoolConflict) {
 			log.Printf("proxy pool subscription sync failed: pool_id=%d error=%v", claim.ID, err)
 			failures = append(failures, err)
 		}
+		now = time.Now().UTC()
 	}
+
 	return errors.Join(failures...)
 }
 

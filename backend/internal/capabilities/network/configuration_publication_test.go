@@ -23,7 +23,7 @@ func (s *configurationPublicationRepositoryStub) BeginConfigurationPublication(_
 	s.beginRequest = request
 	return s.start, nil
 }
-func (s *configurationPublicationRepositoryStub) SetConfigurationPublicationDesired(_ context.Context, deployment ConfigurationDeployment, desired string) (ConfigurationDeployment, error) {
+func (s *configurationPublicationRepositoryStub) SetConfigurationPublicationDesired(_ context.Context, deployment ConfigurationDeployment, desired string, _ ...string) (ConfigurationDeployment, error) {
 	s.desired = desired
 	deployment.DesiredConfigSHA256 = desired
 	return deployment, nil
@@ -44,6 +44,21 @@ func (s *configurationPublicationRepositoryStub) CompleteConfigurationPublicatio
 func (s *configurationPublicationRepositoryStub) FailConfigurationPublication(_ context.Context, deployment ConfigurationDeployment, message, output string, _ time.Time) (ConfigurationDeployment, error) {
 	s.failure, s.failureOutput = message, output
 	deployment.Status = "failed"
+	return deployment, s.failurePersistence
+}
+
+func (s *configurationPublicationRepositoryStub) UncertainConfigurationPublication(_ context.Context, deployment ConfigurationDeployment, message, output string, _ time.Time) (ConfigurationDeployment, error) {
+	s.failure, s.failureOutput = message, output
+	deployment.Status = "reconciling"
+	return deployment, s.failurePersistence
+}
+func (s *configurationPublicationRepositoryStub) ResolveConfigurationPublication(context.Context, ConfigurationDeployment, bool, string, time.Time) error {
+	return s.failurePersistence
+}
+
+func (s *configurationPublicationRepositoryStub) DeferConfigurationPublication(_ context.Context, deployment ConfigurationDeployment, message, output string, _ time.Time) (ConfigurationDeployment, error) {
+	s.failure, s.failureOutput = message, output
+	deployment.Status = "deferred"
 	return deployment, s.failurePersistence
 }
 

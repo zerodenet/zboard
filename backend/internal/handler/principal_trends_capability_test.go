@@ -3,8 +3,10 @@ package handler
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm"
 	"strconv"
 	"testing"
 	"time"
@@ -27,12 +29,20 @@ func TestPrincipalTrendsUseAuthorizedScopeAndExplicitDayBoundaries(t *testing.T)
 		peak uint64
 	}{{actor.UserID, start.Add(time.Hour), 5}, {actor.UserID, start.Add(24 * time.Hour), 9}, {actor.UserID, start.Add(48 * time.Hour), 99}, {999, start.Add(time.Hour), 88}} {
 		fact := principalFlowScopeObservation{ScopeType: "user", ScopeID: row.id, NodeID: uint(i + 1), EventID: "trend-" + strconv.Itoa(i), CoreInstanceID: "test", ObservedAt: row.at, ActiveFlows: row.peak}
-		if err = h.db.Create(&fact).Error; err != nil {
+		if err = h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&fact).Error; err != nil {
+				return err
+			}
+			return meteringstore.EnqueuePrincipalStatistics(tx, meteringstore.PrincipalFlowScopeObservation(fact))
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if _, err := (meteringstore.PrincipalStatistics{DB: h.db}).Drain(ctx, 200); err != nil {
+		t.Fatal(err)
+	}
 	service := h.services.PrincipalTrends()
 	query := metering.PrincipalTrendQuery{UserID: 999, Buckets: buckets}
 	rows, err := service.Read(ctx, actor.UserID, query)

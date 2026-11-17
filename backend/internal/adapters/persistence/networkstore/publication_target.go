@@ -20,7 +20,7 @@ func (s PublicationTargets) Resolve(ctx context.Context, item network.Publicatio
 		}
 		return network.PublicationTarget{}, false, err
 	}
-	if node.LifecycleStatus == "deleting" {
+	if network.NodeManagementClosed(node.LifecycleStatus) {
 		return network.PublicationTarget{}, false, nil
 	}
 	var endpoint model.ProtocolEndpoint

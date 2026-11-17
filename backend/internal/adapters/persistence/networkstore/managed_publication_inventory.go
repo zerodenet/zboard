@@ -12,7 +12,11 @@ type ManagedPublicationInventory struct{ DB *gorm.DB }
 
 func (s ManagedPublicationInventory) ListManagedPublicationTargets(ctx context.Context, protocols []string) ([]network.PublicationRequest, error) {
 	var rows []model.ProtocolEndpoint
-	if err := s.DB.WithContext(ctx).Select("id", "node_id").Where("LOWER(protocol) IN ?", protocols).Order("id asc").Find(&rows).Error; err != nil {
+	// Startup repairs incomplete principal-aware migrations only. Ready nodes
+	// already have a durable publication path for subsequent business changes.
+	if err := s.DB.WithContext(ctx).Select("id", "node_id").
+		Where("LOWER(protocol) IN ? AND is_active = ? AND managed_principal_ready = ?", protocols, true, false).
+		Order("id asc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make([]network.PublicationRequest, 0, len(rows))

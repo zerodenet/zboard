@@ -1,7 +1,7 @@
 <template>
   <section class="plugin-data-status">
     <h3>数据状态</h3>
-    <p>安装、升级和恢复均由 ZBoard 管理数据版本。插件数据不会覆盖核心用户、身份绑定和审计记录。</p>
+    <p>安装、升级和重新安装均由 ZBoard 管理数据版本。插件数据不会覆盖核心用户、身份绑定和审计记录。</p>
     <dl class="plugin-facts">
       <div><dt>私有存储</dt><dd>{{ plugin.manifest.capabilities.includes('zboard.storage.v1') ? '加密 JSON · 128 个键 / 256 KiB' : '未声明私有存储能力' }}</dd></div>
       <div><dt>已应用数据版本</dt><dd>{{ plugin.data.version }} / 目标 {{ plugin.data.target_version }} · 修订 {{ plugin.data.revision }}</dd></div>

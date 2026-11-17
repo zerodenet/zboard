@@ -1,0 +1,84 @@
+{
+  "source": "6bd9334669b6639ee0329f4399384f9423661c04",
+  "run_id": 39990119933,
+  "url": "https://github.com/zerodenet/zboard/actions/runs/39990119933",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "contract",
+      "id": 120539419580,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "zrs-compiler",
+      "id": 120539419833,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "backend",
+      "id": 120539419874,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "compose",
+      "id": 120539419897,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "mysql",
+      "id": 120539419967,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "frontend",
+      "id": 120539420064,
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "package_seconds": {
+    "datastore": 209.604,
+    "handler": 841.293,
+    "networkstore": 220.77,
+    "application": 25.172,
+    "jobstore": 127.285,
+    "platformstore": 248.909
+  },
+  "local_targeted": "26 Go and11 actual MySQL top-level tests passed, zero skipped; original candidate receipt in2026-10-23-termination-closed-history.json.",
+  "local_full": {
+    "backend4": "not executed on this head",
+    "mysql3": "not executed on this head",
+    "race_count3": "not executed on this head",
+    "reason": "Same original environment lacks storage: after authorized idle Go cache clear531537920B free versus630730752B cache recovered from prior actual complete backend checks. No speculative disk exhaustion run, timeout/coverage reduction, broader cleanup or environment switch."
+  },
+  "capacity": "Not executed; original1677721600B gate after512MiB spool reserve unchanged. Same-env>=2GiB storage request has no provisioned result/resize interface.",
+  "overall_complete": false,
+  "raw_mysql_log": "ci-39990119933-mysql-success.log",
+  "raw_mysql_log_sha256": "55534f1fc5ea8fae809e28bdcf3738b9f8c822c4df551d57bbd09bfc0ba90925",
+  "cache_receipt": {
+    "utc": "2026-10-23T16:52:32.866428+00:00",
+    "target": "/workspace/toolchains/cache/go-build",
+    "resolved": "/workspace/toolchains/cache/go-build",
+    "symlinks": false,
+    "process_scan_valid": true,
+    "ps_columns": [
+      "pid",
+      "state",
+      "comm",
+      "args"
+    ],
+    "workloads_before_env_probe": [],
+    "workloads_after_env_probe": [],
+    "free_before": 55967744,
+    "command": "go clean -cache",
+    "exit_code": 0,
+    "output": "",
+    "free_after": 531537920
+  }
+}

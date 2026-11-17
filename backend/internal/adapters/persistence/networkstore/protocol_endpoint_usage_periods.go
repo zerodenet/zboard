@@ -30,6 +30,17 @@ func (s ProtocolEndpointUsagePeriods) ResetProtocolEndpointUsage(ctx context.Con
 			}
 			return err
 		}
+		// This consistent read shares the daily aggregate's transaction snapshot.
+		// Projection and pending removal commit atomically, so a reset cannot
+		// record a baseline which silently omits accepted but unprojected usage.
+		var pending model.MeteringUsageProjectionPending
+		check := tx.Where("protocol_endpoint_id = ?", endpointID).Limit(1).Find(&pending)
+		if check.Error != nil {
+			return check.Error
+		}
+		if check.RowsAffected > 0 {
+			return network.ErrProtocolEndpointUsagePending
+		}
 		day := now.UTC().Format("2006-01-02")
 		var totals struct {
 			Total int64

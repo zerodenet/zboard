@@ -80,6 +80,9 @@ func (s GroupCredentialReconciliation) ensureSubscriptions(ctx context.Context, 
 			return err
 		}
 		if current {
+			if err := reconcileKernelPolicy(ctx, s.DB, subscription.ID); err != nil {
+				return err
+			}
 			continue
 		}
 		err = RunCredentialTransaction(ctx, s.DB, func(tx *gorm.DB) error {
@@ -87,11 +90,17 @@ func (s GroupCredentialReconciliation) ensureSubscriptions(ctx context.Context, 
 			return err
 		})
 		if err == nil {
+			if err := reconcileKernelPolicy(ctx, s.DB, subscription.ID); err != nil {
+				return err
+			}
 			continue
 		}
 		if errors.Is(err, ErrCredentialLockTimeout) {
 			current, checkErr := subscriptionCredentialsCurrent(s.DB.WithContext(ctx), subscription, s.Issuer)
 			if checkErr == nil && current {
+				if err := reconcileKernelPolicy(ctx, s.DB, subscription.ID); err != nil {
+					return err
+				}
 				continue
 			}
 			if checkErr != nil {
@@ -104,6 +113,18 @@ func (s GroupCredentialReconciliation) ensureSubscriptions(ctx context.Context, 
 }
 
 func subscriptionCredentialsCurrent(db *gorm.DB, subscription model.Subscription, issuer entitlements.CredentialIssuer) (bool, error) {
+	if subscription.CredentialMaterialMode == 1 {
+		var root model.ProtocolCredential
+		if err := db.Where("subscription_id=? AND current_scope=1 AND material_scope=1", subscription.ID).Limit(1).Find(&root).Error; err != nil {
+			return false, err
+		}
+		if root.ID != 0 {
+			return root.MaterialGroupID == subscription.NodeGroupID && root.MaterialVersion == 1 && root.EntitlementEpoch == subscription.EntitlementEpoch && root.Status == "active" && root.RevokedAt == nil && root.ExpiresAt.Equal(subscription.EndAt), nil
+		}
+
+		return false, nil
+	}
+
 	var endpoints []model.ProtocolEndpoint
 	if err := db.Model(&model.ProtocolEndpoint{}).
 		Joins(networkstore.CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).
@@ -122,7 +143,7 @@ func subscriptionCredentialsCurrent(db *gorm.DB, subscription model.Subscription
 		return true, nil
 	}
 	var credentials []model.ProtocolCredential
-	if err := db.Where("subscription_id = ? AND protocol_endpoint_id IN ?", subscription.ID, endpointIDs).Find(&credentials).Error; err != nil {
+	if err := db.Where("subscription_id = ? AND protocol_endpoint_id IN ? AND current_scope = ? AND entitlement_epoch = ?", subscription.ID, endpointIDs, 1, subscription.EntitlementEpoch).Find(&credentials).Error; err != nil {
 		return false, err
 	}
 	credentialsByEndpoint := make(map[uint]model.ProtocolCredential, len(credentials))

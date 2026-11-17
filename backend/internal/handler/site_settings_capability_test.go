@@ -13,6 +13,7 @@ import (
 
 func TestPlatformSiteSettingsAuthorityAndAtomicProjection(t *testing.T) {
 	h, _ := newAnnouncementTestHandlers(t)
+	prepareTestMaintenanceSource(t, h)
 	ctx := context.Background()
 	actor := model.User{Email: "site-settings@example.test", Password: "unused", IsAdmin: true, Status: "active"}
 	if err := h.db.Create(&actor).Error; err != nil {

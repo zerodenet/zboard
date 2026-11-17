@@ -27,6 +27,9 @@ func (h *handlers) pluginIdentityProviderViews(pluginID string) ([]plugins.Ident
 	if h.identityProviders == nil {
 		return nil, plugins.ErrUnavailable
 	}
+	if manager, ok := h.identityProviders.(*plugins.Manager); ok {
+		return manager.IdentityProviderViews(context.Background(), pluginID)
+	}
 	providers, err := h.identityProviders.IdentityProviders()
 	if err != nil {
 		return nil, err

@@ -14,12 +14,12 @@ func TestAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T) {
 }
 
 func TestMySQLAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	checkAccountingBatchReplayOutOfOrderAndExhaustion(t, h, credential)
 }
 
 func TestMySQLAccountingPreservesReportCollationIdempotency(t *testing.T) {
-	h, credential := accountingFixtureFromOrder(t, newMySQLOrderFixture(t))
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
 	events := accountingBenchmarkEvents(credential, 0, 2)
 	events[0].ID, events[1].ID = "Case-Event", "case-event"
 	if err := h.projectZeroNodeEvents(context.Background(), events); err != nil {
@@ -50,10 +50,11 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 	}
 	assertAccountingTotal(t, h, credential.SubscriptionID, 1920, subStatusActive)
 	var count int64
-	if err := h.db.Model(&model.TrafficRecord{}).Count(&count).Error; err != nil || count != 64 {
+	if err := h.db.Model(&model.MeteringReportReceipt{}).Count(&count).Error; err != nil || count != 64 {
 		t.Fatalf("replayed/old events persisted: count=%d error=%v", count, err)
 	}
 	var projected int64
+	drainUsageProjections(t, h.db)
 	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Where("protocol_endpoint_id = ?", credential.ProtocolEndpointID).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 1920 {
 		t.Fatalf("batch usage projection: %d %v", projected, err)
 	}
@@ -76,6 +77,7 @@ func checkAccountingBatchReplayOutOfOrderAndExhaustion(t *testing.T, h *handlers
 	if err := h.db.First(&current, credential.ID).Error; err != nil || current.Status != "expired" {
 		t.Fatalf("credential not expired: status=%s error=%v", current.Status, err)
 	}
+	drainUsageProjections(t, h.db)
 	if err := h.db.Model(&model.ProtocolEndpointUsageDaily{}).Where("protocol_endpoint_id = ?", credential.ProtocolEndpointID).Select("COALESCE(SUM(used_bytes),0)").Scan(&projected).Error; err != nil || projected != 1950 {
 		t.Fatalf("exhausted usage projection: %d %v", projected, err)
 	}
@@ -123,10 +125,10 @@ func TestAccountingBatchDoesNotShareBalancesOrKeepOldMultiplier(t *testing.T) {
 	}
 }
 
-func TestAccountingBatchFinalWriteFailureRollsBackAndCanReplay(t *testing.T) {
+func TestAccountingBatchQuotaWriteFailureRollsBackAndCanReplay(t *testing.T) {
 	h, credential := accountingBenchmarkFixture(t)
-	if err := h.db.Exec(`CREATE TRIGGER reject_credential_touch BEFORE UPDATE ON protocol_credentials
- WHEN NEW.last_used_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'last used write unavailable'); END`).Error; err != nil {
+	if err := h.db.Exec(`CREATE TRIGGER reject_quota_write BEFORE UPDATE ON subscriptions
+ WHEN NEW.flow_used > OLD.flow_used BEGIN SELECT RAISE(ABORT, 'quota write unavailable'); END`).Error; err != nil {
 		t.Fatal(err)
 	}
 	events := accountingBenchmarkEvents(credential, 0, 205)
@@ -140,7 +142,7 @@ func TestAccountingBatchFinalWriteFailureRollsBackAndCanReplay(t *testing.T) {
 			t.Fatalf("partial commit in %s: %d %v", table, count, err)
 		}
 	}
-	if err := h.db.Exec("DROP TRIGGER reject_credential_touch").Error; err != nil {
+	if err := h.db.Exec("DROP TRIGGER reject_quota_write").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := h.projectZeroNodeEvents(context.Background(), events); err != nil {
@@ -181,5 +183,36 @@ func assertAccountingTotal(t *testing.T, h *handlers, subscriptionID uint, want 
 	}
 	if ledger != want {
 		t.Fatalf("ledger=%d, want %d", ledger, want)
+	}
+}
+
+func TestMySQLAccountingActivityHintFailureDoesNotRollBackOrDoubleBill(t *testing.T) {
+	h, credential := accountingFixtureFromOrder(t, newMySQLBusinessOrderFixture(t))
+	if err := h.db.Exec(`CREATE TRIGGER reject_activity_hint BEFORE UPDATE ON protocol_credentials
+ FOR EACH ROW BEGIN IF NEW.last_used_at IS NOT NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='hint unavailable'; END IF; END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	events := accountingBenchmarkEvents(credential, 0, 205)
+	if err := h.projectZeroNodeEvents(t.Context(), events); err != nil {
+		t.Fatal(err)
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 6150, subStatusActive)
+	var current model.ProtocolCredential
+	if err := h.db.First(&current, credential.ID).Error; err != nil || current.LastUsedAt != nil {
+		t.Fatal("hint fixture did not fail", err)
+	}
+	if err := h.db.Exec("DROP TRIGGER reject_activity_hint").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.projectZeroNodeEvents(t.Context(), events); err != nil {
+		t.Fatal(err)
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 6150, subStatusActive)
+	if err := h.projectZeroNodeEvents(t.Context(), accountingBenchmarkEvents(credential, 1, 1)); err != nil {
+		t.Fatal(err)
+	}
+	assertAccountingTotal(t, h, credential.SubscriptionID, 6180, subStatusActive)
+	if err := h.db.First(&current, credential.ID).Error; err != nil || current.LastUsedAt == nil {
+		t.Fatal("later report did not repair activity hint", err)
 	}
 }

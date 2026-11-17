@@ -3,10 +3,16 @@ package metering
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
+var ErrPrincipalAmbiguous = errors.New("credential principal has ambiguous ownership; reconcile before settlement")
+
 type TrafficRecord struct {
+	RetentionLevel          int16     `json:"retention_level,omitempty"`
+	ResultRecorded          bool      `json:"-"`
+	EntitlementEpoch        uint64    `json:"-"`
 	ID                      uint      `json:"id"`
 	UserID                  uint      `json:"user_id"`
 	SubscriptionID          uint      `json:"subscription_id,omitempty"`
@@ -27,6 +33,8 @@ type TrafficRecord struct {
 	Meta                    string    `json:"meta"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
+	IsAggregate             bool      `json:"is_aggregate,omitempty"`
+	RecordCount             int64     `json:"record_count,omitempty"`
 }
 
 type CredentialDecryptor interface{ Decrypt(string) (string, error) }
@@ -36,6 +44,7 @@ type CredentialDecryptor interface{ Decrypt(string) (string, error) }
 type CompletedFlow struct {
 	NodeID                                                             uint
 	SourceID, CoreInstanceID, EventID, FlowID, PrincipalKey, EventType string
+	InboundTag                                                         string
 	Sequence, Revision                                                 uint64
 	BytesUp, BytesDown                                                 int64
 	OccurredAt                                                         time.Time
@@ -46,7 +55,7 @@ type CompletionRepository interface {
 type CompletionAccounting struct{ Repository CompletionRepository }
 
 func (s CompletionAccounting) Complete(ctx context.Context, in CompletedFlow) (TrafficRecord, bool, error) {
-	if in.NodeID == 0 || in.EventType != "flow.completed" || in.EventID == "" || in.FlowID == "" || in.PrincipalKey == "" {
+	if in.NodeID == 0 || in.EventType != "flow.completed" || (in.EventID == "" || strings.HasPrefix(in.EventID, "bucket:v1:")) || in.FlowID == "" || in.PrincipalKey == "" {
 		return TrafficRecord{}, false, errors.New("invalid completed flow")
 	}
 	if in.BytesUp < 0 || in.BytesDown < 0 {

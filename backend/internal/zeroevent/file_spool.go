@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -57,21 +58,26 @@ type segmentSnapshot struct {
 type FileSpool struct {
 	cfg Config
 
-	mu         sync.RWMutex
-	started    bool
-	closed     bool
-	ctx        context.Context
-	cancel     context.CancelFunc
-	appendCh   chan appendRequest
-	snapshotCh chan snapshotRequest
-	closeCh    chan closeRequest
-	writerDone chan struct{}
-	active     *activeSegment // owned by the writer goroutine
+	mu           sync.RWMutex
+	started      bool
+	closed       bool
+	ctx          context.Context
+	cancel       context.CancelFunc
+	appendCh     chan appendRequest
+	snapshotCh   chan snapshotRequest
+	closeCh      chan closeRequest
+	writerDone   chan struct{}
+	ownership    *os.File // held until explicit Close drains every file mutator
+	closeDone    chan struct{}
+	closeErr     error          // protected by mu; published to every concurrent Close
+	active       *activeSegment // owned by the writer goroutine
+	segmentFloor uint64         // highest durable/committed sequence; never reset by reclamation
 
-	readMu       sync.Mutex
-	checkpoint   Checkpoint
-	hasInflight  bool
-	inflightNext Checkpoint
+	readMu           sync.Mutex
+	checkpoint       Checkpoint
+	hasInflight      bool
+	inflightNext     Checkpoint
+	verifiedPrefixes map[Checkpoint]struct{}
 
 	// segmentMu protects representation changes such as .active -> .ready,
 	// .ready -> .ready.zst, semantic replacement, and deletion after a committed
@@ -111,6 +117,7 @@ func NewFileSpool(cfg Config) (*FileSpool, error) {
 		snapshotCh:      make(chan snapshotRequest),
 		closeCh:         make(chan closeRequest),
 		writerDone:      make(chan struct{}),
+		closeDone:       make(chan struct{}),
 		compressionCh:   make(chan struct{}, 1),
 		compressionDone: make(chan struct{}),
 		storageCh:       make(chan struct{}, 1),
@@ -118,7 +125,7 @@ func NewFileSpool(cfg Config) (*FileSpool, error) {
 	}, nil
 }
 
-func (s *FileSpool) Start(parent context.Context) error {
+func (s *FileSpool) Start(parent context.Context) (err error) {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -133,21 +140,53 @@ func (s *FileSpool) Start(parent context.Context) error {
 	if err := os.MkdirAll(s.cfg.Directory, 0o750); err != nil {
 		return fmt.Errorf("create spool directory: %w", err)
 	}
+	owner, err := acquireSpoolOwnership(s.cfg.Directory)
+	if err != nil {
+		return err
+	}
+	// No reserve, checkpoint or recovery access precedes kernel ownership. A
+	// failed startup must release its descriptor so recovery can be retried.
+	defer func() {
+		if !s.started {
+			err = errors.Join(err, releaseSpoolOwnership(owner))
+		}
+	}()
 	// Reserve creation is best-effort. A host that is already too full to create
 	// the reserve must still be allowed to recover and consume an existing spool.
 	_ = s.ensureEmergencyReserve()
+	recoveryStarted := time.Now()
 	checkpoint, err := loadCheckpoint(s.cfg.Directory)
 	if err != nil {
 		return err
 	}
-	active, err := recoverSegments(s.cfg.Directory)
+	if err := reconcileSegmentSequence(s.cfg.Directory, checkpoint); err != nil {
+		return err
+	}
+	active, err := recoverSegmentsAtCheckpoint(s.cfg.Directory, checkpoint)
 	if err != nil {
 		return err
+	}
+	segments, err := listSegments(s.cfg.Directory)
+	if err != nil {
+		if active != nil {
+			_ = active.file.Close()
+		}
+		return err
+	}
+	s.segmentFloor = checkpoint.Segment
+	if len(segments) > 0 && segments[len(segments)-1].sequence > s.segmentFloor {
+		s.segmentFloor = segments[len(segments)-1].sequence
 	}
 	s.checkpoint = checkpoint
 	s.active = active
 	s.ctx, s.cancel = context.WithCancel(parent)
+	s.ownership = owner
 	s.started = true
+	var activeBytes int64
+	if active != nil {
+		activeBytes = active.size
+	}
+	log.Printf("Zero event spool recovery ready: elapsed_ms=%d segments=%d active_bytes=%d checkpoint_segment=%d sequence_floor=%d", time.Since(recoveryStarted).Milliseconds(), len(segments), activeBytes, checkpoint.Segment, s.segmentFloor)
 	go s.writerLoop()
 	go s.storageLoop()
 	s.requestStorageMaintenance()
@@ -199,12 +238,21 @@ func (s *FileSpool) Append(ctx context.Context, event Envelope) error {
 
 func (s *FileSpool) Close() error {
 	s.mu.Lock()
+	if s.closeDone == nil {
+		s.closeDone = make(chan struct{})
+	}
 	if s.closed {
+		done := s.closeDone
 		s.mu.Unlock()
-		return nil
+		<-done
+		s.mu.RLock()
+		err := s.closeErr
+		s.mu.RUnlock()
+		return err
 	}
 	if !s.started {
 		s.closed = true
+		close(s.closeDone)
 		s.mu.Unlock()
 		return nil
 	}
@@ -221,6 +269,17 @@ func (s *FileSpool) Close() error {
 	}
 	<-s.compressionDone
 	<-s.storageDone
+	// Commit/Compact may already have passed their lifecycle checks, and a
+	// reader may still own an active snapshot. Keep ownership while they drain.
+	// Do not hold mu while acquiring readMu: each operation uses readMu -> mu.
+	s.readMu.Lock()
+	err = errors.Join(err, releaseSpoolOwnership(s.ownership))
+	s.mu.Lock()
+	s.ownership = nil
+	s.closeErr = err
+	close(s.closeDone)
+	s.mu.Unlock()
+	s.readMu.Unlock()
 	return err
 }
 
@@ -360,11 +419,12 @@ func (s *FileSpool) writeBatch(batch []appendRequest) error {
 			}
 		}
 		if s.active == nil {
-			active, err := createActiveSegment(s.cfg.Directory)
+			active, err := createActiveSegment(s.cfg.Directory, s.segmentFloor)
 			if err != nil {
 				return err
 			}
 			s.active = active
+			s.segmentFloor = active.sequence
 		}
 		if err := s.writeRecordWithCapacityRecovery(record); err != nil {
 			return err

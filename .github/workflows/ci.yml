@@ -25,6 +25,13 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Test
         run: go test ./...
+      - name: Verify plugin SDK submodule
+        working-directory: backend/pkg/pluginapi
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go test ./...
+          go vet ./...
       - name: Test offline node cleanup
         run: go test ./internal/nodecleanup -count=1
       - name: Verify pure-Go SQLite path
@@ -61,10 +68,24 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: Test actual MySQL migrations and transactions
-        # MySQL 8.4 enables binary logging and defaults function trust to OFF.
-        # Recovery tests assert those settings and use schema-only accounts.
-        run: go test ./internal/datastore ./internal/handler -run MySQL -count=1 -timeout 15m
+      - name: Verify MySQL profile policy
+        working-directory: .
+        run: python3 -m unittest discover -s scripts -p 'test_mysql_profiles.py'
+      - name: Test account overview on actual MySQL
+        run: go test ./internal/adapters/persistence/identitystore -run 'TestAccountDirectory|TestAccountCleanupOverview' -count=1 -v
+      - name: Test actual MySQL core migrations and transactions
+        # Extended scale/copy matrices remain mandatory full acceptance.
+        # Dynamic discovery defaults every unlisted new MySQL test to core.
+        # Server-wide source-lock copy tests run after financial race tests.
+        working-directory: .
+        run: python3 scripts/mysql_profiles.py --profile core --output-dir artifacts/mysql-core
+      - name: Preserve MySQL core inventory, exact commands and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-core-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/mysql-core
+          if-no-files-found: error
 
   zrs-compiler:
     runs-on: ubuntu-latest
@@ -133,9 +154,15 @@ jobs:
       ZBOARD_MYSQL_PASSWORD: validation-db-password
     steps:
       - uses: actions/checkout@v4
+      - name: Verify acceptance evidence gates
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s scripts -p 'test_acceptance*.py'
       - name: Prepare host directories
         run: |
+          sh scripts/tests/prepare-host-dirs-test.sh
           sh deploy/docker/prepare-host-dirs.sh
+          test -d deploy/docker/files
           test ! -e deploy/docker/data
           ZBOARD_DATABASE_DRIVER=sqlite sh deploy/docker/prepare-host-dirs.sh
           test -d deploy/docker/data
@@ -152,6 +179,17 @@ jobs:
               touch /var/lib/zboard/artifacts/rules/.write-test
               rm /var/lib/zboard/artifacts/rules/.write-test
             '
+      - name: Verify uploads survive container replacement
+        run: |
+          docker run --rm --network none \
+            --mount type=bind,source="$PWD/deploy/docker/files",target=/var/lib/zboard/files \
+            alpine:3.20 sh -c 'printf "retained upload\n" > /var/lib/zboard/files/.upload-persistence-check'
+          docker run --rm --network none \
+            --mount type=bind,source="$PWD/deploy/docker/files",target=/var/lib/zboard/files \
+            alpine:3.20 sh -c '
+              test "$(cat /var/lib/zboard/files/.upload-persistence-check)" = "retained upload"
+              rm /var/lib/zboard/files/.upload-persistence-check
+            '
       - name: Validate Compose configurations
         run: |
           docker compose -f deploy/docker/docker-compose.yml config >/dev/null
@@ -164,6 +202,21 @@ jobs:
               config >/dev/null
           docker compose -f deploy/docker/docker-compose.validation.yml config >/dev/null
           docker compose -f deploy/docker/docker-compose.blue-green.yml config >/dev/null
+      - name: Verify upload mounts in every deployment layout
+        run: |
+          for file in \
+            deploy/docker/docker-compose.yml \
+            deploy/docker/docker-compose.release.yml \
+            deploy/docker/docker-compose.validation.yml \
+            deploy/docker/docker-compose.blue-green.yml; do
+            docker compose --profile '*' -f "$file" config --format json | python3 deploy/docker/verify-upload-mounts.py
+          done
+          ZBOARD_DATABASE_DRIVER=sqlite \
+            ZBOARD_DATA_SOURCE=/var/lib/zboard/data/zboard.db \
+            docker compose \
+              -f deploy/docker/docker-compose.release.yml \
+              -f deploy/docker/docker-compose.sqlite.yml \
+              config --format json | python3 deploy/docker/verify-upload-mounts.py
       - name: Verify managed rule mount contract
         run: |
           for file in \

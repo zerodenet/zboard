@@ -31,6 +31,8 @@ export interface DashboardBusinessOverview {
 }
 
 export interface DashboardServiceOverview {
+  observed_active_subscriptions?: number | null
+  observed_active_flows?: number | null
   active_subscriptions: number | null
   active_flows: number | null
   previous_traffic_bytes?: number
@@ -81,6 +83,8 @@ export interface DashboardOverview {
   infrastructure: DashboardInfrastructureOverview
   coverage: {
     principal_flows: boolean
+    principal_flows_state?: string
+    principal_flows_reason?: string
   }
   trend: DashboardTrendPoint[]
   as_of: string
@@ -109,3 +113,33 @@ export async function fetchDashboardTrafficRankings(range: DashboardRange, optio
   const response = await api.get('/admin/dashboard/traffic-rankings', { params: { range, dimension: options.dimension }, signal: options.signal })
   return response.data?.data
 }
+
+export interface DashboardCurrent {
+  active_subscriptions: number
+  service: Omit<DashboardServiceOverview, 'traffic_bytes' | 'previous_traffic_bytes'>
+  subscriptions: DashboardSubscriptionHealth
+  attention: DashboardAttentionOverview
+  infrastructure: DashboardInfrastructureOverview
+  coverage: DashboardOverview['coverage']
+  as_of: string
+}
+export interface DashboardStatistics {
+  period: DashboardPeriod
+  business: Omit<DashboardBusinessOverview, 'active_subscriptions' | 'expiring_within_3d'>
+  traffic: Pick<DashboardServiceOverview, 'traffic_bytes' | 'previous_traffic_bytes'>
+  as_of: string
+}
+export interface DashboardTrend {
+  currency: string
+  mixed_currency: boolean
+  period: DashboardPeriod
+  trend: DashboardTrendPoint[]
+  as_of: string
+}
+async function fetchDashboardView<T>(view: string, range: DashboardRange, options: ApiRequestOptions): Promise<T> {
+  const response = await api.get('/admin/dashboard/overview', { params: { range, view }, signal: options.signal })
+  return response.data?.data
+}
+export const fetchDashboardCurrent = (options: ApiRequestOptions = {}) => fetchDashboardView<DashboardCurrent>('current', 'today', options)
+export const fetchDashboardStatistics = (range: DashboardRange, options: ApiRequestOptions = {}) => fetchDashboardView<DashboardStatistics>('statistics', range, options)
+export const fetchDashboardTrend = (range: DashboardRange, options: ApiRequestOptions = {}) => fetchDashboardView<DashboardTrend>('trend', range, options)

@@ -35,6 +35,16 @@ func verifyNativeOutcome(tx *gorm.DB, in jobs.Review) error {
 	if err := tx.First(&run, "id = ?", in.RunID).Error; err != nil {
 		return err
 	}
+	if run.Owner == "system" && run.Handler == "node_retirement" {
+		var input struct {
+			NodeID uint `json:"node_id"`
+		}
+		var retirement model.NodeRetirement
+		if json.Unmarshal([]byte(run.Payload), &input) != nil || input.NodeID == 0 || tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&retirement, "node_id = ? AND run_id = ?", input.NodeID, run.ID).Error != nil || retirement.State != "succeeded" || in.Outcome != jobs.Succeeded {
+			return jobs.ErrOutcomeUnverified
+		}
+		return validateRetirementPlan(retirement)
+	}
 	if run.Owner != "system" || (run.Handler != "certificate_operation" && run.Handler != "dns_operation") {
 		return nil
 	}

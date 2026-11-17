@@ -10,7 +10,7 @@ import { NAVIGATION_CHANGED } from '../utils/navigationEvents'
 vi.mock('../api/menus', async () => { const { menuFixture } = await import('../test/menuFixtures'); return { fetchNavigation: vi.fn(async (surface: 'admin' | 'account' | 'public') => menuFixture(surface)) } })
 
 const clearAuth = vi.hoisted(() => vi.fn())
-vi.mock('../stores/app', () => ({ useAppStore: () => ({ siteName: 'zboard', user: { email: 'admin@example.test' }, loadMe: vi.fn(), clear: clearAuth }) }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ siteName: 'zboard', user: { email: 'admin@example.test' }, loadMe: vi.fn(async () => undefined), clear: clearAuth }) }))
 vi.mock('../components/TaskTray.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../api/system', () => ({ fetchAdminSystemInfo: vi.fn(async () => ({ release_version: '0.3.0', build_time: '2026-09-24T00:00:00Z' })) }))
 vi.mock('../api/releaseUpdates', async importOriginal => ({ ...(await importOriginal<typeof import('../api/releaseUpdates')>()), fetchZBoardReleases: vi.fn(async () => [{ tag_name: 'v0.3.0', html_url: 'https://github.com/zerodenet/zboard/releases/tag/v0.3.0', prerelease: false, draft: false, published_at: '2026-09-24T00:00:00Z' }]) }))
@@ -22,8 +22,8 @@ async function setup(path: string, mobile = false) {
   let viewportListener: (() => void) | undefined
   const media = { matches: mobile, addEventListener: vi.fn((_event, listener) => { viewportListener = listener }), removeEventListener: vi.fn() }
   vi.stubGlobal('matchMedia', vi.fn(() => media))
-  const pages = adminNavigation.flatMap(domain => domain.sections.flatMap(section => section.pages))
-  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/account', label: '个人中心' }, { to: '/admin/extensions/:pluginId/:pageId', label: '扩展' }].map(page => ({ path: page.to, component: { components: { PageHeader }, template: '<section class="standard-page"><PageHeader :title="String($route.meta.title)" /></section>' }, meta: { title: page.label } })) })
+  const pages = adminNavigation.flatMap(domain => domain.sections.flatMap(section => [...section.pages, ...(section.workspace?.kind === 'hub' ? [{ to: section.workspace.entry_path!, label: section.label }] : [])]))
+  const router = createRouter({ history: createMemoryHistory(), routes: [...pages, { to: '/', label: '首页' }, { to: '/login', label: '登录' }, { to: '/account', label: '个人中心' }, { to: '/admin/extensions/:pluginId/:pageId', label: '扩展' }].map(page => ({ path: page.to, component: { components: { PageHeader }, template: '<section class="standard-page"><PageHeader :title="String($route.meta.title)" /></section>' }, meta: { title: page.label } })) })
   await router.push(path)
   await router.isReady()
   const wrapper = mount(AdminLayout, { attachTo: document.body, global: { plugins: [router] } })
@@ -43,16 +43,16 @@ describe('AdminLayout navigation', () => {
     expect(wrapper.get('.app-workspace > .mobile-section-navigation a[aria-current="page"]').attributes('href')).toBe('/admin/protocols')
   })
 
-  it('offers other visible domain pages when the current menu section has one page', async () => {
+  it('does not mix another section into single-page contextual navigation', async () => {
     const menu = menuFixture('admin')
     menu.nodes = menu.nodes.map(node => node.parent_id === 'infrastructure.resources' && node.path !== '/admin/nodes'
       ? { ...node, parent_id: 'infrastructure.access' }
       : node)
     vi.mocked(fetchNavigation).mockResolvedValueOnce(menu)
     const { wrapper } = await setup('/admin/nodes', true)
-    const tabs = wrapper.get('.app-workspace > .mobile-section-navigation')
-    expect(tabs.get('a[href="/admin/nodes"]').attributes('aria-current')).toBe('page')
-    expect(tabs.find('a[href="/admin/protocols"]').exists()).toBe(true)
+    expect(wrapper.find('.app-workspace > .mobile-section-navigation').exists()).toBe(false)
+    // The moved page remains reachable through the sidebar; it is no longer a sibling tab.
+    expect(wrapper.find('.page-link[href="/admin/protocols"]').exists()).toBe(true)
   })
 
   it('shows an unavailable notice without mounting a directly opened hidden page', async () => {
@@ -127,14 +127,55 @@ describe('AdminLayout navigation', () => {
     expect(wrapper.find('.standard-page').exists()).toBe(true)
   })
 
+  it('keeps loaded content during a connectivity failure and clears the warning on recovery', async () => {
+    const { wrapper } = await setup('/admin/nodes')
+    vi.mocked(fetchNavigation).mockRejectedValueOnce(new Error('offline'))
+    window.dispatchEvent(new Event(NAVIGATION_CHANGED))
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(true)
+    expect(wrapper.get('.navigation-notice').text()).toContain('当前内容已保留')
+    expect(wrapper.get('main').text()).not.toContain('暂时无法加载页面')
+    await wrapper.get('.navigation-notice button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.navigation-notice').exists()).toBe(false)
+  })
+
+  it('revokes cached page approval on 403 without clearing the login', async () => {
+    const { wrapper } = await setup('/admin/nodes')
+    vi.mocked(fetchNavigation).mockRejectedValueOnce({ response: { status: 403 } })
+    window.dispatchEvent(new Event(NAVIGATION_CHANGED))
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('访问权限不足')
+    expect(wrapper.get('main a').attributes('href')).toBe('/account')
+    expect(clearAuth).not.toHaveBeenCalled()
+    await wrapper.get('main button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.standard-page').exists()).toBe(true)
+  })
+
+  it('offers login with the original location when navigation returns 401', async () => {
+    vi.mocked(fetchNavigation).mockRejectedValueOnce({ response: { status: 401 } })
+    const { wrapper } = await setup('/admin/nodes?page=3')
+    expect(wrapper.get('main').text()).toContain('登录已过期')
+    expect(wrapper.find('main button').exists()).toBe(false)
+    expect(wrapper.get('main a').attributes('href')).toContain('redirect=/admin/nodes?page=3')
+    expect(wrapper.get('main a').attributes('href')).toContain('reason=session-expired')
+  })
+
   it('renders backend menu edits and plugin placement in sidebar, sibling tabs and search', async () => {
     const value = menuFixture('admin')
     value.nodes = value.nodes.filter(node => node.path !== '/admin/protocols')
     value.nodes.find(node => node.id === 'infrastructure')!.label = '服务接入'
+    value.nodes.find(node => node.path === '/admin/nodes')!.label = '我的服务器'
     value.nodes.push({ ...value.nodes.find(node => node.path === '/admin/nodes')!, id: 'plugin:custom', label: '扩展控制台', path: '/admin/extensions/example/home', owner: 'plugin', plugin_id: 'example', page_id: 'home' })
     vi.mocked(fetchNavigation).mockResolvedValueOnce(value)
     const { wrapper } = await setup('/admin/nodes')
     expect(wrapper.get('.domain-group.selected > .domain-link').text()).toContain('服务接入')
+    expect(wrapper.get('.page-link[href="/admin/nodes"]').text()).toBe('我的服务器')
+    expect(wrapper.get('.topbar-breadcrumb strong').text()).toBe('我的服务器')
+    expect(wrapper.get('main h1').text()).toBe('我的服务器')
+    expect(wrapper.get('.page-link[href="/admin/extensions/example/home"]').text()).toBe('扩展控制台')
     expect(wrapper.find('.admin-page-navigation-link[href="/admin/protocols"]').exists()).toBe(false)
     expect(wrapper.get('.admin-page-navigation-link[href="/admin/extensions/example/home"]').text()).toBe('扩展控制台')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
@@ -144,6 +185,64 @@ describe('AdminLayout navigation', () => {
     await flushPromises()
     expect(document.querySelectorAll('.admin-quick-search-results a')).toHaveLength(1)
     expect(document.querySelector('.admin-quick-search-results a')?.getAttribute('href')).toBe('/admin/extensions/example/home')
+  })
+
+  it('exposes each subscription page by its own name and navigates directly without a group landing page', async () => {
+    const { wrapper, router } = await setup('/admin/plans')
+    const expected = [
+      ['/admin/plans', '套餐管理'], ['/admin/orders', '订单管理'],
+      ['/admin/subscriptions', '订阅管理'], ['/admin/subscription-templates', '订阅模板'],
+      ['/admin/subscription-templates/rule-sets', '规则集'],
+    ]
+    expect(wrapper.findAll('.page-link')).toHaveLength(expected.length)
+    for (const [path, label] of expected) {
+      const link = wrapper.get(`.page-link[href="${path}"]`)
+      expect(link.text()).toBe(label)
+      await link.trigger('click'); await flushPromises()
+      expect(router.currentRoute.value.path).toBe(path)
+      expect(wrapper.findAll('.page-link[aria-current="page"]')).toHaveLength(1)
+      expect(wrapper.get('.page-link.selected').text()).toBe(label)
+      expect(wrapper.get('.topbar-breadcrumb strong').text()).toBe(label)
+      expect(wrapper.get('main h1').text()).toBe(label)
+    }
+  })
+
+  it('opens system settings directly and keeps categories inside the editor', async () => {
+    const { wrapper } = await setup('/admin/settings/email')
+    expect(wrapper.findAll('.page-link').map(link => [link.attributes('href'), link.text()])).toEqual([
+      ['/admin/settings/site', '系统设置'], ['/admin/plugins', '插件管理'],
+      ['/admin/runtime-jobs', '运行状态'], ['/admin/operation-logs', '操作记录'],
+    ])
+    expect(wrapper.get('.page-link.selected').text()).toBe('系统设置')
+    expect(wrapper.find('.page-link[href="/admin/about"]').exists()).toBe(false)
+    expect(wrapper.get('.admin-build-info a[href="/admin/about"]').attributes('aria-label')).toContain('关于项目')
+    expect(wrapper.findAll('.admin-page-navigation-link').map(link => link.text())).toEqual(['站点设置', '注册设置', '邮件通知', '服务条款', '运行参数', '菜单管理'])
+    expect(wrapper.find('.workspace-return-link').exists()).toBe(false)
+    expect(wrapper.find('.page-link[href="/admin/workspaces/settings.site"]').exists()).toBe(false)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
+    await flushPromises()
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="搜索管理页面"]')!
+    input.value = '邮件通知'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('.admin-quick-search-results a')?.getAttribute('href')).toBe('/admin/settings/email')
+  })
+
+  it('opens About from version information and respects a hidden About page', async () => {
+    const { wrapper, router } = await setup('/admin/settings/site')
+    await wrapper.get('.admin-build-info a[href="/admin/about"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/about')
+    expect(wrapper.find('.page-link[href="/admin/about"]').exists()).toBe(false)
+    expect(wrapper.get('main h1').text()).toBe('关于项目')
+    const hidden = menuFixture('admin')
+    hidden.nodes = hidden.nodes.filter(node => node.path !== '/admin/about')
+    hidden.presentation.footer_ids = []
+    hidden.page_available = false
+    vi.mocked(fetchNavigation).mockResolvedValueOnce(hidden)
+    window.dispatchEvent(new Event(NAVIGATION_CHANGED))
+    await flushPromises()
+    expect(wrapper.find('.admin-build-info a[href="/admin/about"]').exists()).toBe(false)
+    expect(wrapper.get('main').text()).toContain('页面不可用')
   })
 
   it('searches admin pages from the topbar shortcut and follows a result', async () => {
@@ -169,12 +268,12 @@ describe('AdminLayout navigation', () => {
   it('shows just the URL-owned domain and one active page on a deep link', async () => {
     const { wrapper } = await setup('/admin/subscription-templates/rule-sets?search=test')
     expect(wrapper.findAll('.domain-link')).toHaveLength(5)
-    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('订阅系统')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('交易')
     expect(wrapper.findAll('.page-link[aria-current="page"]')).toHaveLength(1)
-    expect(wrapper.get('.page-link.selected').text()).toBe('配置交付')
-    expect(wrapper.findAll('.page-link')).toHaveLength(3)
+    expect(wrapper.get('.page-link.selected').text()).toBe('规则集')
+    expect(wrapper.findAll('.page-link')).toHaveLength(5)
     expect(wrapper.get('.admin-page-navigation-link[aria-current="page"]').text()).toBe('规则集')
-    expect(wrapper.get('.topbar-context').text()).toBe('订阅系统')
+    expect(wrapper.get('.topbar-context').text()).toBe('交易')
     expect(wrapper.get('.admin-build-info').text()).toContain('版本 0.3.0')
     expect(wrapper.get('.admin-build-info').text()).toContain('构建时间')
     expect(wrapper.find('.admin-account').exists()).toBe(false)
@@ -208,26 +307,26 @@ describe('AdminLayout navigation', () => {
 
   it('expands the overview and four core modules without navigation, then follows sections and browser history', async () => {
     const { wrapper, router } = await setup('/admin/users?page=3')
-    await wrapper.get('.domain-link[aria-label="用户系统"]').trigger('click')
+    await wrapper.get('.domain-link[aria-label="用户"]').trigger('click')
     expect(router.currentRoute.value.fullPath).toBe('/admin/users?page=3')
-    expect(wrapper.get('.domain-link[aria-label="用户系统"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.domain-link[aria-label="用户"]').attributes('aria-expanded')).toBe('false')
     for (const domain of adminNavigation) {
       const previousRoute = router.currentRoute.value.fullPath
       await wrapper.get(`.domain-link[aria-label="${domain.label}"]`).trigger('click')
       await flushPromises()
       expect(wrapper.get(`.domain-link[aria-label="${domain.label}"]`).attributes('aria-expanded')).toBe('true')
       expect(router.currentRoute.value.fullPath).toBe(previousRoute)
-      await wrapper.get(`.page-link[href="${domain.sections[0].pages[0].to}"]`).trigger('click')
+      await wrapper.get(`.page-link[href="${(domain.sections[0].workspace?.entry_path || domain.sections[0].pages[0].to)}"]`).trigger('click')
       await flushPromises()
-      expect(router.currentRoute.value.path).toBe(domain.sections[0].pages[0].to)
+      expect(router.currentRoute.value.path).toBe((domain.sections[0].workspace?.entry_path || domain.sections[0].pages[0].to))
       expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe(domain.label)
     }
     router.back()
     await flushPromises()
-    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('节点系统')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('节点')
     router.forward()
     await flushPromises()
-    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('服务系统')
+    expect(wrapper.get('.domain-group.selected > .domain-link').attributes('aria-label')).toBe('系统')
   })
 
   it('keeps the mobile drawer open for domain selection, then closes for the page and restores focus', async () => {
@@ -241,7 +340,7 @@ describe('AdminLayout navigation', () => {
     expect(wrapper.get('.app-workspace').attributes('inert')).toBeDefined()
     expect(document.body.style.overflow).toBe('hidden')
     expect(document.activeElement).toBe(wrapper.get('.sidebar-close').element)
-    await wrapper.get('.domain-link[aria-label="节点系统"]').trigger('click')
+    await wrapper.get('.domain-link[aria-label="节点"]').trigger('click')
     await flushPromises()
     expect(wrapper.classes()).toContain('nav-open')
     await wrapper.get('.page-link[href="/admin/nodes"]').trigger('click')

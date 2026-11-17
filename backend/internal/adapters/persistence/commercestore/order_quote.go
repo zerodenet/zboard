@@ -17,24 +17,22 @@ import (
 
 // A paid change carries the consumed credit into the new entitlement's value.
 // Binding its source also prevents two pending orders from spending it twice.
-type changeSnapshot struct {
-	PlanID, PlanSKUID          uint
-	EndAt                      time.Time
-	CycleStartUsed, ResetQuota int64
-	SourceOrderID              uint
-	QuotaEventID               uint
-	QuotedAt                   time.Time
-	Credit                     int64
-}
+type changeSnapshot = commerce.SubscriptionChangeSnapshot
 
 func quoteError(message string) error {
 	return &commerce.ValidationError{Message: message, Fields: map[string]string{"target_subscription_id": message}}
 }
 func (s OrderCreation) Preview(ctx context.Context, buyer uint, request commerce.OrderCreateRequest) (commerce.OrderPreview, error) {
+	if request.TargetSubscriptionID != 0 {
+		return s.previewRenewalAwareOrder(ctx, buyer, request)
+	}
+	if request.Discount != nil {
+		return s.previewDiscounted(ctx, buyer, request)
+	}
 	var preview commerce.OrderPreview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		_, preview, err = prepareOrder(tx, buyer, request, time.Now().UTC())
+		_, preview, err = prepareOrder(tx, buyer, request, commerceNow(s.Now))
 		return err
 	})
 	return preview, err
@@ -82,10 +80,21 @@ func sourceValue(tx *gorm.DB, sub model.Subscription, currency string) (int64, t
 	}
 	return value, start, root, nil
 }
-func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now, creditAt time.Time) (commerce.OrderPreview, error) {
+func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, now, creditAt time.Time, resolutions ...*renewalPriceResolution) (commerce.OrderPreview, error) {
 	preview := commerce.OrderPreview{OrderType: order.OrderType, AmountCents: order.AmountCents, PayableAmount: order.PayableAmount, Currency: order.Currency, TrafficBytes: order.TrafficBytes}
-	if order.OrderType == "renewal" && !entitlements.CanRenewAt(entitlements.Subscription(sub), now) {
-		return preview, quoteError(entitlements.ErrRenewalWindow.Error())
+	if order.OrderType == "renewal" {
+		var resolved *renewalPriceResolution
+		if len(resolutions) > 0 {
+			resolved = resolutions[0]
+		}
+		if resolved == nil {
+			var err error
+			resolved, err = resolveOrderRenewalPrice(tx, order, sub, now)
+			if err != nil {
+				return preview, err
+			}
+		}
+		return quoteResolvedRenewal(*order, sub, *resolved)
 	}
 	if order.TargetSubscriptionID != nil && order.OrderType != "renewal" && (sub.EndedAt != nil || !sub.EndAt.After(now)) {
 		return preview, quoteError("订阅已结束，请续费恢复或新购套餐。")
@@ -160,6 +169,11 @@ func applyTargetQuote(tx *gorm.DB, order *model.Order, sub model.Subscription, n
 }
 
 func validateTargetQuote(tx *gorm.DB, order model.Order, now time.Time) error {
+	if full, err := fullReplacementSnapshot(order); err != nil {
+		return err
+	} else if full != nil {
+		return validateFullReplacementQuote(tx, order, *full, now)
+	}
 	if order.OrderType != "upgrade" && order.OrderType != "traffic_reset" {
 		return nil
 	}

@@ -1,0 +1,96 @@
+{
+  "status": "blocked_go_overlay_rejection",
+  "clone": "/workspace/zboard-current-verify",
+  "head": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "tree": "4946c24153d9c2b307e7c5a7e59aa411d0770c28",
+  "status_before": "clean",
+  "files_before": {
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/gorm@v1.31.2/migrator/migrator.go": "62286d4ace7b00bda8ee635cff623f41108f6fe3861898d2b93c6e0ecffad49b",
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go": "4a76b7a3c2ec1c1325a971777ec2a1d2ec38e5505d3aa75055b9acb4cb5541a5",
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+    "/workspace/zboard-current-verify/backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416"
+  },
+  "module_cache_files_are_read_only": true,
+  "overlay_map": {
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/gorm@v1.31.2/migrator/migrator.go": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/generic-migrator.go.overlay",
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/mysql-migrator.go.overlay",
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/schema-benchmark.go.overlay"
+  },
+  "scope": "Diagnostic instrumented test binary only. Five original SQL/argument/Scan operations remain unchanged; no stage probes or additional SQL. Clock spans include original Raw/Row/Scan call, preserving return/ignored-error behavior.",
+  "instrumentation_cost": "Every monitored call adds enabled check/closure/time reads and atomic counter updates; atomics after elapsed capture are in outer time but not category span. No paired uninstrumented performance estimate in this task.",
+  "command": [
+    "go",
+    "test",
+    "-overlay",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/overlay.json",
+    "-p",
+    "1",
+    "./internal/datastore",
+    "-run",
+    "^$",
+    "-bench",
+    "^BenchmarkMySQLSchemaPreparation$",
+    "-benchtime=1x",
+    "-count=3",
+    "-v"
+  ],
+  "private_files_before": {
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/generic-migrator.go.overlay": "ef8c9f82262981da3753994b3e195799b8fdd92700f89637f8135edc41dd310c",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/mysql-migrator.go.overlay": "0133f74ab59ef517432d022bf9a77895d2838eca1cdfe5bad1fb46fc14d72d86",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/schema-benchmark.go.overlay": "660bd4c5beca0cf5efa7df68e2da37e16c7764316ffbd09d4c549dcf93d73def",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/overlay.json": "4e90afe7255bafb3b41bfef63fd61ff61a87560330d8e15f07d3d169cb80033d",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/instrumentation.patch": "73be85ee77fda3457d796070faace2158bf4730f078cf71a6af1a641782e5669"
+  },
+  "sql_literals_preserved": true,
+  "started_utc": "2026-10-20T22:24:02.727850+00:00",
+  "wall_seconds": 0.005343237000488443,
+  "finished_utc": "2026-10-20T22:24:02.733210+00:00",
+  "exit_code": 1,
+  "files_after": {
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/gorm@v1.31.2/migrator/migrator.go": "62286d4ace7b00bda8ee635cff623f41108f6fe3861898d2b93c6e0ecffad49b",
+    "/workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go": "4a76b7a3c2ec1c1325a971777ec2a1d2ec38e5505d3aa75055b9acb4cb5541a5",
+    "/workspace/zboard-current-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go": "defcd8320e5e36f9daa7eb3f32ab69c32843cd2ffef96f9e2dc457b2e8a9fa14",
+    "/workspace/zboard-current-verify/backend/internal/application/database.go": "5162834327bdd1d89e9a06402392e84346cc671a90c404c86fb05afabc721416"
+  },
+  "private_files_after": {
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/generic-migrator.go.overlay": "ef8c9f82262981da3753994b3e195799b8fdd92700f89637f8135edc41dd310c",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/mysql-migrator.go.overlay": "0133f74ab59ef517432d022bf9a77895d2838eca1cdfe5bad1fb46fc14d72d86",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/schema-benchmark.go.overlay": "660bd4c5beca0cf5efa7df68e2da37e16c7764316ffbd09d4c549dcf93d73def",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/overlay.json": "4e90afe7255bafb3b41bfef63fd61ff61a87560330d8e15f07d3d169cb80033d",
+    "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/gorm-metadata-probe-31/instrumentation.patch": "73be85ee77fda3457d796070faace2158bf4730f078cf71a6af1a641782e5669"
+  },
+  "private_hashes_unchanged": true,
+  "file_hashes_unchanged": true,
+  "status_after": "",
+  "head_after": "31e72db8c6fbbbedddbd006cd5887c39c3d6cd44",
+  "blocking_action": "go test with private replacement overlays for the two installed GORM module migrator files",
+  "blocking_target": "/workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go (the second generic GORM module file is also beneath GOMODCACHE)",
+  "blocking_reason": "go: overlay contains a replacement for /workspace/toolchains/gopath/pkg/mod/gorm.io/driver/mysql@v1.5.7/migrator.go. Files beneath GOMODCACHE (/workspace/toolchains/gopath/pkg/mod) must not be replaced.",
+  "blocker_origin": "Go tool module-cache overlay restriction, not automatic approval review.",
+  "execution_outcome": {
+    "command_attempts": 1,
+    "compile_started": false,
+    "benchmark_started": false,
+    "fresh_schema_samples": 0,
+    "database_operations_from_probe": 0,
+    "scan_measurements": [],
+    "diagnostic_binary_built": false,
+    "workaround_attempted": false
+  },
+  "completed_preparation": [
+    "Fixed31 clone HEAD/clean status and original application source checked.",
+    "Two private module-source copies and benchmark-only bridge prepared; original SQL literals/arguments/return handling preserved.",
+    "Only ignored private files were written and formatted. Original module files and tracked clone files were not written.",
+    "Original source and private overlay hashes checked unchanged after rejection.",
+    "Complete tool rejection retained in benchmark.log."
+  ],
+  "unexecuted": [
+    "All three fresh-schema benchmark samples.",
+    "Every Scan timing/call-count bucket and comparison.",
+    "No original-source benchmark baseline, alternate strategy, retry, full suite or capacity run attempted."
+  ],
+  "measurement_limit": "No performance/count result: the prepared instrumentation was never compiled or executed. Earlier successful stage measurements are separate evidence and cannot substitute for this probe.",
+  "raw_log_sha256": "32a68c14a006345c7a916bb559b8bbf794fb6d865c0cec3a50a8ab8f89a004c7",
+  "runner_sha256": "3e7bd1771ce86dc7b5618814646b48c66ade40d06e861ed99c7f455c19fdcef1",
+  "private_receipt_sha256": "005b19861fb71db21aa122345b2779017170e8520020fbfae478afe0dbb722b2"
+}

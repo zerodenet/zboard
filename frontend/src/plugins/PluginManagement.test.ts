@@ -10,6 +10,7 @@ import PluginConfigDialog from './PluginConfigDialog.vue'
 import UiFileUpload from '../components/UiFileUpload.vue'
 import type { Plugin } from '../api/plugins'
 const mocks = vi.hoisted(() => ({ list: vi.fn(), config: vi.fn(), operations: vi.fn(), import: vi.fn(), preview: vi.fn(), save: vi.fn(), action: vi.fn(), confirm: vi.fn(), migrations: vi.fn() }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 vi.mock('../api/plugins', async importOriginal => ({ ...await importOriginal<typeof import('../api/plugins')>(), fetchPlugins: mocks.list, fetchPluginConfig: mocks.config, fetchPluginOperations: mocks.operations, importPlugin: mocks.import, previewPlugin: mocks.preview, savePluginConfig: mocks.save, pluginAction: mocks.action, fetchPluginMigrations: mocks.migrations }))
 vi.mock('../utils/feedback', async importOriginal => ({ ...await importOriginal<typeof import('../utils/feedback')>(), confirmAction: mocks.confirm }))
 const plugin = (id = 'zboard.oauth'): Plugin => ({
@@ -43,6 +44,28 @@ beforeEach(() => {
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('plugin management navigation', () => {
+  it('lists retained versions without advertising the removed rollback operation', async () => {
+    const { wrapper } = await render('/admin/plugins/zboard.oauth?tab=versions')
+    expect(wrapper.text()).toContain('v0.1.0')
+    expect(wrapper.text()).not.toContain('恢复此版本')
+    expect(wrapper.text()).not.toContain('恢复旧版本')
+    expect(wrapper.find('a[href="/admin/plugin-market/zboard.oauth"]').exists()).toBe(true)
+  })
+  it.each([
+    ['plugin changed; refresh and retry', '插件状态或配置已更新，请刷新后再操作。'],
+    ['admin required', '此操作需要管理员权限'],
+    ['plugin capability is outside the host admission scope', '插件未通过宿主能力准入'],
+    ['plugin API or runtime is incompatible', '运行平台与当前宿主不兼容'],
+    ['plugin lifecycle data preparation is incomplete or incompatible', '数据准备尚未完成'],
+    ['plugin process failed to start', '插件进程启动失败'],
+  ])('shows the host failure without a false success: %s', async (message, expected) => {
+    mocks.action.mockRejectedValueOnce({ response: { data: { message } } })
+    const { wrapper } = await render('/admin/plugins/zboard.oauth')
+    await clickText(wrapper, '启用插件')
+    expect(wrapper.text()).toContain(expected)
+    expect(wrapper.text()).not.toContain('启用已完成')
+    expect(wrapper.findAll('button').some(button => button.text() === '启用插件')).toBe(true)
+  })
   it('keeps retained uninstall records out of the installed plugin list', async () => {
     const removed = { ...plugin('removed'), name: '已卸载插件', state: 'uninstalled' }
     mocks.list.mockResolvedValue([plugin(), removed])
@@ -85,7 +108,7 @@ describe('plugin management navigation', () => {
     const file = new File(['package'], 'org.zerodenet.connect.zboard-0.0.2-dev.202609181350-linux-amd64.zbplugin')
     dialog.getComponent(UiFileUpload).vm.$emit('select', [file]); await flushPromises()
     expect(mocks.import).not.toHaveBeenCalled()
-    expect(wrapper.get('.plugin-import-file strong').attributes('title')).toBe(file.name)
+    expect(wrapper.get('.plugin-import-file strong').attributes('title')).toBeUndefined()
     expect(wrapper.text()).toContain(file.name)
     expect(wrapper.text()).toContain('7 B')
     mocks.import.mockRejectedValueOnce({ response: { data: { message: '发布者签名不受信任' } } })
@@ -101,7 +124,7 @@ describe('plugin management navigation', () => {
     wrapper.getComponent(UiFileUpload).vm.$emit('select', [new File(['package'], 'oauth.zbplugin')]); await flushPromises()
     await clickText(wrapper, '查看插件'); await clickText(wrapper, '确认导入')
     expect(router.currentRoute.value.path).toBe('/admin/plugins/zboard.oauth')
-    expect(wrapper.text()).toContain('系统已完成能力校验和数据准备'); expect(mocks.action).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('插件已安装，请完成配置后启用'); expect(mocks.action).not.toHaveBeenCalled()
   })
   it('requires explicit trust for an unknown key and clears consent on package replacement', async () => {
     mocks.preview.mockResolvedValueOnce({ ...await mocks.preview(), trusted: false })
@@ -121,6 +144,40 @@ describe('plugin management navigation', () => {
     await wrapper.get('input[type="checkbox"]').setValue(true)
     await clickText(wrapper, '确认导入')
     expect(mocks.import).toHaveBeenCalledWith(file, expect.objectContaining({ fingerprint: 'fingerprint', digest: 'digest' }), true)
+  })
+  it('requires separate same-key publisher migration consent and rechecks after a conflict', async () => {
+    const migration = { from_publisher: 'local.publisher', to_publisher: 'formal.publisher', from_version_id: 'old-digest', previous_state: 'uninstalled', generation: 4, confirmation: 'bound-confirmation' }
+    mocks.preview.mockResolvedValue({ ...await mocks.preview(), publisher_migration: migration })
+    const { wrapper } = await render('/admin/plugins')
+    await clickText(wrapper, '离线导入')
+    const file = new File(['package'], 'plugin.zbplugin')
+    wrapper.getComponent(UiFileUpload).vm.$emit('select', [file]); await flushPromises()
+    await clickText(wrapper, '查看插件')
+    expect(wrapper.text()).toContain('local.publisher → formal.publisher')
+    expect(wrapper.text()).toContain('保持停用')
+    expect(wrapper.text()).toContain('历史业务记录继续保留')
+    expect(wrapper.text()).toContain('安装包摘要：digest')
+    expect(wrapper.text()).toContain('不提供旧包回滚')
+    expect(wrapper.findAll('button').find(b => b.text() === '确认导入')!.attributes('disabled')).toBeDefined()
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    mocks.import.mockRejectedValueOnce({ response: { status: 409, data: { message: 'stale' } } })
+    await clickText(wrapper, '确认导入')
+    expect(mocks.import).toHaveBeenCalledWith(file, expect.objectContaining({ publisher_migration: migration }), false, true)
+    expect(wrapper.text()).toContain('请重新查看安装包并确认')
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    await clickText(wrapper, '查看插件')
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.findAll('button').find(b => b.text() === '确认导入')!.attributes('disabled')).toBeDefined()
+  })
+  it('shows publisher migration audit identity with its result and operator', async () => {
+    mocks.operations.mockResolvedValue([{ id: 'migration', action: 'publisher_migration', state: 'failed', actor: 'operator', message: 'candidate rejected', previous_publisher: 'local.publisher', publisher: 'formal.publisher', signing_key_fingerprint: 'verified-fingerprint', package_digest: 'target-digest', created_at: '2026-10-15' }])
+    const { wrapper } = await render('/admin/plugins/zboard.oauth?tab=operations')
+    expect(wrapper.text()).toContain('发布者迁移')
+    expect(wrapper.text()).toContain('local.publisher → formal.publisher')
+    expect(wrapper.text()).toContain('verified-fingerprint')
+    expect(wrapper.text()).toContain('target-digest')
+    expect(wrapper.text()).toContain('operator')
+    expect(wrapper.text()).toContain('candidate rejected')
   })
   it('ignores stale detail and operation responses after switching plugins', async () => {
     const { wrapper, router } = await render('/admin/plugins/zboard.oauth?tab=operations')
@@ -162,7 +219,7 @@ describe('plugin management navigation', () => {
     expect(wrapper.text()).not.toContain('能力授权')
     expect(wrapper.text()).toContain('由 ZBoard 根据插件声明、调用身份和站点策略约束')
     await clickText(wrapper, '启用插件')
-    expect(mocks.action).toHaveBeenCalledWith(plugin(), 'enable', false, '')
+    expect(mocks.action).toHaveBeenCalledWith(plugin(), 'enable')
   })
   it('shows host migration status without exposing a manual migration action', async () => {
     const migrating = plugin()
@@ -181,7 +238,7 @@ describe('plugin management navigation', () => {
     mocks.list.mockResolvedValue([active])
     const { wrapper } = await render('/admin/plugins/zboard.oauth')
     await clickText(wrapper, '卸载插件')
-    expect(mocks.action).toHaveBeenCalledWith(active, 'uninstall', false, '')
+    expect(mocks.action).toHaveBeenCalledWith(active, 'uninstall')
   })
   it('protects a dirty advanced configuration from switching to a different plugin', async () => {
     const { wrapper, router } = await render('/admin/plugins/zboard.oauth/configuration')

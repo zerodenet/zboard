@@ -17,7 +17,7 @@ func (m *Manager) Import(data []byte, actor string) (Installation, error) {
 }
 
 // The confirmation is bound to both the complete archive and the verified key.
-func (m *Manager) ImportConfirmed(data []byte, actor, publicKey, digest, fingerprint string) (Installation, error) {
+func (m *Manager) ImportConfirmed(data []byte, actor, publicKey, digest, fingerprint string, migration ...string) (Installation, error) {
 	p, err := m.inspectPackage(data, publicKey)
 	if err != nil {
 		return Installation{}, err
@@ -25,28 +25,27 @@ func (m *Manager) ImportConfirmed(data []byte, actor, publicKey, digest, fingerp
 	if digest != "" && digest != p.Digest {
 		return Installation{}, ErrConflict
 	}
-	return m.importVerified(data, actor, p, digest == p.Digest && fingerprint == keyFingerprint(p.PublicKey))
+	return m.importVerified(data, actor, p, digest == p.Digest && fingerprint == keyFingerprint(p.PublicKey), migration...)
 }
-func (m *Manager) importVerified(data []byte, actor string, p *Package, confirmed bool) (Installation, error) {
+func (m *Manager) importVerified(data []byte, actor string, p *Package, confirmed bool, migration ...string) (Installation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	trusted, err := m.packageTrusted(p)
+	trusted, prev, err := m.assessPackage(p)
 	if err != nil {
 		return Installation{}, err
 	}
 	if !trusted && !confirmed {
 		return Installation{}, errors.New("confirm trust for this plugin publisher before importing")
 	}
-	if err := m.guard(m.db); err != nil {
+	if err := confirmPublisherMigration(prev, p, confirmed, migration); err != nil {
 		return Installation{}, err
 	}
-	var prev model.PluginInstallation
-	if err := m.db.Where("id = ?", p.Manifest.ID).Limit(1).Find(&prev).Error; err != nil {
+	if err := m.guard(m.db); err != nil {
 		return Installation{}, err
 	}
 	p.LocalTrust = prev.LocalTrust || (prev.ID == "" && !trusted && confirmed)
 	if prev.ID != "" && prev.Publisher != p.Publisher {
-		return Installation{}, errors.New("publisher must match")
+		p.LocalTrust = prev.LocalTrust || m.options.TrustedPublishers[p.Publisher] == ""
 	}
 	if !p.Manifest.Compatibility(m.host).Compatible {
 		return Installation{}, errors.New("plugin is incompatible with this host")
@@ -60,7 +59,7 @@ func (m *Manager) importVerified(data []byte, actor string, p *Package, confirme
 			return Installation{}, errors.New("plugin installation limit reached")
 		}
 	}
-	op, err := m.newOperation(p.Manifest.ID, "import", actor)
+	op, err := m.newImportOperation(prev, p, actor)
 	if err != nil {
 		return Installation{}, err
 	}
@@ -72,7 +71,10 @@ func (m *Manager) importVerified(data []byte, actor string, p *Package, confirme
 	}
 	if err != nil {
 		if os.IsNotExist(before) {
-			_ = os.RemoveAll(target)
+			// A replaced host must not delete a package its successor committed.
+			if cleanupErr := m.removeFailedCandidate(p.Digest); cleanupErr != nil {
+				log.Printf("plugin candidate cleanup deferred: %v", cleanupErr)
+			}
 		}
 		return Installation{}, m.finish(op, err)
 	}
@@ -90,6 +92,9 @@ func (m *Manager) packageFor(v Installation) (*Package, error) {
 		return nil, errors.New("plugin package missing; import it again")
 	}
 	keys := map[string]string{v.Publisher: m.options.TrustedPublishers[v.Publisher]}
+	if configured := keys[v.Publisher]; configured != "" && v.SigningKey != "" && configured != v.SigningKey {
+		return nil, errors.New("publisher key conflicts with host configuration")
+	}
 	if v.LocalTrust {
 		keys[v.Publisher] = v.SigningKey
 	}

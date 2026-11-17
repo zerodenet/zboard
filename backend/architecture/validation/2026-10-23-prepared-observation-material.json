@@ -1,0 +1,250 @@
+{
+  "recorded_utc": "2026-10-23T17:31:05.128168+00:00",
+  "base_head": "8ae692e2859da869f0d55c3fac0bb0a8ccc5b07a",
+  "candidate_not_base_commit": true,
+  "overall_complete": false,
+  "pull_request": "https://github.com/zerodenet/zboard/pull/78",
+  "checks": [
+    {
+      "head": "8ae692e2859da869f0d55c3fac0bb0a8ccc5b07a",
+      "phase": "baseline",
+      "started_utc": "2026-10-23T17:19:44.851217+00:00",
+      "finished_utc": "2026-10-23T17:21:06.284712+00:00",
+      "checks": [
+        {
+          "name": "old-failure",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/application",
+            "-run",
+            "^TestSQLitePreparedProjectionDatabaseReadOnly$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 81.3,
+          "log": "baseline-1-old-failure.log",
+          "log_sha256": "b678931fc3d98540204e47b35a0bf7a84625263ae0ac8e306f3f36503de812ff"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": false,
+      "name": "baseline-1",
+      "source_before_sha256": "3e0a7272cf8b32874b89c951a771d2abf4e807b8506ecdd97982f4c49646adf2",
+      "source_after_sha256": "3e0a7272cf8b32874b89c951a771d2abf4e807b8506ecdd97982f4c49646adf2",
+      "top_level": {
+        "pass": [],
+        "fail": [
+          "TestSQLitePreparedProjectionDatabaseReadOnly"
+        ],
+        "skip": []
+      },
+      "failed_subcases": [
+        "TestSQLitePreparedProjectionDatabaseReadOnly/observation_material_receipt_required",
+        "TestSQLitePreparedProjectionDatabaseReadOnly/observation_material_material_review_at_required",
+        "TestSQLitePreparedProjectionDatabaseReadOnly/observation_material_material_retired_at_required"
+      ],
+      "interpretation": "Old checker falsely accepted absent0061 receipt and missing material_review_at. Third new field test hit a missing-index cascade because old failing assertions skipped fixture repair. Count only first two as defect reproductions; entire failure retained."
+    },
+    {
+      "head": "8ae692e2859da869f0d55c3fac0bb0a8ccc5b07a",
+      "phase": "go",
+      "started_utc": "2026-10-23T17:22:12.453904+00:00",
+      "finished_utc": "2026-10-23T17:22:50.217735+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/application",
+            "./cmd/zboard",
+            "-run",
+            "^Test(SQLitePreparedProjection.*|Projection.*|ValidateDatabaseModes.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 1,
+          "wall_seconds": 37.632,
+          "log": "go-1-target.log",
+          "log_sha256": "b60bfcbd45f0844d0970c4185ae15d7e85d14e8752f2e1f18d702a03090fbd08"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": false,
+      "name": "go-1",
+      "source_before_sha256": "eecfa4ab240f97573ddc7b35b6d559379c579d754da87e992590f92dc70a298d",
+      "source_after_sha256": "eecfa4ab240f97573ddc7b35b6d559379c579d754da87e992590f92dc70a298d",
+      "top_level": {
+        "pass": [
+          "TestProjectionCheckSQLiteConnectionParameters",
+          "TestProjectionCheckMissingSQLiteFileDoesNotCreate",
+          "TestProjectionJobDefinitionsPreserveExistingContract",
+          "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics",
+          "TestProjectionDatabaseCheckModeExclusion",
+          "TestProjectionDatabaseCheckEntrypoint"
+        ],
+        "fail": [
+          "TestSQLitePreparedProjectionDatabaseReadOnly"
+        ],
+        "skip": []
+      },
+      "failed_subcases": [
+        "TestSQLitePreparedProjectionDatabaseReadOnly/observation_material_receipt_required",
+        "TestSQLitePreparedProjectionDatabaseReadOnly/observation_material_material_review_at_required",
+        "TestSQLitePreparedProjectionDatabaseReadOnly/observation_material_material_retired_at_required"
+      ],
+      "interpretation": "New checker compiled and refused faults; three positive checks in Cleanup used already-canceled t.Context, failing table metadata. Cleanup restoration retained, positive validation moved into active test body; no assertion removed."
+    },
+    {
+      "head": "8ae692e2859da869f0d55c3fac0bb0a8ccc5b07a",
+      "phase": "go",
+      "started_utc": "2026-10-23T17:24:42.634087+00:00",
+      "finished_utc": "2026-10-23T17:26:38.881976+00:00",
+      "checks": [
+        {
+          "name": "target",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/datastore",
+            "./internal/application",
+            "./cmd/zboard",
+            "-run",
+            "^Test(SQLitePreparedProjection.*|Projection.*|ValidateDatabaseModes.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 116.117,
+          "log": "go-2-target.log",
+          "log_sha256": "46e6b90b2955cd8bcc1f1d9233fc6905ef05b0b2d88d6e5f51d45f0513ec0e47"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": false,
+      "name": "go-2",
+      "source_before_sha256": "c12df3823a0e6e735dd3cf8c27a5f3364a65050bb929c106004c57a37b435c7f",
+      "source_after_sha256": "c12df3823a0e6e735dd3cf8c27a5f3364a65050bb929c106004c57a37b435c7f",
+      "top_level": {
+        "pass": [
+          "TestProjectionCheckSQLiteConnectionParameters",
+          "TestProjectionCheckMissingSQLiteFileDoesNotCreate",
+          "TestSQLitePreparedProjectionDatabaseReadOnly",
+          "TestProjectionJobDefinitionsPreserveExistingContract",
+          "TestProjectionDefinitionsKeepLiveCapabilityAndErrorSemantics",
+          "TestProjectionDatabaseCheckModeExclusion",
+          "TestProjectionDatabaseCheckEntrypoint"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "failed_subcases": [],
+      "interpretation": "Final read-only0061 admission fix, storage/app/actual SQLite command entrypoint focused regression passed. No extra worker or full backend claim."
+    },
+    {
+      "head": "8ae692e2859da869f0d55c3fac0bb0a8ccc5b07a",
+      "phase": "mysql",
+      "started_utc": "2026-10-23T17:28:14.692923+00:00",
+      "finished_utc": "2026-10-23T17:28:36.256435+00:00",
+      "checks": [
+        {
+          "name": "mysql",
+          "cwd": "backend",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-p",
+            "1",
+            "./internal/application",
+            "./internal/datastore",
+            "./cmd/zboard",
+            "-run",
+            "^TestMySQL(PreparedProjection.*|Projection.*)$",
+            "-count=1",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 21.437,
+          "log": "mysql-1-mysql.log",
+          "log_sha256": "47f31955ae97991a1955bca2e53c85532a1dcf0568a1292556099bab24647f31"
+        }
+      ],
+      "source_stable": true,
+      "mysql_configured": true,
+      "name": "mysql-1",
+      "source_before_sha256": "c12df3823a0e6e735dd3cf8c27a5f3364a65050bb929c106004c57a37b435c7f",
+      "source_after_sha256": "c12df3823a0e6e735dd3cf8c27a5f3364a65050bb929c106004c57a37b435c7f",
+      "top_level": {
+        "pass": [
+          "TestMySQLPreparedProjectionDatabaseReadOnly"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "failed_subcases": [],
+      "interpretation": "Same final source, actual isolated MySQL8.4 application prepared-check matrix passed; other unmatched packages do not count as executed MySQL tests."
+    }
+  ],
+  "final_source_sha256": "c12df3823a0e6e735dd3cf8c27a5f3364a65050bb929c106004c57a37b435c7f",
+  "source_scope": "All Go, frontend ts/vue, modules, OpenAPI and ownership JSON; prose/evidence/ignored artifacts excluded.",
+  "files": [
+    {
+      "path": "backend/internal/datastore/prepared_projection.go",
+      "original_sha256": "69c49a851c108a828472048492c106773884d1c0de474a17a11cac564bba5c27",
+      "candidate_sha256": "b14d869a00f78c8dd9a23e4bd8f35d3c8e0bd202759aef3590c8e65e1ccd1c82"
+    },
+    {
+      "path": "backend/internal/application/prepared_projection_test.go",
+      "original_sha256": "2ec4dd92ce62b3fc3cd15f57ca677410dd2fbe2a6b0ec802cc244b64f0c9bb7d",
+      "candidate_sha256": "659d62a85d3ab2199f8e30d4910ed145dabb145b8c4894c8cedccc16fcdd9abb"
+    }
+  ],
+  "cache_action": {
+    "utc": "2026-10-23T17:24:42.488515+00:00",
+    "target": "/workspace/toolchains/cache/go-build",
+    "resolved": "/workspace/toolchains/cache/go-build",
+    "symlinks": false,
+    "process_scan_valid": true,
+    "ps_columns": [
+      "pid",
+      "state",
+      "comm",
+      "args"
+    ],
+    "workloads_before_env_probe": [],
+    "workloads_after_env_probe": [],
+    "free_before": 18513920,
+    "command": "go clean -cache",
+    "exit_code": 0,
+    "output": "",
+    "free_after": 522199040
+  },
+  "migration": "No SQL/schema or data migration.157 published SQL files unchanged. Require only actual worker dependencies: receipt0061 plus retire marker/review columns and their existing shape/default contract. inspect only; never reconcile/create index/alter schema during validation.",
+  "authority": "Prepared admission remains read-only and point-in-time. Same application maintenance authority and per-claim pause are required. No HTTP/spool/bootstrap/credential migration/runtime/worker starts.",
+  "unverified": [
+    "Own exact new commit CI pending until pushed;8ae CI still running and cannot certify this candidate",
+    "Full local backend4/MySQL3/race3 not executed under original same-env storage constraint",
+    "Actual standalone main subprocess covered only SQLite; MySQL application/readonly DB path is separate, not MySQL CLI/OS kill evidence",
+    "No standalone worker/autoscaler/capacity or external/production acceptance; P6/P7 not complete"
+  ]
+}

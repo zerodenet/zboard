@@ -3,6 +3,7 @@ package observabilitystore
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func (l *dashboardQueryCounter) Trace(ctx context.Context, begin time.Time, fc f
 	l.Interface.Trace(ctx, begin, fc, err)
 }
 
-func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
+func TestDashboardProjectionPreservesFactsAndBoundedPendingChecks(t *testing.T) {
 	db, err := datastore.OpenWithDriver(datastore.DriverSQLite, filepath.Join(t.TempDir(), "dashboard.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +84,9 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := db.Transaction(datastore.RebuildTrafficHourly); err != nil {
+		t.Fatal(err)
+	}
 	counter := &dashboardQueryCounter{Interface: db.Config.Logger}
 	counted := db.Session(&gorm.Session{Logger: counter})
 	period := observability.DashboardPeriod{Range: "today", From: now.Add(-2 * time.Hour), To: now, PreviousFrom: now.Add(-26 * time.Hour), PreviousTo: now.Add(-24 * time.Hour), Bucket: "hour", Timezone: "UTC"}
@@ -94,8 +98,8 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	if result.Business.NewUsers != 1 || result.Business.PreviousNewUsers != 0 || result.Business.PreviousRenewOrders != 1 {
 		t.Fatalf("comparison facts = %+v", result.Business)
 	}
-	if got := counter.queries.Load(); got != 4 {
-		t.Fatalf("dashboard used %d queries, want 4", got)
+	if got := counter.queries.Load(); got != 5 {
+		t.Fatalf("dashboard used %d queries, want 4 aggregates and 1 combined indexed pending probe", got)
 	}
 	if result.Business.RevenueCents != 120 || result.Business.PreviousRevenueCents != 70 || result.Business.PaidOrders != 1 || !result.Business.MixedCurrency {
 		t.Fatalf("business = %+v", result.Business)
@@ -103,7 +107,7 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	if result.Business.ActiveSubscriptions != 1 || result.Subscriptions.ExpiringWithin24Hours != 1 || result.Subscriptions.QuotaExhausted != 1 {
 		t.Fatalf("subscriptions = business:%+v health:%+v", result.Business, result.Subscriptions)
 	}
-	if result.Service.TrafficBytes != 321 || result.Service.EnabledNodes != 2 || result.Service.OnlineNodes != 1 || result.Service.ActiveSubscriptions == nil || *result.Service.ActiveSubscriptions != 1 || result.Service.ActiveFlows == nil || *result.Service.ActiveFlows != 3 {
+	if result.Service.TrafficBytes != 321 || result.Service.EnabledNodes != 2 || result.Service.OnlineNodes != 1 || result.Service.ObservedActiveSubscriptions == nil || *result.Service.ObservedActiveSubscriptions != 1 || result.Service.ObservedActiveFlows == nil || *result.Service.ObservedActiveFlows != 3 || result.Service.ActiveSubscriptions != nil || result.Service.ActiveFlows != nil || result.Coverage.PrincipalFlows || result.Coverage.PrincipalFlowsState != "unknown" {
 		t.Fatalf("service = %+v", result.Service)
 	}
 	if result.Attention.OfflineNodes != 1 || result.Attention.PendingTickets != 1 || result.Attention.UnresolvedDeployments != 1 || result.Infrastructure.SSHVerified != 1 || result.Infrastructure.TrafficReady != 1 || result.Infrastructure.ActiveProtocolEndpoints != 1 || result.Infrastructure.PublishedPlans != 1 {
@@ -111,6 +115,38 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	}
 	if len(result.Trend) != 2 || result.Trend[1].RevenueCents != 120 {
 		t.Fatalf("trend = %+v", result.Trend)
+	}
+
+	for _, view := range []string{"current", "statistics", "trend"} {
+		counter.queries.Store(0)
+		focused, err := (observability.Dashboard{Repository: Dashboard{DB: counted}}).View(context.Background(), period, now, buckets, view)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch view {
+		case "current":
+			if focused.Business.ActiveSubscriptions != result.Business.ActiveSubscriptions || (!reflect.DeepEqual(focused.Service.ObservedActiveFlows, result.Service.ObservedActiveFlows) || focused.Service.ActiveFlows != nil || focused.Coverage != result.Coverage) || focused.Attention != result.Attention || focused.Subscriptions != result.Subscriptions || focused.Infrastructure != result.Infrastructure {
+				t.Fatalf("current facts changed: %+v", focused)
+			}
+			if counter.queries.Load() != 2 {
+				t.Fatalf("current queries=%d", counter.queries.Load())
+			}
+		case "statistics":
+			// Current subscription counts intentionally live in a different response.
+			want := result.Business
+			want.ActiveSubscriptions = 0
+			want.ExpiringWithin3Days = 0
+			if focused.Business != want || focused.Service.TrafficBytes != result.Service.TrafficBytes || focused.Service.PreviousTrafficBytes != result.Service.PreviousTrafficBytes {
+				t.Fatalf("statistics changed: %+v", focused)
+			}
+			if counter.queries.Load() != 4 {
+				t.Fatalf("statistics queries=%d", counter.queries.Load())
+			}
+		case "trend":
+			if !reflect.DeepEqual(focused.Trend, result.Trend) || counter.queries.Load() != 1 {
+				t.Fatalf("trend=%+v", focused)
+			}
+		}
 	}
 
 	counter.queries.Store(0)
@@ -130,4 +166,21 @@ func TestDashboardProjectionPreservesFactsInFourQueries(t *testing.T) {
 	if totals.PendingTickets != 1 || totals.FailedDeployments != 1 || totals.ProtocolEndpoints != 1 || totals.ActiveProtocolEndpoints != 1 || totals.SSHVerifiedNodes != 1 || totals.TrafficReadyNodes != 1 {
 		t.Fatalf("operational totals = %+v", totals)
 	}
+	// Independent trend currency must be derived from its own rows, including
+	// different currencies in separate buckets and then in the same bucket.
+	otherPaid := now.Add(-90 * time.Minute)
+	other := model.Order{TradeNo: "trend-usd", Status: "paid", PaidAt: &otherPaid, PaidAmount: 500, Currency: "USD", OrderType: "new"}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		snapshot, err := (observability.Dashboard{Repository: Dashboard{DB: db}}).View(context.Background(), period, now, buckets, "trend")
+		if err != nil || !snapshot.TrendMixedCurrency || snapshot.TrendCurrency != "" {
+			t.Fatalf("mixed trend=%+v err=%v", snapshot, err)
+		}
+		if err := db.Model(&other).Update("paid_at", paidAt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
 }

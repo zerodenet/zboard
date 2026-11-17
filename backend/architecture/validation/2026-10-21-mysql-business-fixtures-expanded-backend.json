@@ -1,0 +1,55 @@
+{
+  "source": "c923d1b5cc2f95370a1b795dc9cd277886020839",
+  "phase": "backend",
+  "started_utc": "2026-10-21T05:46:13.756261+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "full-go",
+      "command": "go test -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 298.413,
+      "log": "full-go-c923d1b-final.log",
+      "raw_log_bytes": 4034,
+      "raw_log_sha256": "406e4350733900da8f208c23913229efcfc110feaa62a7e76aa019b0e0ddd868"
+    },
+    {
+      "name": "vet",
+      "command": "go vet -p 2 ./...",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 3.604,
+      "log": "vet-c923d1b-final.log",
+      "raw_log_bytes": 0,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/zboard",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 1.837,
+      "log": "build-c923d1b-final.log",
+      "raw_log_bytes": 0,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pure-go-sqlite",
+      "command": "go test -p 2 ./internal/datastore -run SQLite -count=1",
+      "environment_additions": {
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 23.169,
+      "log": "pure-go-sqlite-c923d1b-final.log",
+      "raw_log_bytes": 68,
+      "raw_log_sha256": "2af46d8a070980236e31741ede905a720aded178c2f09609ba58d7a1a5baad09"
+    }
+  ],
+  "finished_utc": "2026-10-21T05:51:40.781065+00:00",
+  "scope": "Exact clean c923d1b checkout in original cloud environment. Full backend test/vet/build/pure-Go SQLite all passed. Actual MySQL commands are separately recorded; standard backend command does not establish opt-in external integration."
+}

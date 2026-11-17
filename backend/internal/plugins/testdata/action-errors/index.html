@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>Generic action errors</title>
+<style>body{font:14px system-ui;margin:20px;color:CanvasText;background:Canvas}input{padding:8px;width:90%;margin:8px 0 16px}button{padding:8px;margin:4px}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}</style>
+<h2>通用插件动作验收</h2><label>备注<input id="note" value="保留我的输入"></label>
+<button data-action="reject.retry">可重试动作</button><button data-action="reject.permanent">不可重试动作</button><button data-action="reject.html">纯文本说明</button><button data-action="success.echo">成功动作</button>
+<pre id="result" role="status"></pre><p id="detail"></p>
+<script>
+const token=new URLSearchParams(location.hash.slice(1)).get('bridge_token');let sequence=0;const pending=new Map();
+for(const button of document.querySelectorAll('[data-action]'))button.onclick=()=>{if(button.disabled)return;button.disabled=true;const id='action-'+(++sequence);pending.set(id,button);parent.postMessage({source:'zboard-plugin-ui',bridge_token:token,request_id:id,type:'page.call',action:button.dataset.action,payload:{note:document.querySelector('#note').value}},'*')};
+addEventListener('message',event=>{const m=event.data;if(event.source!==parent||m?.source!=='zboard-plugin-host'||m.bridge_token!==token)return;const button=pending.get(m.request_id);if(!button)return;pending.delete(m.request_id);button.disabled=!m.ok&&m.source_kind==='plugin'&&m.retryable===false;document.querySelector('#result').textContent=m.ok?'动作成功':m.error;document.querySelector('#detail').textContent=m.ok?'成功分支已执行':`来源 ${m.source_kind||'host'} · 分类 ${m.code} · 插件码 ${m.plugin_code||'-'} · 允许重试 ${m.retryable===undefined?'-':m.retryable}`;});
+parent.postMessage({source:'zboard-plugin-ui',bridge_token:token,type:'ui.resize',height:280},'*');
+</script>

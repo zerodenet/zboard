@@ -30,7 +30,7 @@ defineEmits<{ select: [value: string] }>()
 </script>
 
 <style scoped>
-.status-count-filters { min-height: 32px; display: inline-flex; align-items: center; gap: 2px; padding-left: 10px; overflow-x: auto; border-left: 1px solid var(--border); }
+.status-count-filters { min-height: 32px; display: inline-flex; align-items: center; gap: 2px; padding-left: 0; overflow-x: auto; }
 .status-count-filter { min-height: 30px; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; color: var(--muted-foreground); background: transparent; font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; }
 .status-count-filter:hover { color: var(--foreground); background: var(--muted-surface); }
 .status-count-filter[aria-pressed='true'] { border-color: var(--border); color: var(--foreground); background: var(--surface-subtle); }

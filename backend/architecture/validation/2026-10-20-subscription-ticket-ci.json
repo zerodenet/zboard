@@ -1,0 +1,51 @@
+{
+  "source": "a82d6735247edc919b8a5ca4a522e205c0e99a0d",
+  "run_id": 39510073097,
+  "run_url": "https://github.com/zerodenet/zboard/actions/runs/39510073097",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 118928607984,
+      "name": "compose",
+      "conclusion": "success"
+    },
+    {
+      "id": 118928608232,
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118928608273,
+      "name": "backend",
+      "conclusion": "success"
+    },
+    {
+      "id": 118928608288,
+      "name": "zrs-compiler",
+      "conclusion": "success"
+    },
+    {
+      "id": 118928608304,
+      "name": "mysql",
+      "conclusion": "success"
+    },
+    {
+      "id": 118928608376,
+      "name": "contract",
+      "conclusion": "success"
+    }
+  ],
+  "mysql_seconds": {
+    "datastore": 122.655,
+    "handler": 657.053,
+    "networkstore": 79.4,
+    "jobstore": 83.777,
+    "platformstore_copy": 73.95
+  },
+  "raw_log_sha256": "3689613b3e44aed4031539b52b73719c87ef9521bdf854308736b8007719a2d8",
+  "limits": [
+    "Original commands and timeout/exclusions unchanged",
+    "This new run validates a82d673, not 3c44aa0 or subsequent candidates",
+    "Earlier 31e72db local and CI900s failures remain; single-run timing is not a stable margin or causal speedup"
+  ]
+}

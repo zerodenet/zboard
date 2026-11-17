@@ -5,8 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/zeroevent"
@@ -87,5 +90,29 @@ func TestAdminRuntimeDiagnosticsAreOptInAndAdminOnly(t *testing.T) {
 		if response.Code != item.status {
 			t.Fatalf("runtime access status=%d want=%d", response.Code, item.status)
 		}
+	}
+}
+
+func TestConsumerFailureDiagnosticIsBoundedRedactedAndConcurrent(t *testing.T) {
+	var metrics zeroEventConsumerMetrics
+	var workers sync.WaitGroup
+	for range 4 {
+		workers.Go(func() {
+			for range 50 {
+				metrics.failed(errors.New("temporary failure"), time.Now())
+				_ = metrics.snapshot()
+			}
+		})
+	}
+	workers.Wait()
+	at := time.Now().UTC()
+	metrics.failed(errors.New("Bearer private-report-secret "+strings.Repeat("错", 300)), at)
+	result := metrics.snapshot()
+	if result.Failures != 201 || strings.Contains(result.LastFailure, "private-report-secret") || !strings.Contains(result.LastFailure, "[redacted]") || !utf8.ValidString(result.LastFailure) || utf8.RuneCountInString(result.LastFailure) > 256 || result.LastFailureAt == nil || !result.LastFailureAt.Equal(at) {
+		t.Fatalf("unbounded or unsafe latest failure: %+v", result)
+	}
+	*result.LastFailureAt = time.Time{}
+	if metrics.snapshot().LastFailureAt.IsZero() {
+		t.Fatal("snapshot exposed mutable failure timestamp")
 	}
 }

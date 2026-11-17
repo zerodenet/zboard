@@ -2,12 +2,12 @@
   <Tooltip :text="label"><UiButton
     class="page-refresh-button"
     :variant="variant"
+    size="sm"
     icon
     type="button"
     :loading="loading"
     :disabled="disabled"
     :aria-label="label"
-    :title="label"
     @click="$emit('click')"
   >
     <UiIcon name="refresh" />
@@ -33,14 +33,3 @@ withDefaults(defineProps<{
 
 defineEmits<{ click: [] }>()
 </script>
-
-<style scoped>
-.page-refresh-button.ui-button {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  padding: 0;
-}
-.page-refresh-button.ui-button-ghost { border-color: transparent; background: transparent; box-shadow: none; }
-.page-refresh-button.ui-button-ghost:hover:not(:disabled) { color: var(--text-strong); background: transparent; }
-</style>

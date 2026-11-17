@@ -17,6 +17,7 @@ services:
       ZBOARD_JWT_SECRET: ${ZBOARD_JWT_SECRET:?set ZBOARD_JWT_SECRET}
       ZBOARD_CREDENTIAL_ENCRYPTION_KEY: ${ZBOARD_CREDENTIAL_ENCRYPTION_KEY:?set ZBOARD_CREDENTIAL_ENCRYPTION_KEY}
       ZBOARD_ZERO_ARTIFACT_DIR: /var/lib/zboard/artifacts
+      ZBOARD_FILE_STORAGE_DIR: /var/lib/zboard/files
       ZBOARD_ZERO_KERNEL_CONTRACT: ${ZBOARD_ZERO_KERNEL_CONTRACT:-legacy}
       ZBOARD_ZERO_LOCAL_VERSION: ${ZBOARD_ZERO_LOCAL_VERSION:-}
       ZBOARD_ZERO_EVENT_SPOOL_MODE: ${ZBOARD_ZERO_EVENT_SPOOL_MODE:-file}
@@ -37,6 +38,10 @@ services:
       ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_FLOW_UPDATES: ${ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_FLOW_UPDATES:-true}
       ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_NODE_STATS: ${ZBOARD_ZERO_EVENT_SPOOL_COMPACTION_NODE_STATS:-true}
     volumes:
+      - type: bind
+        source: ${ZBOARD_FILE_HOST_DIR:-./files}
+        target: /var/lib/zboard/files
+        read_only: false
       - type: bind
         source: ${ZBOARD_PLUGIN_HOST_DIR:-./plugins}
         target: /var/lib/zboard/plugins

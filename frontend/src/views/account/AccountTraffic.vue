@@ -1,68 +1,60 @@
 <template>
   <section class="account-page stack">
-    <PageHeader title="流量明细" description="按时间范围查看使用趋势、节点流量分布和按分钟、小时或天聚合的计费明细。" eyebrow="TRAFFIC">
+    <PageHeader title="流量记录">
       <template #actions>
-        <UiButton variant="secondary" type="button" :disabled="loading" @click="loadAll">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+        <PageRefreshButton label="刷新流量" :loading="loading" @click="loadAll" />
       </template>
     </PageHeader>
 
     <PageAlert v-if="summaryError" tone="danger" title="流量汇总加载失败">{{ summaryError }} <UiButton variant="secondary" @click="summaryResource.load()">重试汇总</UiButton></PageAlert>
 
-    <UiMetricStrip :columns="4">
+    <UiMetricStrip :columns="3" variant="plain">
       <MetricCard
         label="剩余可用"
-        :value="summaryLoaded && !summaryError ? formatBytes(summary.remaining_bytes) : '—'"
+        :value="summaryLoaded ? formatBytes(summary.remaining_bytes) : '—'"
         icon="activity"
-        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '可用'"
-        tone="info"
-        meta="当前有效订阅汇总"
+        :loading="!summaryLoaded && summaryLoading"
+        tone="neutral"
       />
       <MetricCard
         label="累计使用"
-        :value="summaryLoaded && !summaryError ? formatBytes(summary.total_used_bytes) : '—'"
+        :value="summaryLoaded ? formatBytes(summary.total_used_bytes) : '—'"
         icon="database"
-        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '历史'"
-        tone="info"
-        icon-tone="success"
-        meta="历史计费流量"
+        :loading="!summaryLoaded && summaryLoading"
+        tone="neutral"
+        icon-tone="neutral"
       />
       <MetricCard
         label="今日使用"
-        :value="summaryLoaded && !summaryError ? formatBytes(summary.used_bytes_today) : '—'"
+        :value="summaryLoaded ? formatBytes(summary.used_bytes_today) : '—'"
         icon="clock"
-        :status="summaryLoading ? '加载中' : summaryError ? '读取失败' : '今日'"
-        tone="info"
-        icon-tone="warning"
+        :loading="!summaryLoaded && summaryLoading"
+        tone="neutral"
+        icon-tone="neutral"
       >
         <template #meta><TimeBadge :value="summary.as_of" mode="relative" /></template>
       </MetricCard>
-      <MetricCard
-        label="最高连接数"
-        :value="observabilityError || observability.peak_connections === null ? '—' : observability.peak_connections.toLocaleString('zh-CN')"
-        icon="activity"
-        :status="observabilityLoading ? '加载中' : observabilityError ? '读取失败' : observability.peak_connections === null ? '未采集' : '区间峰值'"
-        tone="info"
-        :meta="observabilityLoading ? '正在读取连接观测' : observabilityError ? '连接观测读取失败' : observability.peak_connections === null ? '当前范围暂无连接观测；旧版内核会保持未采集状态' : '取筛选范围内的最高并发值'"
-      />
+
     </UiMetricStrip>
 
     <PageAlert v-if="observabilityError" tone="danger" title="流量趋势加载失败">{{ observabilityError }} <UiButton variant="secondary" @click="observabilityResource.load()">重试趋势</UiButton></PageAlert>
-    <TrafficObservabilityChart v-else
+    <TrafficHistoryCoverageHint :history="observability.history || recordTable.history.value" />
+    <TrafficObservabilityChart v-if="!observabilityError || observabilitySnapshotAvailable"
       :points="observability.points"
       :loading="observabilityLoading || !observabilityLoaded"
       :truncated="observability.truncated"
       :record-count="observability.record_count"
       :peak-connections="observability.peak_connections"
+      :projection-pending="observabilityProjectionPending"
+      :snapshot-available="observabilitySnapshotAvailable"
+      :as-of="observability.as_of"
+      @refresh="observabilityResource.load()"
     />
 
     <PageAlert v-if="nodeSeriesError" tone="danger" title="节点流量趋势加载失败">{{ nodeSeriesError }} <UiButton variant="secondary" @click="nodeSeriesResource.load()">重试节点流量</UiButton></PageAlert>
-    <NodeTrafficChart v-else :data="nodeSeries" :loading="nodeSeriesLoading || !nodeSeriesLoaded" />
+    <NodeTrafficChart v-if="!nodeSeriesError || nodeSeriesLoaded" :data="nodeSeries" :loading="nodeSeriesLoading || !nodeSeriesLoaded" />
 
     <PageAlert v-if="statisticsError" tone="danger" title="流量区间统计加载失败">{{ statisticsError }} <UiButton variant="secondary" @click="recordStatistics.load()">重试区间统计</UiButton></PageAlert>
-    <p v-else-if="statisticsLoading" role="status">正在计算流量区间统计…</p>
-    <p v-if="statisticsReady && statisticsData" class="muted">区间统计时间：<TimeBadge :value="statisticsData.as_of" />（翻页不刷新统计）<UiButton variant="ghost" size="sm" :disabled="statisticsLoading" @click="recordStatistics.load()">刷新区间统计</UiButton></p>
 
     <DataWorkbench :total="total" :loading="recordLoading" :refreshing="refreshing">
       <template #filters>
@@ -78,16 +70,15 @@
         </WorkbenchFilterBar>
       </template>
       <template #actions>
-        <span v-if="statisticsReady" class="muted">范围内计费 {{ formatBytes(aggregates.used_bytes) }}</span>
+        <span v-if="statisticsLoading && !statisticsData" class="sr-only" role="status">正在计算流量区间统计…</span><p v-if="statisticsReady && statisticsData" class="sr-only">区间统计时间：<TimeBadge :value="statisticsData.as_of" /></p><span v-if="statisticsReady" class="muted">范围内计费 {{ formatBytes(aggregates.used_bytes) }}</span><PageRefreshButton label="刷新区间统计" :loading="statisticsLoading" @click="recordStatistics.load()" />
       </template>
 
       <PageAlert v-if="recordError" tone="danger" title="流量记录加载失败">{{ recordError }} <UiButton variant="secondary" @click="loadRecords()">重试记录</UiButton></PageAlert>
-      <p v-if="recordLoading && !records.length" role="status">正在加载流量记录…</p>
       <TableSkeleton v-if="recordLoading && !records.length" label="正在加载流量使用明细" :columns="8" />
       <DataTable v-else-if="records.length" :caption="`我的流量使用明细（按${bucketLabel}聚合）`" :row-count="total" :min-width="920">
         <thead>
           <tr>
-            <th class="table-primary-column">时间</th>
+            <th class="table-primary-column">{{ recordTable.bucket.value === 'day' ? '日期（UTC）' : '时间' }}</th>
             <th>节点</th>
             <th>订阅</th>
             <th data-column-priority="2">上行</th>
@@ -98,7 +89,7 @@
         </thead>
         <tbody>
           <tr v-for="record in records" :key="record.id">
-            <td class="table-primary-column"><TimeBadge :value="record.record_at" /></td>
+            <td class="table-primary-column"><span v-if="recordTable.bucket.value === 'day'">{{ record.record_at.slice(0, 10) }}</span><TimeBadge v-else :value="record.record_at" mode="exact" /></td>
             <td>
               <EntityReference
                 :reference="nodeReference(record.node_id)"
@@ -126,7 +117,7 @@
         v-else-if="recordsLoaded && !recordLoading && !recordError"
         icon="activity"
         title="还没有流量使用明细"
-        :description="`节点开始产生计费记录后，按${bucketLabel}聚合的使用明细会显示在这里。`"
+        description=""
       />
 
       <template #footer>
@@ -144,17 +135,12 @@
       </template>
     </DataWorkbench>
 
-    <aside class="account-notice">
-      <UiIcon name="activity" />
-      <div>
-        <strong>流量明细如何计算？</strong>
-        <p>明细由服务端按照时间粒度、节点、订阅和实际计费倍率汇总；原始计费记录仍保留用于计费、审计与对账。节点趋势直接从同一批原始计费事实按时间与节点计算，不额外生成统计记录。连接峰值来自 ZBoard 已接受的 Principal 当前态观测，并按所选日期范围聚合；旧版内核没有观测时保持未采集。</p>
-      </div>
-    </aside>
+
   </section>
 </template>
 
 <script setup lang="ts">
+import TrafficHistoryCoverageHint from './TrafficHistoryCoverageHint.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTrafficSummary } from '../../api/client'
@@ -171,12 +157,16 @@ import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import EntityReference from '../../components/EntityReference.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import TimeBadge from '../../components/TimeBadge.vue'
 import PageAlert from '../../components/PageAlert.vue'
 import MetricCard from '../../components/MetricCard.vue'
 import UiMetricStrip from '../../components/UiMetricStrip.vue'
 import { useRemoteResource } from '../../composables/useRemoteResource'
+import { useTrafficTrendResource } from '../../composables/useTrafficTrendResource'
+import { useAppStore } from '../../stores/app'
+import { getDisplayTimeZone } from '../../utils/timeZone'
 import { trafficNodeBucket } from '../../utils/trafficNodeBucket'
 import { keyedLoad } from '../../composables/keyedLoad'
 import UiButton from '../../components/UiButton.vue'
@@ -192,11 +182,11 @@ import TrafficObservabilityChart from './TrafficObservabilityChart.vue'
 import {
   emptyTrafficObservabilityResult,
   fetchTrafficObservability,
-  type TrafficObservabilityResult,
 } from './trafficObservability'
 
 const route = useRoute()
 const router = useRouter()
+const app = useAppStore()
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
@@ -209,8 +199,9 @@ const bucket = ref<TrafficUsageBucket>(normalizeBucket(route.query.bucket))
 const summaryResource = useRemoteResource<Record<string, any>>({
   initial: () => ({}), fetch: ({ signal }) => fetchTrafficSummary(false, { signal }), errorMessage: '流量汇总加载失败。',
 })
-const observabilityResource = useRemoteResource<TrafficObservabilityResult>({
+const observabilityResource = useTrafficTrendResource({
   initial: emptyTrafficObservabilityResult,
+  scope: () => trendKey(),
   fetch: ({ signal }) => fetchTrafficObservability({
     subscriptionId: subscriptionFilter.value || undefined, from: from.value, to: to.value, signal,
   }),
@@ -224,7 +215,8 @@ const nodeSeriesResource = useRemoteResource<TrafficNodeSeries | null>({
   errorMessage: '节点流量趋势加载失败。',
 })
 const { data: summary, loading: summaryLoading, error: summaryError, loaded: summaryLoaded } = summaryResource
-const { data: observability, loading: observabilityLoading, error: observabilityError, loaded: observabilityLoaded } = observabilityResource
+const { data: observability, loading: observabilityLoading, error: observabilityError, loaded: observabilityLoaded,
+  snapshotAvailable: observabilitySnapshotAvailable, projectionPending: observabilityProjectionPending } = observabilityResource
 const { data: nodeSeries, loading: nodeSeriesLoading, error: nodeSeriesError, loaded: nodeSeriesLoaded } = nodeSeriesResource
 
 const bucketOptions = [
@@ -232,7 +224,7 @@ const bucketOptions = [
   { label: '按小时', value: 'hour' },
   { label: '按分钟', value: 'minute' },
 ]
-const bucketLabel = computed(() => bucket.value === 'minute' ? '分钟' : bucket.value === 'day' ? '天' : '小时')
+const bucketLabel = computed(() => recordTable.bucket.value === 'minute' ? '分钟' : recordTable.bucket.value === 'day' ? '天' : '小时')
 
 const recordTable = useTrafficUsageTable(() => ({
   bucket: bucket.value, subscriptionId: subscriptionFilter.value || undefined,
@@ -278,7 +270,7 @@ function chartBucket(): TrafficUsageBucket {
   return trafficNodeBucket(bucket.value, from.value, to.value)
 }
 
-const trendKey = () => JSON.stringify([subscriptionFilter.value, from.value, to.value])
+function trendKey() { return JSON.stringify([app.user.id, app.user.isAdmin, getDisplayTimeZone(), subscriptionFilter.value, from.value, to.value]) }
 const loadRecordQuery = keyedLoad(() => JSON.stringify([trendKey(), bucket.value, cursor.value, limit.value]), recordTable)
 const loadTrendQuery = keyedLoad(trendKey, observabilityResource)
 const loadNodeQuery = keyedLoad(() => JSON.stringify([trendKey(), chartBucket()]), nodeSeriesResource)
@@ -364,6 +356,13 @@ watch(() => route.fullPath, async () => {
   }
 })
 
+watch(() => JSON.stringify([app.user.id, app.user.isAdmin, getDisplayTimeZone()]), () => {
+  summaryResource.reset()
+  recordTable.reset()
+  recordStatistics.reset()
+  nodeSeriesResource.reset()
+  void loadAll()
+})
 onMounted(async () => {
   if (!route.query.from || !route.query.to) await syncURL(true)
   await loadAll()

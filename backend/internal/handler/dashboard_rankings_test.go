@@ -15,6 +15,7 @@ func TestDashboardRankingsRequiresCurrentAdministratorAndUsesSystemTimezone(t *t
 	if err := f.h.db.Create(&model.TrafficRecord{UserID: 1, NodeID: 1, ReportID: "dashboard-rank", Nonce: "dashboard-rank", UsedBytes: 500, At: time.Now().UTC().Add(-time.Minute)}).Error; err != nil {
 		t.Fatal(err)
 	}
+	rebuildFixtureHourly(t, f.h.db)
 	request := func(path, token string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		f.h.DashboardTrafficRankingsHandler(w, announcementRequest(http.MethodGet, path, token, ""))

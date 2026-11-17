@@ -61,3 +61,32 @@ func TestProtocolEndpointUsagePrefersPrincipalCurrentProjection(t *testing.T) {
 		t.Fatalf("authoritative Principal zero fell back to legacy events: %+v", zero[81])
 	}
 }
+
+func TestProtocolLoadExcludesStalePrincipalsWithoutUsingCredentialActivityAsSample(t *testing.T) {
+	h, _ := newAnnouncementTestHandlers(t)
+	now := time.Now().UTC()
+	old := now.Add(-time.Hour)
+	for _, row := range []principalFlowCurrent{
+		{NodeID: 1, PrincipalKey: "old", CoreInstanceID: "old-core", UserID: 1, SubscriptionID: 41, ProtocolEndpointID: 81, ActiveFlows: 99, ObservedAt: old, UpdatedAt: old},
+		{NodeID: 1, PrincipalKey: "current", CoreInstanceID: "new-core", UserID: 2, SubscriptionID: 42, ProtocolEndpointID: 81, ActiveFlows: 3, ObservedAt: now, UpdatedAt: now},
+	} {
+		if err := h.db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Credential usage is historical activity, not proof that a load sample is current.
+	credential := model.ProtocolCredential{SubscriptionID: 41, UserID: 1, NodeID: 1, ProtocolEndpointID: 82, PrincipalKey: "credential", Secret: "encrypted", Status: "active", ExpiresAt: now.Add(time.Hour), LastUsedAt: &now}
+	if err := h.db.Create(&credential).Error; err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.loadProtocolEndpointUsageBatch([]model.ProtocolEndpoint{{ID: 81}, {ID: 82}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result[81].ActiveFlows != 3 || result[81].ActiveUsers != 1 || result[81].ObservedAt == nil {
+		t.Fatalf("stale principal counted: %+v", result[81])
+	}
+	if result[82].ObservedAt != nil || result[82].LastUsedAt == nil {
+		t.Fatalf("credential activity became a load sample: %+v", result[82])
+	}
+}

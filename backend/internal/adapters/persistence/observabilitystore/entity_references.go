@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/observability"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -193,7 +194,7 @@ func resolveOrders(db *gorm.DB, result map[string]observability.EntityReference,
 		return nil
 	}
 	var items []model.Order
-	if err := db.Select("id, plan_name, sku_name, trade_no, status").Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := db.Select("id, plan_name, sku_name, status, created_at").Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return err
 	}
 	for _, item := range items {
@@ -205,9 +206,7 @@ func resolveOrders(db *gorm.DB, result map[string]observability.EntityReference,
 		if strings.TrimSpace(item.SKUName) != "" {
 			parts = append(parts, strings.TrimSpace(item.SKUName))
 		}
-		if strings.TrimSpace(item.TradeNo) != "" {
-			parts = append(parts, strings.TrimSpace(item.TradeNo))
-		}
+		parts = append(parts, businessref.Order(item.ID, item.CreatedAt))
 		result[referenceKey(item.ID)] = observability.EntityReference{ID: item.ID, Kind: "order", DisplayName: display, Secondary: strings.Join(parts, " · "), Status: item.Status}
 	}
 	return nil

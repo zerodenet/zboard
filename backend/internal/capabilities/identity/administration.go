@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,16 +35,19 @@ func ValidStatus(value string) bool {
 type NewAccount struct {
 	Email, Password, Status string
 	IsAdmin                 bool
+	AdminNote               string
 }
 type AccountChange struct {
-	Status   *string
-	IsAdmin  *bool
-	Password *string
+	Status    *string
+	IsAdmin   *bool
+	Password  *string
+	AdminNote *string
 }
 type StoredAccountChange struct {
 	Status       *string
 	IsAdmin      *bool
 	PasswordHash *string
+	AdminNote    *string
 }
 type AdministrationTx interface {
 	Account(uint) (PublicAccount, error)
@@ -69,6 +73,10 @@ func (s Administration) Create(ctx context.Context, p Principal, in NewAccount) 
 		in.Status = "active"
 	}
 	fields := map[string]string{}
+	in.AdminNote = strings.TrimSpace(in.AdminNote)
+	if !utf8.ValidString(in.AdminNote) || utf8.RuneCountInString(in.AdminNote) > 500 {
+		fields["admin_note"] = "备注最多 500 个字符。"
+	}
 	if !ValidEmail(in.Email) {
 		fields["email"] = "请输入有效邮箱。"
 	}
@@ -92,6 +100,11 @@ func (s Administration) Create(ctx context.Context, p Principal, in NewAccount) 
 		if err != nil {
 			return err
 		}
+		if in.AdminNote != "" {
+			if _, err = tx.Update(result.ID, StoredAccountChange{AdminNote: &in.AdminNote}); err != nil {
+				return err
+			}
+		}
 		return tx.Audit("user.create", result.ID, fmt.Sprintf("status=%s admin=%t", result.Status, result.IsAdmin))
 	})
 	if err != nil {
@@ -109,6 +122,14 @@ func (s Administration) Update(ctx context.Context, p Principal, id uint, in Acc
 	fields := map[string]string{}
 	changed := []string{}
 	updates := StoredAccountChange{IsAdmin: in.IsAdmin}
+	if in.AdminNote != nil {
+		value := strings.TrimSpace(*in.AdminNote)
+		if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 500 {
+			fields["admin_note"] = "备注最多 500 个字符。"
+		}
+		updates.AdminNote = &value
+		changed = append(changed, "admin_note")
+	}
 	if in.Status != nil {
 		value := strings.TrimSpace(*in.Status)
 		updates.Status = &value

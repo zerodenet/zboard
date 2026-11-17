@@ -97,6 +97,6 @@ onBeforeUnmount(() => controller?.abort())
 .subscription-rule-set-lookup{display:grid;gap:4px}
 .rule-set-option{display:grid;gap:2px}
 .rule-set-option strong{color:var(--text-strong);font-size:11px}
-.rule-set-option small,.lookup-error{color:var(--muted);font-size:9px}
+.rule-set-option small,.lookup-error{color:var(--muted);font-size: 12px}
 .lookup-error{color:var(--danger)}
 </style>

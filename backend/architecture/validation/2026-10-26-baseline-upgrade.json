@@ -1,0 +1,166 @@
+{
+  "scope": "Actual isolated 7c-to-690 upgrade rehearsal; not P7 overall release acceptance",
+  "executions": {
+    "sqlite": {
+      "baseline": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+      "current": "690e55c96214e75cf34e02582bb7d2f4fc998d85",
+      "started_utc": "2026-10-26T09:55:40.155827+00:00",
+      "finished_utc": "2026-10-26T09:55:42.537063+00:00",
+      "checks": [
+        {
+          "name": "old-seed",
+          "exit_code": 0,
+          "wall_seconds": 0.159,
+          "log_sha256": "3c029ac9090055d983e5d5383e0f6c4403b872d3a51db108163ba0c600467116"
+        },
+        {
+          "name": "upgrade",
+          "exit_code": 0,
+          "wall_seconds": 1.301,
+          "log_sha256": "166bfbc7487d9c99724c01b0e85ab23c0cec6ad846acb54a4f71ed871f8391eb"
+        },
+        {
+          "name": "recovery",
+          "exit_code": 0,
+          "wall_seconds": 0.732,
+          "log_sha256": "0dd23818aa6b1f47a44528534cfc0592c9de09591ec4991f73a29f60323638a5"
+        }
+      ],
+      "reused_binaries": {
+        "old": "e895f273570a95795fed05f4e0269719bbfe75ee4852cf2589c57d19136e294b",
+        "current": "e78a60ab80de23f4bbf93e55b5dad4e67fe56f09e1c5b40af0bcb9e602896604"
+      },
+      "templates": {
+        "old_seed_probe.go.txt": "220a6fa7be9406c45ef41687b22fef463efa37238053909865adb37e67381259",
+        "current_upgrade_probe.go.txt": "cedbdde97ad5a675b12fbf712e3944f562bde8e2d29574b81dca23a9fb21e0a3",
+        "snapshot_probe.go.txt": "1d173174d7262e93408a2b0d8fb9c44943cc5a07ceab3b6ea7ab92180c59795a"
+      },
+      "old_backup_sha256": "5ed99b60784182a5e13f4e1e20151861e5e51e253143dbcb58c11e91fce6b230",
+      "backup_unchanged": true,
+      "product_sources_unchanged": true,
+      "binaries_unchanged": true,
+      "primary_worktree_clean": true,
+      "prior_controller_failure_preserved": true,
+      "original_column_rows": {
+        "orders": 3,
+        "subscriptions": 2,
+        "protocol_credentials": 2,
+        "traffic_records": 1,
+        "quota_events": 3,
+        "node_config_publishes": 1
+      },
+      "business_checks": {
+        "driver": "sqlite",
+        "migration_attempts": 2,
+        "old_paid_replays": 2,
+        "old_report_replays": 2,
+        "old_source": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+        "other_subscription_preserved": true,
+        "preserved_tables": 6,
+        "production_data": false,
+        "remote_revocation_verified": false,
+        "revocation_intent_persisted": true,
+        "unknown_value_not_fabricated": true,
+        "whole_zero_termination_idempotent": true
+      },
+      "fresh_process_checks": {
+        "migration_repeated": true,
+        "old_paid_did_not_revive": true,
+        "remote_application_verified": false,
+        "separate_process": true,
+        "unchanged_tables": 8,
+        "zero_termination_replayed": true
+      }
+    },
+    "mysql": {
+      "baseline": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+      "current": "690e55c96214e75cf34e02582bb7d2f4fc998d85",
+      "started_utc": "2026-10-26T09:55:54.286833+00:00",
+      "finished_utc": "2026-10-26T09:56:01.027172+00:00",
+      "checks": [
+        {
+          "name": "upgrade",
+          "exit_code": 0,
+          "wall_seconds": 2.408,
+          "log_sha256": "857bc81355769dbaf1cf6b0d7c0204d1acf16c44d9fe32247a51247ec4bb290b"
+        },
+        {
+          "name": "recovery",
+          "exit_code": 0,
+          "wall_seconds": 0.698,
+          "log_sha256": "d5edfb9de6e741b250b6a5b8a3f0300dfc8d9f5d1414b0069370d01cc45554e7"
+        }
+      ],
+      "reused_binaries": {
+        "old": "e895f273570a95795fed05f4e0269719bbfe75ee4852cf2589c57d19136e294b",
+        "current": "e78a60ab80de23f4bbf93e55b5dad4e67fe56f09e1c5b40af0bcb9e602896604"
+      },
+      "templates": {
+        "old_seed_probe.go.txt": "220a6fa7be9406c45ef41687b22fef463efa37238053909865adb37e67381259",
+        "current_upgrade_probe.go.txt": "cedbdde97ad5a675b12fbf712e3944f562bde8e2d29574b81dca23a9fb21e0a3",
+        "snapshot_probe.go.txt": "1d173174d7262e93408a2b0d8fb9c44943cc5a07ceab3b6ea7ab92180c59795a"
+      },
+      "old_backup_sha256": "2f9e3d8bef4a588f76985270b5a6de5c11b998c0dc080191e8a58ba1be43d46b",
+      "backup_unchanged": true,
+      "product_sources_unchanged": true,
+      "binaries_unchanged": true,
+      "primary_worktree_clean": true,
+      "prior_controller_failure_preserved": true,
+      "original_column_rows": {
+        "orders": 3,
+        "subscriptions": 2,
+        "protocol_credentials": 2,
+        "traffic_records": 1,
+        "quota_events": 3,
+        "node_config_publishes": 1
+      },
+      "business_checks": {
+        "driver": "mysql",
+        "migration_attempts": 2,
+        "old_paid_replays": 2,
+        "old_report_replays": 2,
+        "old_source": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+        "other_subscription_preserved": true,
+        "preserved_tables": 6,
+        "production_data": false,
+        "remote_revocation_verified": false,
+        "revocation_intent_persisted": true,
+        "unknown_value_not_fabricated": true,
+        "whole_zero_termination_idempotent": true
+      },
+      "fresh_process_checks": {
+        "migration_repeated": true,
+        "old_paid_did_not_revive": true,
+        "remote_application_verified": false,
+        "separate_process": true,
+        "unchanged_tables": 8,
+        "zero_termination_replayed": true
+      },
+      "old_seed_exit_code": 0,
+      "old_seed_log_sha256": "c308bd2569c7eead25902cc8697dd4616b4811f41302e845ab3f6d55b6dbbd9c"
+    }
+  },
+  "historical_failures_preserved": [
+    "First probe incorrectly compared omitted old JSON private fields against fabricated zero values; original SQL-column equality had passed",
+    "Second probe used reflect.DeepEqual on time.Time internals across JSON; replaced with complete serialized receipt equality",
+    "Controller receipt filename collided after all business probes passed; failed outcome preserved, separate checked controller reused identical binaries",
+    "Next source-copy attempt failed with no disk space before the current upgrade; evidence retained"
+  ],
+  "isolation": [
+    "Old fixtures were generated by compiled exact 7c source, not a current-schema emulation",
+    "New owned SQLite copies and random MySQL fixture schemas only",
+    "No HTTP listener, worker, native node, external payment, production migration or security setting change",
+    "MySQL source dump preserved; original old test owns normal random-schema cleanup"
+  ],
+  "not_verified": [
+    "Restoring the MySQL SQL dump into a new server",
+    "Starting an old binary after current-version business writes",
+    "Integrated UI purchase/change/cancel against external payment and native nodes",
+    "Full publication/lease/worker failure matrix",
+    "Long duration capacity and bounded full-ledger replay"
+  ],
+  "repository_reproduction_bundle": {
+    "path": "scripts/acceptance-upgrade",
+    "status": "Prepared with syntax checks; original private execution templates/binaries above remain the exact evidence; revised container-port guard must be executed after next clean commit"
+  }
+}

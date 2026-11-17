@@ -9,6 +9,8 @@ import (
 func writeFairUsePolicyError(w http.ResponseWriter, err error) {
 	var invalid *metering.PolicyValidation
 	switch {
+	case errors.Is(err, metering.ErrUsageProjectionPending):
+		writeCapabilityError(w, http.StatusServiceUnavailable, "统计投影正在更新，原始接收事实与业务配额不受影响。", "usage_projection_pending")
 	case errors.As(err, &invalid):
 		BadRequestFields(w, invalid.Error(), invalid.Fields)
 	case errors.Is(err, metering.ErrPolicyRevisionConflict):

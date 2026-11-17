@@ -90,44 +90,8 @@ func TestCompareZeroVersions(t *testing.T) {
 	}
 }
 
-func TestZeroConnectorCompatibilityFollowsReleaseVersion(t *testing.T) {
-	for _, version := range []string{"0.0.1", "v0.0.1", "0.0.2-dev.202609080000", "0.0.3"} {
-		if !zeroadapter.UsesGenericConnector(version) {
-			t.Fatalf("reset baseline %s must use generic connector", version)
-		}
-	}
-	for _, version := range []string{"0.0.0", "0.0.1-rc.1", "0.0.4", "0.0.14", "invalid"} {
-		if zeroadapter.UsesGenericConnector(version) {
-			t.Fatalf("legacy connector changed for %s", version)
-		}
-	}
-}
-
-func TestZeroConnectorContractFollowsKernelVersion(t *testing.T) {
-	tests := []struct {
-		version string
-		want    bool
-	}{
-		{version: "0.0.14", want: false},
-		{version: "0.0.15-rc.1", want: false},
-		{version: "v0.0.15-rc.2", want: true},
-		{version: "0.0.15-rc.3", want: true},
-		{version: "0.0.15", want: true},
-		{version: "0.0.16-dev.1", want: true},
-		{version: "", want: false},
-		{version: "not-a-version", want: false},
-	}
-	for _, test := range tests {
-		t.Run(test.version, func(t *testing.T) {
-			if got := zeroadapter.UsesGenericConnector(test.version); got != test.want {
-				t.Fatalf("zeroUsesGenericConnector(%q) = %t, want %t", test.version, got, test.want)
-			}
-		})
-	}
-}
-
 func TestValidateZeroReleaseURL(t *testing.T) {
-	allowed, _ := url.Parse("https://github.com/zerodenet/zero/releases/download/v0.0.14/zero-linux-x86_64.tar.gz")
+	allowed, _ := url.Parse("https://github.com/zerodenet/core/releases/download/v0.0.14/zero-linux-x86_64.tar.gz")
 	if err := validateZeroReleaseURL(allowed); err != nil {
 		t.Fatal(err)
 	}
@@ -171,8 +135,8 @@ func TestZeroConnectorConfigMatchesPublishedContracts(t *testing.T) {
 }
 
 func TestZeroConnectorUsesCurrentLocalKernelContract(t *testing.T) {
-	if !strings.Contains(zeroReleaseAPI, "/zerodenet/zero/") {
-		t.Fatalf("zeroReleaseAPI = %q, want the currently published zerodenet/zero channel", zeroReleaseAPI)
+	if !strings.Contains(zeroReleaseAPI, "/zerodenet/core/") {
+		t.Fatalf("zeroReleaseAPI = %q, want the currently published zerodenet/core channel", zeroReleaseAPI)
 	}
 	config := zeroadapter.ConnectorAPIConfig("http://panel.example.test/", 17, "opaque-secret", true)
 	encoded, err := json.Marshal(config)
@@ -416,15 +380,15 @@ func TestResolveGitHubZeroReleaseMatchesUnversionedMuslAsset(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{
 		"tag_name":"v0.0.15",
 		"assets":[
-			{"name":"zero-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz","size":1234},
-			{"name":"zero-linux-x86_64-musl.tar.gz.sha256","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz.sha256","size":96}
+			{"name":"zero-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/zerodenet/core/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz","size":1234},
+			{"name":"zero-linux-x86_64-musl.tar.gz.sha256","browser_download_url":"https://github.com/zerodenet/core/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz.sha256","size":96}
 		]
 	}`), &payload); err != nil {
 		t.Fatal(err)
 	}
 	checksum := strings.Repeat("a", 64)
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.URL.Path != "/zerodenet/zero/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz.sha256" {
+		if request.URL.Path != "/zerodenet/core/releases/download/v0.0.15/zero-linux-x86_64-musl.tar.gz.sha256" {
 			t.Fatalf("unexpected checksum request: %s", request.URL)
 		}
 		return &http.Response{
@@ -449,15 +413,15 @@ func TestResolveGitHubZeroReleaseMatchesHistoricalVersionedPrereleaseMuslAsset(t
 		"tag_name":"v0.0.15-rc.2",
 		"prerelease":true,
 		"assets":[
-			{"name":"zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz","size":1234},
-			{"name":"zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256","browser_download_url":"https://github.com/zerodenet/zero/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256","size":96}
+			{"name":"zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz","browser_download_url":"https://github.com/zerodenet/core/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz","size":1234},
+			{"name":"zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256","browser_download_url":"https://github.com/zerodenet/core/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256","size":96}
 		]
 	}`), &payload); err != nil {
 		t.Fatal(err)
 	}
 	checksum := strings.Repeat("b", 64)
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.URL.Path != "/zerodenet/zero/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256" {
+		if request.URL.Path != "/zerodenet/core/releases/download/v0.0.15-rc.2/zero-v0.0.15-rc.2-linux-x86_64-musl.tar.gz.sha256" {
 			t.Fatalf("unexpected checksum request: %s", request.URL)
 		}
 		return &http.Response{
@@ -471,7 +435,7 @@ func TestResolveGitHubZeroReleaseMatchesHistoricalVersionedPrereleaseMuslAsset(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if release.Version != "0.0.15-rc.2" || release.Tag != "v0.0.15-rc.2" || release.ArtifactSHA256 != checksum {
+	if release.Version != "0.0.15-rc.2" || release.Tag != "v0.0.15-rc.2" || !release.Prerelease || release.ArtifactSHA256 != checksum {
 		t.Fatalf("unexpected historical prerelease musl release: %+v", release)
 	}
 }
@@ -522,6 +486,40 @@ func TestKernelStatusTreatsOfficialMuslAsLegacyPlatformSupport(t *testing.T) {
 	}
 }
 
+func TestZeroReleaseClassificationPreservesPrereleaseStatus(t *testing.T) {
+	for _, test := range []struct {
+		tag            string
+		declared, want bool
+	}{
+		{"v0.0.3-dev.202610102233", false, true},
+		{"v0.0.3-rc.1", false, true},
+		{"v0.0.3", true, true},
+		{"v0.0.3", false, false},
+	} {
+		if got := zeroReleaseIsPrerelease(test.tag, test.declared); got != test.want {
+			t.Fatalf("%s declared=%t prerelease=%t want=%t", test.tag, test.declared, got, test.want)
+		}
+	}
+}
+
+func TestDefaultZeroReleasePinsCompleteNativePrerelease(t *testing.T) {
+	previous := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	http.DefaultTransport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.String() != zeroReleaseByTagAPI+"v"+zeroadapter.NativeBaselineVersion {
+			t.Fatalf("default must request the exact prerelease, got %s", request.URL)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v` + zeroadapter.NativeBaselineVersion + `","prerelease":true}`))}, nil
+	})
+	release, _, _, cancel, err := fetchZeroRelease(context.Background(), "")
+	if cancel != nil {
+		defer cancel()
+	}
+	if err != nil || release.TagName != "v"+zeroadapter.NativeBaselineVersion || !release.Prerelease {
+		t.Fatalf("default prerelease=%+v error=%v", release, err)
+	}
+}
+
 func TestResolveLocalNativeZeroReleaseSupportsExplicitPrerelease(t *testing.T) {
 	dir := t.TempDir()
 	name := "zero-v0.0.15-rc.1-linux-x86_64-musl.tar.gz"
@@ -538,7 +536,7 @@ func TestResolveLocalNativeZeroReleaseSupportsExplicitPrerelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if release.Version != "0.0.15-rc.1" || release.Tag != "v0.0.15-rc.1" ||
+	if release.Version != "0.0.15-rc.1" || release.Tag != "v0.0.15-rc.1" || !release.Prerelease ||
 		release.ArtifactSHA256 != checksum || release.LocalPath != filepath.Join(dir, name) {
 		t.Fatalf("unexpected local native release: %+v", release)
 	}

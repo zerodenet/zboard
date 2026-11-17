@@ -23,7 +23,7 @@ const nodes = computed(() => navigationState[props.surface].snapshot.value.nodes
 </script>
 
 <style scoped>
-.nav-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 999px; background: var(--danger); color: var(--text-inverse); font-size: 9px; font-weight: 800; }
+.nav-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; margin-left: auto; padding: 0 5px; border-radius: 999px; background: var(--danger); color: var(--text-inverse); font-size: 11px; font-weight: 600; }
 .navigation-link-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .navigation-group-label { color: var(--muted-foreground); font-size: 11px; padding: 4px 8px; }
 </style>

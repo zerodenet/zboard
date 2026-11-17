@@ -1,5 +1,6 @@
 <template>
   <div class="auth-shell">
+    <AppearanceSwitch floating />
     <aside class="auth-aside">
       <RouterLink class="auth-brand" to="/"><img v-if="store.siteProfile.logoDark || store.siteProfile.logo" class="auth-logo" :src="store.siteProfile.logoDark || store.siteProfile.logo" :alt="store.siteName" /><span v-else class="brand-mark">{{ store.siteName.charAt(0).toUpperCase() || 'Z' }}</span><span>{{ store.siteName }}</span></RouterLink>
       <div class="auth-copy"><p class="page-eyebrow">GET STARTED</p><h1>一个账户，管理<br />所有订阅。</h1><p>注册后可以选购套餐、查看订单、生成订阅链接并追踪自己的流量使用。</p></div>
@@ -25,6 +26,7 @@
 </template>
 
 <script setup lang="ts">
+import AppearanceSwitch from '../components/AppearanceSwitch.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { register, requestRegistrationCode } from '../api/client'

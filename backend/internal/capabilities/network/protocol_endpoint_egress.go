@@ -25,8 +25,30 @@ func NormalizeProtocolEndpointEgressConfig(raw string) (string, string, error) {
 	}
 	kind, _ := protocol["type"].(string)
 	kind = strings.ToLower(strings.TrimSpace(kind))
+	var dial *OutboundDial
+	if value, exists := protocol["dial"]; exists {
+		encoded, _ := json.Marshal(value)
+		var err error
+		dial, err = normalizeOutboundDial(encoded)
+		if err != nil {
+			return "", "", err
+		}
+		delete(protocol, "dial")
+	}
 	if kind == "direct" {
-		return "", "", nil
+		protocol["type"] = kind
+		if len(protocol) != 1 {
+			return "", "", protocolEndpointEgressValidation("Direct 出口只接受 type 和 dial，不使用服务器、端口或协议内网卡字段。")
+		}
+		if dial == nil {
+			return "", "", nil
+		}
+		protocol["dial"] = dial
+		canonical, err := json.Marshal(protocol)
+		return "direct", string(canonical), err
+	}
+	if dial != nil {
+		return "", "", protocolEndpointEgressValidation("v0.0.3 的非默认出站约束仅支持 Direct。")
 	}
 	if !protocolEndpointEgressTypes[kind] {
 		return "", "", protocolEndpointEgressValidation("请选择 Zero 内核支持的出口协议。")

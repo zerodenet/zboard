@@ -2,12 +2,16 @@ package handler
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
-func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T) {
+func TestNodeArchivalRollsBackAssociationsWhenArchiveWriteFails(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
 	entry := saveEntryForTest(t, f, a, b, "")
 	group := model.NodeGroup{Name: "rollback", Code: "rollback"}
@@ -18,17 +22,23 @@ func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T
 		t.Fatal(err)
 	}
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
-	if err := f.h.db.Exec(fmt.Sprintf("CREATE TRIGGER deny_node_delete BEFORE DELETE ON nodes WHEN OLD.id = %d BEGIN SELECT RAISE(ABORT, 'test delete failure'); END", b.NodeID)).Error; err != nil {
+	if err := f.h.db.Exec(fmt.Sprintf("CREATE TRIGGER deny_node_archive BEFORE UPDATE OF lifecycle_status ON nodes WHEN NEW.id = %d AND NEW.lifecycle_status = 'archived' BEGIN SELECT RAISE(ABORT, 'test archive failure'); END", b.NodeID)).Error; err != nil {
 		t.Fatal(err)
 	}
 	var originalNode model.Node
 	if err := f.h.db.First(&originalNode, b.NodeID).Error; err != nil {
 		t.Fatal(err)
 	}
+	f.h.backgroundJobs()
+	f.h.services.Jobs.Detach(network.NodeRetirementHandler)
 	w := httptest.NewRecorder()
 	f.h.NodeCascadeDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/nodes/%d", b.NodeID), f.admin, ""))
-	if w.Code != 500 {
+	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	executor := jobs.Executor{Store: jobstore.New(f.h.db), Worker: "delete-rollback-test", Timeout: time.Minute, Handlers: map[string]jobs.Handler{network.NodeRetirementHandler: f.h.services.NodeRetirement(f.h).Execute}}
+	if err := executor.RunOne(t.Context()); err == nil {
+		t.Fatal("archive write failure was ignored")
 	}
 	if err := f.h.db.First(&entry, entry.ID).Error; err != nil {
 		t.Fatal("failed deletion lost entry")
@@ -45,7 +55,7 @@ func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T
 	if err := f.h.db.First(&retainedNode, b.NodeID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if retainedNode.LifecycleStatus != originalNode.LifecycleStatus || retainedNode.IsEnabled != originalNode.IsEnabled {
+	if retainedNode.LifecycleStatus != "deleting" || retainedNode.IsEnabled || retainedNode.ArchivedAt != nil {
 		t.Fatal("failed deletion left node disabled or deleting")
 	}
 
@@ -59,7 +69,7 @@ func TestNodeDeletionRollsBackAssociationsWhenDatabaseDeletionFails(t *testing.T
 func TestActiveProtocolDeletionClearsReferencesAndQueuesWithoutSSH(t *testing.T) {
 	f, a, b := networkEntryFixture(t)
 	entry := saveEntryForTest(t, f, a, b, "")
-	group := model.NodeGroup{Name: "published", Code: "published"}
+	group := model.NodeGroup{Name: "unused", Code: "unused"}
 	if err := f.h.db.Create(&group).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +77,9 @@ func TestActiveProtocolDeletionClearsReferencesAndQueuesWithoutSSH(t *testing.T)
 		t.Fatal(err)
 	}
 	if err := f.h.db.Create(&model.NodeGroupNetworkEntry{NodeGroupID: group.ID, NetworkEntryID: entry.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&group).Update("is_enabled", false).Error; err != nil {
 		t.Fatal(err)
 	}
 	f.h.db.Where("1 = 1").Delete(&model.NodeConfigPublish{})
@@ -88,18 +101,18 @@ func TestActiveProtocolDeletionClearsReferencesAndQueuesWithoutSSH(t *testing.T)
 	}
 }
 
-func TestProtocolEndpointDeletionReportsRunningPublicationConflict(t *testing.T) {
+func TestProtocolEndpointDeletionQueuesWithdrawalDuringPublication(t *testing.T) {
 	f, _, endpoint := networkEntryFixture(t)
 	if err := f.h.db.Create(&model.ProtocolDeployment{ProtocolEndpointID: endpoint.ID, NodeID: endpoint.NodeID, Status: "running"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
 	f.h.ProtocolEndpointDeleteHandler(w, announcementRequest("DELETE", fmt.Sprintf("/api/v1/admin/protocol-endpoints/%d", endpoint.ID), f.admin, ""))
-	if w.Code != 409 {
+	if w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 	var count int64
-	if err := f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Count(&count).Error; err != nil || count != 1 {
+	if err := f.h.db.Model(&model.ProtocolEndpoint{}).Where("id = ?", endpoint.ID).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("endpoint count=%d error=%v", count, err)
 	}
 }

@@ -7,6 +7,7 @@ import { NAVIGATION_CHANGED } from '../stores/navigation'
 import { notify } from '../utils/feedback'
 import UiSelect from '../components/UiSelect.vue'
 
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ token: '', user: { id: 0 }, reauthRequired: false, sessionEpoch: 0 }) }))
 vi.mock('../api/menus', () => ({ fetchMenus: vi.fn(), saveMenus: vi.fn(), fetchNavigation: vi.fn() }))
 vi.mock('../utils/feedback', () => ({ notify: vi.fn(), confirmAction: vi.fn().mockResolvedValue(false) }))
 const snapshot: MenuSnapshot = { revision: 7, nodes: [

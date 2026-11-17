@@ -1,0 +1,93 @@
+{
+  "base_sha": "cabce7c67feb4cd76b20b456f65e907fc087968b",
+  "frozen": true,
+  "files": {
+    "frontend/src/views/account/AccountSubscription.vue": "c438eaa500559b4e88efbd5f2fbad7dce0ca55c41b7ff8c32afd401bf20e115b",
+    "frontend/src/views/account/AccountSubscription.test.ts": "15a5ca853942d1f0f1c0974c57f9b7a428cb7a41b521f08bc7b13ee23e819c85"
+  },
+  "production_change": "Each subscription row has an explicit account ticket RouterLink only when Number.isSafeInteger(id) && id > 0. Query contains only new=1 and subscription_id; available to historical/expired rows without credential selection, automatic submit or other writes.",
+  "new_behavior_cases": 4,
+  "validation": [
+    {
+      "phase": "narrow-1",
+      "command": "pnpm test --no-file-parallelism src/views/account/AccountSubscription.test.ts",
+      "exit_code": 0,
+      "elapsed_seconds": 4.533,
+      "tests_passed": 22,
+      "note": "Initial PASS retained; fixture-only missing ticket routes/NaN VNode warnings cleaned before final runs."
+    },
+    {
+      "phase": "narrow-2",
+      "command": "pnpm test --no-file-parallelism src/views/account/AccountSubscription.test.ts",
+      "exit_code": 0,
+      "elapsed_seconds": 5.011,
+      "vitest_seconds": 4.02,
+      "tests_passed": 22,
+      "warnings": false
+    },
+    {
+      "phase": "full-1",
+      "command": "pnpm test --no-file-parallelism --exclude src/theme/designTokens.test.ts --exclude src/views/commercePurchaseExperience.test.ts --exclude src/utils/adminRowActionsAudit.test.ts --exclude src/utils/catalogScalePolicy.test.ts --exclude src/utils/formPolicy.test.ts --exclude src/utils/frontendArchitecturePolicy.test.ts",
+      "exit_code": 0,
+      "elapsed_seconds": 151.76,
+      "vitest_seconds": 150.81,
+      "test_files_passed": 201,
+      "test_files_skipped_existing": 2,
+      "tests_passed": 1112,
+      "tests_skipped_existing": 8,
+      "new_skips_or_excludes": false
+    },
+    {
+      "phase": "build-1",
+      "command": "pnpm build",
+      "exit_code": 0,
+      "elapsed_seconds": 29.636,
+      "vite_seconds": 12.23,
+      "typecheck": "PASS"
+    }
+  ],
+  "test_failures": [],
+  "frontend_tracked_files_hashed": 529,
+  "dist_files_hashed": 188,
+  "all_frontend_sources_unchanged_across_full_build": true,
+  "lockfile_unchanged": true,
+  "refund_harness_unchanged": {
+    "backend/internal/handler/consumption_refund_browser_test.go": "30dfdb182123e1a14ccbe2b26da60ebf9810294a5b11a298e2fde3e1451be24f",
+    "scripts/acceptance-consumption-refund-browser.py": "ba7d6e987167853c75df2a128849ac707823b36ff5ee986892a87494dda1fc78"
+  },
+  "environment": {
+    "cwd": "/workspace/zboard/frontend",
+    "PATH_prefix": "/workspace/toolchains/node-v22.23.0-linux-x64/bin:/workspace/toolchains/pnpm/node_modules/.bin",
+    "node": "22.23.0",
+    "pnpm": "11.9.0",
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "installed_anything": false
+  },
+  "final_patch_sha256": "34d29747440823609c9e1128bdcc010a769dd254bd84b6ed1c4906d1d2c22265",
+  "logs_and_manifests": {
+    "build-1-result.json": "90ccca3baa0c3c7ce811d0e35a836047edaf7b9570a3f9698f5e37ac3c27c9ac",
+    "build-1.log": "26da6fd3307992eb258d7e04b75d65f5fb1572475085942bd71403c1882db98b",
+    "draft.patch": "623bfe3b3cf52d4f56f78031daacd696e55e5837314f8b7ad6e2b8e15dc47b1c",
+    "final.patch": "34d29747440823609c9e1128bdcc010a769dd254bd84b6ed1c4906d1d2c22265",
+    "full-1-result.json": "8d2ee252fe42a7391c647bfac35fba9c618c180920810bf14ae0b216c2a0c2c1",
+    "full-1.log": "424b8d413eabcc8578d67e35939e067b6f373a1739fda8fe236f7352f22f44aa",
+    "full-source-before.json": "af547c61b7944a030fac432d79daa034267c8087d28268a902029ea314bdfea1",
+    "narrow-1-result.json": "dab3a45d4ff53e575014c253948c63953c727d85a69c9b12e450defdb722643d",
+    "narrow-1.log": "739b19ddc08cec96e67e9d201bdc5e5115253e557b43c04e1e05afa28ffffb6e",
+    "narrow-2-result.json": "50c87b8754fab242c579eee472d0047a39787a70741b604bf5df835f3e6dd119",
+    "narrow-2.log": "fe95a4fc05a3dc9598f2e6e9879a45c4ebbdba1c118dcf268bc48cb4af7e4b27",
+    "narrow-source-before.json": "3b062a8c898fd0ec76e15a2b2fa719f0f11ef0296263f76fcc2d5e782ea2eea6",
+    "static-receipt.json": "08868bdd506f22f2a5188bc40f5ef3b013022328d633f4765f1e741aa9b726cd"
+  },
+  "no_live_frontend_processes": true,
+  "resource_window_released": true,
+  "commit_push_performed": false,
+  "limits": [
+    "No new browser acceptance for this shortcut; actual component/router behavior tested via Vitest.",
+    "Existing TicketCenter dirty-draft, permission, explicit-submit behavior reused; no backend or policy change.",
+    "No Go/MySQL/capacity tests run in this batch."
+  ],
+  "private_receipt_sha256": "c547d03a5c908b5a41701b04adeb15ec8b50d615fe3f53f25cc9949925eee302",
+  "backend_read_contract_clarification": "Existing owner service lists exclude ended and finalized fixed instances. Component-supplied ended DTO tests prove defensive rendering only, not API accessibility. Shortcut applies to returned current/recovery-window rows; historical-order support remains the terminal path.",
+  "additional_terminal_row_browser": "Blocked before compilation/browser launch by existing owner read contract; no production, fixture, lifecycle or payment modification."
+}

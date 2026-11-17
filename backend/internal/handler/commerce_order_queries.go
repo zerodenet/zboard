@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"net/http"
 	"strconv"
@@ -25,6 +26,18 @@ func (h *handlers) OrderListHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	q := commerce.OrderQuery{Status: r.URL.Query().Get("status"), LegacyArray: !wantsPagedList(r)}
+	if values, present := r.URL.Query()["id"]; present {
+		if len(values) != 1 {
+			BadRequest(w, "invalid id")
+			return
+		}
+		id, valid := businessref.Parse(values[0], 'O')
+		if !valid {
+			BadRequest(w, "invalid id")
+			return
+		}
+		q.ID = uint(id)
+	}
 	if admin {
 		if value := strings.TrimSpace(r.URL.Query().Get("user_id")); value != "" {
 			id, e := strconv.ParseUint(value, 10, 64)

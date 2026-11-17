@@ -2,10 +2,11 @@ import {mount,flushPromises} from '@vue/test-utils'
 import {beforeEach,describe,expect,it,vi} from 'vitest'
 import {poolFixture} from '../utils/proxyPoolGraph.fixture'
 import NodeProxyPools from './NodeProxyPools.vue'
-const mocks=vi.hoisted(()=>({list:vi.fn(),save:vi.fn(),sync:vi.fn(),remove:vi.fn(),detail:vi.fn(),runtime:vi.fn()}))
-vi.mock('../api/client',()=>({fetchNodeProxyPools:mocks.list,saveNodeProxyPool:mocks.save,syncNodeProxyPool:mocks.sync,deleteNodeProxyPool:mocks.remove,fetchNodeProxyPoolConfig:mocks.detail,fetchNodeProxyPoolRuntime:mocks.runtime}))
+import UiSelect from './UiSelect.vue'
+const mocks=vi.hoisted(()=>({list:vi.fn(),save:vi.fn(),sync:vi.fn(),remove:vi.fn(),detail:vi.fn(),runtime:vi.fn(),reference:vi.fn()}))
+vi.mock('../api/client',()=>({setNodeProxyPoolReference:mocks.reference,fetchNodeProxyPools:mocks.list,saveNodeProxyPool:mocks.save,syncNodeProxyPool:mocks.sync,deleteNodeProxyPool:mocks.remove,fetchNodeProxyPoolConfig:mocks.detail,fetchNodeProxyPoolRuntime:mocks.runtime}))
 vi.mock('../utils/feedback',()=>({confirmAction:vi.fn(async()=>true),notify:vi.fn()}))
-function render(){return mount(NodeProxyPools,{props:{nodeId:7},global:{plugins:[],stubs:{teleport:true,ModalDialog:{props:['open'],template:'<div v-if="open"><slot/><slot name="footer"/></div>'}}}})}
+function render(nodeId=7){return mount(NodeProxyPools,{props:{nodeId},global:{plugins:[],stubs:{teleport:true,ModalDialog:{props:['open'],template:'<div v-if="open"><slot/><slot name="footer"/></div>'}}}})}
 describe('node shared pools',()=>{
  beforeEach(()=>{vi.clearAllMocks();mocks.list.mockResolvedValue([{id:3,node_id:7,name:'现有池',revision:4,entry_count:2}]);mocks.save.mockResolvedValue({});mocks.sync.mockResolvedValue({});mocks.detail.mockResolvedValue({pool:{id:3,node_id:7,name:'现有池',revision:4},config:poolFixture(),compiled:{}})})
  it('keeps encrypted members when renaming a node pool',async()=>{
@@ -14,13 +15,13 @@ describe('node shared pools',()=>{
   await wrapper.findAll('button').find(b=>b.text()==='编辑')!.trigger('click');await flushPromises()
   expect(mocks.detail).toHaveBeenCalledWith(3);expect(wrapper.get('input[aria-label="代理节点地址"]').element).toHaveProperty('value','proxy.example')
   await wrapper.get('input').setValue('新名称')
-  await wrapper.findAll('button').find(b=>b.text()==='保存并发布到本节点')!.trigger('click');await flushPromises()
+  await wrapper.findAll('button').find(b=>b.text()==='保存代理池')!.trigger('click');await flushPromises()
   expect(mocks.save).toHaveBeenCalledWith(3,{node_id:7,name:'新名称',revision:4})
   wrapper.unmount()
  })
  it('shows a referenced-pool deletion error instead of removing the row',async()=>{
   mocks.remove.mockRejectedValue({response:{data:{message:'仍有 2 条前置服务引用该池'}}})
-  const wrapper=render();await flushPromises()
+  const wrapper=render(0);await flushPromises()
   await wrapper.findAll('button').find(b=>b.text()==='删除')!.trigger('click');await flushPromises()
   expect(wrapper.text()).toContain('仍有 2 条前置服务引用该池');expect(wrapper.text()).toContain('现有池');wrapper.unmount()
  })
@@ -31,7 +32,7 @@ describe('node shared pools',()=>{
   await wrapper.get('input[aria-label="代理密码"]').setValue('changed secret')
   await wrapper.findAll('button').find(b=>b.text()==='读取节点配置')!.trigger('click');await flushPromises()
   expect(wrapper.text()).toContain('SSH 不可用')
-  await wrapper.findAll('button').find(b=>b.text()==='保存并发布到本节点')!.trigger('click');await flushPromises()
+  await wrapper.findAll('button').find(b=>b.text()==='保存代理池')!.trigger('click');await flushPromises()
   expect(mocks.save.mock.calls[0]![1].config.outbounds[1].protocol.password).toBe('changed secret')
   wrapper.unmount()
  })
@@ -47,7 +48,7 @@ describe('node shared pools',()=>{
  })
  it('creates a subscription-maintained pool without replacing the retained RAW editor contract',async()=>{
   const wrapper=render();await flushPromises()
-  await wrapper.findAll('button').find(b=>b.text()==='创建代理池')!.trigger('click');await flushPromises()
+  await wrapper.findAll('button').find(b=>b.text()==='新建代理池')!.trigger('click');await flushPromises()
   await wrapper.findAll('button').find(b=>b.text()==='订阅维护')!.trigger('click');await flushPromises()
   await wrapper.find('input').setValue('订阅池')
   await wrapper.get('input[aria-label="订阅地址"]').setValue('https://example.com/sub/token')
@@ -64,7 +65,7 @@ describe('node shared pools',()=>{
   const pool={id:3,node_id:7,name:'订阅池',revision:4,entry_count:1,subscription_configured:true,auto_sync:true,last_sync_at:previous,next_sync_at:next}
   mocks.list.mockResolvedValueOnce([pool]).mockResolvedValueOnce([{...pool,last_sync_at:latest}])
   const wrapper=render();await flushPromises()
-  expect(wrapper.text()).toContain('最近成功同步');expect(wrapper.text()).toContain('下次自动同步')
+  expect(wrapper.text()).toContain('最近成功同步');expect(wrapper.text()).toContain('自动同步')
   expect(wrapper.find(`time[datetime="${new Date(previous).toISOString()}"]`).exists()).toBe(true)
   expect(wrapper.find(`time[datetime="${new Date(next).toISOString()}"]`).exists()).toBe(true)
   await wrapper.findAll('button').find(b=>b.text()==='同步')!.trigger('click');await flushPromises()
@@ -86,6 +87,35 @@ describe('node shared pools',()=>{
   expect(wrapper.findAll('article')[0]!.text()).toContain('最近同步失败：订阅下载失败')
   expect(wrapper.find(`time[datetime="${new Date(previous).toISOString()}"]`).exists()).toBe(true)
   wrapper.unmount()
+ })
+
+ it('references an independent pool and unlinks without deleting the shared source',async()=>{
+  const wrapper=render();await flushPromises()
+  mocks.list.mockResolvedValueOnce([{id:3,name:'现有池',nodes:[{id:7,name:'原服务器'}]},{id:8,name:'共享来源',nodes:[{id:9,name:'其他服务器'}]}])
+  await wrapper.findAll('button').find(b=>b.text()==='引用已有池')!.trigger('click');await flushPromises()
+  const picker=wrapper.findComponent(UiSelect)
+  expect(picker.props('options')).toEqual([{value:8,label:'共享来源 · 其他服务器'}])
+  picker.vm.$emit('update:modelValue',8);await flushPromises()
+  await wrapper.findAll('button').find(b=>b.text()==='引用到此服务器')!.trigger('click');await flushPromises()
+  expect(mocks.reference).toHaveBeenCalledWith(8,7,true)
+  await wrapper.findAll('button').find(b=>b.text()==='取消引用')!.trigger('click');await flushPromises()
+  expect(mocks.reference).toHaveBeenCalledWith(3,7,false)
+  expect(mocks.remove).not.toHaveBeenCalled();wrapper.unmount()
+ })
+ it('loads the global catalog without requiring a server and keeps global deletion explicit',async()=>{
+  const wrapper=render(0);await flushPromises()
+  expect(mocks.list).toHaveBeenCalledWith(0)
+  expect(wrapper.text()).not.toContain('取消引用')
+  await wrapper.findAll('button').find(b=>b.text()==='删除')!.trigger('click');await flushPromises()
+  expect(mocks.remove).toHaveBeenCalledWith(3);expect(mocks.reference).not.toHaveBeenCalled();wrapper.unmount()
+ })
+ it('closes the reference chooser when its server changes',async()=>{
+  const wrapper=render();await flushPromises()
+  let resolve!:(value:any)=>void;mocks.list.mockReturnValueOnce(new Promise(r=>{resolve=r}))
+  await wrapper.findAll('button').find(b=>b.text()==='引用已有池')!.trigger('click')
+  await wrapper.setProps({nodeId:8});resolve([{id:9,name:'delayed'}]);await flushPromises()
+  expect(wrapper.text()).not.toContain('引用到此服务器')
+  expect(mocks.reference).not.toHaveBeenCalled();wrapper.unmount()
  })
 
 })

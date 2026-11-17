@@ -1,6 +1,6 @@
 <template>
   <section class="standard-page">
-    <PageHeader title="运行日志" description="以紧凑摘要查看协议发布、节点内核和后台任务；输出与错误仅在打开详情时加载。" eyebrow="Operations">
+    <PageHeader title="操作记录">
       <template #actions><PageRefreshButton label="刷新运行日志" :loading="loading" @click="load" /></template>
     </PageHeader>
 
@@ -30,7 +30,7 @@
             <td class="table-action-column"><UiButton variant="secondary" size="sm" type="button" :loading="detailLoadingKey === `${item.source}:${item.id}`" @click="openDetail(item)">查看</UiButton></td>
           </tr></tbody>
       </DataTable>
-      <EmptyState v-else icon="terminal" title="没有匹配的运行记录" description="执行协议发布、内核操作或后台任务后，结果会显示在这里。" />
+      <EmptyState v-else-if="!error" icon="terminal" title="没有匹配的运行记录" description="执行协议发布、内核操作或后台任务后，结果会显示在这里。" />
       <template #footer><CursorPager :count="items.length" :total="total" :limit="limit" :loading="loading" :has-previous="Boolean(previousCursor)" :has-next="Boolean(nextCursor)" @previous="changeCursor(previousCursor)" @next="changeCursor(nextCursor)" @limit="changeLimit" /></template>
     </DataWorkbench>
 
@@ -90,7 +90,7 @@ const detailLoadingKey = ref('')
 const detailError = ref('')
 let detailController: AbortController | null = null
 const sourceOptions = [{ label: '全部来源', value: '' }, { label: '协议发布', value: 'protocol_publish' }, { label: '节点内核', value: 'node_kernel' }, { label: '后台任务', value: 'task' }]
-const statusOptions = [{ label: '全部状态', value: '' }, { label: '等待中', value: 'queued' }, { label: '执行中', value: 'running' }, { label: '成功', value: 'succeeded' }, { label: '失败', value: 'failed' }]
+const statusOptions = [{ label: '全部状态', value: '' }, { label: '等待中', value: 'queued' }, { label: '执行中', value: 'running' }, { label: '成功', value: 'succeeded' }, { label: '失败', value: 'failed' }, { label: '保持现状（待适配）', value: 'deferred' }]
 const hasFilters = computed(() => Boolean(source.value || status.value || nodeID.value || endpointID.value))
 const { items, total, nextCursor, previousCursor, loading, refreshing, error, load } = useCursorTable<OperationLog>({
   fetchPage: ({ signal }) => fetchOperationLogs({ source: source.value || undefined, status: status.value || undefined, nodeId: nodeID.value || undefined, protocolEndpointId: endpointID.value || undefined, cursor: cursor.value || undefined, from: from.value, to: to.value, limit: limit.value }, { signal }),
@@ -99,8 +99,8 @@ const { items, total, nextCursor, previousCursor, loading, refreshing, error, lo
 
 function sourceLabel(value: string) { return ({ protocol_publish: '协议发布', node_kernel: '节点内核', task: '后台任务' } as Record<string,string>)[value] || formatUnknownValue('来源', value) }
 function sourceIcon(value: string) { return value === 'task' ? 'tasks' : value === 'node_kernel' ? 'nodes' : 'activity' }
-function statusLabel(value: string) { return ({ queued: '等待中', running: '执行中', succeeded: '成功', failed: '失败' } as Record<string,string>)[value] || formatUnknownValue('状态', value) }
-function statusTone(value: string): 'neutral' | 'info' | 'success' | 'danger' { return value === 'succeeded' ? 'success' : value === 'failed' ? 'danger' : value === 'running' ? 'info' : 'neutral' }
+function statusLabel(value: string) { return ({ queued: '等待中', running: '执行中', succeeded: '成功', failed: '失败', deferred: '保持现状（待适配）', reconciling: '结果待核对', superseded: '已由后续配置接替', interrupted: '未下发，已结束' } as Record<string,string>)[value] || formatUnknownValue('状态', value) }
+function statusTone(value: string): 'neutral' | 'info' | 'success' | 'danger' | 'warning' { return value === 'succeeded' ? 'success' : value === 'failed' ? 'danger' : value === 'running' ? 'info' : value === 'reconciling' ? 'warning' : 'neutral' }
 function selectedLogKey() { return selectedItem.value ? `${selectedItem.value.source}:${selectedItem.value.id}` : '' }
 async function syncURL(replace = false) { const location = { query: { ...preserveAdminReturnTo(route.query.return_to), ...(source.value ? { source: source.value } : {}), ...(status.value ? { status: status.value } : {}), ...(nodeID.value ? { node_id: String(nodeID.value) } : {}), ...(endpointID.value ? { protocol_endpoint_id: String(endpointID.value) } : {}), from: from.value, to: to.value, ...(cursor.value ? { cursor: cursor.value } : {}), ...(limit.value !== 50 ? { limit: String(limit.value) } : {}), ...(selectedLogKey() ? { log: selectedLogKey() } : {}) } }; await (replace ? router.replace(location) : router.push(location)) }
 function normalizeRange() { const range = resolveHistoryRange({ from: from.value, to: to.value }, 30); from.value = range.from; to.value = range.to }
@@ -145,5 +145,5 @@ onBeforeUnmount(() => detailController?.abort())
 </script>
 
 <style scoped>
-:deep(.operation-table .cell-title strong){display:flex;align-items:center;gap:6px}:deep(.operation-table td:nth-child(5)){max-width:300px;color:var(--muted);white-space:normal}.detail-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;border:1px solid var(--line);border-radius:9px}.detail-kv>div{padding:11px}.detail-kv dt{color:var(--muted);font-size:9px}.detail-kv dd{margin:4px 0 0;font-size:11px;font-weight:650}.operation-summary{margin:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);font-size:11px;line-height:1.55}@media(max-width:620px){.detail-kv{grid-template-columns:1fr}}
+:deep(.operation-table .cell-title strong){display:flex;align-items:center;gap:6px}:deep(.operation-table td:nth-child(5)){max-width:300px;color:var(--muted);white-space:normal}.detail-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;border:1px solid var(--line);border-radius:9px}.detail-kv>div{padding:11px}.detail-kv dt{color:var(--muted);font-size:12px}.detail-kv dd{margin:4px 0 0;font-size:11px;font-weight:600}.operation-summary{margin:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);font-size:11px;line-height:1.55}@media(max-width:620px){.detail-kv{grid-template-columns:1fr}}
 </style>

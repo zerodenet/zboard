@@ -289,24 +289,28 @@ func TestFileSpoolSplitsOneFlushBatchAcrossSegments(t *testing.T) {
 	}
 }
 
-func TestRecoverSegmentsQuarantinesCorruptRecord(t *testing.T) {
+func TestRecoverSegmentsRetainsCorruptActiveRecordAcrossRetries(t *testing.T) {
 	cfg := testFileConfig(t)
-	path := segmentPath(cfg.Directory, 1, segmentReadySuffix)
-	if err := os.WriteFile(path, []byte("not-a-record"), 0o640); err != nil {
+	path := segmentPath(cfg.Directory, 1, segmentActiveSuffix)
+	record, err := encodeRecord(testEnvelope("corrupt", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record[recordHeaderSize] ^= 1
+	if err := os.WriteFile(path, record, 0o640); err != nil {
 		t.Fatal(err)
 	}
 	spool, err := NewFileSpool(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := spool.Start(context.Background()); err == nil {
-		t.Fatal("Start() error = nil")
-	}
-	matches, err := filepath.Glob(path + ".corrupt.*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) != 1 {
-		t.Fatalf("quarantined files = %v", matches)
+	for range 2 {
+		if err := spool.Start(context.Background()); err == nil {
+			t.Fatal("corrupt active record accepted on retry")
+		}
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != string(record) {
+			t.Fatal("corrupt evidence was hidden or modified", err)
+		}
 	}
 }

@@ -16,7 +16,9 @@ export interface MenuNode {
   condition: string
 }
 export interface MenuSnapshot { revision: number; nodes: MenuNode[] }
-export interface NavigationSnapshot extends MenuSnapshot { page_available?: boolean }
+export interface MenuWorkspace { group_id: string; entry_path?: string; kind: 'hub' | 'page' | 'primary' | 'menu' }
+export interface NavigationPresentation { workspaces: MenuWorkspace[]; footer_ids?: string[] }
+export interface NavigationSnapshot extends MenuSnapshot { page_available?: boolean; presentation?: NavigationPresentation }
 const data = <T extends MenuSnapshot>(r: { data: { data: T } }): T => r.data.data
 export const fetchNavigation = (surface: Surface, signal?: AbortSignal, path?: string): Promise<NavigationSnapshot> => api.get('/navigation', { params: { surface, path }, signal }).then(data<NavigationSnapshot>)
 export const fetchMenus = (surface: Surface, signal?: AbortSignal) => api.get('/admin/menus', { params: { surface }, signal }).then(data)

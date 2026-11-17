@@ -19,39 +19,51 @@ type TicketActor struct {
 	IsAdmin bool
 }
 
+// TicketReferences records context only. It grants no access to the referenced
+// resource and cannot initiate any financial or subscription operation.
+type TicketReferences struct {
+	OrderID        *uint `json:"order_id,omitempty"`
+	SubscriptionID *uint `json:"subscription_id,omitempty"`
+	WalletEntryID  *uint `json:"wallet_entry_id,omitempty"`
+}
+
 type NewTicket struct {
-	TicketNo string
-	Subject  string
-	Category string
-	Priority int16
-	Body     string
+	TicketNo    string
+	Subject     string
+	Category    string
+	Priority    int16
+	Body        string
+	Attachments []TicketAttachment
+	References  *TicketReferences
 }
 
 type Ticket struct {
-	ID            uint       `json:"id"`
-	TicketNo      string     `json:"ticket_no"`
-	UserID        uint       `json:"user_id"`
-	Subject       string     `json:"subject"`
-	Category      string     `json:"category"`
-	Priority      int16      `json:"priority"`
-	Status        string     `json:"status"`
-	LastMessageAt time.Time  `json:"last_message_at"`
-	ResolvedAt    *time.Time `json:"resolved_at"`
-	ClosedAt      *time.Time `json:"closed_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID            uint              `json:"id"`
+	TicketNo      string            `json:"ticket_no"`
+	UserID        uint              `json:"user_id"`
+	Subject       string            `json:"subject"`
+	Category      string            `json:"category"`
+	Priority      int16             `json:"priority"`
+	Status        string            `json:"status"`
+	LastMessageAt time.Time         `json:"last_message_at"`
+	ResolvedAt    *time.Time        `json:"resolved_at"`
+	ClosedAt      *time.Time        `json:"closed_at"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	References    *TicketReferences `json:"references,omitempty"`
 }
 
 type TicketMessage struct {
-	ID         uint      `json:"id"`
-	TicketID   uint      `json:"ticket_id"`
-	AuthorID   *uint     `json:"author_id"`
-	AuthorRole string    `json:"author_role"`
-	Type       string    `json:"type"`
-	Body       string    `json:"body"`
-	FromStatus string    `json:"from_status"`
-	ToStatus   string    `json:"to_status"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID          uint               `json:"id"`
+	TicketID    uint               `json:"ticket_id"`
+	AuthorID    *uint              `json:"author_id"`
+	AuthorRole  string             `json:"author_role"`
+	Type        string             `json:"type"`
+	Body        string             `json:"body"`
+	FromStatus  string             `json:"from_status"`
+	ToStatus    string             `json:"to_status"`
+	CreatedAt   time.Time          `json:"created_at"`
+	Attachments []TicketAttachment `json:"attachments"`
 }
 
 type TicketSummary struct {
@@ -87,7 +99,7 @@ type TicketDetail struct {
 
 type TicketRepository interface {
 	CreateTicket(context.Context, uint, NewTicket, time.Time) (uint, error)
-	ReplyTicket(context.Context, TicketActor, uint, string, time.Time) error
+	ReplyTicket(context.Context, TicketActor, uint, string, time.Time, ...TicketAttachment) error
 	ChangeTicketStatus(context.Context, TicketActor, uint, string, bool, time.Time) error
 	ListTickets(context.Context, TicketQuery) (TicketPage, error)
 	TicketDetail(context.Context, TicketActor, uint, uint, int) (TicketDetail, error)
@@ -114,10 +126,22 @@ func (s Tickets) Create(ctx context.Context, actor uint, input NewTicket, now ti
 	if err := validateTicketText("message", input.Body, 1, 5000); err != nil {
 		return 0, err
 	}
+	if input.References != nil {
+		for _, id := range []*uint{input.References.OrderID, input.References.SubscriptionID, input.References.WalletEntryID} {
+			if id != nil && *id == 0 {
+				return 0, fmt.Errorf("%w: ticket reference must be a positive identifier", ErrInvalid)
+			}
+		}
+	}
+	var err error
+	input.Attachments, err = NormalizeTicketAttachments(input.Attachments)
+	if err != nil {
+		return 0, err
+	}
 	return s.Repository.CreateTicket(ctx, actor, input, now.UTC())
 }
 
-func (s Tickets) Reply(ctx context.Context, actor TicketActor, id uint, body string, now time.Time) error {
+func (s Tickets) Reply(ctx context.Context, actor TicketActor, id uint, body string, now time.Time, attachments ...TicketAttachment) error {
 	if actor.ID == 0 {
 		return ErrPermission
 	}
@@ -125,7 +149,11 @@ func (s Tickets) Reply(ctx context.Context, actor TicketActor, id uint, body str
 	if err := validateTicketText("message", body, 1, 5000); err != nil {
 		return err
 	}
-	return s.Repository.ReplyTicket(ctx, actor, id, body, now.UTC())
+	attachments, err := NormalizeTicketAttachments(attachments)
+	if err != nil {
+		return err
+	}
+	return s.Repository.ReplyTicket(ctx, actor, id, body, now.UTC(), attachments...)
 }
 
 func (s Tickets) ChangeStatus(ctx context.Context, actor TicketActor, id uint, status string, adminOverride bool, now time.Time) error {

@@ -22,12 +22,30 @@ func (runtimeConfigurationCipher) Decrypt(value string) (string, error) {
 	return strings.TrimPrefix(value, "enc:"), nil
 }
 
+func TestConnectorWireContractIsExplicitAndNeverSelectedByVersion(t *testing.T) {
+	request := RuntimeConfigurationRenderRequest{NodeID: 1, APIKey: "secret", Now: time.Now(), Snapshot: network.RuntimeConfigurationSnapshot{SiteURL: "https://panel.example"}}
+	renderer := RuntimeConfigurationRenderer{Cipher: runtimeConfigurationCipher{}}
+	data, _, err := renderer.Render(request)
+	if err != nil || strings.Contains(string(data), `"push"`) || !strings.Contains(string(data), `"headers"`) {
+		t.Fatalf("default native contract: %s %v", data, err)
+	}
+	request.ConnectorContract = "legacy.push"
+	data, _, err = renderer.Render(request)
+	if err != nil || !strings.Contains(string(data), `"push"`) || strings.Contains(string(data), `"headers"`) {
+		t.Fatalf("explicit legacy contract: %s %v", data, err)
+	}
+	request.ConnectorContract = "future-unknown"
+	if _, _, err := renderer.Render(request); err == nil {
+		t.Fatal("unknown wire contract silently substituted")
+	}
+}
+
 func TestRuntimeConfigurationRendererBuildsManagedEndpointAndNetworkEntry(t *testing.T) {
 	now := time.Date(2026, time.September, 16, 5, 0, 0, 0, time.UTC)
 	notAfter := now.Add(24 * time.Hour)
 	renderer := RuntimeConfigurationRenderer{Cipher: runtimeConfigurationCipher{}}
 	payload, digest, err := renderer.Render(RuntimeConfigurationRenderRequest{
-		NodeID: 7, APIKey: "connector-secret", ZeroVersion: "0.1.0", NativeConnector: true, Now: now,
+		NodeID: 7, APIKey: "connector-secret", Now: now,
 		Snapshot: network.RuntimeConfigurationSnapshot{
 			SiteURL: "https://panel.example.test/",
 			Endpoints: []network.RuntimeConfigurationEndpoint{{
@@ -38,7 +56,7 @@ func TestRuntimeConfigurationRendererBuildsManagedEndpointAndNetworkEntry(t *tes
 				Certificate:             &network.RuntimeConfigurationCertificate{Status: "active", CertPath: "/cert.pem", KeyPath: "/key.pem", NotAfter: &notAfter},
 				Credentials: []network.RuntimeConfigurationCredential{{
 					ID: 21, SubscriptionID: 31, PrincipalKey: "subscription:31", Secret: "enc:user-id", ListenPort: 443, PublicPort: 8443,
-					SubscriptionUpdatedAt: now.Add(-time.Minute), SpeedLimitMbps: 8, DeviceLimit: 2, SoleActiveCredential: true,
+					PolicyRevision: uint64(now.Add(-time.Minute).UnixMilli()), SpeedLimitMbps: 8, DeviceLimit: 2, SoleActiveCredential: true,
 				}},
 			}},
 			NetworkEntries: []network.RuntimeConfigurationNetworkEntry{{
@@ -89,7 +107,7 @@ func TestRuntimeConfigurationRendererBuildsManagedEndpointAndNetworkEntry(t *tes
 
 func TestRuntimeConfigurationRendererUsesBootstrapOnlyWithoutRealInbound(t *testing.T) {
 	payload, _, err := (RuntimeConfigurationRenderer{Cipher: runtimeConfigurationCipher{}}).Render(RuntimeConfigurationRenderRequest{
-		NodeID: 1, APIKey: "connector", ZeroVersion: "0.1.0", NativeConnector: true, Now: time.Now().UTC(),
+		NodeID: 1, APIKey: "connector", Now: time.Now().UTC(),
 		Snapshot: network.RuntimeConfigurationSnapshot{SiteURL: "https://panel.example.test"},
 	})
 	if err != nil {
@@ -112,7 +130,7 @@ func TestRuntimeConfigurationRendererUsesBootstrapOnlyWithoutRealInbound(t *test
 
 func TestRuntimeConfigurationRendererRejectsMissingCredentialProjection(t *testing.T) {
 	_, _, err := (RuntimeConfigurationRenderer{Cipher: runtimeConfigurationCipher{}}).Render(RuntimeConfigurationRenderRequest{
-		NodeID: 1, APIKey: "connector", ZeroVersion: "0.1.0", NativeConnector: true, Now: time.Now().UTC(),
+		NodeID: 1, APIKey: "connector", Now: time.Now().UTC(),
 		Snapshot: network.RuntimeConfigurationSnapshot{SiteURL: "https://panel.example.test", Endpoints: []network.RuntimeConfigurationEndpoint{{
 			ID: 2, NodeID: 1, Protocol: "vless", Port: 443, ServerConfig: `enc:{"type":"vless","users":[]}`, ActiveSubscriptionCount: 2,
 		}}},
@@ -140,7 +158,7 @@ func TestRuntimeConfigurationRendererOwnsManagedAudienceSemantics(t *testing.T) 
 			}
 		})
 	}
-	credential := network.RuntimeConfigurationCredential{ID: 9, PrincipalKey: "subscription:7:endpoint:8", Secret: "enc:subscriber-secret"}
+	credential := network.RuntimeConfigurationCredential{PolicyRevision: 1, ID: 9, PrincipalKey: "subscription:7:endpoint:8", Secret: "enc:subscriber-secret"}
 	for _, protocolName := range []string{"hysteria2", "mieru"} {
 		t.Run(protocolName+"_materialized_audience", func(t *testing.T) {
 			inbounds, err := renderer.renderEndpoint(network.RuntimeConfigurationEndpoint{ID: 8, Protocol: protocolName, Port: 443, ActiveSubscriptionCount: 1, Credentials: []network.RuntimeConfigurationCredential{credential}, MieruPrincipalReady: true}, map[string]interface{}{"type": protocolName, "users": []interface{}{}}, false)
@@ -159,7 +177,7 @@ func TestRuntimeConfigurationRendererProjectsOnlySafePerProcessPolicy(t *testing
 	now := time.UnixMilli(1_753_500_000_123).UTC()
 	sole := network.RuntimeConfigurationCredential{
 		PrincipalKey: "subscription:7:endpoint:3", SubscriptionID: 7,
-		SubscriptionUpdatedAt: now, SpeedLimitMbps: 80, DeviceLimit: 3, SoleActiveCredential: true,
+		PolicyRevision: uint64(now.UnixMilli()), SpeedLimitMbps: 80, DeviceLimit: 3, SoleActiveCredential: true,
 	}
 	user, err := managedAccessUserFields(sole)
 	if err != nil {
@@ -192,7 +210,7 @@ func TestRuntimeConfigurationRendererOwnsShadowsocks2022Rules(t *testing.T) {
 	}
 	inbounds, err := renderer.renderEndpoint(network.RuntimeConfigurationEndpoint{
 		ID: 4, Protocol: "shadowsocks", Port: 8388, ActiveSubscriptionCount: 1,
-		Credentials: []network.RuntimeConfigurationCredential{{ID: 1, PrincipalKey: "subscription:1:endpoint:4", Secret: "enc:user-secret"}},
+		Credentials: []network.RuntimeConfigurationCredential{{PolicyRevision: 1, ID: 1, PrincipalKey: "subscription:1:endpoint:4", Secret: "enc:user-secret"}},
 	}, protocol, false)
 	if err != nil || len(inbounds) != 1 {
 		t.Fatalf("inbounds=%d error=%v", len(inbounds), err)
@@ -202,7 +220,7 @@ func TestRuntimeConfigurationRendererOwnsShadowsocks2022Rules(t *testing.T) {
 	}
 	_, err = renderer.renderEndpoint(network.RuntimeConfigurationEndpoint{
 		ID: 4, Protocol: "shadowsocks", Port: 8388, ActiveSubscriptionCount: 2,
-		Credentials: []network.RuntimeConfigurationCredential{{ID: 1, Secret: "enc:first"}, {ID: 2, Secret: "enc:second"}},
+		Credentials: []network.RuntimeConfigurationCredential{{PolicyRevision: 1, ID: 1, Secret: "enc:first"}, {ID: 2, Secret: "enc:second"}},
 	}, map[string]interface{}{"type": "shadowsocks", "cipher": "2022-blake3-chacha20-poly1305"}, false)
 	if err == nil || !strings.Contains(err.Error(), "cannot identify multiple managed users") {
 		t.Fatalf("error=%v", err)

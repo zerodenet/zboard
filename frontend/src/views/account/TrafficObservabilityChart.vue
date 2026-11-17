@@ -3,23 +3,33 @@
     <header class="panel-header observability-header">
       <div>
         <h2 id="traffic-observability-title">使用趋势</h2>
-        <p>按时间查看计费、上下行和连接峰值；移动指针可查看对应时间点详情。</p>
       </div>
       <div class="observability-status">
-        <span v-if="recordCount">已汇总 {{ recordCount.toLocaleString('zh-CN') }} 条原始记录</span>
+        <span v-if="hasConnectionSamples">连接峰值按{{ points.some(point => (point.connection_resolution_seconds ?? 0) >= 3600) ? '小时' : '分钟' }}统计</span>
         <span v-if="truncated" class="observability-warning">当前范围数据已截断</span>
+        <span v-if="snapshotAvailable && asOf">统计于 <TimeBadge :value="asOf" /></span>
+        <UiButton variant="ghost" size="sm" :disabled="loading" @click="emit('refresh')">刷新趋势</UiButton>
       </div>
     </header>
 
-    <div v-if="loading" class="observability-loading" aria-live="polite">
+    <p v-if="projectionPending" class="observability-warning" role="status">
+      统计更新中。{{ snapshotAvailable ? '以下保留上次完整统计及其时间，当前统计尚未完成。' : '当前范围统计未知，请稍后刷新；不代表没有流量活动。' }}
+    </p>
+
+    <div v-if="loading && !snapshotAvailable" class="observability-loading" aria-live="polite">
       <UiIcon name="refresh" />
       正在加载趋势数据…
+    </div>
+
+    <div v-else-if="projectionPending && !snapshotAvailable" class="observability-empty">
+      <UiIcon name="activity" />
+      <strong>当前范围统计未知</strong>
     </div>
 
     <div v-else-if="!points.length" class="observability-empty">
       <UiIcon name="activity" />
       <div>
-        <strong>当前范围没有可绘制的数据</strong>
+        <strong>{{ projectionPending ? '上次完整统计没有可绘制的数据' : '当前范围没有可绘制的数据' }}</strong>
         <p>节点产生计费记录后，这里会显示流量和最高连接数趋势。</p>
       </div>
     </div>
@@ -28,7 +38,6 @@
       <article class="observability-chart-card traffic-card">
         <div class="chart-heading">
           <div>
-            <span class="chart-eyebrow">TRAFFIC</span>
             <h3>流量使用</h3>
           </div>
           <div class="chart-legend" aria-label="流量图例">
@@ -130,7 +139,6 @@
       <article class="observability-chart-card connection-card">
         <div class="chart-heading">
           <div>
-            <span class="chart-eyebrow">CONNECTIONS</span>
             <h3>最高连接数</h3>
           </div>
           <div class="connection-summary">
@@ -211,6 +219,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import UiIcon from '../../components/UiIcon.vue'
+import UiButton from '../../components/UiButton.vue'
+import TimeBadge from '../../components/TimeBadge.vue'
 import { formatBytes } from '../../utils/format'
 import type { TrafficObservabilityPoint } from './trafficObservability'
 
@@ -220,12 +230,19 @@ const props = withDefaults(defineProps<{
   truncated?: boolean
   recordCount?: number
   peakConnections?: number | null
+  projectionPending?: boolean
+  snapshotAvailable?: boolean
+  asOf?: string
 }>(), {
   loading: false,
   truncated: false,
   recordCount: 0,
   peakConnections: null,
+  projectionPending: false,
+  snapshotAvailable: true,
+  asOf: '',
 })
+const emit = defineEmits<{ refresh: [] }>()
 
 const chartWidth = 720
 const chartHeight = 238
@@ -439,7 +456,7 @@ function tooltipSideClass(index: number) {
 
 .observability-warning {
   color: var(--warning);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .observability-loading,
@@ -504,8 +521,8 @@ function tooltipSideClass(index: number) {
 
 .chart-eyebrow {
   color: var(--primary);
-  font-size: 9px;
-  font-weight: 750;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: .12em;
 }
 
@@ -527,7 +544,7 @@ function tooltipSideClass(index: number) {
   color: var(--text);
   background: var(--surface);
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
   transition: opacity .16s ease, border-color .16s ease, background .16s ease;
 }
@@ -595,7 +612,7 @@ function tooltipSideClass(index: number) {
 .chart-grid text,
 .chart-axis-labels text {
   fill: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .traffic-area.used {
@@ -714,7 +731,7 @@ function tooltipSideClass(index: number) {
 
 .tooltip-row b {
   color: var(--text-strong);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .tooltip-key {
@@ -728,7 +745,7 @@ function tooltipSideClass(index: number) {
   padding-top: 7px;
   border-top: 1px solid var(--line-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .connection-summary {
@@ -736,7 +753,7 @@ function tooltipSideClass(index: number) {
   justify-items: end;
   gap: 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .connection-summary strong {

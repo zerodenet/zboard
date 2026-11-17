@@ -1,5 +1,9 @@
 # ZBoard design system
 
+[UI/UX Standard v2](STANDARD_V2.md) is the complete acceptance contract, retained
+from the original project standard. This document summarizes its tokens; it
+does not replace or relax the original interaction and page requirements.
+
 The console uses a neutral, compact desktop density. The semantic colors and their
 dark counterparts are in `frontend/src/theme/tokens.css`. Component and shared
 page styles are in `frontend/src/theme/design-system.css`.

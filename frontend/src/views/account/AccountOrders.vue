@@ -1,8 +1,8 @@
 <template>
-  <section class="account-page stack">
-    <PageHeader title="我的订单" description="按状态查看商品快照、金额和处理进度。" eyebrow="ORDERS">
+  <section class="account-page stack account-order-page">
+    <PageHeader title="我的订单">
       <template #actions>
-        <RouterLink class="button" to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink>
+        <UiButton as-child><RouterLink  to="/account/plans"><UiIcon name="plus" />购买套餐</RouterLink></UiButton>
       </template>
     </PageHeader>
 
@@ -15,63 +15,25 @@
 
     <DataWorkbench :total="total" :loading="loading" :refreshing="refreshing">
       <template #filters>
-        <WorkbenchFilterBar :active="Boolean(status)" @clear="clearFilters">
+        <WorkbenchFilterBar :active="Boolean(status || orderFilter)" @clear="clearFilters">
+          <WorkbenchFilterInput v-model="orderFilter" label="订单号" placeholder="DD0000000048" maxlength="32" @apply="applyFilters" />
           <WorkbenchFilterSelect v-model="status" label="订单状态" :options="statusOptions" @apply="applyFilters" />
         </WorkbenchFilterBar>
       </template>
       <template #actions>
-        <UiButton variant="secondary" size="sm" type="button" :disabled="loading" @click="load">
-          <UiIcon name="refresh" />刷新
-        </UiButton>
+        <PageRefreshButton label="刷新订单" :loading="loading" @click="load" />
       </template>
 
       <TableSkeleton v-if="loading && !orders.length" label="正在加载我的订单" :columns="6" />
-      <DataTable v-else-if="orders.length" caption="我的订单列表" :row-count="total" :min-width="820">
-        <thead>
-          <tr>
-            <th class="table-primary-column">订单</th>
-            <th>商品规格</th>
-            <th>应付金额</th>
-            <th>状态</th>
-            <th data-column-priority="2">时间</th>
-            <th class="table-action-column"><span class="sr-only">操作</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in orders" :key="item.id">
-            <td class="table-primary-column">
-              <div class="cell-title"><strong>#{{ item.id }}</strong><TableText :value="item.trade_no" /></div>
-            </td>
-            <td>
-              <div class="cell-title cell-related">
-                <TableText :value="item.plan_name || `套餐 #${item.plan_id}`" />
-                <TableText :value="item.sku_name || `SKU #${item.plan_sku_id}`" />
-                <small v-if="item.subscription_ended_at">原订阅{{ item.subscription_end_reason === 'exhausted' ? '已用完' : '已到期' }} · <TimeBadge :value="item.subscription_ended_at" /></small>
-                <small v-if="item.subscription_ended_at">最终用量 {{ formatBytes(item.subscription_final_flow_used || 0) }} / {{ formatBytes(item.subscription_final_flow_total || 0) }}</small>
-              </div>
-            </td>
-            <td class="value-cell">{{ formatCurrency(item.payable_amount ?? item.amount_cents, item.currency) }}</td>
-            <td><StatusBadge :tone="tone(item.status)">{{ label(item.status) }}</StatusBadge></td>
-            <td data-column-priority="2"><TimeBadge :value="item.created_at" /></td>
-            <td class="table-action-column">
-              <UiButton
-                v-if="item.status === 'pending'"
-                variant="danger"
-                size="sm"
-                type="button"
-                @click="askCancel(item)"
-              >
-                取消
-              </UiButton>
-            </td>
-          </tr>
-        </tbody>
-      </DataTable>
+      <AccountOrderList v-else-if="orders.length" :orders="orders"><template #actions="{ order }">
+        <UiButton v-if="['pending', 'failed'].includes(order.status)" as-child variant="secondary" size="sm"><RouterLink :to="`/account/orders/${order.id}`">继续支付</RouterLink></UiButton>
+        <UiButton v-if="order.status === 'pending'" variant="ghost" size="sm" type="button" @click="askCancel(order)">取消订单</UiButton>
+      </template></AccountOrderList>
       <EmptyState
-        v-else
+        v-else-if="!loading && !error"
         icon="billing"
         title="没有匹配订单"
-        description="从套餐页面创建第一笔订单，或调整筛选条件。"
+        description=""
       />
 
       <template #footer>
@@ -85,13 +47,7 @@
       </template>
     </DataWorkbench>
 
-    <aside class="account-notice">
-      <UiIcon name="clock" />
-      <div>
-        <strong>当前采用人工确认流程</strong>
-        <p>订单创建后保持“待支付”状态，管理员确认收款后会自动生成订阅。用户端不会提供虚假的即时支付按钮。</p>
-      </div>
-    </aside>
+
 
     <ConfirmDialog
       :open="confirmOpen"
@@ -107,34 +63,41 @@
 </template>
 
 <script setup lang="ts">
-import TableText from '../../components/TableText.vue'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelOrder, fetchAccountOrdersPage, type AdminOrderListItem } from '../../api/client'
+import AccountOrderList from '../../components/account/AccountOrderList.vue'
+import PageRefreshButton from '../../components/PageRefreshButton.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import DataTable from '../../components/DataTable.vue'
 import TableSkeleton from '../../components/TableSkeleton.vue'
 import DataWorkbench from '../../components/DataWorkbench.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import PageHeader from '../../components/PageHeader.vue'
-import StatusBadge from '../../components/StatusBadge.vue'
 import TablePager from '../../components/TablePager.vue'
-import TimeBadge from '../../components/TimeBadge.vue'
 import TransientFeedback from '../../components/TransientFeedback.vue'
 import UiButton from '../../components/UiButton.vue'
 import UiIcon from '../../components/UiIcon.vue'
 import WorkbenchFilterBar from '../../components/WorkbenchFilterBar.vue'
+import WorkbenchFilterInput from '../../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../../components/WorkbenchFilterSelect.vue'
 import { useRemoteTable } from '../../composables/useRemoteTable'
-import { formatBytes, formatCurrency, formatUnknownValue } from '../../utils/format'
 
 const route = useRoute()
 const router = useRouter()
+// Existing plugin return URLs remain valid, but payment belongs to one order.
+watch(() => route.query.payment_order, order => {
+  const id = Number(order)
+  if (!Number.isSafeInteger(id) || id <= 0) return
+  void router.replace({ path: `/account/orders/${id}`, query: {
+    ...(typeof route.query.payment_plugin === 'string' ? { payment_plugin: route.query.payment_plugin } : {}),
+  } })
+}, { immediate: true })
 const allowedPageSizes = [25, 50, 100]
 const initialLimit = Number(route.query.limit)
 const limit = ref(allowedPageSizes.includes(initialLimit) ? initialLimit : 25)
 const offset = ref((Math.max(1, Number(route.query.page) || 1) - 1) * limit.value)
 const status = ref(String(route.query.status || ''))
+const orderFilter = ref(String(route.query.number || ''))
 const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '待支付', value: 'pending' },
@@ -151,6 +114,7 @@ const { items: orders, total, loading, refreshing, error, load } = useRemoteTabl
   offset,
   limit,
   fetchPage: ({ signal }) => fetchAccountOrdersPage({
+    id: orderFilter.value.trim() || undefined,
     status: status.value || undefined,
     offset: offset.value,
     limit: limit.value,
@@ -159,19 +123,11 @@ const { items: orders, total, loading, refreshing, error, load } = useRemoteTabl
   onOffsetCorrected: () => syncURL(true),
 })
 
-function tone(value: string): 'success' | 'warning' | 'danger' | 'neutral' {
-  return value === 'paid' ? 'success' : value === 'pending' ? 'warning' : value === 'failed' ? 'danger' : 'neutral'
-}
-
-function label(value: string) {
-  return ({ pending: '待支付', paid: '已支付', failed: '失败', canceled: '已取消' } as Record<string, string>)[value]
-    || formatUnknownValue('状态', value)
-}
-
 async function syncURL(replace = false) {
   const page = Math.floor(offset.value / limit.value) + 1
   const location = {
     query: {
+      ...(orderFilter.value.trim() ? { number: orderFilter.value.trim() } : {}),
       ...(status.value ? { status: status.value } : {}),
       ...(page > 1 ? { page: String(page) } : {}),
       ...(limit.value !== 25 ? { limit: String(limit.value) } : {}),
@@ -187,7 +143,7 @@ async function applyFilters() {
 }
 
 async function clearFilters() {
-  status.value = ''
+  status.value = ''; orderFilter.value = ''
   await applyFilters()
 }
 
@@ -222,10 +178,12 @@ async function doCancel() {
 
 watch(() => route.fullPath, async () => {
   const nextStatus = String(route.query.status || '')
+  const nextNumber = String(route.query.number || '')
   const rawLimit = Number(route.query.limit)
   const nextLimit = allowedPageSizes.includes(rawLimit) ? rawLimit : 25
   const nextOffset = (Math.max(1, Number(route.query.page) || 1) - 1) * nextLimit
-  if (nextStatus !== status.value || nextLimit !== limit.value || nextOffset !== offset.value) {
+  if (nextNumber !== orderFilter.value || nextStatus !== status.value || nextLimit !== limit.value || nextOffset !== offset.value) {
+    orderFilter.value = nextNumber
     status.value = nextStatus
     limit.value = nextLimit
     offset.value = nextOffset
@@ -235,3 +193,11 @@ watch(() => route.fullPath, async () => {
 
 onMounted(load)
 </script>
+
+<style scoped>
+@media (max-width: 720px) {
+  .account-order-page :deep(.workbench-toolbar) { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .account-order-page :deep(.workbench-filters) { flex: 1 1 160px; width: auto; min-width: 0; }
+  .account-order-page :deep(.workbench-actions) { flex: 0 0 auto; justify-content: flex-end; }
+}
+</style>

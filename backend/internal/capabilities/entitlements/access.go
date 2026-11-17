@@ -11,17 +11,18 @@ var ErrAccessNotFound = errors.New("subscription not found")
 var ErrAccessInactive = errors.New("subscription is inactive, expired, or out of traffic")
 
 type AccessView struct {
-	Configured      bool       `json:"configured"`
-	SubscriptionID  uint       `json:"subscription_id"`
-	Token           string     `json:"token,omitempty"`
-	TokenPrefix     string     `json:"token_prefix,omitempty"`
-	SubscriptionURL string     `json:"subscription_url,omitempty"`
-	LastUsedAt      *time.Time `json:"last_used_at,omitempty"`
-	RevokedAt       *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt       *time.Time `json:"created_at,omitempty"`
-	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
-	Revoked         bool       `json:"revoked,omitempty"`
-	Notice          string     `json:"notice,omitempty"`
+	DeliveryConfigured bool       `json:"delivery_configured"`
+	Configured         bool       `json:"configured"`
+	SubscriptionID     uint       `json:"subscription_id"`
+	Token              string     `json:"token,omitempty"`
+	TokenPrefix        string     `json:"token_prefix,omitempty"`
+	SubscriptionURL    string     `json:"subscription_url,omitempty"`
+	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt          *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt          *time.Time `json:"created_at,omitempty"`
+	UpdatedAt          *time.Time `json:"updated_at,omitempty"`
+	Revoked            bool       `json:"revoked,omitempty"`
+	Notice             string     `json:"notice,omitempty"`
 }
 
 type AccessRepository interface {

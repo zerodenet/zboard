@@ -2,14 +2,53 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from './Dashboard.vue'
-import { fetchDashboardOverview, fetchDashboardTrafficRankings, type DashboardOverview } from '../api/dashboard'
+import { fetchDashboardCurrent, fetchDashboardStatistics, fetchDashboardTrend, fetchDashboardTrafficRankings, type DashboardOverview } from '../api/dashboard'
 import { fetchProtocolDeployments } from '../api/client'
 import UiSection from '../components/UiSection.vue'
 import UiMetricStrip from '../components/UiMetricStrip.vue'
 import UiSegmentedControl from '../components/UiSegmentedControl.vue'
 import DashboardTrafficRanking from '../components/DashboardTrafficRanking.vue'
 import PageRefreshButton from '../components/PageRefreshButton.vue'
-vi.mock('../api/dashboard', () => ({ fetchDashboardOverview: vi.fn(), fetchDashboardTrafficRankings: vi.fn() }))
+import MetricCard from '../components/MetricCard.vue'
+
+it('keeps metric containers and previous figures throughout a pending refresh', async () => {
+ const wrapper = await open()
+ const service = wrapper.get('.service-metrics').element, business = wrapper.get('.business-metrics').element
+ const card = wrapper.get('.business-metrics .metric-card').element
+ const current = deferred<any>(), statistics = deferred<any>()
+ vi.mocked(fetchDashboardCurrent).mockReturnValueOnce(current.promise)
+ vi.mocked(fetchDashboardStatistics).mockReturnValueOnce(statistics.promise)
+ const statusCount = wrapper.findAll('.remote-read-status-compact').length
+ wrapper.getComponent(PageRefreshButton).vm.$emit('click'); await flushPromises()
+ expect(wrapper.get('.service-metrics').element).toBe(service)
+ expect(wrapper.get('.business-metrics').element).toBe(business)
+ expect(wrapper.get('.business-metrics .metric-card').element).toBe(card)
+ expect(wrapper.text()).toContain('¥15.00')
+ expect(wrapper.text()).not.toContain('更新中，显示上次结果')
+ expect(wrapper.findAll('.remote-read-status-compact')).toHaveLength(statusCount)
+ current.resolve({ ...structuredClone(facts), active_subscriptions: 8 })
+ statistics.resolve({ ...structuredClone(facts), traffic: facts.service, business: { ...facts.business, revenue_cents: 2500 } })
+ await flushPromises()
+ expect(wrapper.text()).toContain('¥25.00')
+ expect(wrapper.get('.service-metrics').element).toBe(service)
+ expect(wrapper.get('.business-metrics .metric-card').element).toBe(card)
+})
+it('reserves all metric positions before initial responses without inventing zero values', async () => {
+ const current = deferred<any>(), statistics = deferred<any>()
+ vi.mocked(fetchDashboardCurrent).mockReturnValueOnce(current.promise)
+ vi.mocked(fetchDashboardStatistics).mockReturnValueOnce(statistics.promise)
+ const wrapper = await open()
+ expect(wrapper.get('.service-metrics').findAllComponents(MetricCard)).toHaveLength(4)
+ expect(wrapper.get('.business-metrics').findAllComponents(MetricCard)).toHaveLength(6)
+ expect(wrapper.findAll('.metric-value-skeleton')).toHaveLength(10)
+ expect(wrapper.text()).not.toContain('¥0.00')
+ current.resolve({ ...structuredClone(facts), active_subscriptions: 3 })
+ statistics.resolve({ ...structuredClone(facts), traffic: facts.service }); await flushPromises()
+ expect(wrapper.get('.service-metrics').findAllComponents(MetricCard)).toHaveLength(4)
+ expect(wrapper.get('.business-metrics').findAllComponents(MetricCard)).toHaveLength(6)
+ expect(wrapper.findAll('.metric-value-skeleton')).toHaveLength(0)
+})
+vi.mock('../api/dashboard', () => ({ fetchDashboardCurrent: vi.fn(), fetchDashboardStatistics: vi.fn(), fetchDashboardTrend: vi.fn(), fetchDashboardTrafficRankings: vi.fn() }))
 vi.mock('../api/client', () => ({ fetchProtocolDeployments: vi.fn() }))
 const facts: DashboardOverview = {
  period: {range:'7d', from:'2026-09-22T00:00:00Z',to:'2026-09-28T10:00:00Z',previous_from:'2026-09-15T00:00:00Z',previous_to:'2026-09-21T10:00:00Z',bucket:'day',timezone:'Asia/Shanghai'},
@@ -22,33 +61,115 @@ function deferred<T>() { let resolve!: (value:T)=>void; const promise=new Promis
 let view:VueWrapper|undefined
 beforeEach(()=>{
  vi.resetAllMocks()
- vi.mocked(fetchDashboardOverview).mockResolvedValue(structuredClone(facts))
+ vi.mocked(fetchDashboardStatistics).mockResolvedValue({...structuredClone(facts), traffic: facts.service})
+ vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions: facts.business.active_subscriptions})
+ vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,trend:[],as_of:facts.as_of,currency:"CNY",mixed_currency:false})
  vi.mocked(fetchDashboardTrafficRankings).mockResolvedValue({period:facts.period,nodes:[{id:1,name:'Node HK',traffic_bytes:1000,previous_traffic_bytes:500}],users:[{id:2,name:'test@example.test',traffic_bytes:2000,previous_traffic_bytes:0}],as_of:facts.as_of})
  vi.mocked(fetchProtocolDeployments).mockResolvedValue({items:[]} as any)
 })
-afterEach(()=>{view?.unmount();view=undefined})
+afterEach(()=>{view?.unmount();view=undefined;document.body.innerHTML=''})
 async function open() {
  const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component:{template:'<div />'}}]});await router.push('/admin');await router.isReady()
- view=mount(Dashboard,{global:{plugins:[router],components:{UiSection,UiMetricStrip,PageRefreshButton}}});await flushPromises();return view
+ view=mount(Dashboard,{attachTo:document.body,global:{plugins:[router],components:{UiSection,UiMetricStrip,PageRefreshButton}}});await flushPromises();return view
 }
 describe('operations dashboard',()=>{
+ it('shows the hovered bucket amount in the trend currency and prioritizes the selected measure', async () => {
+  vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'USD',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:1,renew_orders:1}]})
+  const wrapper = await open()
+  const column = wrapper.get('.trend-point')
+  expect(column.attributes('title')).toBeUndefined()
+  await column.trigger('pointermove', { pointerType: 'mouse' }); await flushPromises()
+  await vi.waitFor(() => expect(document.body.querySelector('.ui-tooltip-content')).not.toBeNull())
+  const tooltip = () => document.body.querySelector<HTMLElement>('.ui-tooltip-content')!
+  expect(tooltip().textContent).toContain('实收金额 US$7.00')
+  expect(tooltip().textContent).toContain('已支付订单 2 笔')
+  expect(tooltip().textContent).toContain('新购 1 · 续费 1')
+  expect(tooltip().querySelector('time')?.getAttribute('datetime')).toBe(facts.period.from)
+  wrapper.findAllComponents(UiSegmentedControl)[1].vm.$emit('update:modelValue', 'orders'); await flushPromises()
+  expect(tooltip().querySelector('strong')?.textContent).toBe('已支付订单 2 笔')
+  expect(column.attributes('aria-label')).toContain('已支付订单 2 笔 · 实收金额 US$7.00')
+  expect(fetchDashboardTrend).toHaveBeenCalledTimes(1)
+ })
+ it('lets keyboard users inspect an empty bucket and dismiss the amount tooltip', async () => {
+  vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'CNY',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:0,paid_orders:0,new_orders:0,renew_orders:0}]})
+  const wrapper = await open()
+  const column = wrapper.get<HTMLElement>('.trend-point')
+  expect(column.attributes('tabindex')).toBe('0')
+  column.element.focus(); await flushPromises()
+  expect(document.body.querySelector('.ui-tooltip-content')?.textContent).toContain('实收金额 ¥0.00')
+  await column.trigger('keydown', { key: 'Escape' }); await flushPromises()
+  expect(document.body.querySelector('.ui-tooltip-content')).toBeNull()
+ })
+ it('does not invent a combined amount for a mixed-currency bucket', async () => {
+  vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'',mixed_currency:true,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:2,renew_orders:0}]})
+  const wrapper = await open()
+  await wrapper.get('.trend-point').trigger('pointermove', { pointerType: 'mouse' }); await flushPromises()
+  await vi.waitFor(() => expect(document.body.querySelector('.ui-tooltip-content')).not.toBeNull())
+  const tooltip = document.body.querySelector<HTMLElement>('.ui-tooltip-content')!
+  expect(tooltip.querySelector('strong')?.textContent).toBe('已支付订单 2 笔')
+  expect(tooltip.textContent).toContain('多币种金额不合并展示')
+  expect(tooltip.textContent).not.toContain('¥7.00')
+ })
+ it('keeps partial snapshot counts separate from unknown complete current totals', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service, observed_active_subscriptions:2, observed_active_flows:7},
+   coverage:{principal_flows:false,principal_flows_state:'unknown',principal_flows_reason:'snapshot_coverage_unverified'}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('7')
+  expect(flows.props('status')).toBe('覆盖未知')
+  expect(flows.attributes('title')).toContain('覆盖范围及更新时间待确认')
+  expect(flows.props('meta')).toBe('')
+  const subscriptions=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测活跃订阅')!
+  expect(subscriptions.props('value')).toBe('2')
+  expect(subscriptions.props('status')).toBe('覆盖未知')
+  expect(subscriptions.attributes('title')).toContain('覆盖范围及更新时间待确认')
+  expect(subscriptions.props('meta')).toBe('')
+  expect(wrapper.text()).not.toContain('实时')
+ })
+ it('treats old server counts as observations even when its old coverage boolean is true', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service,active_subscriptions:2,active_flows:9},coverage:{principal_flows:true}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('9')
+  expect(flows.props('status')).toBe('覆盖未知')
+  expect(wrapper.text()).not.toContain('实时')
+ })
+ it('preserves an observed zero while keeping complete current coverage unknown', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service,observed_active_subscriptions:0,observed_active_flows:0},coverage:{principal_flows:false}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('0')
+  expect(flows.props('status')).toBe('覆盖未知')
+ })
+ it('does not replace explicit missing observations with legacy current values', async()=>{
+  vi.mocked(fetchDashboardCurrent).mockResolvedValue({...structuredClone(facts), active_subscriptions:3,
+   service:{...facts.service,active_flows:999,observed_active_flows:null},coverage:{principal_flows:true}})
+  const wrapper=await open()
+  const flows=wrapper.findAllComponents(MetricCard).find(card=>card.props('label')==='已观测连接')!
+  expect(flows.props('value')).toBe('未采集')
+  expect(flows.props('status')).toBe('未采集')
+  expect(wrapper.text()).not.toContain('实时')
+ })
  it('shows successful metrics and comparisons while event loading fails',async()=>{
   vi.mocked(fetchProtocolDeployments).mockRejectedValue(new Error('events offline'))
   const wrapper=await open()
   expect(wrapper.text()).toContain('¥15.00');expect(wrapper.text()).toContain('↑ 50.0%');expect(wrapper.text()).toContain('↓ 25.0%')
-  expect(wrapper.text()).toContain('Node HK');expect(wrapper.text()).toContain('上期为 0');expect(wrapper.text()).toContain('最近事件加载失败')
-  expect(fetchDashboardOverview).toHaveBeenCalledTimes(1);expect(fetchDashboardTrafficRankings).toHaveBeenCalledTimes(2)
+  expect(wrapper.text()).toContain('Node HK');expect(wrapper.text()).toContain('上期为 0');expect(wrapper.text()).toContain('最近事件：更新失败')
+  expect(fetchDashboardStatistics).toHaveBeenCalledTimes(1);expect(fetchDashboardTrafficRankings).toHaveBeenCalledTimes(2)
  })
  it('does not wait for pending rankings to render metrics',async()=>{
   vi.mocked(fetchDashboardTrafficRankings).mockReturnValue(deferred<any>().promise)
   const wrapper=await open();expect(wrapper.text()).toContain('¥15.00');expect(wrapper.text()).toContain('正在加载流量排行')
  })
  it('cancels and ignores an older range response after switching',async()=>{
-  const old=deferred<DashboardOverview>();vi.mocked(fetchDashboardOverview).mockReturnValueOnce(old.promise)
-  const wrapper=await open();const signal=vi.mocked(fetchDashboardOverview).mock.calls[0][1]!.signal!
+  const old=deferred<any>();vi.mocked(fetchDashboardStatistics).mockReturnValueOnce(old.promise)
+  const wrapper=await open();const signal=vi.mocked(fetchDashboardStatistics).mock.calls[0][1]!.signal!
   wrapper.findComponent(UiSegmentedControl).vm.$emit('update:modelValue','today');await flushPromises()
-  expect(signal.aborted).toBe(true);expect(fetchDashboardOverview).toHaveBeenLastCalledWith('today',expect.objectContaining({signal:expect.any(AbortSignal)}))
-  old.resolve({...facts,business:{...facts.business,revenue_cents:99999}});await flushPromises()
+  expect(signal.aborted).toBe(true);expect(fetchDashboardStatistics).toHaveBeenLastCalledWith('today',expect.objectContaining({signal:expect.any(AbortSignal)}))
+  old.resolve({...facts,traffic:facts.service,business:{...facts.business,revenue_cents:99999}});await flushPromises()
   expect(wrapper.text()).toContain('¥15.00');expect(wrapper.text()).not.toContain('999.99');expect(wrapper.text()).toContain('对比昨日同期')
  })
  it('changes node periods without refetching business, users or events and ignores stale nodes', async()=>{
@@ -61,18 +182,85 @@ describe('operations dashboard',()=>{
   expect(nodeSignal.aborted).toBe(true)
   expect(fetchDashboardTrafficRankings).toHaveBeenLastCalledWith('month',expect.objectContaining({dimension:'nodes'}))
   expect(fetchDashboardTrafficRankings).toHaveBeenCalledTimes(3)
-  expect(fetchDashboardOverview).toHaveBeenCalledTimes(1);expect(fetchProtocolDeployments).toHaveBeenCalledTimes(1)
+  expect(fetchDashboardStatistics).toHaveBeenCalledTimes(1);expect(fetchProtocolDeployments).toHaveBeenCalledTimes(1)
   expect(wrapper.text()).toContain('user-kept');expect(wrapper.text()).toContain('对比上月同期')
   old.resolve({period:facts.period,nodes:[{id:4,name:'stale-node',traffic_bytes:99,previous_traffic_bytes:0}],users:[],as_of:facts.as_of});await flushPromises()
   expect(wrapper.text()).toContain('latest-node');expect(wrapper.text()).not.toContain('stale-node')
  })
  it('switches trend amount to count without fetching again', async()=>{
-  vi.mocked(fetchDashboardOverview).mockResolvedValue({...facts,trend:[{bucket_start:facts.period.from,revenue_cents:1000,paid_orders:1,new_orders:1,renew_orders:0},{bucket_start:facts.period.to,revenue_cents:500,paid_orders:2,new_orders:1,renew_orders:1}]})
+  vi.mocked(fetchDashboardTrend).mockResolvedValue({...facts,currency:"CNY",mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:1000,paid_orders:1,new_orders:1,renew_orders:0},{bucket_start:facts.period.to,revenue_cents:500,paid_orders:2,new_orders:1,renew_orders:1}]})
   const wrapper=await open()
-  expect(wrapper.findAll('.trend-bar')[0].attributes('style')).toContain('100%')
+  expect(wrapper.get('.trend-line').attributes('points')).toBe('250,8 750,100')
   wrapper.findAllComponents(UiSegmentedControl)[1].vm.$emit('update:modelValue','orders');await flushPromises()
-  expect(wrapper.findAll('.trend-bar')[0].attributes('style')).toContain('50%')
-  expect(wrapper.text()).toContain('柱高：订单量');expect(fetchDashboardOverview).toHaveBeenCalledTimes(1)
+  expect(wrapper.get('.trend-line').attributes('points')).toBe('250,100 750,8')
+  expect(wrapper.get('.trend-legend').text()).toBe('订单量');expect(fetchDashboardStatistics).toHaveBeenCalledTimes(1)
  })
 
+})
+
+it('renders current service state before either historical statistics or trends return', async () => {
+ vi.mocked(fetchDashboardStatistics).mockReturnValue(new Promise(() => {}))
+ vi.mocked(fetchDashboardTrend).mockReturnValue(new Promise(() => {}))
+ const wrapper = await open()
+ expect(wrapper.text()).toContain('在线节点')
+ expect(wrapper.text()).toContain('有效订阅')
+ expect(wrapper.text()).toContain('当前没有需要处理的异常')
+ expect(wrapper.text()).toContain('经营统计：加载中')
+ expect(wrapper.text()).not.toContain('¥0.00')
+})
+it('keeps service status on statistics failure and retries only the failed section', async () => {
+ vi.mocked(fetchDashboardStatistics).mockRejectedValue(new Error('history unavailable'))
+ const wrapper = await open()
+ expect(wrapper.text()).toContain('经营统计：更新失败')
+ expect(wrapper.text()).toContain('在线节点')
+ expect(fetchDashboardCurrent).toHaveBeenCalledOnce()
+ await wrapper.get('[aria-label="经营统计：查看失败原因"]').trigger('click'); await flushPromises()
+ expect(document.body.textContent).toContain('经营统计加载失败')
+ const retry = [...document.body.querySelectorAll('button')].find(b => b.textContent === '重试')!
+ retry.click(); await flushPromises()
+ expect(fetchDashboardStatistics).toHaveBeenCalledTimes(2)
+ expect(fetchDashboardCurrent).toHaveBeenCalledOnce()
+})
+it('polls current state while history is stalled and stops on unmount', async () => {
+ vi.useFakeTimers()
+ try {
+  vi.mocked(fetchDashboardStatistics).mockReturnValue(new Promise(() => {}))
+  vi.mocked(fetchDashboardTrend).mockReturnValue(new Promise(() => {}))
+  await open()
+  await vi.advanceTimersByTimeAsync(3_001)
+  expect(fetchDashboardCurrent).toHaveBeenCalledTimes(2)
+  expect(fetchDashboardStatistics).toHaveBeenCalledOnce()
+  view!.unmount(); view=undefined
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(fetchDashboardCurrent).toHaveBeenCalledTimes(2)
+ } finally { vi.useRealTimers() }
+})
+
+it('renders independent trend amounts and currency while business statistics are pending', async () => {
+ vi.mocked(fetchDashboardStatistics).mockReturnValue(new Promise(() => {}))
+ vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'USD',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:2,renew_orders:0}]})
+ const wrapper = await open()
+ const chart = wrapper.get('.trend-shell')
+ expect(chart.text()).toContain('$7.00')
+ expect(chart.text()).toContain('USD')
+ expect(wrapper.findAll('.trend-point')).toHaveLength(1)
+ expect(wrapper.get('.trend-dot').classes()).toContain('active')
+ expect(wrapper.get('.trend-line').attributes('points')).not.toMatch(/NaN|Infinity/)
+})
+it('does not label mixed trend amounts with a separate statistics currency', async () => {
+ vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'',mixed_currency:true,trend:[{bucket_start:facts.period.from,revenue_cents:700,paid_orders:2,new_orders:2,renew_orders:0}]})
+ const wrapper = await open()
+ expect(wrapper.get('.trend-shell').text()).toContain('多币种')
+ expect(wrapper.get('.trend-legend').text()).toBe('订单量')
+ expect(wrapper.get('.trend-shell').text()).not.toContain('¥7.00')
+})
+
+it('draws a stable zero line and lets touch users inspect a bucket', async () => {
+ vi.mocked(fetchDashboardTrend).mockResolvedValue({period:facts.period,as_of:facts.as_of,currency:'CNY',mixed_currency:false,trend:[{bucket_start:facts.period.from,revenue_cents:0,paid_orders:0,new_orders:0,renew_orders:0},{bucket_start:facts.period.to,revenue_cents:0,paid_orders:0,new_orders:0,renew_orders:0}]})
+ const wrapper = await open()
+ expect(wrapper.get('.trend-line').attributes('points')).toBe('250,192 750,192')
+ expect(wrapper.find('.trend-bar').exists()).toBe(false)
+ await wrapper.findAll('.trend-point')[1].trigger('click'); await flushPromises()
+ expect(document.body.querySelector('.ui-tooltip-content')?.textContent).toContain('实收金额 ¥0.00')
+ expect(wrapper.find('.trend-crosshair').exists()).toBe(true)
 })

@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const KernelReconciliationTimeout = 10 * time.Minute
+
 type KernelReconciliationRequest struct {
 	NodeID, ActorID uint
 	Version         string
@@ -45,6 +47,10 @@ type PreparedKernelMaterialization interface {
 	Rollback(context.Context, uint) error
 }
 
+// Native config transactions own rollback. A lost confirmation must preserve
+// acknowledged runtime state rather than undoing a later publication.
+type RuntimePreservingMaterialization interface{ PreservesRuntimeOnFailure() bool }
+
 type KernelReconciliationPreparer interface {
 	PrepareKernelReconciliation(context.Context, uint) (PreparedKernelReconciliation, error)
 }
@@ -75,7 +81,7 @@ func (s KernelReconciliation) Reconcile(ctx context.Context, request KernelRecon
 	}
 	timeout := s.Timeout
 	if timeout <= 0 {
-		timeout = 10 * time.Minute
+		timeout = KernelReconciliationTimeout
 	}
 	executionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -170,6 +176,11 @@ func (s KernelReconciliation) execute(ctx context.Context, operation *KernelOper
 	}
 	binarySHA := materialization.BinarySHA256()
 	action := ClassifyKernelAction(probe, release.Version, binarySHA, configSHA)
+	// A matching runtime can belong to a previous occupant of this machine.
+	// First initialization must still establish ownership of persistent queues.
+	if action == "none" && activation.ConnectorSnapshot().LastSeenAt == nil {
+		action = "repair"
+	}
 	if action == "manual_review" && request.AllowDowngrade {
 		action = "downgrade"
 	}
@@ -209,6 +220,9 @@ func (s KernelReconciliation) execute(ctx context.Context, operation *KernelOper
 	}
 	activationStartedAt := time.Now().UTC()
 	if err := materialization.Install(ctx, operation.ID); err != nil {
+		if native, ok := materialization.(RuntimePreservingMaterialization); ok && native.PreservesRuntimeOnFailure() {
+			return KernelReconciliationResult{}, fmt.Errorf("%w; configuration outcome requires reconciliation; runtime and connector credential retained", err)
+		}
 		if credentialErr := restoreCredential(); credentialErr != nil {
 			return KernelReconciliationResult{}, fmt.Errorf("%w; generated connector credential rollback failed: %v", err, credentialErr)
 		}
@@ -218,6 +232,9 @@ func (s KernelReconciliation) execute(ctx context.Context, operation *KernelOper
 		return KernelReconciliationResult{}, err
 	}
 	rollbackAfterActivation := func(cause error) error {
+		if native, ok := materialization.(RuntimePreservingMaterialization); ok && native.PreservesRuntimeOnFailure() {
+			return fmt.Errorf("%w; acknowledged configuration retained for reconciliation without restart", cause)
+		}
 		rollbackErr := materialization.Rollback(context.WithoutCancel(ctx), operation.ID)
 		credentialErr := restoreCredential()
 		if rollbackErr != nil || credentialErr != nil {
@@ -281,6 +298,27 @@ func ClassifyKernelAction(probe KernelProbe, desiredVersion, desiredBinarySHA, d
 }
 
 func CompareKernelVersions(left, right string) int {
+	// The reviewed native line reset product numbering. Migration from the old
+	// 0.0.4..0.0.16 line to v0.0.3 is not a binary downgrade.
+	oldLine := func(v string) bool {
+		parts := strings.SplitN(strings.TrimPrefix(v, "v"), "-", 2)
+		core := strings.Split(parts[0], ".")
+		if len(core) != 3 || core[0] != "0" || core[1] != "0" {
+			return false
+		}
+		patch, err := strconv.Atoi(core[2])
+		return err == nil && patch >= 4 && patch <= 16
+	}
+	nativeLine := func(v string) bool {
+		return strings.TrimPrefix(v, "v") == "0.0.3" || strings.HasPrefix(strings.TrimPrefix(v, "v"), "0.0.3-")
+	}
+	if oldLine(left) && nativeLine(right) {
+		return -1
+	}
+	if nativeLine(left) && oldLine(right) {
+		return 1
+	}
+
 	type parsedVersion struct {
 		core       [3]int
 		prerelease []string

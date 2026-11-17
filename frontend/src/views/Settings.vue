@@ -1,27 +1,40 @@
 <template>
   <section class="standard-page">
-    <PageHeader :title="pageTitle" :description="pageDescription" eyebrow="Configuration" :show-section-navigation="false">
+    <PageHeader title="系统设置" workspace :show-section-navigation="false">
       <template #actions><PageRefreshButton label="刷新系统设置" :loading="loading" @click="reloadSettings" /></template>
     </PageHeader>
 
     <TransientFeedback :success="message" :error="error" success-title="系统设置已保存" error-title="设置操作失败" />
 
-    <SettingsPageLayout>
+    <PageAlert v-if="settingsDraftRecovery.message.value" tone="info" title="重新认证后的草稿">{{ settingsDraftRecovery.message.value }}<UiButton variant="ghost" type="button" @click="settingsDraftRecovery.restore()">重新检查草稿恢复</UiButton></PageAlert>
+    <PageAlert v-if="siteRecoveryConflict" tone="warning" title="站点身份已变化">原草稿仍可查看，保存已暂停。请刷新页面当前值后重新编辑。</PageAlert>
+    <PageAlert v-for="key in missingRecoveryKeys" :key="key" tone="warning" title="公开配置已不可编辑">{{ key }} 的原草稿已保留，不能提交。<pre>{{ drafts[key] }}</pre></PageAlert>
+    <SettingsPageLayout :title="pageTitle">
         <UiSection class="settings-shell">
         <div v-if="activeSection === 'site'" class="settings-panel stack-lg">
-          <UiSection title="站点身份" description="管理公开名称和访问地址；注册开关与验证方式已迁移到独立的“注册与验证”页面。">
-            <template #meta><StatusBadge :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
+          <UiSection title="站点身份" >
+            <template #meta><StatusBadge v-if="siteState.dirty.value" :tone="siteState.dirty.value ? 'warning' : 'info'" :icon="siteState.dirty.value ? 'edit' : 'info'">{{ siteState.dirty.value ? '有未保存修改' : '公开配置' }}</StatusBadge></template>
             <form ref="siteFormElement" class="panel-body stack" novalidate @submit.prevent="saveSiteSettings">
               <div class="form-grid">
                 <FormField v-slot="{ controlAttrs }" label="站点名称" name="settings-site-name" :error="siteErrors.fields.site_name" required><UiInput v-model.trim="form.site_name" v-bind="controlAttrs" maxlength="80" /></FormField>
-                <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接、canonical 地址和外部页面跳转。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
+                <FormField v-slot="{ controlAttrs }" label="公开访问地址" name="settings-site-url" hint="用于订阅链接和外部访问。" :error="siteErrors.fields.site_url" required><UiInput v-model.trim="form.site_url" v-bind="controlAttrs" type="url" /></FormField>
               </div>
               <PageAlert v-if="siteErrors.formError.value" tone="danger" title="站点设置未保存">{{ siteErrors.formError.value }}</PageAlert>
-              <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="!siteState.dirty.value">保存站点身份</UiButton></div>
+              <div class="form-actions"><UiButton type="submit" :loading="savingSite" :disabled="siteRecoveryConflict || !siteState.dirty.value">保存站点身份</UiButton></div>
             </form>
           </UiSection>
 
-          <UiSection title="视觉品牌" description="配置公开站点使用的 Logo 和浏览器图标。支持完整 HTTP/HTTPS URL 或 / 开头的站内资源路径。">
+          <UiSection title="货币">
+            <ConfigRow v-if="currencyConfig" :config="currencyConfig" :draft="drafts[currencyConfig.config_key]" :dirty="configDirty(currencyConfig)" :saving="savingKey === currencyConfig.config_key" :error="configErrors[currencyConfig.config_key]" :conflict="Boolean(configConflicts[currencyConfig.config_key])" @update:draft="updateDraft(currencyConfig.config_key, $event)" @reload="reloadConfig(currencyConfig.config_key)" @save="saveConfig(currencyConfig)" />
+          </UiSection>
+
+          <UiSection title="订阅入口">
+            <PageAlert v-if="!subscriptionEntryConfig?.value" tone="warning" title="订阅入口尚未配置">用户暂时无法获取订阅地址，请设置独立的站内路径前缀。</PageAlert>
+            <ConfigRow v-if="subscriptionEntryConfig" :config="subscriptionEntryConfig" :draft="drafts[subscriptionEntryConfig.config_key]" :dirty="configDirty(subscriptionEntryConfig)" :saving="savingKey === subscriptionEntryConfig.config_key" :error="configErrors[subscriptionEntryConfig.config_key]" :conflict="Boolean(configConflicts[subscriptionEntryConfig.config_key])" @update:draft="updateDraft(subscriptionEntryConfig.config_key, $event)" @reload="reloadConfig(subscriptionEntryConfig.config_key)" @save="saveConfig(subscriptionEntryConfig)" />
+          </UiSection>
+
+          <SettingsDisclosure title="视觉品牌" :dirty="groupDirty(siteVisualKeys)" :busy="savingGroup === 'visual'" :error="groupHasConflict(siteVisualKeys) || siteVisualKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="配置公开站点使用的 Logo 和浏览器图标。支持完整 HTTP/HTTPS URL 或 / 开头的站内资源路径。">
             <template #meta><StatusBadge v-if="groupDirty(siteVisualKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="site-config-layout">
               <div class="public-fields form-grid">
@@ -43,11 +56,13 @@
             </div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteVisualKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteVisualKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'visual'" :disabled="!groupDirty(siteVisualKeys)" @click="saveConfigGroup('visual', '视觉品牌', siteVisualKeys)">保存视觉品牌</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'visual'" :disabled="groupHasConflict(siteVisualKeys) || !groupDirty(siteVisualKeys)" @click="saveConfigGroup('visual', '视觉品牌', siteVisualKeys)">保存视觉品牌</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
 
-          <UiSection title="公开文案" description="只开放真正属于站点内容的文字；套餐、登录注册等固定业务动作仍由产品行为决定。">
+          <SettingsDisclosure title="公开文案" :dirty="groupDirty(siteContentKeys)" :busy="savingGroup === 'content'" :error="groupHasConflict(siteContentKeys) || siteContentKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="只开放真正属于站点内容的文字；套餐、登录注册等固定业务动作仍由产品行为决定。">
             <template #meta><StatusBadge v-if="groupDirty(siteContentKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="public-fields form-grid">
               <SettingsPublicField v-for="config in contentConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_desc' || config.config_key === 'site_home_title'" @update:draft="updateDraft(config.config_key, $event)" />
@@ -59,11 +74,13 @@
             </div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteContentKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContentKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'content'" :disabled="!groupDirty(siteContentKeys)" @click="saveConfigGroup('content', '公开文案', siteContentKeys)">保存公开文案</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'content'" :disabled="groupHasConflict(siteContentKeys) || !groupDirty(siteContentKeys)" @click="saveConfigGroup('content', '公开文案', siteContentKeys)">保存公开文案</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
 
-          <UiSection title="页脚与联系方式" description="配置公开 Footer 的版权、客服与社区入口。版权留空时自动使用当前年份和站点名称。">
+          <SettingsDisclosure title="页脚与联系方式" :dirty="groupDirty(siteContactKeys)" :busy="savingGroup === 'contact'" :error="groupHasConflict(siteContactKeys) || siteContactKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="配置公开 Footer 的版权、客服与社区入口。版权留空时自动使用当前年份和站点名称。">
             <template #meta><StatusBadge v-if="groupDirty(siteContactKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="public-fields form-grid">
               <SettingsPublicField v-for="config in contactConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :error="configErrors[config.config_key]" :full="config.config_key === 'site_footer_copyright'" @update:draft="updateDraft(config.config_key, $event)" />
@@ -71,11 +88,13 @@
             <div class="footer-preview"><strong>{{ previewProfile.name }}</strong><span>{{ previewProfile.copyright }}</span><span v-if="previewProfile.supportEmail">{{ previewProfile.supportEmail }}</span><span v-if="previewProfile.supportUrl">客服入口</span><span v-if="previewProfile.telegramUrl">Telegram</span></div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteContactKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteContactKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'contact'" :disabled="!groupDirty(siteContactKeys)" @click="saveConfigGroup('contact', '页脚与联系方式', siteContactKeys)">保存页脚与联系方式</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'contact'" :disabled="groupHasConflict(siteContactKeys) || !groupDirty(siteContactKeys)" @click="saveConfigGroup('contact', '页脚与联系方式', siteContactKeys)">保存页脚与联系方式</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
 
-          <UiSection title="搜索与分享" description="控制浏览器标题、搜索摘要和 OpenGraph 的基础文案；留空时自动回退到站点名称和站点描述。">
+          <SettingsDisclosure title="搜索与分享" :dirty="groupDirty(siteSeoKeys)" :busy="savingGroup === 'seo'" :error="groupHasConflict(siteSeoKeys) || siteSeoKeys.some(key => Boolean(configErrors[key]))">
+          <UiSection  description="控制浏览器标题、搜索摘要和 OpenGraph 的基础文案；留空时自动回退到站点名称和站点描述。">
             <template #meta><StatusBadge v-if="groupDirty(siteSeoKeys)" tone="warning" icon="edit">有未保存修改</StatusBadge></template>
             <div class="site-config-layout site-config-layout-seo">
               <div class="public-fields form-grid">
@@ -90,9 +109,10 @@
             </div>
             <div class="section-actions">
               <UiButton v-if="groupHasConflict(siteSeoKeys)" variant="ghost" type="button" :disabled="Boolean(savingGroup)" @click="reloadConfigGroup(siteSeoKeys)"><UiIcon name="refresh" />重新载入冲突项</UiButton>
-              <UiButton type="button" :loading="savingGroup === 'seo'" :disabled="!groupDirty(siteSeoKeys)" @click="saveConfigGroup('seo', '搜索与分享', siteSeoKeys)">保存搜索与分享</UiButton>
+              <UiButton type="button" :loading="savingGroup === 'seo'" :disabled="groupHasConflict(siteSeoKeys) || !groupDirty(siteSeoKeys)" @click="saveConfigGroup('seo', '搜索与分享', siteSeoKeys)">保存搜索与分享</UiButton>
             </div>
           </UiSection>
+          </SettingsDisclosure>
         </div>
 
         <div v-else-if="activeSection === 'legal'" class="settings-panel stack-lg">
@@ -129,31 +149,40 @@
         </div>
 
         <div v-else-if="activeSection === 'email'" class="settings-panel stack-lg">
-          <UiSection title="SMTP 投递通道" description="保存配置后，可先验证连接与 TLS/认证，再向指定邮箱投递一封完整测试邮件。">
-            <template #meta><span class="config-count">{{ emailConfigs.length }} 项</span></template>
+          <UiSection title="邮件服务器" description="保存配置后可测试连接或发送测试邮件。">
+
             <div v-if="emailConfigs.length" class="config-list"><ConfigRow v-for="config in emailConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
             <EmptyState v-else icon="audit" title="没有邮件配置" description="系统当前未返回可编辑的邮件或通知参数。" />
             <PageAlert v-if="emailConfigDirty" tone="warning" title="先保存 SMTP 修改">连通性测试始终使用服务端已保存的配置，当前草稿不会被发送到测试接口。</PageAlert>
-            <div class="smtp-test-recipient"><FormField v-slot="{ controlAttrs }" label="测试邮件收件地址" name="smtp-test-recipient" hint="仅用于本次完整投递测试，不会保存为系统配置。" :error="smtpTestRecipientError"><UiInput v-model.trim="smtpTestRecipient" v-bind="controlAttrs" type="email" placeholder="recipient@example.com" /></FormField></div>
+            <div class="smtp-test-recipient"><FormField v-slot="{ controlAttrs }" label="测试邮件收件地址" name="smtp-test-recipient" hint="仅用于本次测试。" :error="smtpTestRecipientError"><UiInput v-model.trim="smtpTestRecipient" v-bind="controlAttrs" type="email" placeholder="recipient@example.com" /></FormField></div>
             <div class="section-actions smtp-test-actions">
-              <span>连接测试不发送邮件；完整投递测试发送到上方地址。</span>
+
               <UiButton variant="secondary" type="button" :loading="smtpTesting === 'connection'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('connection')"><UiIcon name="refresh" />测试连接</UiButton>
               <UiButton type="button" :loading="smtpTesting === 'delivery'" :disabled="Boolean(smtpTesting) || emailConfigDirty" @click="runSMTPTest('delivery')"><UiIcon name="audit" />发送测试邮件</UiButton>
             </div>
           </UiSection>
 
-          <UiSection title="订阅告警" description="发送给订阅用户，各类默认关闭。需先启用运营邮件并配置 SMTP。">
+          <SettingsDisclosure title="订阅提醒" :dirty="alertConfigs.some(configDirty)" :busy="alertConfigs.some(config => savingKey === config.config_key)" :error="alertConfigs.some(config => Boolean(configErrors[config.config_key] || configConflicts[config.config_key]))">
+          <UiSection description="发送给订阅用户，各类默认关闭。">
             <div class="config-list"><ConfigRow v-for="config in alertConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
             <p class="muted">每个周期或到期阶段只提醒一次，同一用户共用频率限制。续费、恢复余量或关闭开关后，旧提醒会取消。投递结果可在运营任务中查看。</p>
           </UiSection>
 
-          <UiSection title="运营邮件模板" description="模板只负责可复用内容；真正的收件人、发送时机和执行进度在运营任务中确定。">
+          </SettingsDisclosure>
+          <SettingsDisclosure title="邮件模板" :dirty="emailTemplateDirty">
             <EmailTemplateManager mode="operational" @dirty="emailTemplateDirty = $event" />
-          </UiSection>
+          </SettingsDisclosure>
         </div>
 
         <div v-else class="settings-panel stack-lg">
-          <UiSection title="安全边界" description="敏感凭证不属于浏览器设置，不会在这里读取或回显。">
+          <UiSection id="account-cleanup" title="账号自动清理" description="默认0关闭。开启后，已有账号也适用；连续无有效订阅达到配置天数后永久删除，无法恢复。管理员、有余额或未结业务的账号受保护，历史结算与流量账本保留。">
+            <ConfigRow v-if="accountCleanupConfig" :config="accountCleanupConfig" :draft="drafts[accountCleanupConfig.config_key]" :dirty="configDirty(accountCleanupConfig)" :saving="savingKey === accountCleanupConfig.config_key" :error="configErrors[accountCleanupConfig.config_key]" :conflict="Boolean(configConflicts[accountCleanupConfig.config_key])" @update:draft="updateDraft(accountCleanupConfig.config_key, $event)" @reload="reloadConfig(accountCleanupConfig.config_key)" @save="saveConfig(accountCleanupConfig)" />
+          </UiSection>
+          <UiSection v-if="retentionConfigs.length" title="日志与自动清理">
+            <div class="config-list"><ConfigRow v-for="config in retentionConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+          </UiSection>
+          <SettingsDisclosure title="部署安全信息">
+          <UiSection description="敏感凭证由部署环境管理。">
             <template #meta><UiIcon class="security-header" name="shield" /></template>
             <div class="panel-body security-list">
               <div><span><UiIcon name="database" /></span><div><strong>数据库凭证</strong><p>由部署环境变量管理</p></div><StatusBadge tone="success">受保护</StatusBadge></div>
@@ -162,6 +191,14 @@
             </div>
           </UiSection>
 
+          </SettingsDisclosure>
+          <UiSection v-if="recoveryConfigs.length" title="订阅续费恢复" description="到期后停服，窗口内可续费恢复；超过窗口自动删除订阅、链接和运行配置，历史订单与账务保留。0 天表示到期即删除；已取消订阅直接清理。">
+            <div class="config-list"><ConfigRow v-for="config in recoveryConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+          </UiSection>
+
+          <UiSection v-if="credentialMaterialConfigs.length" title="订阅连接凭证" description="新订阅可使用合并凭证；存量订阅在详情中逐步迁移。兼容窗口从节点确认后开始。">
+            <div class="config-list"><ConfigRow v-for="config in credentialMaterialConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+          </UiSection>
           <UiSection title="运行参数" description="系统时区、数据保留策略和其他服务端运行行为。">
             <template #meta><span class="config-count">{{ otherConfigs.length }} 项</span></template>
             <div v-if="otherConfigs.length" class="config-list"><ConfigRow v-for="config in otherConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
@@ -174,6 +211,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingsDisclosure from '../components/SettingsDisclosure.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchSystemConfigs, testSMTP, updateSiteSettings, updateSystemConfig, type SystemConfig } from '../api/client'
@@ -190,6 +228,8 @@ import StatusBadge from '../components/StatusBadge.vue'
 import TransientFeedback from '../components/TransientFeedback.vue'
 import UiIcon from '../components/UiIcon.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
+import { useReauthenticationDraft } from '../composables/useReauthenticationDraft'
+import { recoverableLegalKeys, recoverableSiteKeys, settingsRecoveryDraft, settingsRecoveryValueType, type SiteBaseline } from '../utils/settingsReauthenticationDraftSchemas'
 import { useAppStore } from '../stores/app'
 import { normalizeApiErrorMessage } from '../utils/apiError'
 import { confirmAction } from '../utils/feedback'
@@ -200,7 +240,7 @@ import { collectFieldErrors, isEmail, isHttpUrl, isUtf8LengthInRange } from '../
 const app = useAppStore()
 const route = useRoute()
 const activeSection = computed(() => String(route.meta.settingsSection || 'site'))
-const pageTitle = computed(() => ({ site: '站点与品牌', legal: '法务与政策', email: '邮件与运营模板', runtime: '系统运行' } as Record<string, string>)[activeSection.value] || '系统设置')
+const pageTitle = computed(() => ({ site: '站点设置', legal: '服务条款', email: '邮件通知', runtime: '运行参数' } as Record<string, string>)[activeSection.value] || '系统设置')
 const pageDescription = computed(() => ({
   site: '管理公开站点身份、视觉品牌、首页文案、联系方式与搜索展示。',
   legal: '维护公开政策文档、发布位置以及地区所需的法律与注册信息。',
@@ -225,29 +265,84 @@ const form = reactive({ site_name: '', site_url: '', allow_registration: true })
 const siteFormElement = ref<HTMLElement | null>(null)
 const siteErrors = useFormErrors()
 const siteState = useDirtyForm(() => form)
+const recoveryReady = ref(false)
+const siteRecoveryConflict = ref(false)
+const siteDraftBaseline = ref<SiteBaseline>({ ...form })
+const missingRecoveryKeys = ref<string[]>([])
+const configRecoveryOrigins = new Map<string, { baseline: string; revision: number }>()
+const settingsDraftRecovery = useReauthenticationDraft({
+  scope: 'admin.settings.public', permission: 'admin', ready: () => recoveryReady.value,
+  read: () => {
+    const keys = activeSection.value === 'site' ? recoverableSiteKeys : activeSection.value === 'legal' ? recoverableLegalKeys : null
+    if (!keys) return null
+    const entries: Array<{ key: string; value: unknown; baseline: unknown; revision: number }> = []
+    for (const key of keys) {
+      const config = configForKey(key)
+      const origin = configRecoveryOrigins.get(key)
+      if (origin) entries.push({ key, value: drafts[key], ...origin })
+      else if (config && config.is_public && !config.is_secret && config.value_type === settingsRecoveryValueType(key) && configDirty(config)) {
+        entries.push({ key, value: drafts[key], baseline: configValue(config), revision: config.revision })
+      }
+    }
+    const siteDirty = activeSection.value === 'site' && siteState.dirty.value
+    return siteDirty || entries.length ? { site: siteDirty ? { site_name: form.site_name, site_url: form.site_url, baseline: siteDraftBaseline.value } : null, configs: entries } : null
+  },
+  sanitize: settingsRecoveryDraft,
+  restore: value => {
+    const keys: readonly string[] = activeSection.value === 'site' ? recoverableSiteKeys : activeSection.value === 'legal' ? recoverableLegalKeys : []
+    if (value.site && activeSection.value !== 'site' || value.configs.some(item => !keys.includes(item.key))) return false
+    if (value.site) {
+      siteRecoveryConflict.value = !sameValue(value.site.baseline, siteDraftBaseline.value)
+      form.site_name = value.site.site_name; form.site_url = value.site.site_url
+      siteDraftBaseline.value = value.site.baseline
+    }
+    for (const item of value.configs) {
+      const config = configForKey(item.key)
+      const conflict = !config || !config.is_public || config.is_secret || config.value_type !== settingsRecoveryValueType(item.key) || config.revision !== item.revision || configValue(config) !== item.baseline
+      configRecoveryOrigins.set(item.key, { baseline: item.baseline, revision: item.revision })
+      drafts[item.key] = item.value
+      if (conflict) {
+        configConflicts[item.key] = true
+        configErrors[item.key] = '草稿基于旧版本，已保留内容。请重新载入当前值后再编辑。'
+        if (!config || !config.is_public || config.is_secret || config.value_type !== settingsRecoveryValueType(item.key)) missingRecoveryKeys.value.push(item.key)
+      }
+    }
+  },
+})
 
 const hiddenSiteKeys = new Set(['site_name', 'site_url', 'register_switch'])
-const deprecatedSiteKeys = new Set(['site_terms_url', 'site_privacy_url', 'site_refund_url', 'site_home_primary_cta'])
+const deprecatedSiteKeys = new Set(['subscribe_url', 'site_terms_url', 'site_privacy_url', 'site_refund_url', 'site_home_primary_cta'])
 const legacyPolicyKeys = new Set(['site_terms_content', 'site_privacy_content', 'site_refund_content'])
 const policyDocumentsKeys = new Set(['site_policy_documents'])
 const legalMetadataKeys = new Set(['site_legal_items'])
 const registrationKeys = new Set(['register_email_verification'])
-const dedicatedOperationsKeys = new Set(['maintenance_enabled', 'maintenance_title', 'maintenance_message', 'maintenance_task_id'])
+const dedicatedOperationsKeys = new Set(['subscription_url_prefix', 'user_cleanup_inactive_days', 'maintenance_enabled', 'maintenance_title', 'maintenance_message', 'maintenance_task_id'])
 const siteVisualKeys = ['site_logo', 'site_logo_dark', 'site_favicon']
 const siteContentKeys = ['site_desc', 'site_home_kicker', 'site_home_title']
 const siteContactKeys = ['site_footer_copyright', 'site_support_email', 'site_support_url', 'site_telegram_url']
 const siteSeoKeys = ['site_meta_title', 'site_meta_description']
 const sitePresentationKeys = new Set([...siteVisualKeys, ...siteContentKeys, ...siteContactKeys, ...siteSeoKeys])
-const publicSiteKeys = new Set([...sitePresentationKeys, ...legacyPolicyKeys, ...policyDocumentsKeys, ...legalMetadataKeys])
+const publicSiteKeys = new Set(['default_currency', ...sitePresentationKeys, ...legacyPolicyKeys, ...policyDocumentsKeys, ...legalMetadataKeys])
 const operationalConfigs = computed(() => configs.value
   .filter(item => !hiddenSiteKeys.has(item.config_key) && !deprecatedSiteKeys.has(item.config_key))
   .sort((a, b) => a.id - b.id))
 const policyDocumentsConfig = computed(() => operationalConfigs.value.find(item => policyDocumentsKeys.has(item.config_key)))
 const legalMetadataConfig = computed(() => operationalConfigs.value.find(item => legalMetadataKeys.has(item.config_key)))
-const alertConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')))
-const emailConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)))
+const smtpFieldOrder = ['task_email_enabled', 'smtp_host', 'smtp_port', 'smtp_tls_mode', 'smtp_username', 'smtp_password', 'smtp_from']
+const alertFieldOrder = ['subscription_alert_low_enabled', 'subscription_alert_remaining_percent', 'subscription_alert_exhausted_enabled', 'subscription_alert_expiring_enabled', 'subscription_alert_expiring_days', 'subscription_alert_expired_enabled', 'subscription_alert_interval_hours']
+function orderSettings(items: SystemConfig[], order: string[]) {
+  return [...items].sort((a,b) => (order.indexOf(a.config_key) < 0 ? order.length : order.indexOf(a.config_key)) - (order.indexOf(b.config_key) < 0 ? order.length : order.indexOf(b.config_key)))
+}
+const alertConfigs = computed(() => orderSettings(operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_alert_')), alertFieldOrder))
+const emailConfigs = computed(() => orderSettings(operationalConfigs.value.filter(item => !retentionConfigs.value.includes(item) && !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && /smtp|email/i.test(item.config_key)), smtpFieldOrder))
 const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
-const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && !/smtp|email/i.test(item.config_key)))
+const currencyConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'default_currency'))
+const subscriptionEntryConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'subscription_url_prefix'))
+const accountCleanupConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'user_cleanup_inactive_days'))
+const credentialMaterialConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_credential_')))
+const recoveryConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key === 'subscription_renewal_grace_days'))
+const retentionConfigs = computed(() => operationalConfigs.value.filter(item => /_retention_days$/.test(item.config_key) || item.config_key === 'history_cleanup_interval_minutes'))
+const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && !item.config_key.startsWith('subscription_credential_') && item.config_key !== 'subscription_renewal_grace_days' && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))
 const contactConfigs = computed(() => configsForKeys(siteContactKeys))
@@ -323,6 +418,7 @@ function updateDraft(key: string, value: unknown) {
 async function loadConfigs() {
   const next = await fetchSystemConfigs()
   configs.value = next
+  configRecoveryOrigins.clear()
   for (const key of Object.keys(drafts)) delete drafts[key]
   for (const key of Object.keys(configErrors)) delete configErrors[key]
   for (const key of Object.keys(configConflicts)) delete configConflicts[key]
@@ -330,6 +426,7 @@ async function loadConfigs() {
 }
 
 async function loadAllData() {
+  recoveryReady.value = false
   loading.value = true; error.value = ''
   try {
     const [settings] = await Promise.all([app.loadSetupStatus(true), loadConfigs()])
@@ -338,6 +435,8 @@ async function loadAllData() {
     form.allow_registration = settings?.allow_registration ?? true
     siteErrors.clear()
     siteState.markClean()
+    siteDraftBaseline.value = { ...form }; siteRecoveryConflict.value = false; missingRecoveryKeys.value = []
+    recoveryReady.value = Boolean(settings)
   }
   catch (e: any) { error.value = e?.response?.data?.message || '系统设置加载失败。' }
   finally { loading.value = false }
@@ -354,6 +453,7 @@ async function reloadSettings() {
 }
 
 async function saveSiteSettings() {
+  if (siteRecoveryConflict.value) return
   form.site_name = form.site_name.trim()
   form.site_url = form.site_url.trim().replace(/\/+$/, '')
   const valid = await siteErrors.applyValidation(collectFieldErrors({
@@ -367,6 +467,7 @@ async function saveSiteSettings() {
     await app.loadSetupStatus(true)
     await app.loadPublicConfigs()
     siteState.markClean()
+    siteDraftBaseline.value = { ...form }
     message.value = '站点身份已保存。'
   } catch (e: any) {
     await siteErrors.applyApiError(e, '站点设置保存失败。', siteFormElement, { site_name: 'site_name', site_url: 'site_url' })
@@ -377,12 +478,15 @@ function applyUpdatedConfig(updated: SystemConfig) {
   const index = configs.value.findIndex(item => item.config_key === updated.config_key)
   if (index >= 0) configs.value[index] = updated
   drafts[updated.config_key] = configValue(updated)
+  configRecoveryOrigins.delete(updated.config_key)
+  missingRecoveryKeys.value = missingRecoveryKeys.value.filter(key => key !== updated.config_key)
   delete configConflicts[updated.config_key]
   delete configErrors[updated.config_key]
 }
 
 async function saveConfig(config: SystemConfig) {
   const key = config.config_key
+  if (configConflicts[key]) return
   if (!configDirty(config)) return
   message.value = ''; delete configErrors[key]
   const normalized = normalizeSystemConfigDraft(config, drafts[key])
@@ -392,6 +496,7 @@ async function saveConfig(config: SystemConfig) {
     document.getElementById(`${key}-control`)?.focus()
     return
   }
+  if (key === 'user_cleanup_inactive_days' && Number(normalized.value) > 0 && !await confirmAction({title: '启用账号自动硬删除', message: `连续 ${normalized.value} 天无有效订阅且符合条件的已有及新账号将被永久删除，无法恢复。确认启用？`, confirmText: '启用自动删除', tone: 'danger'})) return
   savingKey.value = key
   try {
     const updated = await updateSystemConfig(key, normalized.value, config.revision)
@@ -409,6 +514,7 @@ async function saveConfig(config: SystemConfig) {
 }
 
 async function saveConfigGroup(group: string, label: string, keys: readonly string[]) {
+  if (groupHasConflict(keys)) return
   const candidates = configsForKeys(keys).filter(configDirty)
   if (!candidates.length) return
   message.value = ''; error.value = ''
@@ -514,20 +620,20 @@ onMounted(async () => { smtpTestRecipient.value = app.user.email || ''; await lo
 .site-config-layout .public-fields { padding-right: 0; }
 .brand-preview { display: grid; gap: 10px; margin: 16px 16px 16px 0; }
 .brand-preview__surface { min-height: 116px; display: grid; align-content: center; justify-items: start; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.brand-preview__surface small { font-size: 9px; opacity: .68; }
+.brand-preview__surface small { font-size:12px; opacity: .68; }
 .brand-preview__surface img { display: block; width: auto; max-width: 190px; max-height: 48px; object-fit: contain; }
 .brand-preview__surface-light { background: var(--brand-preview-light-surface); color: var(--brand-preview-light-text); }
 .brand-preview__surface-dark { background: var(--brand-preview-dark-surface); color: var(--brand-preview-dark-text); }
-.brand-preview__fallback { display: flex; align-items: center; gap: 9px; }.brand-preview__fallback span { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 9px; font-weight: 800; }.brand-preview__fallback strong { font-size: 13px; }
-.favicon-preview { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); color: var(--muted); font-size: 10px; }.favicon-preview img,.favicon-preview i { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 5px; object-fit: contain; background: var(--surface); color: var(--text); font-style: normal; font-weight: 800; }
+.brand-preview__fallback { display: flex; align-items: center; gap: 9px; }.brand-preview__fallback span { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 9px; font-weight:600; }.brand-preview__fallback strong { font-size: 13px; }
+.favicon-preview { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); color: var(--muted); font-size:12px; }.favicon-preview img,.favicon-preview i { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 5px; object-fit: contain; background: var(--surface); color: var(--text); font-style: normal; font-weight:600; }
 .section-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 16px; }
-.smtp-test-actions{align-items:center;flex-wrap:wrap;padding-top:14px}.smtp-test-actions>span{margin-right:auto;color:var(--muted);font-size:10px}.smtp-test-actions strong{color:var(--text)}
+.smtp-test-actions{align-items:center;flex-wrap:wrap;padding-top:14px}.smtp-test-actions>span{margin-right:auto;color:var(--muted);font-size:12px}.smtp-test-actions strong{color:var(--text)}
 .smtp-test-recipient{max-width:520px;padding:14px 16px 0}
-.copy-preview { display: grid; gap: 7px; margin: 0 16px 16px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.copy-preview span { color: var(--primary); font-size: 10px; font-weight: 700; }.copy-preview strong { max-width: 760px; font-size: 18px; line-height: 1.35; }.copy-preview p { max-width: 760px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
-.footer-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin: 0 16px 16px; padding: 13px 15px; border-radius: 9px; background: var(--brand-preview-dark-surface); color: var(--brand-preview-dark-text); }.footer-preview strong { font-size: 12px; }.footer-preview span { color: var(--brand-preview-dark-muted); font-size: 9px; }
+.copy-preview { display: grid; gap: 7px; margin: 0 16px 16px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.copy-preview span { color: var(--primary); font-size:12px; font-weight:600; }.copy-preview strong { max-width: 760px; font-size: 18px; line-height: 1.35; }.copy-preview p { max-width: 760px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.footer-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin: 0 16px 16px; padding: 13px 15px; border-radius: 9px; background: var(--brand-preview-dark-surface); color: var(--brand-preview-dark-text); }.footer-preview strong { font-size: 12px; }.footer-preview span { color: var(--brand-preview-dark-muted); font-size:12px; }
 .site-config-layout-seo { grid-template-columns: minmax(0, 1fr) minmax(280px, .7fr); }
-.search-preview { display: grid; gap: 4px; margin: 16px 16px 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }.search-preview small { margin-bottom: 7px; color: var(--muted); font-size: 9px; }.search-preview span { color: var(--success); font-size: 10px; overflow-wrap: anywhere; }.search-preview strong { color: var(--primary); font-size: 16px; font-weight: 500; line-height: 1.3; }.search-preview p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.security-header { color: var(--success); font-size: 20px; }.security-list { display: grid; gap: 4px; }.security-list > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 0; }.security-list > div + div { border-top: 1px solid var(--line); }.security-list > div > span:first-child { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--success); background: var(--success-soft); }.security-list strong { font-size: 12px; }.security-list p { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
+.search-preview { display: grid; gap: 4px; margin: 16px 16px 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }.search-preview small { margin-bottom: 7px; color: var(--muted); font-size:12px; }.search-preview span { color: var(--success); font-size:12px; overflow-wrap: anywhere; }.search-preview strong { color: var(--primary); font-size: 16px; font-weight: 500; line-height: 1.3; }.search-preview p { margin: 0; color: var(--muted); font-size:12px; line-height: 1.5; }
+.security-header { color: var(--success); font-size: 20px; }.security-list { display: grid; gap: 4px; }.security-list > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 0; }.security-list > div + div { border-top: 1px solid var(--line); }.security-list > div > span:first-child { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--success); background: var(--success-soft); }.security-list strong { font-size: 12px; }.security-list p { margin: 2px 0 0; color: var(--muted); font-size:12px; }
 .config-count { color: var(--muted); font-size: 12px; }.config-list { display: grid; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }.policy-editors { display: grid; gap: 16px; padding: 16px; }
 :deep(.config-row) { display: grid; grid-template-columns: minmax(260px, 1.2fr) minmax(220px, .8fr) auto; align-items: center; gap: 16px; padding: 14px; background: var(--surface); }:deep(.config-row + .config-row) { border-top: 1px solid var(--line); }
 @media (max-width: 900px) { .site-config-layout,.site-config-layout-seo { grid-template-columns: 1fr; }.site-config-layout .public-fields { padding-right: 16px; }.brand-preview,.search-preview { margin: 0 16px 16px; } }

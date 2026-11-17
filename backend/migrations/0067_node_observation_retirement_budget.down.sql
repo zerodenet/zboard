@@ -1,0 +1,4 @@
+-- Intentionally retain the budget, compact receipts, partial SHA/delete
+-- checkpoints and migration receipt. Removing them can reuse retired optional
+-- sources or forget currently retained bytes. Rollback requires quiescent
+-- writers and a coherent pre0067 restore; no destructive down is provided.

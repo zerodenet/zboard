@@ -1,0 +1,1006 @@
+{
+  "status": "TARGETED_VERIFIED_INTEGRATED_FULL_CHECKS_PENDING",
+  "prepared_utc": "2026-10-21T02:07:33.070529+00:00",
+  "source_base": "0f491e151079ca88b224d86baaeeae6a9211b120",
+  "source_sha256": {
+    "backend/internal/adapters/persistence/networkstore/event_credential.go": "952b64380483bd19e3df0f7b537763c514669ab5d040dc1db88e2ebef6fbdc5c",
+    "backend/internal/adapters/persistence/networkstore/node_asset_identity_test.go": "b687e0f736186104e00c24dc4f5da6b385ecd1f70c62274def194b76fd40139c",
+    "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go": "723a99e18235cb185e50eb0a40316251627b876c67b5e87927c93cdd9e8861b7",
+    "backend/internal/capabilities/network/event_credential.go": "dc72ca9c6dba5fbd2f91616a4ac9b9b0d26499ca320b9e4f60499e015c403bb3",
+    "backend/internal/capabilities/network/node_observation.go": "d7242bbe8c55634b024582fa2c925c13d7c5b5361c9a50e54811f4ae96314194",
+    "backend/internal/datastore/database_copy.go": "3b8917bedca4d6d29b2866a8277b9cfd4848192ffa30e1107848a059971fc930",
+    "backend/internal/datastore/migrations.go": "9e3a7e9d98ff9659d585f97a94e685caf09ab917f886250bb118fa43dd884188",
+    "backend/internal/datastore/migrations_test.go": "18c3c8ea734cd5d4973202aded10e5bd06dd8fbe85577fb2380d854502adce0f",
+    "backend/internal/datastore/node_asset_migration_test.go": "3e4aeb4c97e43cb3b8fb4a8ecd5ad16f8ff6c983e1e4c705f9e264c481e5ae1b",
+    "backend/internal/datastore/node_asset_schema.go": "3dc31741d1985bd4403d8b3e2ce4cdc2f0d380832dbf36ec6ff706ad92aa31a2",
+    "backend/internal/datastore/node_asset_schema_test.go": "8094ba066c8559ea5d55bfc74dd1bdeaeb4918d032945e64f1ac6fee6d9dc7ee",
+    "backend/internal/handler/zero_event_asset_test.go": "7a5f1ab0d5bc1a695ba74facb7c3d36b9c325f5505f98cd1d4367794b01f61bf",
+    "backend/internal/handler/zero_event_projection_window.go": "ebaee019b22dcb9ebb0d7af21ff2fc664ee1804efbe3170208cb95269fd3c7d5",
+    "backend/internal/handler/zero_event_runtime.go": "ab598e27b058ad383569047446e3fd9b432f95e7098f305b3af74e710f3bfe88",
+    "backend/internal/model/models.go": "c5e482d9a397bbf6b0f31545ecd02ac916aaad4456c3853ce368469e827e72f4",
+    "backend/internal/model/node_asset_identity.go": "126777dac0ac0a3f07f3c31f614855a25997621351d509283a498b8081805359",
+    "backend/internal/model/node_asset_identity_test.go": "fdcccd4c4c4cc0750cd0084ef8190f349a532be45cfc4eec6e022ca870bf6d44",
+    "backend/internal/zeroevent/file_compaction.go": "49e1ad4c1430564965b3c0dc27192f30edcdaa877149eba4d8065c4cabbca905",
+    "backend/internal/zeroevent/node_asset_identity_test.go": "57018f75968487b678e933f75ae800660155d124517ac482141d42eb9e1c99d9",
+    "backend/internal/zeroevent/spool.go": "3a7271e3b68a54ab20151e584c258360d6e934a2b56aeefdf1adbd593107c11c",
+    "backend/migrations/0059_node_asset_identity.down.sql": "139666fd5a69b9f95a00af55317bb34706a81302e32f2f0354a65fd01a3f35f9",
+    "backend/migrations/0059_node_asset_identity.up.sql": "e1db53f6e7f3755058888731593036dd49e2b8f1f5055c1b58c2ae888a6893b2",
+    "backend/migrations/sqlite/0059_node_asset_identity.sql": "417b710818f8f6f7a235b47624133bbbdef741c1037936059a36a91d639944a4"
+  },
+  "scope": "P3/P4 asset admission foundation; not observation fencing or independent auxiliary projection",
+  "environment": {
+    "location": "original zboard cloud workspace",
+    "go": "1.26.8",
+    "GOMAXPROCS": 1,
+    "parallel_packages": 1,
+    "mysql": "actual isolated MySQL 8.4; random databases; DSN child environment only",
+    "timeouts": "original Go default; no broadened timeout or exclusions"
+  },
+  "published_sql_unchanged_count": 148,
+  "runs": [
+    {
+      "private_receipt": "root-pure-attempt1/receipt.json",
+      "receipt_sha256": "da2aedf64e3212984f7695d86a5eea04b601f5163367f9559db99d8789234e12",
+      "status": "PASS",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [
+        "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go",
+        "backend/internal/datastore/node_asset_migration_test.go",
+        "backend/internal/handler/zero_event_asset_test.go"
+      ],
+      "cases": [
+        {
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 20.111,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestCompactedCodecWritersRetainAssetAndLegacyMaterials",
+            "TestNodeAssetCopyClassifiesLegacyCurrentAndLostReceipt",
+            "TestNodeAssetEntropyFailureIsNotAnIdentity",
+            "TestNodeAssetLabelsAreServerGeneratedAndHidden",
+            "TestNodeAssetMetadataFailuresNeverInitializeOrRecord",
+            "TestNodeAssetRejectsQuotedNonemptySchemaDefault",
+            "TestNodeAssetSpoolAppendCloseAndCheckpointRecovery",
+            "TestSQLiteNodeAssetDefaultQuoteIsRealNonemptyValue",
+            "TestSemanticCompactionPreservesMixedAssetLineage",
+            "TestVersionOneAssetStampRoundTripAndLegacyUnknown"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:49:53.730822+00:00",
+          "finished_utc": "2026-10-21T01:50:13.842020+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^(TestNodeAssetLabelsAreServerGeneratedAndHidden|TestNodeAssetEntropyFailureIsNotAnIdentity|TestNodeAssetCopyClassifiesLegacyCurrentAndLostReceipt|TestNodeAssetMetadataFailuresNeverInitializeOrRecord|TestNodeAssetRejectsQuotedNonemptySchemaDefault|TestSQLiteNodeAssetDefaultQuoteIsRealNonemptyValue|TestVersionOneAssetStampRoundTripAndLegacyUnknown|TestSemanticCompactionPreservesMixedAssetLineage|TestCompactedCodecWritersRetainAssetAndLegacyMaterials|TestNodeAssetSpoolAppendCloseAndCheckpointRecovery)$",
+            "./internal/model",
+            "./internal/datastore",
+            "./internal/zeroevent"
+          ],
+          "raw_log_sha256": "e4718e79dd703a94ed6d9d3470cf72bca33e42b82c36c6917762ab14b6901c50",
+          "passed_top_level_executions": 10
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-controls-attempt1/receipt.json",
+      "receipt_sha256": "1ff29c116c0e7887ea1c8ae7a467b7c1def020ab4ec6d3fe759ab33d65055240",
+      "status": "STOPPED_UNEXPECTED_FAILURE",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [
+        "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go",
+        "backend/internal/datastore/node_asset_migration_test.go",
+        "backend/internal/handler/zero_event_asset_test.go"
+      ],
+      "cases": [
+        {
+          "name": "old-compaction",
+          "status": "EXPECTED_ASSERTION_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 1.137,
+          "expected_assertion": "mixed lineage removed or reordered source facts",
+          "failed": [
+            "TestSemanticCompactionPreservesMixedAssetLineage/flow.updated/asset-b",
+            "TestSemanticCompactionPreservesMixedAssetLineage/flow.updated/",
+            "TestSemanticCompactionPreservesMixedAssetLineage/stats.sampled/asset-b",
+            "TestSemanticCompactionPreservesMixedAssetLineage/stats.sampled/",
+            "TestSemanticCompactionPreservesMixedAssetLineage",
+            "github.com/zerodenet/zboard/backend/internal/zeroevent"
+          ],
+          "skipped": [],
+          "passed_top_level": [],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:55:55.923583+00:00",
+          "finished_utc": "2026-10-21T01:55:57.061237+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/file_compaction.json",
+            "-run",
+            "^TestSemanticCompactionPreservesMixedAssetLineage$",
+            "./internal/zeroevent"
+          ],
+          "raw_log_sha256": "4c28bad280b4b6230f70822aaaf4d82f1e22ee39d5dbd2514825c6febe0cbbd9",
+          "passed_top_level_executions": 0
+        },
+        {
+          "name": "old-flow-reduction",
+          "status": "EXPECTED_ASSERTION_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 27.65,
+          "expected_assertion": "A/B/A merged across a label transition",
+          "failed": [
+            "TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay/asset-b",
+            "TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay/#00",
+            "TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay",
+            "TestMixedAssetOtherFlowCannotReorderEarlierSample",
+            "github.com/zerodenet/zboard/backend/internal/handler"
+          ],
+          "skipped": [],
+          "passed_top_level": [],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:55:57.063651+00:00",
+          "finished_utc": "2026-10-21T01:56:24.714469+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/zero_event_projection_window.json",
+            "-run",
+            "^(TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay|TestMixedAssetOtherFlowCannotReorderEarlierSample)$",
+            "./internal/handler"
+          ],
+          "raw_log_sha256": "bc3a46430d8b894b3ffbc5d79a379e70887521d876459822b0b1219560da18a2",
+          "passed_top_level_executions": 0
+        },
+        {
+          "name": "old-http-capture",
+          "status": "UNEXPECTED_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 17.694,
+          "expected_assertion": "wire/current row replaced captured asset or narrowed CoreID",
+          "failed": [
+            "TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode",
+            "github.com/zerodenet/zboard/backend/internal/handler"
+          ],
+          "skipped": [],
+          "passed_top_level": [],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:56:24.717145+00:00",
+          "finished_utc": "2026-10-21T01:56:42.412023+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/zero_event_runtime.json",
+            "-run",
+            "^TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode$",
+            "./internal/handler"
+          ],
+          "raw_log_sha256": "da7e295d148de15516b19c5661f430b7a19b325bf6b39a2a65e11d30662d10d0",
+          "passed_top_level_executions": 0
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-controls-rest-attempt1/receipt.json",
+      "receipt_sha256": "2f4f2e04bce7e9fcf302ac130c03163f04e946919b0e2e3e5b625ca58ab6f357",
+      "status": "PASS",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [
+        "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go",
+        "backend/internal/datastore/node_asset_migration_test.go",
+        "backend/internal/handler/zero_event_asset_test.go"
+      ],
+      "cases": [
+        {
+          "name": "old-http-capture",
+          "status": "EXPECTED_ASSERTION_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 19.17,
+          "expected_assertion": "wire/current row replaced captured asset or narrowed CoreID",
+          "failed": [
+            "TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode",
+            "github.com/zerodenet/zboard/backend/internal/handler"
+          ],
+          "skipped": [],
+          "passed_top_level": [],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:57:30.200475+00:00",
+          "finished_utc": "2026-10-21T01:57:49.371626+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/zero_event_runtime.json",
+            "-run",
+            "^TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode$",
+            "./internal/handler"
+          ],
+          "raw_log_sha256": "1daeb14034b1e7b137db9b2de4e6fca8df442eebbb3c760145edf6b4e4e42cc7",
+          "passed_top_level_executions": 0
+        },
+        {
+          "name": "old-legacy-copy",
+          "status": "EXPECTED_ASSERTION_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 3.134,
+          "expected_assertion": "legacy target did not establish distinct future labels",
+          "failed": [
+            "TestMigrationCopierNodeAssetFoundation/legacy_future_labels",
+            "TestMigrationCopierNodeAssetFoundation",
+            "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
+          ],
+          "skipped": [],
+          "passed_top_level": [],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:57:49.375080+00:00",
+          "finished_utc": "2026-10-21T01:57:52.509896+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-overlay",
+            "controlled-old-source/database_copy.json",
+            "-run",
+            "^TestMigrationCopierNodeAssetFoundation$/^legacy_future_labels$",
+            "./internal/adapters/persistence/platformstore"
+          ],
+          "raw_log_sha256": "10f2f5f0ba1b93d7520c80ac78178913d5a49e6f715510d35c2aca7a1b583efb",
+          "passed_top_level_executions": 0
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-sqlite-attempt1/receipt.json",
+      "receipt_sha256": "1e8a6daf0f1da7d7df228715fc118aa1f325fdb39619f35323c4b407427ddb05",
+      "status": "STOPPED_UNEXPECTED_FAILURE",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [
+        "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go",
+        "backend/internal/datastore/node_asset_migration_test.go",
+        "backend/internal/handler/zero_event_asset_test.go"
+      ],
+      "cases": [
+        {
+          "name": "sqlite-owned-migration",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 1.544,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestSQLiteNodeAssetOwnedMigration"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:58:00.770737+00:00",
+          "finished_utc": "2026-10-21T01:58:02.315995+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestSQLiteNodeAssetOwnedMigration$",
+            "./internal/datastore"
+          ],
+          "raw_log_sha256": "6be7f7a13f2f46334bbeedabc8beb9088101c14630efb1160671131c60f377ac",
+          "passed_top_level_executions": 1
+        },
+        {
+          "name": "sqlite-network",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 5.092,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestNodeAssetIdentityPersistenceAndCapturedCredential",
+            "TestNodeAssetInitializationResumesWithoutRekeyingOrPrematureReceipt",
+            "TestNodeAssetSurvivesAdministrationAndCreationRollback"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:58:02.318525+00:00",
+          "finished_utc": "2026-10-21T01:58:07.411640+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^(TestNodeAssetIdentityPersistenceAndCapturedCredential|TestNodeAssetInitializationResumesWithoutRekeyingOrPrematureReceipt|TestNodeAssetSurvivesAdministrationAndCreationRollback)$",
+            "./internal/adapters/persistence/networkstore"
+          ],
+          "raw_log_sha256": "e5ee5005fe06d192785a1f4430a9bbe7f474f2cf80a70d307d36eb6523e3c296",
+          "passed_top_level_executions": 3
+        },
+        {
+          "name": "sqlite-owned-copy",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 3.256,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestMigrationCopierNodeAssetFoundation"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:58:07.414417+00:00",
+          "finished_utc": "2026-10-21T01:58:10.671072+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMigrationCopierNodeAssetFoundation$",
+            "./internal/adapters/persistence/platformstore"
+          ],
+          "raw_log_sha256": "80d87d8e74fec8a5f92e0734d04448206c74d0d9b904a64cb8770c1d7d3dccbf",
+          "passed_top_level_executions": 1
+        },
+        {
+          "name": "sqlite-http-observation-accounting",
+          "status": "UNEXPECTED_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 17.891,
+          "expected_assertion": null,
+          "failed": [
+            "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial",
+            "github.com/zerodenet/zboard/backend/internal/handler"
+          ],
+          "skipped": [],
+          "passed_top_level": [
+            "TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode",
+            "TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay",
+            "TestMixedAssetOtherFlowCannotReorderEarlierSample"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:58:10.675075+00:00",
+          "finished_utc": "2026-10-21T01:58:28.567063+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^(TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode|TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial|TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay|TestMixedAssetOtherFlowCannotReorderEarlierSample)$",
+            "./internal/handler"
+          ],
+          "raw_log_sha256": "0a361025aa5e4058c5dbffe02b356731153c0b25a73fead94aac8aa17dd03085",
+          "passed_top_level_executions": 3
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-sqlite-rest-attempt1/receipt.json",
+      "receipt_sha256": "d6ad437501692f0d8518b8762732c2a9c024b1082d39d1f9b7974254fd6b6b55",
+      "status": "PASS",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [
+        "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go",
+        "backend/internal/datastore/node_asset_migration_test.go"
+      ],
+      "cases": [
+        {
+          "name": "sqlite-observation-mapping",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 16.867,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:59:01.099211+00:00",
+          "finished_utc": "2026-10-21T01:59:17.967336+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial$",
+            "./internal/handler"
+          ],
+          "raw_log_sha256": "bfe00e253cc038bbf1cb74909dd73d8f79c3ede9a8e21395caf3094aa6732ff4",
+          "passed_top_level_executions": 1
+        },
+        {
+          "name": "original-zeroevent-suite",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 1.603,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [
+            "TestFileSpoolOwnershipProcessHelper"
+          ],
+          "passed_top_level": [
+            "TestStorageMaintenanceCompactsSupersededSnapshotsUnderPressure",
+            "TestFileSpoolStatusReportsSemanticCompactionTotals",
+            "TestFileSpoolCompactsHistoricalZstdWhenCompressionNowDisabled",
+            "TestCompactSemanticEventsKeepsLatestSafeSnapshotsInOriginalOrder",
+            "TestCompactSemanticEventsKeepsConflictingDuplicateSequence",
+            "TestFileSpoolCompactsRawSealedSegment",
+            "TestFileSpoolCompactsCompressedSegmentWithoutExpandingToRaw",
+            "TestFileSpoolCompactionSkipsCheckpointAndInflightHorizon",
+            "TestZstdCompressedSegmentReadsLegacyAndBlockCheckpoints",
+            "TestFileSpoolCompressesOnlySealedSegments",
+            "TestFileSpoolRecoversCompressedSegmentWithLegacyCheckpoint",
+            "TestListSegmentsPrefersRawCrashFallbackOverCompressedDuplicate",
+            "TestLZ4CompressedSegmentReadsLegacyAndBlockCheckpoints",
+            "TestFileSpoolUsesConfiguredLZ4ForSealedSegments",
+            "TestFileSpoolCompactsLZ4SegmentInPlace",
+            "TestFileSpoolOwnershipSameProcessAndPermanentInode",
+            "TestFileSpoolOwnershipBeforeRecoveryAndReserve",
+            "TestFileSpoolOwnershipFailedStartReleasesAndRetries",
+            "TestFileSpoolOwnershipParentCancellationRetainsCommit",
+            "TestFileSpoolOwnershipCloseWaitsForReadAndCompact",
+            "TestFileSpoolOwnershipCloseBeforeStartIsConcurrentSafe",
+            "TestFileSpoolOwnershipCloseWaitsForCommit",
+            "TestFileSpoolOwnershipCrossProcessKillReleases",
+            "TestRawIndexResumesWithinSparsePointsAndOlderDurableSnapshot",
+            "TestRawIndexTracksPartialAppendAndRejectsInvalidCheckpoint",
+            "TestRawIndexInvalidatesReplacementTruncationAndCorruption",
+            "TestRawIndexBoundsPointsAndSegments",
+            "TestFileSpoolReadBudgetBoundsLargePayloadsAndResumesAcrossSegments",
+            "TestSemanticCompactionKeepsChangedCountersAndAccountingBoundaries",
+            "TestFileSpoolAppendReadCommitAndRecover",
+            "TestFileSpoolConcurrentAppendUsesDurableBatches",
+            "TestRecoverSegmentsTruncatesInterruptedFinalRecord",
+            "TestFileSpoolRotatesBySizeAndCleansCommittedReadySegment",
+            "TestFileSpoolRejectsCheckpointBeyondDurableRecords",
+            "TestFileSpoolSplitsOneFlushBatchAcrossSegments",
+            "TestRecoverSegmentsQuarantinesCorruptRecord",
+            "TestEvaluateStoragePressureUsesRatiosFreeSpaceAndCriticalHeadroom",
+            "TestEmergencyReserveLifecycle",
+            "TestStorageMaintenanceRestoresReserveWhenPressureNormal",
+            "TestStorageMaintenanceReleasesReserveUnderEmergencyPressure",
+            "TestFileSpoolSoftMaxSizeDoesNotRejectAppend",
+            "TestPressureCleanupCanBypassConsumedRetention",
+            "TestVersionOneAssetStampRoundTripAndLegacyUnknown",
+            "TestSemanticCompactionPreservesMixedAssetLineage",
+            "TestCompactedCodecWritersRetainAssetAndLegacyMaterials",
+            "TestNodeAssetSpoolAppendCloseAndCheckpointRecovery",
+            "TestDefaultConfig",
+            "TestConfigValidation",
+            "TestDisabledConfigDoesNotRequireFileSettings",
+            "TestEnvelopeRuntimeCursorIsScopedToCoreInstance",
+            "TestEnvelopeRuntimeCursorRequiresGenerationIdentity"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:59:17.969619+00:00",
+          "finished_utc": "2026-10-21T01:59:19.573052+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            ".",
+            "./internal/zeroevent"
+          ],
+          "raw_log_sha256": "d87c64cf48064d45ced670d068bb05ce42fd2ee6bb6ec581f85ac52f98ca181f",
+          "passed_top_level_executions": 51
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-sqlite-copy-fixed-attempt1/receipt.json",
+      "receipt_sha256": "cae304e31c1cc757b960d3562d9019cb86d90cff81c1b15099307913d2407fda",
+      "status": "PASS",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [],
+      "cases": [
+        {
+          "name": "sqlite-owned-copy",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 3.256,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestMigrationCopierNodeAssetFoundation"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:02:16.127808+00:00",
+          "finished_utc": "2026-10-21T02:02:19.384508+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMigrationCopierNodeAssetFoundation$",
+            "./internal/adapters/persistence/platformstore"
+          ],
+          "raw_log_sha256": "1cc203b0aef0360b4ef3d70cbb4757bbaa57385c32aa23f75d6c001bf8a0da99",
+          "passed_top_level_executions": 1
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-mysql-attempt1/receipt.json",
+      "receipt_sha256": "b26307aaa12f085473e11f32e6f58f1861dafc94051e3d7ba31a7c0c6ec6728b",
+      "status": "STOPPED_UNEXPECTED_FAILURE",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [
+        "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go",
+        "backend/internal/datastore/node_asset_migration_test.go"
+      ],
+      "cases": [
+        {
+          "name": "mysql-owned-migration",
+          "status": "UNEXPECTED_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 5.334,
+          "expected_assertion": null,
+          "failed": [
+            "TestMySQLNodeAssetOwnedMigration",
+            "github.com/zerodenet/zboard/backend/internal/datastore"
+          ],
+          "skipped": [],
+          "passed_top_level": [],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T01:59:24.881356+00:00",
+          "finished_utc": "2026-10-21T01:59:30.215950+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMySQLNodeAssetOwnedMigration$",
+            "./internal/datastore"
+          ],
+          "raw_log_sha256": "ad6cc6de98ef0bd2a712793340cad9739e0a09839d342aa6a28ba031b69f7a1a",
+          "passed_top_level_executions": 0
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-mysql-fixed-attempt1/receipt.json",
+      "receipt_sha256": "1f5d314cdfc2e9e31ded10d76edd2549fee5e950ef5eccb026a6e4c5d2aea8cc",
+      "status": "STOPPED_UNEXPECTED_FAILURE",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [
+        "backend/internal/adapters/persistence/platformstore/node_asset_copy_test.go"
+      ],
+      "cases": [
+        {
+          "name": "mysql-owned-migration",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 6.103,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestMySQLNodeAssetOwnedMigration"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:00:43.164514+00:00",
+          "finished_utc": "2026-10-21T02:00:49.268584+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMySQLNodeAssetOwnedMigration$",
+            "./internal/datastore"
+          ],
+          "raw_log_sha256": "a2999184b402d17c283e55ce874b6b8eeb82d1b867617a12b20f2974155c2ec7",
+          "passed_top_level_executions": 1
+        },
+        {
+          "name": "mysql-network-wrapper",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 13.322,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestMySQLNodeAssetFoundationPersistence"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:00:49.271185+00:00",
+          "finished_utc": "2026-10-21T02:01:02.594318+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMySQLNodeAssetFoundationPersistence$",
+            "./internal/adapters/persistence/networkstore"
+          ],
+          "raw_log_sha256": "a86a2d6086c2b5b2e41f96b345984d54752170d7efc4166646ecb7dcbdbac802",
+          "passed_top_level_executions": 1
+        },
+        {
+          "name": "mysql-cross-copy",
+          "status": "UNEXPECTED_FAILURE",
+          "exit_code": 1,
+          "wall_seconds": 35.031,
+          "expected_assertion": null,
+          "failed": [
+            "TestMySQLMigrationCopierNodeAssetFoundation/false/current_including_unknown",
+            "TestMySQLMigrationCopierNodeAssetFoundation/false/legacy_future_labels",
+            "TestMySQLMigrationCopierNodeAssetFoundation/false/legacy_completion_rollback",
+            "TestMySQLMigrationCopierNodeAssetFoundation/false",
+            "TestMySQLMigrationCopierNodeAssetFoundation/true/current_including_unknown",
+            "TestMySQLMigrationCopierNodeAssetFoundation/true/legacy_future_labels",
+            "TestMySQLMigrationCopierNodeAssetFoundation/true/legacy_completion_rollback",
+            "TestMySQLMigrationCopierNodeAssetFoundation/true",
+            "TestMySQLMigrationCopierNodeAssetFoundation",
+            "github.com/zerodenet/zboard/backend/internal/adapters/persistence/platformstore"
+          ],
+          "skipped": [],
+          "passed_top_level": [],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:01:02.596352+00:00",
+          "finished_utc": "2026-10-21T02:01:37.628115+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMySQLMigrationCopierNodeAssetFoundation$",
+            "./internal/adapters/persistence/platformstore"
+          ],
+          "raw_log_sha256": "999370f69fd369adb7247098f642fa5636898f8de1d2999606d7dd6c1dc8e8d8",
+          "passed_top_level_executions": 0
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-mysql-copy-fixed-attempt1/receipt.json",
+      "receipt_sha256": "bfa31ca52dc9401b0c898227d188d0c1378c19ddd9ff5af841050b174634e3d8",
+      "status": "PASS",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [],
+      "cases": [
+        {
+          "name": "mysql-cross-copy",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 36.764,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestMySQLMigrationCopierNodeAssetFoundation"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:02:40.987845+00:00",
+          "finished_utc": "2026-10-21T02:03:17.752259+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=1",
+            "-run",
+            "^TestMySQLMigrationCopierNodeAssetFoundation$",
+            "./internal/adapters/persistence/platformstore"
+          ],
+          "raw_log_sha256": "2422d7241a5a8f0c7950988a81f627c3b32fdf67f16961cd36bf7c2787d5ed80",
+          "passed_top_level_executions": 1
+        }
+      ]
+    },
+    {
+      "private_receipt": "root-race-attempt1/receipt.json",
+      "receipt_sha256": "ad49df33aa0574fcb9ee1ccfd08f328918ba8b89592b8a22feade1af2fd0f791",
+      "status": "PASS",
+      "production_matches_final": true,
+      "test_files_differing_from_final": [],
+      "cases": [
+        {
+          "name": "race-pure",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 24.375,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestNodeAssetLabelsAreServerGeneratedAndHidden",
+            "TestNodeAssetEntropyFailureIsNotAnIdentity",
+            "TestNodeAssetLabelsAreServerGeneratedAndHidden",
+            "TestNodeAssetEntropyFailureIsNotAnIdentity",
+            "TestNodeAssetLabelsAreServerGeneratedAndHidden",
+            "TestNodeAssetEntropyFailureIsNotAnIdentity",
+            "TestNodeAssetCopyClassifiesLegacyCurrentAndLostReceipt",
+            "TestNodeAssetMetadataFailuresNeverInitializeOrRecord",
+            "TestNodeAssetRejectsQuotedNonemptySchemaDefault",
+            "TestSQLiteNodeAssetDefaultQuoteIsRealNonemptyValue",
+            "TestNodeAssetCopyClassifiesLegacyCurrentAndLostReceipt",
+            "TestNodeAssetMetadataFailuresNeverInitializeOrRecord",
+            "TestNodeAssetRejectsQuotedNonemptySchemaDefault",
+            "TestSQLiteNodeAssetDefaultQuoteIsRealNonemptyValue",
+            "TestNodeAssetCopyClassifiesLegacyCurrentAndLostReceipt",
+            "TestNodeAssetMetadataFailuresNeverInitializeOrRecord",
+            "TestNodeAssetRejectsQuotedNonemptySchemaDefault",
+            "TestSQLiteNodeAssetDefaultQuoteIsRealNonemptyValue",
+            "TestVersionOneAssetStampRoundTripAndLegacyUnknown",
+            "TestSemanticCompactionPreservesMixedAssetLineage",
+            "TestCompactedCodecWritersRetainAssetAndLegacyMaterials",
+            "TestNodeAssetSpoolAppendCloseAndCheckpointRecovery",
+            "TestVersionOneAssetStampRoundTripAndLegacyUnknown",
+            "TestSemanticCompactionPreservesMixedAssetLineage",
+            "TestCompactedCodecWritersRetainAssetAndLegacyMaterials",
+            "TestNodeAssetSpoolAppendCloseAndCheckpointRecovery",
+            "TestVersionOneAssetStampRoundTripAndLegacyUnknown",
+            "TestSemanticCompactionPreservesMixedAssetLineage",
+            "TestCompactedCodecWritersRetainAssetAndLegacyMaterials",
+            "TestNodeAssetSpoolAppendCloseAndCheckpointRecovery"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:03:23.836348+00:00",
+          "finished_utc": "2026-10-21T02:03:48.211728+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=3",
+            "-race",
+            "-run",
+            "^(TestNodeAssetLabelsAreServerGeneratedAndHidden|TestNodeAssetEntropyFailureIsNotAnIdentity|TestNodeAssetCopyClassifiesLegacyCurrentAndLostReceipt|TestNodeAssetMetadataFailuresNeverInitializeOrRecord|TestNodeAssetRejectsQuotedNonemptySchemaDefault|TestSQLiteNodeAssetDefaultQuoteIsRealNonemptyValue|TestVersionOneAssetStampRoundTripAndLegacyUnknown|TestSemanticCompactionPreservesMixedAssetLineage|TestCompactedCodecWritersRetainAssetAndLegacyMaterials|TestNodeAssetSpoolAppendCloseAndCheckpointRecovery)$",
+            "./internal/model",
+            "./internal/datastore",
+            "./internal/zeroevent"
+          ],
+          "raw_log_sha256": "cfbf756d1dc9ef862a44afa43a2309bc46423ad0106b4d894683fb88eb6be7f0",
+          "passed_top_level_executions": 30
+        },
+        {
+          "name": "race-handler",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 73.916,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode",
+            "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial",
+            "TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay",
+            "TestMixedAssetOtherFlowCannotReorderEarlierSample",
+            "TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode",
+            "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial",
+            "TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay",
+            "TestMixedAssetOtherFlowCannotReorderEarlierSample",
+            "TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode",
+            "TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial",
+            "TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay",
+            "TestMixedAssetOtherFlowCannotReorderEarlierSample"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:03:48.215706+00:00",
+          "finished_utc": "2026-10-21T02:05:02.132439+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=3",
+            "-race",
+            "-run",
+            "^(TestBufferedHTTPAssetStampComesOnlyFromAuthenticatedNode|TestObservationPositionsKeepTheirOwnAssetAndUnknownMaterial|TestMixedAssetFlowSamplesPreserveOrderRoundingAndReplay|TestMixedAssetOtherFlowCannotReorderEarlierSample)$",
+            "./internal/handler"
+          ],
+          "raw_log_sha256": "6ee432f1ed399fb349132aa553a9bebffcb8e30fb7b3fdedb583c8e18ceac719",
+          "passed_top_level_executions": 12
+        },
+        {
+          "name": "race-network",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 99.435,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestNodeAssetIdentityPersistenceAndCapturedCredential",
+            "TestNodeAssetInitializationResumesWithoutRekeyingOrPrematureReceipt",
+            "TestNodeAssetSurvivesAdministrationAndCreationRollback",
+            "TestNodeAssetIdentityPersistenceAndCapturedCredential",
+            "TestNodeAssetInitializationResumesWithoutRekeyingOrPrematureReceipt",
+            "TestNodeAssetSurvivesAdministrationAndCreationRollback",
+            "TestNodeAssetIdentityPersistenceAndCapturedCredential",
+            "TestNodeAssetInitializationResumesWithoutRekeyingOrPrematureReceipt",
+            "TestNodeAssetSurvivesAdministrationAndCreationRollback"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:05:02.135231+00:00",
+          "finished_utc": "2026-10-21T02:06:41.571013+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=3",
+            "-race",
+            "-run",
+            "^(TestNodeAssetIdentityPersistenceAndCapturedCredential|TestNodeAssetInitializationResumesWithoutRekeyingOrPrematureReceipt|TestNodeAssetSurvivesAdministrationAndCreationRollback)$",
+            "./internal/adapters/persistence/networkstore"
+          ],
+          "raw_log_sha256": "0e6ef163dcbf08b30ad7f736525c7fbfa4a736bb99690d2eee28fb4600ea7365",
+          "passed_top_level_executions": 9
+        },
+        {
+          "name": "race-owned-copy-rollback",
+          "status": "PASS",
+          "exit_code": 0,
+          "wall_seconds": 42.567,
+          "expected_assertion": null,
+          "failed": [],
+          "skipped": [],
+          "passed_top_level": [
+            "TestMigrationCopierNodeAssetFoundation",
+            "TestMigrationCopierNodeAssetFoundation",
+            "TestMigrationCopierNodeAssetFoundation"
+          ],
+          "source_unchanged": true,
+          "started_utc": "2026-10-21T02:06:41.573965+00:00",
+          "finished_utc": "2026-10-21T02:07:24.142219+00:00",
+          "command": [
+            "go",
+            "test",
+            "-p",
+            "1",
+            "-json",
+            "-count=3",
+            "-race",
+            "-run",
+            "^TestMigrationCopierNodeAssetFoundation$/^legacy_completion_rollback$",
+            "./internal/adapters/persistence/platformstore"
+          ],
+          "raw_log_sha256": "898655d7034174affcac96463523a54bffd55c425e3293e04497fbe74c3fb945",
+          "passed_top_level_executions": 3
+        }
+      ]
+    }
+  ],
+  "preserved_failures": [
+    {
+      "run": "root-controls-attempt1/old-http-capture",
+      "reason": "New HTTP fixture omitted mandatory bytes_up/down; HTTP400 before durable append; not a successful old-source control. Corrected fixture only; root-controls-rest proves intended assertion after actual append."
+    },
+    {
+      "run": "root-sqlite-attempt1/sqlite-http-observation-accounting",
+      "reason": "New mapping fixture omitted mandatory stats counters; aggregate rejected malformed payload. Other three top-level cases passed. Corrected only sample; root-sqlite-rest mapping and final race pass."
+    },
+    {
+      "run": "root-mysql-attempt1/mysql-owned-migration",
+      "reason": "Test compared transient input JSON with MySQL persisted representation. Revised comparison uses stored baseline before DDL; equality-only log proves name=true/config=false/credential=true before migration; full same persisted fields retained after re-entry."
+    },
+    {
+      "run": "root-mysql-fixed-attempt1/mysql-cross-copy",
+      "reason": "Six successful-copy leaves compared cross-engine JSON text formatting. Exact JSON values now compared using UseNumber, full canonical Node snapshots and strict unchanged raw source-row checks retained; SQLite four and MySQL cross eight fixtures pass."
+    }
+  ],
+  "old_source_controls": {
+    "base": "0f491e1",
+    "method": "Exact single baseline production file via Go overlay, with compatible new types/tests retained; not the old binary",
+    "actual_expected_assertion_leaves": 9,
+    "cases": [
+      "mixed lineage persistent compaction four leaves",
+      "mixed lineage same-flow and different-flow reduction three leaves",
+      "authenticated HTTP durable append stamp one test",
+      "legacy owned copy target labels one leaf"
+    ],
+    "unexpected_setup_or_compile_failure_is_not_evidence": true,
+    "baseline_files": {
+      "backend/internal/datastore/database_copy.go": {
+        "baseline_sha256": "d8314e7b1a7a9baf177fc02bf14b4ee75ad46a756f66e9b44ce66e801b8034f4",
+        "overlay_json_sha256": "b2ff0ff15155b84c5ff13fe876a295671a3cdf896a27977e78f204ac6d5a9eaa",
+        "exact_baseline_bytes_confirmed": true
+      },
+      "backend/internal/zeroevent/file_compaction.go": {
+        "baseline_sha256": "d3fa09aaab0ad2af789e3f2383e6c7e893cafb42f87a4f30c809f52e8564c3cd",
+        "overlay_json_sha256": "dbcca01a52884c395b5d40bd332dc85c5e2bf44462559c909e660de7dbbad9d1",
+        "exact_baseline_bytes_confirmed": true
+      },
+      "backend/internal/handler/zero_event_projection_window.go": {
+        "baseline_sha256": "66082c3fa09d8831bcd4bd1fb60a59943ace0f5f8b344a3af03443483fe6a744",
+        "overlay_json_sha256": "6d0511bfeb0d4f610bf1b64ab88ed7c571690b454fe146a30697605896ee1b17",
+        "exact_baseline_bytes_confirmed": true
+      },
+      "backend/internal/handler/zero_event_runtime.go": {
+        "baseline_sha256": "7ad3be79ad1793ee1bbd5c34d5833674d467f60db9860042f260327192b6d081",
+        "overlay_json_sha256": "540205f114e89531ba81e7cf08b5423106c42c42336c734d7faf2840f46e3f1a",
+        "exact_baseline_bytes_confirmed": true
+      }
+    }
+  },
+  "final_fixed_scope": {
+    "actual_sqlite": [
+      "owned migration/formal DDL/receipt failure/re-entry/lost identity refusal",
+      "network credential capture, administration rollback, partial initialization across two pools",
+      "owned copier four fixture modes",
+      "actual authenticated HTTP append, captured cache identity, forged wire/payload ignored",
+      "per-position known/unknown mapping",
+      "mixed A/B/A and A/unknown/A accounting15, samples3, first_sequence1, rounding_numerator1500, replay unchanged"
+    ],
+    "actual_mysql": [
+      "owned migration and formal DDL/re-entry/receipt failure/loss refusal",
+      "explicit MySQL wrapper executes all three network test bodies with two pools",
+      "MySQL to SQLite and SQLite to MySQL: four fixtures each"
+    ],
+    "race": "-race -count=3; ten pure tests; four handler tests; three network tests; only public SQLite legacy_completion_rollback copy leaf",
+    "original_spool_suite": "51 top-level PASS plus original TestFileSpoolOwnershipProcessHelper skip as designed; actual parent cross-process kill/ownership test executes"
+  },
+  "not_verified": [
+    "New integrated full backend checks and original three-command MySQL run pending",
+    "New commit CI and original capacity pending; 0f results are source-specific",
+    "No new MySQL-to-MySQL fixture or MySQL capacity claim",
+    "New HTTP asset-stamp and mixed-accounting tests use SQLite; MySQL credential capture and copier verified separately",
+    "No independent Stats cursor, current-asset/deletion fence, durable auxiliary handoff, authority archival, long-term growth bound, worker or autoscaler",
+    "No production migration/deploy/release/merge; no other repository modified"
+  ]
+}

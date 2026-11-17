@@ -12,16 +12,17 @@ var (
 )
 
 type RuntimeConfigurationCredential struct {
-	ID                    uint
-	SubscriptionID        uint
-	PrincipalKey          string
-	Secret                string
-	ListenPort            int
-	PublicPort            int
-	SubscriptionUpdatedAt time.Time
-	SpeedLimitMbps        int
-	DeviceLimit           int
-	SoleActiveCredential  bool
+	MaterialVersion      uint16
+	ID                   uint
+	SubscriptionID       uint
+	PrincipalKey         string
+	Secret               string
+	ListenPort           int
+	PublicPort           int
+	PolicyRevision       uint64
+	SpeedLimitMbps       int
+	DeviceLimit          int
+	SoleActiveCredential bool
 }
 
 type RuntimeConfigurationCertificate struct {
@@ -32,10 +33,12 @@ type RuntimeConfigurationCertificate struct {
 }
 
 type RuntimeConfigurationEndpoint struct {
+	ClientConfig            string
 	ID                      uint
 	NodeID                  uint
 	Protocol                string
 	Address                 string
+	ListenAddress           string
 	Port                    int
 	PublicPort              int
 	MieruPrincipalReady     bool
@@ -65,15 +68,18 @@ type RuntimeConfigurationProxyPool struct {
 }
 
 type RuntimeConfigurationNetworkEntry struct {
-	ID          uint
-	NodeID      uint
-	EndpointID  uint
-	Network     string
-	Port        int
-	ProxyPoolID *uint
-	PathConfig  string
-	Landing     RuntimeConfigurationLanding
-	ProxyPool   *RuntimeConfigurationProxyPool
+	Address       string
+	PublicPort    int
+	ListenAddress string
+	ID            uint
+	NodeID        uint
+	EndpointID    uint
+	Network       string
+	Port          int
+	ProxyPoolID   *uint
+	PathConfig    string
+	Landing       RuntimeConfigurationLanding
+	ProxyPool     *RuntimeConfigurationProxyPool
 }
 
 type RuntimeConfigurationSnapshot struct {

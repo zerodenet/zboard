@@ -86,7 +86,18 @@ func verify(dir string) error {
 			mismatches = append(mismatches, fmt.Sprintf("ledger references unexpected subscription %d", id))
 		}
 	}
-	result := map[string]any{"run_id": f.RunID, "verified_at": time.Now().UTC(), "expected_total": expectedTotal, "subscription_total": actualTotal, "ledger_total": ledgerTotal, "mismatches": mismatches, "passed": len(mismatches) == 0}
+	accountingPassed := len(mismatches) == 0
+	// A committed quota fact and a completed auxiliary projection are separate
+	// milestones. The end-to-end drain check must not silently omit durable
+	// work left behind after accounting has already reconciled.
+	var pendingProjections int64
+	if err := db.Model(&model.MeteringUsageProjectionPending{}).Count(&pendingProjections).Error; err != nil {
+		return err
+	}
+	if pendingProjections != 0 {
+		mismatches = append(mismatches, fmt.Sprintf("statistics projection still has %d committed pending facts", pendingProjections))
+	}
+	result := map[string]any{"run_id": f.RunID, "verified_at": time.Now().UTC(), "expected_total": expectedTotal, "subscription_total": actualTotal, "ledger_total": ledgerTotal, "accounting_passed": accountingPassed, "pending_usage_projections": pendingProjections, "statistics_passed": pendingProjections == 0, "mismatches": mismatches, "passed": len(mismatches) == 0}
 	if err := writeJSON(filepath.Join(dir, "verification.json"), result); err != nil {
 		return err
 	}

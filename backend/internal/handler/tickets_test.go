@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestNormalizeTicketCreateRequest(t *testing.T) {
@@ -71,10 +70,7 @@ func TestTicketEnumsAndNumber(t *testing.T) {
 			t.Errorf("category %q should be valid", category)
 		}
 	}
-	number := newTicketNumber(time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC))
-	if !strings.HasPrefix(number, "T20260719-") || len(number) != 18 {
-		t.Fatalf("ticket number = %q", number)
-	}
+
 }
 
 func TestTicketMessageLimitBounds(t *testing.T) {

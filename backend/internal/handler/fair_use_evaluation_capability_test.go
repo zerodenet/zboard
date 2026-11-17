@@ -94,6 +94,7 @@ func TestFairUseEvaluationPersistenceAndAuthorizedQueries(t *testing.T) {
 	if err = h.db.Create(&event).Error; err != nil {
 		t.Fatal(err)
 	}
+	drainFlowStatisticsFixture(t, h.db)
 	metrics, err := h.services.FairUseTelemetry.Read(ctx, actor.UserID, sub.ID, 60, 300, now)
 	if err != nil || metrics.ConnectionStarts.Count != 0 || metrics.ReceivedConnectionStarts.Count != 1 || metrics.WorkingNodes.Count != 0 || metrics.ReceivedWorkingNodes.Count != 1 {
 		t.Fatalf("delayed telemetry: %+v %v", metrics, err)
@@ -113,6 +114,7 @@ func TestFairUseEvaluationPersistenceAndAuthorizedQueries(t *testing.T) {
 	if err = h.services.FairUseFlowCollection.Record(ctx, collected); err != nil {
 		t.Fatal(err)
 	}
+	drainFlowStatisticsFixture(t, h.db)
 	series, err := h.services.FairUseObservationSeries.Read(ctx, actor.UserID, sub.ID, "1d", now)
 	if err != nil || series.TotalConnectionStarts != 2 || series.DistinctWorkingNodes != 1 || len(series.Buckets) != 289 {
 		t.Fatalf("collection mapping/dedup/series: %+v %v", series, err)

@@ -141,3 +141,18 @@ it('discards an older version response after another channel is selected', async
  await click('在线安装')
  expect(api.preview).toHaveBeenLastCalledWith('zboard.oauth', '0.0.3-dev.1', expect.any(AbortSignal))
 })
+
+it('reinstalls an uninstalled identical package with retained data and separate migration consent', async () => {
+ api.detail.mockResolvedValue({ ...detail(), installed: { version: '0.0.1', digest: 'digest', state: 'uninstalled' } })
+ const migration = { from_publisher: 'local.publisher', to_publisher: 'formal.publisher', previous_state: 'uninstalled', confirmation: 'bound-confirmation' }
+ api.preview.mockResolvedValue({ ...await api.preview(), publisher_migration: migration })
+ await render()
+ expect(wrapper.text()).toContain('复用保留的配置和私有数据')
+ await click('重新安装')
+ const confirm = () => wrapper.findAll('button').find(b => b.text() === '确认安装')!
+ expect(confirm().attributes('disabled')).toBeDefined()
+ expect(api.install).not.toHaveBeenCalled()
+ await wrapper.get('input[type="checkbox"]').setValue(true)
+ await click('确认安装')
+ expect(api.install).toHaveBeenCalledWith('zboard.oauth', '0.0.1', expect.objectContaining({ publisher_migration: migration }), false, true)
+})

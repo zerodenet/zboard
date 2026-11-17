@@ -33,7 +33,7 @@ ctl() {
   *--property=ExecStart*)
    if [ -f "$FIXTURE_ROOT/foreign" ]; then printf '/other/zero run /other.json\n'
    else printf '/usr/local/bin/zero run /etc/zerodenet/current.json\n'; fi;;
-  *--property=LoadState*) printf 'loaded\n';;
+  *--property=LoadState*) if [ -f "$FIXTURE_ROOT/absent" ]; then printf 'not-found\n'; return 4; else printf 'loaded\n'; fi;;
   *--property=ActiveState*)
    if [ -f "$FIXTURE_ROOT/active" ]; then cat "$FIXTURE_ROOT/active"; else printf 'inactive\n'; fi;;
   stop*)
@@ -65,6 +65,24 @@ func fixtureFile(t *testing.T, root, name, value string) string {
 	return path
 }
 func exists(path string) bool { _, err := os.Lstat(path); return err == nil }
+
+func TestShellUninstallCanPreservePendingEventState(t *testing.T) {
+	root := t.TempDir()
+	state := fixtureFile(t, root, "var/lib/zerodenet/outbox.jsonl", "pending delivery\n")
+	binary := fixtureFile(t, root, "usr/local/bin/zero", "binary")
+	fixtureFile(t, root, "etc/zerodenet/current.json", "{}")
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			fixtureFile(t, root, "absent", "")
+		}
+		if output, err := runFixture(t, root, "uninstall", "--yes", "--keep-state"); err != nil {
+			t.Fatalf("%v: %s", err, output)
+		}
+		if !exists(state) || exists(binary) {
+			t.Fatal("uninstall lost pending events or left the binary")
+		}
+	}
+}
 func calls(t *testing.T, root string) string {
 	t.Helper()
 	raw, _ := os.ReadFile(filepath.Join(root, "calls"))
@@ -89,6 +107,8 @@ func TestShellUninstallScopesFilesAndRequiresCertificateOptIn(t *testing.T) {
 	root := t.TempDir()
 	config := fixtureFile(t, root, "etc/zerodenet/current.json", "{}")
 	queue := fixtureFile(t, root, "var/lib/zerodenet/event-outbox.jsonl", "pending")
+	owner := fixtureFile(t, root, "var/lib/zerodenet/zboard-event-state.owner", "previous node")
+	archived := fixtureFile(t, root, "var/lib/zerodenet/backups/42/event-state.outbox", "historical queue")
 	cert := fixtureFile(t, root, "etc/zboard/certificates/1/key.pem", "key")
 	owned := fixtureFile(t, root, "etc/letsencrypt/renewal/zboard-1.conf", "renewal")
 	other := fixtureFile(t, root, "etc/letsencrypt/renewal/other.conf", "other")
@@ -96,7 +116,7 @@ func TestShellUninstallScopesFilesAndRequiresCertificateOptIn(t *testing.T) {
 	if output, err := runFixture(t, root, "uninstall", "--yes"); err != nil {
 		t.Fatalf("%v: %s", err, output)
 	}
-	if exists(config) || exists(queue) || !exists(cert) || !exists(owned) {
+	if exists(config) || exists(queue) || exists(owner) || exists(archived) || !exists(cert) || !exists(owned) {
 		t.Fatal("wrong default removal scope")
 	}
 	for i := 0; i < 2; i++ {

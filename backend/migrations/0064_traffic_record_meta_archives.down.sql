@@ -1,0 +1,2 @@
+-- Archive payloads are financial proof. Retain this additive table on rollback.
+-- Restore and verify every referenced native proof before considering removal.

@@ -1,0 +1,594 @@
+{
+  "verified_commit": "95fb16cb3f01bb4fb48f1d803d70ff91592c6927",
+  "created_utc": "2026-10-26T04:02:52.150601+00:00",
+  "scope": "October 26 exact-head baseline verification before applying new diagnostic-retention code; not certification of later source",
+  "git_baseline": {
+    "develop": "658671e9f3978df1c79f4030fdb072a877f10bf5",
+    "required_base": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+    "uncommitted_prior_work_lost": false
+  },
+  "toolchain": {
+    "go": "1.26.8",
+    "node": "22.23.0",
+    "pnpm": "11.9.0",
+    "mysql": "8.4",
+    "gomaxprocs": 2,
+    "local_parallel_packages": 1
+  },
+  "cache_maintenance": {
+    "command": [
+      "docker",
+      "builder",
+      "prune",
+      "--force",
+      "--filter",
+      "until=24h"
+    ],
+    "exit_code": 0,
+    "free_bytes_before": 430825472,
+    "free_bytes_after": 3616894976,
+    "released_filesystem_bytes": 3186069504,
+    "inventory_unchanged": true,
+    "source_unchanged": true
+  },
+  "cache_counts": {
+    "before": 99,
+    "after": 19
+  },
+  "cache_scope": "only unused regenerable Docker build cache; all preexisting images/containers/volumes and tracked source preserved; no database/log/source/module-cache cleanup or paid expansion/security change",
+  "checks": [
+    {
+      "phase": "backend",
+      "started_utc": "2026-10-26T02:29:05.490496+00:00",
+      "finished_utc": "2026-10-26T02:39:35.234571+00:00",
+      "checks": [
+        {
+          "name": "full-go",
+          "command": "go test -p 1 ./...",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 556.346,
+          "log": "full-go-95fb16c-final.log",
+          "log_sha256": "da4d4e47e83d5845e68cac7cbba4b05392951bf6ec1b1c112ee1c1f1c678b1bd",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/full-go-95fb16c-final.log"
+        },
+        {
+          "name": "vet",
+          "command": "go vet -p 1 ./...",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 17.234,
+          "log": "vet-95fb16c-final.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/vet-95fb16c-final.log"
+        },
+        {
+          "name": "build",
+          "command": "go build ./cmd/zboard",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 1.95,
+          "log": "build-95fb16c-final.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/build-95fb16c-final.log"
+        },
+        {
+          "name": "pure-go-sqlite",
+          "command": "go test -p 1 ./internal/datastore -run SQLite -count=1",
+          "environment_additions": {
+            "CGO_ENABLED": "0"
+          },
+          "exit_code": 0,
+          "wall_seconds": 54.213,
+          "log": "pure-go-sqlite-95fb16c-final.log",
+          "log_sha256": "340d3ccb00296f66e9a624c364a5a21ede8dc81ae32f4b5a03635a5ed59eeed7",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/pure-go-sqlite-95fb16c-final.log"
+        }
+      ],
+      "source_stable": "exact clean HEAD required and remained unchanged during execution"
+    },
+    {
+      "phase": "mysql",
+      "started_utc": "2026-10-26T02:42:58.321408+00:00",
+      "finished_utc": "2026-10-26T03:05:01.441220+00:00",
+      "checks": [
+        {
+          "name": "mysql-core",
+          "command": "go test -p 1 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore ./internal/application -run MySQL -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 956.843,
+          "log": "mysql-core-95fb16c-final.log",
+          "log_sha256": "0739852af8810f77610fc7fb56710a78c65429b10b7e5d8e01fe46e9ae63cbdc",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/mysql-core-95fb16c-final.log"
+        },
+        {
+          "name": "mysql-jobstore",
+          "command": "go test -p 1 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 123.686,
+          "log": "mysql-jobstore-95fb16c-final.log",
+          "log_sha256": "5ab1864430e0ace286178a23d3dd747636378bd9bb8de6d17d05b955f5403267",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/mysql-jobstore-95fb16c-final.log"
+        },
+        {
+          "name": "mysql-copy",
+          "command": "go test -p 1 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+          "environment_additions": {},
+          "exit_code": 0,
+          "wall_seconds": 242.588,
+          "log": "mysql-copy-95fb16c-final.log",
+          "log_sha256": "2f18db52c79770199620f83d3b758102cb9cb77588f346411dc537a5a862d4f0",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/mysql-copy-95fb16c-final.log"
+        }
+      ],
+      "source_stable": "exact clean HEAD required and remained unchanged during execution"
+    },
+    {
+      "phase": "races",
+      "started_utc": "2026-10-26T03:17:08.874261+00:00",
+      "finished_utc": "2026-10-26T03:30:01.187086+00:00",
+      "checks": [
+        {
+          "name": "pure-race",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-race",
+            "-p",
+            "1",
+            "./internal/capabilities/commerce",
+            "./internal/adapters/persistence/observationstore",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 61.645,
+          "skips": [],
+          "coverage_complete": true,
+          "log": "pure-race-95f.log",
+          "log_sha256": "8fcc550beacd9a1c8a394498eee72e74d7480bc2a13a1e205cdcc2a739d1b248",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/oct26-resume/pure-race-95f.log",
+          "top_level_pass_counts": {
+            "TestAdministrativeRefundUsesOnlyFundedSourcesAndKeepsResidualFirst": 3,
+            "TestDiscountQuoteValidatesOnlyReductionAndBoundEvidence": 3,
+            "TestDiscountQuoteRecurringTermsRequireExplicitConfirmationWhenChanged": 3,
+            "TestDiscountQuoteTermsPreservePrecisionAndOnlyIgnoreWhitespace": 3,
+            "TestOperationDiscountReaderBindsTargetMoneyAndLockedBase": 3,
+            "TestOperationDiscountReaderSupportsResetAndPackWithoutRecurringConsent": 3,
+            "TestRemainingCreditCombinesTimeAndTraffic": 3,
+            "TestTrafficResetSKURequiresResetOnlyWithNoOverrides": 3,
+            "TestFullReplacementPreviewPreservesInt64ResidualOnJSONWire": 3,
+            "TestDeriveOrderTypeForSKU": 3,
+            "TestDeriveOrderTypeRejectsUnsupportedContext": 3,
+            "TestOrderTermsSnapshotSeparatesPriceAndEntitlementSources": 3,
+            "TestOrderTermsRejectsOverrideAndNonRenewablePlan": 3,
+            "TestPlanCreationRequiresRealPurchaseAvailability": 3,
+            "TestPlanCreationRejectsNormalizedDuplicateCodes": 3,
+            "TestPlanQuotaSynchronizationPreservesAccountingBaseline": 3,
+            "TestPlanQuotaSyncRequiresExplicitQuota": 3,
+            "TestPlanPatchPreservesOmittedPolicyAndNormalizesIdentity": 3,
+            "TestPlanPatchRejectsInvalidPolicyAndAbsentChanges": 3,
+            "TestPurchaseDiscountSnapshotConservesBaseReductionAndFinal": 3,
+            "TestPurchaseDiscountSurvivesPaymentChannelSelection": 3,
+            "TestPurchaseDiscountQuoteBindsMaterialEvidenceAndAllowsFreshExpiry": 3,
+            "TestPurchaseDiscountSnapshotRejectsUnknownMalformedAndUnboundedJSON": 3,
+            "TestRecurringV2NewAndV1InitialRemainSeparate": 3,
+            "TestRecurringV2RenewalBindsSourceTargetAndPriorAgreement": 3,
+            "TestSKUProjectionPreservesLegacyFactsWithoutMutatingInput": 3,
+            "TestNormalizeCommercePlanSKUAllowsPurchaseAndRenewal": 3,
+            "TestNormalizeCommercePlanSKUMigratesLegacyRenewal": 3,
+            "TestNormalizeCommercePlanSKUAllowsOneTimePlanPurchaseAndRenewal": 3,
+            "TestNormalizeCommercePlanSKUAllowsPermanentPlanQuota": 3,
+            "TestNormalizeCommercePlanSKUAllowsExplicitTimedQuotaGrant": 3,
+            "TestNormalizeCommercePlanSKURejectsPermanentTimeExtension": 3,
+            "TestNormalizeCommercePlanSKUWithoutRenewalHasNoRenewalEffect": 3,
+            "TestNormalizeCommercePlanSKURejectsPeriodicPermanentUnit": 3,
+            "TestNormalizeCommercePlanSKURejectsPeriodicEntitlementOverrides": 3,
+            "TestNormalizeCommercePlanSKUStoresOnlyAddonGrant": 3,
+            "TestNormalizeCommercePlanSKURejectsAddonMixedWithPlanOperations": 3,
+            "TestPaidMonthAndCalendarCycleAllocationConservesActualMoney": 3,
+            "TestAnnualRemainingValueExamplesUseActualQuotaCycles": 3,
+            "TestPaidResetRebasesRemainingValueWithoutResurrectingConsumedMoney": 3,
+            "TestPerpetualFIFOExhaustedLifecycleHasZeroResidual": 3,
+            "TestPerpetualFIFOUsesOriginalLotPrices": 3,
+            "TestPerpetualFIFOMultiplePurchasesKeepBatchRoundingAndNoRetroactiveUse": 3,
+            "TestPerpetualFIFOAcceptsCapturedLegacyAdditionsAndRejectsUnprovenHistory": 3,
+            "TestPerpetualFIFOPreservesEstablishedSingleLotQuotaSyncAndRejectsUnknownMixedAdjustment": 3,
+            "TestPerpetualFIFOSequentialHistoryKeepsOnlyFinalLotResidual": 3,
+            "TestPerpetualQuotaValueUsesOnlyActualPaidAndRemainingQuota": 3,
+            "TestPerpetualQuotaValueTrustedOldSnapshotAndRejectsUnknownHistory": 3,
+            "TestValueProjectionActualAnnualExamplesAndSources": 3,
+            "TestValueProjectionMultiplePaidResetsDoNotReviveConsumedCash": 3,
+            "TestValueProjectionUnverifiedFactsAndCurrencyNeverBecomeZeroQuotes": 3,
+            "TestValueProjectionFutureRenewalAndCurrentRemainderArePreserved": 3,
+            "TestValueProjectionApprovedOverlappingRenewalExampleAndSources": 3,
+            "TestValueProjectionTimedAdditionPreservesConsumedAndFutureMoney": 3,
+            "TestValueProjectionTimedAdditionRejectsUnprovenOrChangedTerms": 3,
+            "TestValueProjectionTimedAdditionSharedYearAndFreeQuota": 3,
+            "TestObservationExpiredClaimCannotAcknowledgeReplacement": 3,
+            "TestObservationEmptyTagStateKeepsFloorDuringOverrideAndDeletion": 3,
+            "TestObservationCachedTimesKeepExactReceiverFenceAndMaterial": 3,
+            "TestObservationClaimExpirationRollsBackNodeAndPosition": 3,
+            "TestObservationForgedSmallHeaderDoesNotFetchLargePart": 3
+          }
+        },
+        {
+          "name": "sqlite-financial-race",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-race",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^(TestSubscriptionTerminationFailuresAndConcurrency|TestApprovedRenewalValueConcurrentPaymentAndUnsubscribe|TestConsumptionRefundConcurrentReplayAndBudget|TestConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice|TestPlanQuotaSyncConcurrentWalletRenewal|TestPlanQuotaSyncConcurrentOriginalMetering|TestPerpetualFIFOFundedPurchasesMeteringAndWholeUnsubscribe|TestPerpetualFIFOFundedPurchasesFullReplacement|TestPerpetualFIFOMeteringExhaustionAllowsZeroUnsubscribe|TestLegacyCancellationUsesWholeTerminationWithoutRefund|TestLegacyCancellationRetainsLateMixedCashWithoutRevival|TestWholeTerminationPreservesLargeClosedHistory|TestWholeTerminationRechecksPreparedOrderMembership|TestWholeTerminationKeepsCurrentSourceBudget|TestAutomaticRenewalConsentWithdrawalRace|TestAutomaticRenewalStableWalletCompetitionAndTopUpRetry|TestObservationMaterialRetirementKeepsBillingAndCheckpointReplay|TestSQLiteObservationMaterialJobUsesSharedExecutor)$",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 504.203,
+          "skips": [],
+          "coverage_complete": true,
+          "log": "sqlite-financial-race-95f.log",
+          "log_sha256": "dd26f7b6e8ed62a0871d6494bb0ab46fcbc7f7eafc48ac5150b7ee519769e863",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/oct26-resume/sqlite-financial-race-95f.log",
+          "top_level_pass_counts": {
+            "TestAutomaticRenewalConsentWithdrawalRace": 3,
+            "TestAutomaticRenewalStableWalletCompetitionAndTopUpRetry": 3,
+            "TestConsumptionRefundConcurrentReplayAndBudget": 3,
+            "TestConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice": 3,
+            "TestLegacyCancellationRetainsLateMixedCashWithoutRevival": 3,
+            "TestLegacyCancellationUsesWholeTerminationWithoutRefund": 3,
+            "TestObservationMaterialRetirementKeepsBillingAndCheckpointReplay": 3,
+            "TestSQLiteObservationMaterialJobUsesSharedExecutor": 3,
+            "TestPerpetualFIFOMeteringExhaustionAllowsZeroUnsubscribe": 3,
+            "TestPerpetualFIFOFundedPurchasesMeteringAndWholeUnsubscribe": 3,
+            "TestPerpetualFIFOFundedPurchasesFullReplacement": 3,
+            "TestPlanQuotaSyncConcurrentWalletRenewal": 3,
+            "TestPlanQuotaSyncConcurrentOriginalMetering": 3,
+            "TestApprovedRenewalValueConcurrentPaymentAndUnsubscribe": 3,
+            "TestSubscriptionTerminationFailuresAndConcurrency": 3,
+            "TestWholeTerminationPreservesLargeClosedHistory": 3,
+            "TestWholeTerminationRechecksPreparedOrderMembership": 3,
+            "TestWholeTerminationKeepsCurrentSourceBudget": 3
+          }
+        },
+        {
+          "name": "mysql-financial-race",
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-race",
+            "-p",
+            "1",
+            "./internal/handler",
+            "-run",
+            "^(TestMySQLSubscriptionTerminationFailuresAndConcurrency|TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe|TestMySQLConsumptionRefundConcurrentReplayAndBudget|TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice|TestMySQLPlanQuotaSyncConcurrentWalletRenewal|TestMySQLPlanQuotaSyncConcurrentOriginalMetering|TestMySQLPerpetualFIFOFundedPurchasesMeteringAndWholeUnsubscribe|TestMySQLPerpetualFIFOFundedPurchasesFullReplacement|TestMySQLPerpetualFIFOMeteringExhaustionAllowsZeroUnsubscribe|TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund|TestMySQLLegacyCancellationRetainsLateMixedCashWithoutRevival|TestMySQLWholeTerminationPreservesLargeClosedHistory|TestMySQLWholeTerminationRechecksPreparedOrderMembership|TestMySQLWholeTerminationKeepsCurrentSourceBudget|TestMySQLAutomaticRenewalConsentWithdrawalRace|TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry|TestMySQLObservationMaterialRetirementKeepsBillingAndCheckpointReplay|TestMySQLObservationMaterialJobUsesSharedExecutor|TestMySQLAutomaticRenewalVersusUnsubscribe|TestMySQLAutomaticRenewalVersusManualVerifiedCash|TestMySQLFullReplacementConcurrentFinancialTransitions|TestMySQLControlledWalletAdjustmentConcurrent|TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks|TestMySQLAutomaticRenewalVersusCredentialExpiry|TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait)$",
+            "-count=3",
+            "-timeout",
+            "15m"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 206.278,
+          "skips": [],
+          "coverage_complete": true,
+          "log": "mysql-financial-race-95f.log",
+          "log_sha256": "518fd8803153bdc184b6b740d29a41ef6523293c7168711c2ee0c01abf2e79fe",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/oct26-resume/mysql-financial-race-95f.log",
+          "top_level_pass_counts": {
+            "TestMySQLExpiryCoordinatesOrderLocksBeforeSubscriptionLocks": 3,
+            "TestMySQLAutomaticRenewalVersusCredentialExpiry": 3,
+            "TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait": 3,
+            "TestMySQLAutomaticRenewalConsentWithdrawalRace": 3,
+            "TestMySQLAutomaticRenewalStableWalletCompetitionAndTopUpRetry": 3,
+            "TestMySQLAutomaticRenewalVersusManualVerifiedCash": 3,
+            "TestMySQLAutomaticRenewalVersusUnsubscribe": 3,
+            "TestMySQLConsumptionRefundConcurrentReplayAndBudget": 3,
+            "TestMySQLConsumptionRefundRacesUnsubscribeWithoutReturningValueTwice": 3,
+            "TestMySQLFullReplacementConcurrentFinancialTransitions": 3,
+            "TestMySQLLegacyCancellationRetainsLateMixedCashWithoutRevival": 3,
+            "TestMySQLLegacyCancellationUsesWholeTerminationWithoutRefund": 3,
+            "TestMySQLObservationMaterialRetirementKeepsBillingAndCheckpointReplay": 3,
+            "TestMySQLObservationMaterialJobUsesSharedExecutor": 3,
+            "TestMySQLPerpetualFIFOMeteringExhaustionAllowsZeroUnsubscribe": 3,
+            "TestMySQLPerpetualFIFOFundedPurchasesMeteringAndWholeUnsubscribe": 3,
+            "TestMySQLPerpetualFIFOFundedPurchasesFullReplacement": 3,
+            "TestMySQLPlanQuotaSyncConcurrentWalletRenewal": 3,
+            "TestMySQLPlanQuotaSyncConcurrentOriginalMetering": 3,
+            "TestMySQLApprovedRenewalValueConcurrentPaymentAndUnsubscribe": 3,
+            "TestMySQLSubscriptionTerminationFailuresAndConcurrency": 3,
+            "TestMySQLWholeTerminationPreservesLargeClosedHistory": 3,
+            "TestMySQLWholeTerminationRechecksPreparedOrderMembership": 3,
+            "TestMySQLWholeTerminationKeepsCurrentSourceBudget": 3,
+            "TestMySQLControlledWalletAdjustmentConcurrent": 3
+          }
+        }
+      ],
+      "source_stable": true
+    },
+    {
+      "phase": "frontend",
+      "started_utc": "2026-10-26T03:42:19.075260+00:00",
+      "finished_utc": "2026-10-26T03:45:24.658491+00:00",
+      "checks": [
+        {
+          "name": "install",
+          "command": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile",
+            "--package-import-method=copy"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 0.909,
+          "log": "95f-frontend-install.log",
+          "log_sha256": "b1960cb14786bc0831c0ec53de71ad5fe0c870144f12365845e021b4c6de45cc",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/oct26-resume/95f-frontend-install.log"
+        },
+        {
+          "name": "test",
+          "command": [
+            "pnpm",
+            "test",
+            "--no-file-parallelism",
+            "--exclude",
+            "src/theme/designTokens.test.ts",
+            "--exclude",
+            "src/views/commercePurchaseExperience.test.ts",
+            "--exclude",
+            "src/utils/adminRowActionsAudit.test.ts",
+            "--exclude",
+            "src/utils/catalogScalePolicy.test.ts",
+            "--exclude",
+            "src/utils/formPolicy.test.ts",
+            "--exclude",
+            "src/utils/frontendArchitecturePolicy.test.ts"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 153.742,
+          "log": "95f-frontend-test.log",
+          "log_sha256": "f9e2c01dfddc32a2600ae7ae2c352849191038b7a2bc3a3626313528e3b15e28",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/oct26-resume/95f-frontend-test.log"
+        },
+        {
+          "name": "build",
+          "command": [
+            "pnpm",
+            "build"
+          ],
+          "exit_code": 0,
+          "wall_seconds": 30.895,
+          "log": "95f-frontend-build.log",
+          "log_sha256": "0fae924db5ce69939d6f8889a83cc66f69645511d6743e2e6be86fa4dac3224c",
+          "log_private_path": ".codex-local-artifacts/recovery-validation/oct26-resume/95f-frontend-build.log"
+        }
+      ],
+      "source_stable": true
+    }
+  ],
+  "capacity": {
+    "parameters": {
+      "NODES": "2",
+      "SUBSCRIPTIONS": "20",
+      "HISTORY_RECORDS": "2000",
+      "DURATION_SECONDS": "60",
+      "EVENT_RATE": "20",
+      "READERS": "4"
+    },
+    "original_result": {
+      "passed": true,
+      "failures": [],
+      "latencies": [
+        {
+          "path": "/api/v1/admin/users?paged=true&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 1,
+          "p95_ms": 22,
+          "p99_ms": 40,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/subscriptions?paged=true&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 157,
+          "errors": 0,
+          "p50_ms": 2,
+          "p95_ms": 32,
+          "p99_ms": 59,
+          "passed": true
+        },
+        {
+          "path": "/api/zero/events",
+          "budget_ms": 250,
+          "count": 1274,
+          "errors": 0,
+          "p50_ms": 12,
+          "p95_ms": 23,
+          "p99_ms": 40,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/subscriptions/1",
+          "budget_ms": 250,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 2,
+          "p95_ms": 23,
+          "p99_ms": 44,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/records?paged=true&bucket=hour&limit=50&offset=0",
+          "budget_ms": 250,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 9,
+          "p95_ms": 29,
+          "p99_ms": 57,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/trends",
+          "budget_ms": 1000,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 1,
+          "p95_ms": 25,
+          "p99_ms": 48,
+          "passed": true
+        },
+        {
+          "path": "/api/v1/admin/traffic/reconciliation?paged=true&limit=50&offset=0",
+          "budget_ms": 1000,
+          "count": 156,
+          "errors": 0,
+          "p50_ms": 3,
+          "p95_ms": 16,
+          "p99_ms": 35,
+          "passed": true
+        }
+      ],
+      "sampled_peak_working_set_mib": 38.24,
+      "resource_samples": 15,
+      "minimum_disk_free_bytes": 1879515136,
+      "spool_pressure_levels": [
+        "normal"
+      ],
+      "runtime_diagnostics": {
+        "samples": 7,
+        "last_consumer": {
+          "batches": 47,
+          "processed_envelopes": 1266,
+          "projected_flow_samples": 849,
+          "coalesced_flow_updates": 417,
+          "failures": 0,
+          "processing_seconds": 1.541309852,
+          "missing_receive_time": 0,
+          "latency_samples": 1266,
+          "latency_bucket_ms": 100,
+          "p95_upper_ms": 2000,
+          "maximum_ms": 2269
+        },
+        "maximum_sampled_pending_events": 36,
+        "database_wait_deltas": {
+          "accounting_db": {
+            "wait_count": 1731,
+            "wait_seconds": 2.991246402
+          },
+          "traffic_read_db": {
+            "wait_count": 0,
+            "wait_seconds": 0
+          }
+        }
+      },
+      "drain_seconds": 6,
+      "note": "Client-observed HTTP latency includes Docker loopback transport; this short run does not prove 24h stability."
+    },
+    "binding": {
+      "checkout_commit_unchanged": true,
+      "checkout_still_clean": true,
+      "source_before_after_equal": true,
+      "source-sha256.txt_matches_observer": true,
+      "source-after-build-sha256.txt_matches_observer": true,
+      "zboard_binary_before_after_equal": true,
+      "acceptance_binary_before_after_equal": true,
+      "acceptance-load.py_copy_matches_source": true,
+      "acceptance-report.py_copy_matches_source": true
+    },
+    "rss": {
+      "container_id": "a31645fadceba30c452ed7aaac0f92e0be4a8962f36138224edb50a846a0d01f",
+      "samples": 22,
+      "errors": [],
+      "available": true,
+      "first_rss_kib": 57120,
+      "last_rss_kib": 60836,
+      "sampled_peak_rss_kib": 63780
+    },
+    "sqlite_space": {
+      "available": true,
+      "scope": "stopped exported SQLite only; not a live SQL latency measurement",
+      "page_size": 4096,
+      "page_count": 1939,
+      "freelist_pages": 0,
+      "allocated_bytes": 7942144,
+      "objects": {
+        "index": {
+          "bytes": 4612096,
+          "pages": 1126
+        },
+        "internal": {
+          "bytes": 126976,
+          "pages": 31
+        },
+        "table": {
+          "bytes": 3203072,
+          "pages": 782
+        }
+      }
+    },
+    "storage_preflight": {
+      "at": "2026-10-26T03:08:57.206187264Z",
+      "disk_free_bytes": 1884340224,
+      "files": {
+        "events/.emergency-reserve": 268435456,
+        "events/.owner.lock": 0,
+        "fixture.json": 2898,
+        "zboard.db": 4980736,
+        "zboard.db-shm": 32768,
+        "zboard.db-wal": 4527912,
+        "zboard.json": 579
+      }
+    },
+    "reserve_correction": {
+      "earlier_512mib_value": "conservative preflight subtraction, not an observed allocation or an original business requirement",
+      "observed_emergency_reserve_bytes": 268435456,
+      "observed_disk_free_after_allocation": 1884340224,
+      "unchanged_runner_gate_bytes": 1677721600,
+      "source": "original runner storage-preflight.json and historical baseline documented 268435456 bytes",
+      "not_claimed": "512MiB physically reserved acceptance"
+    },
+    "preexisting_resources_preserved": true,
+    "log_sha256": "3dea6ff5cb57fe34d10112710740d7cdca612f53691200f74070951256a67491",
+    "result_sha256": "dae2ca46fd055ee087059b497da0c60907cabf821c0574a40f9bda62325233b0",
+    "original_evidence": ".codex-local-artifacts/acceptance/mixed-20261026T030819Z-X1WFxP",
+    "observer_evidence": ".codex-local-artifacts/acceptance/baseline-controller-ijtmlle5"
+  },
+  "ci": {
+    "head": "95fb16cb3f01bb4fb48f1d803d70ff91592c6927",
+    "run_id": 40002718617,
+    "url": "https://github.com/zerodenet/zboard/actions/runs/40002718617",
+    "all_six_success": true,
+    "mysql_package_seconds": {
+      "datastore": 200.123,
+      "handler": 798.935,
+      "networkstore": 211.289,
+      "application": 27.813,
+      "jobstore": 121.886,
+      "platformstore": 241.227
+    },
+    "decoded_mysql_log_sha256": "f26d439d37907ca303bd3149cba9382486e5fb4e075d1e6d1df68b8db333232b"
+  },
+  "not_proven": [
+    "24h stability, capacity ceiling, MySQL sustained mixed-load performance",
+    "plugin-busy workload isolation or same-host worker/autoscaling benefit",
+    "all protocols, external payment/coupon integration, actual browser and production acceptance",
+    "512MiB physically reserved profile; actual original runner used 256MiB",
+    "P4 total-growth and finite-replay completion; later diagnostic-retention candidate is separate source"
+  ],
+  "preserved_failures": [
+    "original112/157 HTTP503",
+    "28d CI handler900.022s timeout and successful-run redo warnings",
+    "all previous test/transport/space failures"
+  ],
+  "overall_p0_p7_complete": false
+}

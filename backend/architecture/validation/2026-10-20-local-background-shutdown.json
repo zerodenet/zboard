@@ -1,0 +1,15 @@
+{
+  "base": "6693090",
+  "scope": "Normal handler-adapter shutdown closes only its local Services/Runtime; explicit handler deactivation remains global",
+  "before": {"method": "Old production source substituted with Go overlay, same new behavioral test", "result": "expected failure", "foreign_active": "cancel_requested", "foreign_queued": "canceled", "package_seconds": 0.202},
+  "after": [
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^(TestBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent|TestScheduledJobDoesNotOverlapAndStops)$' -count=1", "result": "pass", "package_seconds": 0.428},
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^(TestBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent|TestScheduledJobDoesNotOverlapAndStops|TestDurablePublishFailureSurvivesReopenAndBacksOff)$' -count=3", "result": "pass", "package_seconds": 2.267},
+    {"command": "GOMAXPROCS=1 go test -p 1 ./internal/handler -run '^TestMySQLBackgroundShutdownPreservesOtherWorkerLeaseAndQueuedIntent$' -count=1 -timeout 3m", "database": "actual isolated MySQL8.4 random schema", "result": "pass", "package_seconds": 4.114, "wall_seconds": 21.199}
+  ],
+  "migration": "None",
+  "rollback": "Source-only revert restores the prior global-cancellation-on-shutdown risk; do not operate multiple workers under that assumption",
+  "remaining": ["New-head full backend, full actual MySQL and CI", "Spool cross-process ownership", "Bounded graceful drain for independent roles", "Measured independent-process benefit and resource-controlled autoscaling"],
+  "independent_worker_or_autoscaler_completed": false,
+  "production_migration_executed": false
+}

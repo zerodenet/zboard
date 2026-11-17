@@ -1,0 +1,63 @@
+{
+  "source": "0f491e151079ca88b224d86baaeeae6a9211b120",
+  "checkout": "/workspace/zboard-principal-copy-final-verify",
+  "phase": "mysql",
+  "started_utc": "2026-10-21T01:17:59.134798+00:00",
+  "environment": {
+    "GOMAXPROCS": "2",
+    "parallel_packages": "2"
+  },
+  "checks": [
+    {
+      "name": "mysql-core",
+      "command": "go test -p 2 ./internal/datastore ./internal/handler ./internal/adapters/persistence/networkstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 1,
+      "wall_seconds": 901.583,
+      "log": "mysql-core-0f491e1-final.log"
+    },
+    {
+      "name": "mysql-jobstore",
+      "command": "go test -p 2 ./internal/adapters/persistence/jobstore -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 124.763,
+      "log": "mysql-jobstore-0f491e1-final.log"
+    },
+    {
+      "name": "mysql-copy",
+      "command": "go test -p 2 ./internal/adapters/persistence/platformstore -run MySQL -count=1 -timeout 15m",
+      "environment_additions": {},
+      "exit_code": 0,
+      "wall_seconds": 148.095,
+      "log": "mysql-copy-0f491e1-final.log"
+    }
+  ],
+  "pending": [],
+  "note": "Sequential isolated checks; no concurrent local load. MySQL copy remains separate and sequential, including when a preceding independent check fails.",
+  "finished_utc": "2026-10-21T01:37:33.576978+00:00",
+  "raw_logs_sha256": {
+    "mysql-core-0f491e1-final.log": "7515238cb6383f1592f3bde02758b373858cde21a48a4f72bcd9d2197157347f",
+    "mysql-jobstore-0f491e1-final.log": "759c9424780f25745fe06b02b507d5f2245d9d82ec1fad2a61c6a071d1995498",
+    "mysql-copy-0f491e1-final.log": "b5951343d6cefb2a1dc698e9e0ae5a46554e577d52833aa01458126b181dc995"
+  },
+  "packages": {
+    "datastore_seconds": 153.679,
+    "handler_timeout_seconds": 900.023,
+    "networkstore_seconds": 114.327,
+    "jobstore": "PASS",
+    "platformstore_copy": "PASS"
+  },
+  "alarm_context": {
+    "active_test": "TestMySQLZeroEventWindowPreservesRoundedAccountingAndReplay",
+    "active_seconds_displayed": 4,
+    "stack": "handler zero_event_reduction_test.go:180 -> projectZeroNodeEventsWithMerge -> ProjectBufferedEvents -> ApplyFlowBatch -> meteringstore.validateFlowWindowReports:77 -> actual mysqlStmt query wait",
+    "interpretation": "The last test is in actual settlement SQL, not fixture migration. Package cumulative15m alarm does not identify that4s test as the root cause."
+  },
+  "limits": [
+    "Core command failed; original timeout/gates/exclusions unchanged and no retry.",
+    "Independent jobstore124.763s/copy148.095s actually ran and passed afterward.",
+    "Exact-source newCI39525675188 all6 pass separately, but handler892.176s leaves only7.824s margin. Neither result replaces the other.",
+    "Fullbackend and original constrained capacity pass on0f; no stable startup/P7 completion claim."
+  ]
+}

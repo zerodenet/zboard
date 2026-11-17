@@ -1,0 +1,17 @@
+{
+  "base": "118fcee",
+  "scope": "Restrict recurring source prelocks to verified V2 recurring roots; preserve ordinary lifecycle owner-wait fence",
+  "historical_failures": {
+    "ci": ["https://github.com/zerodenet/zboard/actions/runs/39477344970", "https://github.com/zerodenet/zboard/actions/runs/39477387227"],
+    "failed_tests": ["TestMySQLExpiryRejectsCheckoutCommittedDuringOwnerLockWait", "TestMySQLSubscriptionTerminationFencesCheckoutInsertionAtReadCommitted"],
+    "local_7b10068": "Full Go, vet, build and pure-Go SQLite passed; MySQL core failed these races and exceeded its original 15-minute limit; database-copy stage was not executed"
+  },
+  "validation": [
+    {"command": "GOMAXPROCS=2 go test -p 1 ./internal/adapters/persistence/commercestore -run '^(TestRecurring|TestInitialOnlyCheckout)' -count=1", "result": "pass", "package_seconds": 0.344},
+    {"command": "GOMAXPROCS=2 go test -p 1 ./internal/handler -run '^TestMySQL(ExpiryRejectsCheckoutCommittedDuringOwnerLockWait|SubscriptionTerminationFencesCheckoutInsertionAtReadCommitted|RecurringDiscountPreviewWaitsBeforeOwnerAndRejectsStaleQuote)$' -count=1 -timeout 3m", "database": "isolated MySQL 8.4, random schemas", "result": "pass", "wall_seconds": 15.973}
+  ],
+  "migration": "None",
+  "rollback": "Revert this source-only correction only with the recurring source-lock change; retain all purchase and payment evidence",
+  "remaining": ["Full backend and MySQL checks and current correcting-commit CI", "Automatic recurring approvals and SQLite cursor cohort are separate pending batches"],
+  "production_migration_executed": false
+}

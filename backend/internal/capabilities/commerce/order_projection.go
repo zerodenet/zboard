@@ -1,11 +1,15 @@
 package commerce
 
-import "time"
+import (
+	"github.com/zerodenet/zboard/backend/internal/businessref"
+	"time"
+)
 
 // OrderListItem is the bounded order projection used by both account and
 // administration tables. Payment callback bodies and failure diagnostics are
 // detail-only and must never be returned by a list endpoint.
 type OrderListItem struct {
+	OrderNo                    string     `json:"order_no" gorm:"-"`
 	SubscriptionEndedAt        *time.Time `json:"subscription_ended_at,omitempty"`
 	SubscriptionEndReason      string     `json:"subscription_end_reason,omitempty"`
 	SubscriptionFinalFlowTotal int64      `json:"subscription_final_flow_total"`
@@ -68,6 +72,7 @@ type PaymentEventSummary struct {
 
 func SummarizeOrder(order Order) OrderListItem {
 	return OrderListItem{
+		OrderNo:             businessref.Order(order.ID, order.CreatedAt),
 		PayableAmount:       order.PayableAmount,
 		SubscriptionEndedAt: order.SubscriptionEndedAt, SubscriptionEndReason: order.SubscriptionEndReason, SubscriptionFinalFlowTotal: order.SubscriptionFinalFlowTotal, SubscriptionFinalFlowUsed: order.SubscriptionFinalFlowUsed,
 		ID: order.ID, UserID: order.UserID, SubscriptionID: order.SubscriptionID,

@@ -1,12 +1,12 @@
 <template>
-  <time
+  <span v-if="!validDate" class="time-placeholder" :title="value ? exactLabel : undefined" :aria-label="exactLabel">-</span>
+  <time v-else
     class="time-badge"
     :class="`time-badge-${tone}`"
     :datetime="dateTimeAttribute"
     :title="exactLabel"
     :aria-label="ariaLabel"
   >
-    <UiIcon name="clock" />
     <span>{{ label }}</span>
   </time>
 </template>
@@ -14,7 +14,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatCompactDateTime, formatDateTime, formatExactDateTime, formatRelativeTime, isPerpetualDate } from '../utils/format'
-import UiIcon from './UiIcon.vue'
 
 const props = withDefaults(defineProps<{
   value?: string | null

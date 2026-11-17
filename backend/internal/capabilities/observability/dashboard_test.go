@@ -43,3 +43,31 @@ func TestDashboardRejectsIncompleteReadWindows(t *testing.T) {
 		t.Fatalf("zero-duration midnight window was rejected: called=%v err=%v", stub.called, err)
 	}
 }
+
+type dashboardViewStub struct {
+	dashboardRepositoryStub
+	view string
+}
+
+func (s *dashboardViewStub) LoadDashboardView(_ context.Context, _ DashboardPeriod, _ time.Time, _ []DashboardTrendBucket, view string) (DashboardSnapshot, error) {
+	s.view = view
+	return DashboardSnapshot{}, nil
+}
+func TestDashboardFocusedReadsValidateBeforeDispatch(t *testing.T) {
+	now := time.Now().UTC()
+	period := DashboardPeriod{From: now.Add(-time.Hour), To: now, PreviousFrom: now.Add(-2 * time.Hour), PreviousTo: now.Add(-time.Hour)}
+	stub := &dashboardViewStub{}
+	service := Dashboard{Repository: stub}
+	for _, view := range []string{"current", "statistics", "trend"} {
+		if _, err := service.View(context.Background(), period, now, nil, view); err != nil || stub.view != view {
+			t.Fatal(view, err)
+		}
+	}
+	stub.view = ""
+	if _, err := service.View(context.Background(), period, now, nil, "unknown"); !errors.Is(err, ErrDashboardInvalid) || stub.view != "" {
+		t.Fatal(err)
+	}
+	if _, err := service.View(context.Background(), DashboardPeriod{}, now, nil, "current"); !errors.Is(err, ErrDashboardInvalid) {
+		t.Fatal(err)
+	}
+}

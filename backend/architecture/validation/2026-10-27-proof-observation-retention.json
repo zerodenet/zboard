@@ -1,0 +1,324 @@
+{
+  "scope": "Separate actual-asset-admission fixture. Existing unknown-history first experiment is retained unchanged. Finite synthetic windows, not elapsed long-duration or original capacity acceptance.",
+  "implementation_parent": "27873ac",
+  "test_source_sha256": "4e54d0e9bcce752edd242a5005e4cd1480fe2567ec2894ac952f4d9675d1bf3c",
+  "source_binding": "aa8c347d5417623f8d7c1b77482faafc3e6ab1c07e3ff4d246edca883299e1b9",
+  "command": [
+    "go",
+    "test",
+    "-json",
+    "-p",
+    "1",
+    "./internal/adapters/persistence/meteringstore",
+    "./internal/datastore",
+    "./internal/handler",
+    "./cmd/zboard",
+    "-run",
+    "NativeProofArchive|MeteringProofMaintenance|NativeProofFiniteWindow|NativeProofFiniteGrowth",
+    "-count=1",
+    "-timeout",
+    "15m"
+  ],
+  "source_unchanged": true,
+  "wall_seconds": 63.093,
+  "events": {
+    "pass": 31
+  },
+  "experiments": [
+    {
+      "driver": "sqlite",
+      "scope": "Finite synthetic windows; actual asset admission, projection, archive and retention. Necessary financial receipts and observation headers grow per accepted identity. Two current references and unknown held material remain; no capacity/constant-total-size/physical-shrink claim. Body bytes are named variable material only; MySQL physical table values are estimates.",
+      "checkpoints": [
+        {
+          "phase": "before_observation_projection",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 1026,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 822560,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3653632,
+          "sqlite_database_file_bytes": 3330048,
+          "sqlite_wal_file_bytes": 4260112,
+          "observation_status_rows": {
+            "pending": 1026
+          },
+          "retired_observation_headers": 0,
+          "retired_original_material_bytes": 0
+        },
+        {
+          "phase": "after_observation_projection_before_retention",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 1026,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 822560,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3715072,
+          "sqlite_free_page_bytes": 57344,
+          "sqlite_database_file_bytes": 3715072,
+          "sqlite_wal_file_bytes": 4260112,
+          "observation_status_rows": {
+            "applied": 1025,
+            "held": 1
+          },
+          "retired_observation_headers": 0,
+          "retired_original_material_bytes": 0
+        },
+        {
+          "phase": "after_seven_day_retention",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 3,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 2878,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3715072,
+          "sqlite_free_page_bytes": 1081344,
+          "sqlite_database_file_bytes": 3715072,
+          "sqlite_wal_file_bytes": 4260112,
+          "observation_status_rows": {
+            "applied": 1025,
+            "held": 1
+          },
+          "retired_observation_headers": 1023,
+          "retired_original_material_bytes": 819682
+        },
+        {
+          "phase": "after_reverse_checkpoint_replay",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 3,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 2878,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3715072,
+          "sqlite_free_page_bytes": 1081344,
+          "sqlite_database_file_bytes": 3715072,
+          "sqlite_wal_file_bytes": 4260112,
+          "observation_status_rows": {
+            "applied": 1025,
+            "held": 1
+          },
+          "retired_observation_headers": 1023,
+          "retired_original_material_bytes": 819682
+        },
+        {
+          "phase": "after_unseen_late_apply_and_retire",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1027,
+            "node_observation_parts": 3,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 2878,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "sqlite_allocated_page_bytes": 3715072,
+          "sqlite_free_page_bytes": 1081344,
+          "sqlite_database_file_bytes": 3715072,
+          "sqlite_wal_file_bytes": 4260112,
+          "observation_status_rows": {
+            "applied": 1026,
+            "held": 1
+          },
+          "retired_observation_headers": 1024,
+          "retired_original_material_bytes": 820484
+        }
+      ]
+    },
+    {
+      "driver": "mysql",
+      "scope": "Finite synthetic windows; actual asset admission, projection, archive and retention. Necessary financial receipts and observation headers grow per accepted identity. Two current references and unknown held material remain; no capacity/constant-total-size/physical-shrink claim. Body bytes are named variable material only; MySQL physical table values are estimates.",
+      "checkpoints": [
+        {
+          "phase": "before_observation_projection",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 1026,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 822560,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 3555328,
+          "mysql_table_index_bytes_estimate": 4718592,
+          "observation_status_rows": {
+            "pending": 1026
+          },
+          "retired_observation_headers": 0,
+          "retired_original_material_bytes": 0
+        },
+        {
+          "phase": "after_observation_projection_before_retention",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 1026,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 822560,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 3555328,
+          "mysql_table_index_bytes_estimate": 4718592,
+          "observation_status_rows": {
+            "applied": 1025,
+            "held": 1
+          },
+          "retired_observation_headers": 0,
+          "retired_original_material_bytes": 0
+        },
+        {
+          "phase": "after_seven_day_retention",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 3,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 2878,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 3555328,
+          "mysql_table_index_bytes_estimate": 4718592,
+          "observation_status_rows": {
+            "applied": 1025,
+            "held": 1
+          },
+          "retired_observation_headers": 1023,
+          "retired_original_material_bytes": 819682
+        },
+        {
+          "phase": "after_reverse_checkpoint_replay",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1026,
+            "node_observation_parts": 3,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 2878,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 3555328,
+          "mysql_table_index_bytes_estimate": 4718592,
+          "observation_status_rows": {
+            "applied": 1025,
+            "held": 1
+          },
+          "retired_observation_headers": 1023,
+          "retired_original_material_bytes": 819682
+        },
+        {
+          "phase": "after_unseen_late_apply_and_retire",
+          "windows": 16,
+          "rows": {
+            "flow_usages": 1,
+            "metering_report_receipts": 16,
+            "metering_usage_projection_pending": 0,
+            "node_observation_intents": 1027,
+            "node_observation_parts": 3,
+            "traffic_record_meta_archives": 16,
+            "traffic_records": 16
+          },
+          "live_meta_bytes": 2048,
+          "archive_payload_bytes": 2639,
+          "archive_original_bytes": 10624,
+          "observation_part_bytes": 2878,
+          "raw_bytes": 3072,
+          "used_bytes": 5120,
+          "mysql_table_data_bytes_estimate": 3555328,
+          "mysql_table_index_bytes_estimate": 4718592,
+          "observation_status_rows": {
+            "applied": 1026,
+            "held": 1
+          },
+          "retired_observation_headers": 1024,
+          "retired_original_material_bytes": 820484
+        }
+      ]
+    }
+  ],
+  "remaining": [
+    "Necessary financial receipts and observation headers retain linear growth.",
+    "Two current references and unknown held material are intentionally retained.",
+    "Physical database files are not claimed to shrink.",
+    "Original storage-capacity gate, equal-budget worker benefit and production/external acceptance remain unexecuted."
+  ]
+}

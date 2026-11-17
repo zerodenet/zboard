@@ -2,6 +2,7 @@ package commerce
 
 import (
 	"context"
+	"math"
 	"strings"
 )
 
@@ -37,6 +38,12 @@ func ApplyPlanUpdate(current Plan, req PlanUpdateRequest) (Plan, []string, error
 	}
 	if *req.ExpectedRevision != current.Revision {
 		return Plan{}, nil, &PlanRevisionError{Current: current.Revision}
+	}
+	if req.SyncTrafficQuota && req.TrafficBytes == nil {
+		return Plan{}, nil, validationError("套餐策略校验失败。", map[string]string{"traffic_bytes": "同步历史订阅需要明确指定流量配额。"})
+	}
+	if req.SyncResetPolicy && req.ResetPolicy == nil {
+		return Plan{}, nil, validationError("套餐策略校验失败。", map[string]string{"sync_reset_policy": "同步重置策略需要明确指定流量重置策略。"})
 	}
 	candidate := current
 	fields := []string{}
@@ -138,6 +145,15 @@ func ApplyPlanUpdate(current Plan, req PlanUpdateRequest) (Plan, []string, error
 
 	candidate.Revision = current.Revision + 1
 	return candidate, fields, nil
+}
+
+// SynchronizedPlanQuota retains the accounting baseline and all used bytes.
+// An overused cycle keeps its usage; available quota is clamped by the reader.
+func SynchronizedPlanQuota(cycleStartUsed, flowUsed, flowTotal, quota int64) (int64, error) {
+	if quota <= 0 || cycleStartUsed < 0 || flowUsed < cycleStartUsed || flowTotal < cycleStartUsed || cycleStartUsed > math.MaxInt64-quota {
+		return 0, validationError("历史订阅额度无法安全同步，请核对用量。", map[string]string{"sync_traffic_quota": "累计用量或新额度超出安全计算范围。"})
+	}
+	return cycleStartUsed + quota, nil
 }
 func ValidatePlanGroup(candidate Plan, request PlanUpdateRequest, exists, enabled, hasEndpoint bool) error {
 	if request.NodeGroupID != nil && !exists {

@@ -7,9 +7,12 @@ import (
 )
 
 const (
-	PublicationLease           = 3 * time.Minute
-	PublicationTimeout         = 2 * time.Minute
-	PublicationFinalizeTimeout = 5 * time.Second
+	PublicationFailureLimit      = 8
+	PublicationRecheckInterval   = 30 * time.Second
+	PublicationLease             = 3 * time.Minute
+	PublicationTimeout           = 2 * time.Minute
+	PublicationFinalizeTimeout   = 5 * time.Second
+	PublicationCapabilityRecheck = 15 * time.Minute
 )
 
 var (
@@ -21,8 +24,11 @@ var (
 type Publication struct {
 	NodeID, EndpointID, RequestedBy uint
 	Generation                      uint64
+	Phase, AppliedConfigSHA256      string
 	Attempts                        uint
 	LastError                       string
+	Reconciling, Suspended          bool
+	Deferred                        bool
 	NextAttemptAt, LeaseUntil       time.Time
 	LeaseToken                      string
 }
@@ -104,6 +110,9 @@ func (q PublicationQueue) Execute(parent context.Context, item Publication) erro
 	completionErr := q.Store.Complete(completionCtx, item, time.Now().UTC(), failure)
 	if completionErr != nil {
 		return errors.Join(failure, ErrPublicationFinalize, completionErr)
+	}
+	if IsConfigurationCapabilityDeferral(failure) {
+		return nil // Persisted pending compatibility, not a failed jobs run.
 	}
 	return failure
 }

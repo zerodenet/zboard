@@ -89,7 +89,7 @@ export interface MarketDetail {
 }
 export const fetchMarketDetail = (id: string, version = '', signal?: AbortSignal) => api.get(`/admin/plugin-market/${encodeURIComponent(id)}`, { params: version ? { version } : undefined, signal, timeout: 60_000 }).then(data<MarketDetail>);
 export const previewMarketPlugin = (id: string, version: string, signal?: AbortSignal) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/inspect`, undefined, { params: { version }, signal, timeout: 60_000 }).then(data<ImportPreview>);
-export const confirmMarketPlugin = (id: string, version: string, preview: ImportPreview, trust: boolean) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { version, digest: preview.digest, fingerprint: trust ? preview.fingerprint : '' }, { timeout: 60_000 }).then(data<Plugin>).then(changedPlugin);
+export const confirmMarketPlugin = (id: string, version: string, preview: ImportPreview, trust: boolean, migratePublisher = false) => api.post(`/admin/plugin-market/${encodeURIComponent(id)}/install`, { version, digest: preview.digest, fingerprint: trust || migratePublisher ? preview.fingerprint : '', publisher_migration: migratePublisher ? preview.publisher_migration?.confirmation || '' : '' }, { timeout: 60_000 }).then(data<Plugin>).then(changedPlugin);
 export interface PluginSession {
   token: string;
   bridge_token: string;
@@ -110,6 +110,11 @@ export interface CatalogPage {
   generation: number;
 }
 export interface CatalogSlot {
+  config_revision?: number;
+  availability?: "ready" | "unavailable";
+  presentation?: "frame" | "identity";
+  reserved_height?: number;
+  providers?: { id: string; name: string }[];
   plugin_id: string;
   slot: PluginSlotContribution;
   generation: number;
@@ -125,20 +130,22 @@ export interface ImportPreview {
   manifest: Plugin['manifest'] & { id: string; name: string; version: string };
   publisher: string; public_key: string; fingerprint: string; digest: string; trusted: boolean;
   compatibility: Plugin['compatibility'];
+  publisher_migration?: { from_publisher: string; to_publisher: string; from_version_id: string; previous_state: string; generation: number; confirmation: string };
 }
 export const previewPlugin = (file: File, publicKey = '') => api.post('/admin/plugins', file, {
   params: { inspect: true }, headers: { 'Content-Type': 'application/octet-stream', 'X-Plugin-Public-Key': publicKey.trim() }, timeout: 60_000,
 }).then(data<ImportPreview>);
-export const importPlugin = (file: File, preview?: ImportPreview, trust = false) => api.post('/admin/plugins', file, {
+export const importPlugin = (file: File, preview?: ImportPreview, trust = false, migratePublisher = false) => api.post('/admin/plugins', file, {
   headers: { 'Content-Type': 'application/octet-stream', 'X-Plugin-Public-Key': preview?.public_key || '',
-    'X-Plugin-Digest': preview?.digest || '', 'X-Plugin-Trust-Fingerprint': trust ? preview?.fingerprint || '' : '' },
+    'X-Plugin-Digest': preview?.digest || '', 'X-Plugin-Trust-Fingerprint': trust || migratePublisher ? preview?.fingerprint || '' : '',
+    'X-Plugin-Publisher-Migration': migratePublisher ? preview?.publisher_migration?.confirmation || '' : '' },
   timeout: 60_000,
 }).then(data<Plugin>).then(changedPlugin);
+export type PluginLifecycleAction = 'enable' | 'disable' | 'uninstall' | 'purge_data';
 export const pluginAction = (
   p: Plugin,
-  action: string,
+  action: PluginLifecycleAction,
   acceptUntested = false,
-  versionID = "",
 ) =>
   api
     .post(
@@ -146,7 +153,6 @@ export const pluginAction = (
       {
         generation: p.generation,
         accept_untested: acceptUntested,
-        version_id: versionID,
       },
       { timeout: 60_000 },
     )
@@ -171,6 +177,7 @@ export const fetchPluginOperations = (id: string, signal?: AbortSignal) =>
         Array<{
           id: string;
           action: string;
+          previous_publisher?: string; publisher?: string; signing_key_fingerprint?: string; package_digest?: string;
           state: string;
           actor: string;
           message: string;
@@ -234,7 +241,7 @@ export const pluginBridge = (
     .post(
       "/plugin-ui/bridge",
       { ...payload, type },
-      { headers: { "X-Plugin-Session": session.token, ...(confirmation ? { "X-ZBoard-Account-Confirmation": confirmation } : {}) }, signal },
+      { timeout: 35_000, headers: { "X-Plugin-Session": session.token, ...(confirmation ? { "X-ZBoard-Account-Confirmation": confirmation } : {}) }, signal },
     )
     .then(data<Record<string, unknown>>);
 export const pluginPagePath = (surface: Surface, id: string, page: string) =>
@@ -258,3 +265,7 @@ export const revokePluginSession = (session: PluginSession) =>
 export const fetchPluginMigrations = (id: string, signal?: AbortSignal) => api.get(`/admin/plugins/${id}/migrations`, { signal }).then(data<PluginMigration[]>);
 export const capabilityLabel = (c: string) => ({ 'zboard.ui.page.v1': '展示插件页面', 'zboard.config.v1': '管理自身配置', 'zboard.identity.provider.v1': '验证第三方身份', 'zboard.storage.v1': '读写自身私有数据', 'zboard.task.v1': '注册定时任务' })[c] || c;
 export const pluginBusinessLabel = (p: Plugin) => p.manifest.capabilities.includes('zboard.identity.provider.v1') ? '第三方登录与注册' : p.manifest.components.server ? '服务扩展' : '页面扩展';
+
+export interface PluginComposition { revision: string; slots: CatalogSlot[] }
+export const fetchPluginComposition = (surface: Surface, signal?: AbortSignal) => api.get('/plugin-ui/composition', { params: { surface }, signal, timeout: 3500 }).then(data<PluginComposition>);
+export const startPluginIdentity = (plugin: string, slot: string, provider: string, generation: number, revision: number) => api.post(`/plugin-ui/${encodeURIComponent(plugin)}/identity-start`, {slot_id: slot, provider_id: provider, generation, config_revision: revision}).then(data<{authorization_url: string}>);

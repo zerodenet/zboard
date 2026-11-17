@@ -3,12 +3,10 @@ package meteringstore
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
-	"errors"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 	"time"
 )
@@ -20,56 +18,37 @@ type TrafficTrends struct {
 
 func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficTrendQuery) (metering.TrafficTrendData, error) {
 	var out metering.TrafficTrendData
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var user model.User
-		err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id", "is_admin", "status").First(&user, actor).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return metering.ErrTrendPermission
+	if err := authorizeReportingRead(ctx, s.DB, actor, q.Administrative); err != nil {
+		return out, err
+	}
+	if !q.Administrative {
+		q.UserID = actor
+	}
+	database := s.ReadDB
+	if database == nil {
+		database = s.DB
+	}
+	var coverage *metering.HistoryCoverage
+	q, coverage = normalizeTrafficTrendHistory(q, database.NowFunc().UTC())
+	out.History = coverage
+	if q.Days == 0 {
+		out.Snapshot = metering.TrafficTrendSnapshot{Points: []metering.TrafficTrendPoint{}, AsOf: database.NowFunc().UTC()}
+		return out, nil
+	}
+	err := database.WithContext(ctx).Transaction(func(read *gorm.DB) error {
+		var err error
+		windows := make([][2]time.Time, 0, len(q.Buckets))
+		for _, bucket := range q.Buckets {
+			windows = append(windows, [2]time.Time{bucket.StartUTC, bucket.EndUTC})
 		}
+		pending, err := inspectHourlyUsageWindows(read, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID}, windows)
 		if err != nil {
 			return err
 		}
-		if user.Status != "active" || (q.Administrative && !user.IsAdmin) {
-			return metering.ErrTrendPermission
-		}
-		if !q.Administrative {
-			q.UserID = actor
-		}
-		read := tx
-		if s.ReadDB != nil && s.ReadDB != s.DB {
-			read = s.ReadDB.WithContext(ctx)
-		}
 		load := func() (metering.TrafficTrendSnapshot, error) {
 			result := metering.TrafficTrendSnapshot{AsOf: time.Now().UTC()}
-			query := TrafficAggregateSource(read, q.Buckets[0].StartUTC, q.Buckets[len(q.Buckets)-1].EndUTC, TrafficScope{q.UserID, q.SubscriptionID, q.NodeID, q.ProtocolEndpointID})
-			// UTC-hour summaries cannot split local days at half/quarter-hour boundaries.
-			for _, bucket := range q.Buckets {
-				if !bucket.StartUTC.Equal(bucket.StartUTC.Truncate(time.Hour)) || !bucket.EndUTC.Equal(bucket.EndUTC.Truncate(time.Hour)) {
-					query = read.Model(&model.TrafficRecord{}).Select("*, 1 AS record_count").Where("record_at >= ? AND record_at < ?", q.Buckets[0].StartUTC, q.Buckets[len(q.Buckets)-1].EndUTC)
-					for _, filter := range []struct {
-						column string
-						id     uint
-					}{{"user_id", q.UserID}, {"subscription_id", q.SubscriptionID}, {"node_id", q.NodeID}, {"protocol_endpoint_id", q.ProtocolEndpointID}} {
-						if filter.id > 0 {
-							query = query.Where(filter.column+" = ?", filter.id)
-						}
-					}
-					query = read.Table("(?) AS traffic_aggregate", query)
-					break
-				}
-			}
-			expression := "DATE(record_at)"
-			var args []interface{}
-			if q.Timezone != "UTC" {
-				parts := make([]string, 0, len(q.Buckets))
-				for _, b := range q.Buckets {
-					parts = append(parts, "WHEN record_at >= ? AND record_at < ? THEN ?")
-					args = append(args, b.StartUTC, b.EndUTC, b.Key)
-				}
-				expression = "CASE " + strings.Join(parts, " ") + " ELSE NULL END"
-			}
-			var rows []metering.TrafficTrendAggregate
-			if err := query.Select(expression+" AS day, COALESCE(SUM(upload_bytes), 0) AS upload_bytes, COALESCE(SUM(download_bytes), 0) AS download_bytes, COALESCE(SUM(used_bytes), 0) AS used_bytes, COALESCE(SUM(record_count), 0) AS record_count", args...).Group("day").Order("day ASC").Scan(&rows).Error; err != nil {
+			rows, err := loadTrafficCalendar(read, q)
+			if err != nil {
 				return result, err
 			}
 			result.Points, result.RecordCount = metering.BuildTrafficTrendPoints(q.From, q.Days, rows)
@@ -81,7 +60,12 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 			cacheQuery := q
 			cacheQuery.IncludeSubscriptions = false
 			key, _ := json.Marshal(cacheQuery)
-			out.Snapshot, err = s.Cache.Get(ctx, sha256.Sum256(key), load)
+			if pending {
+				invalidateUsageSnapshot(s.Cache, sha256.Sum256(key))
+				out.Snapshot, err = load()
+			} else {
+				out.Snapshot, err = s.Cache.Get(ctx, sha256.Sum256(key), load)
+			}
 		}
 		if err != nil {
 			return err
@@ -104,7 +88,7 @@ func (s TrafficTrends) Read(ctx context.Context, actor uint, q metering.TrafficT
 			}
 		}
 		return nil
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return metering.TrafficTrendData{}, err
 	}

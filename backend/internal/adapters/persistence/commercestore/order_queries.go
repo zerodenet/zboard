@@ -3,6 +3,7 @@ package commercestore
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/businessref"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -44,6 +45,9 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 		} else if q.UserID != 0 {
 			query = query.Where("orders.user_id = ?", q.UserID)
 		}
+		if q.ID != 0 {
+			query = query.Where("orders.id = ?", q.ID)
+		}
 		if admin && q.Search != "" {
 			pattern := "%" + strings.ToLower(q.Search) + "%"
 			condition := `LOWER(orders.trade_no) LIKE ? OR LOWER(COALESCE(orders.provider_trade_no, '')) LIKE ? OR LOWER(orders.plan_name) LIKE ? OR LOWER(orders.sku_name) LIKE ? OR LOWER(orders.channel) LIKE ? OR LOWER(users.email) LIKE ?`
@@ -51,6 +55,10 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 			if id, err := strconv.ParseUint(q.Search, 10, 64); err == nil && id > 0 {
 				condition += " OR orders.id = ? OR orders.user_id = ? OR orders.subscription_id = ?"
 				args = append(args, id, id, id)
+			}
+			if id, ok := businessref.Parse(q.Search, 'O'); ok && (strings.HasPrefix(strings.ToUpper(strings.TrimSpace(q.Search)), "DD") || strings.HasPrefix(strings.ToUpper(strings.TrimSpace(q.Search)), "O")) {
+				condition += " OR orders.id = ?"
+				args = append(args, id)
 			}
 			query = query.Where(condition, args...)
 		}
@@ -79,6 +87,9 @@ func (s OrderQueries) List(ctx context.Context, actor uint, admin bool, q commer
 	})
 	if err != nil {
 		return commerce.OrderPage{}, err
+	}
+	for i := range out.Items {
+		out.Items[i].OrderNo = businessref.Order(out.Items[i].ID, out.Items[i].CreatedAt)
 	}
 	return out, nil
 }

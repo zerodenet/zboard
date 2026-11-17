@@ -1,0 +1,230 @@
+{
+  "date_utc": "2026-10-19",
+  "baseline_sha": "7c7283fb34840883fccaba1de6e0a98edb24dfb1",
+  "candidate_sha": "16815a9288db2bb852fdc0065a7551d726ab517e",
+  "go": "1.26.8",
+  "cgo_enabled": 0,
+  "gomaxprocs": 2,
+  "cpu_quota_cores": 4,
+  "memory_limit_bytes": 17179869184,
+  "iterations_per_sample": 10,
+  "samples_per_mode": 3,
+  "binary_sha256": {
+    "baseline": "ade96d476ba8b3744b212beac8a02c37f7933735f49aca8ad43be6ead1c596a8",
+    "candidate": "f5526e1fae46c6310e3af65db43228a459b941c630d01e1871300ebd86730609"
+  },
+  "results": {
+    "baseline": {
+      "ZeroAccounting/FullBatch": [
+        {
+          "ns/op": 9083850,
+          "SQL/batch": 76.0,
+          "events/s": 3523.0,
+          "p95-ms/batch": 10.18,
+          "p99-ms/batch": 10.18,
+          "B/op": 1274730.0,
+          "allocs/op": 12857.0
+        },
+        {
+          "ns/op": 7902912,
+          "SQL/batch": 76.0,
+          "events/s": 4049.0,
+          "p95-ms/batch": 9.613,
+          "p99-ms/batch": 9.613,
+          "B/op": 1270476.0,
+          "allocs/op": 12836.0
+        },
+        {
+          "ns/op": 9240793,
+          "SQL/batch": 76.0,
+          "events/s": 3463.0,
+          "p95-ms/batch": 10.72,
+          "p99-ms/batch": 10.72,
+          "B/op": 1270521.0,
+          "allocs/op": 12838.0
+        }
+      ],
+      "ZeroAccounting/CoverageOnly": [
+        {
+          "ns/op": 191028,
+          "SQL/batch": 2.0,
+          "events/s": 167515.0,
+          "p95-ms/batch": 0.2049,
+          "p99-ms/batch": 0.2049,
+          "B/op": 40516.0,
+          "allocs/op": 415.0
+        },
+        {
+          "ns/op": 136034,
+          "SQL/batch": 2.0,
+          "events/s": 235234.0,
+          "p95-ms/batch": 0.1366,
+          "p99-ms/batch": 0.1366,
+          "B/op": 40516.0,
+          "allocs/op": 415.0
+        },
+        {
+          "ns/op": 127760,
+          "SQL/batch": 2.0,
+          "events/s": 250470.0,
+          "p95-ms/batch": 0.1701,
+          "p99-ms/batch": 0.1701,
+          "B/op": 40532.0,
+          "allocs/op": 415.0
+        }
+      ],
+      "ZeroEventReduction/window_32": [
+        {
+          "ns/op": 276095308,
+          "SQL/window": 2432.0,
+          "input-events/s": 3709.0,
+          "B/op": 41480875.0,
+          "allocs/op": 425846.0
+        },
+        {
+          "ns/op": 282881068,
+          "SQL/window": 2432.0,
+          "input-events/s": 3620.0,
+          "B/op": 41466158.0,
+          "allocs/op": 425713.0
+        },
+        {
+          "ns/op": 293264149,
+          "SQL/window": 2432.0,
+          "input-events/s": 3492.0,
+          "B/op": 41468113.0,
+          "allocs/op": 425728.0
+        }
+      ],
+      "ZeroEventReduction/window_2000": [
+        {
+          "ns/op": 15356437,
+          "SQL/window": 82.0,
+          "input-events/s": 66682.0,
+          "B/op": 4626560.0,
+          "allocs/op": 50017.0
+        },
+        {
+          "ns/op": 15422664,
+          "SQL/window": 82.0,
+          "input-events/s": 66396.0,
+          "B/op": 4625112.0,
+          "allocs/op": 49999.0
+        },
+        {
+          "ns/op": 13709990,
+          "SQL/window": 82.0,
+          "input-events/s": 74690.0,
+          "B/op": 4623639.0,
+          "allocs/op": 49992.0
+        }
+      ]
+    },
+    "16815a9": {
+      "ZeroAccounting/FullBatch": [
+        {
+          "ns/op": 9346368,
+          "SQL/batch": 76.0,
+          "events/s": 3424.0,
+          "p95-ms/batch": 10.71,
+          "p99-ms/batch": 10.71,
+          "B/op": 1270852.0,
+          "allocs/op": 12840.0
+        },
+        {
+          "ns/op": 10235568,
+          "SQL/batch": 76.0,
+          "events/s": 3126.0,
+          "p95-ms/batch": 12.82,
+          "p99-ms/batch": 12.82,
+          "B/op": 1270171.0,
+          "allocs/op": 12834.0
+        },
+        {
+          "ns/op": 10419652,
+          "SQL/batch": 76.0,
+          "events/s": 3071.0,
+          "p95-ms/batch": 11.34,
+          "p99-ms/batch": 11.34,
+          "B/op": 1271368.0,
+          "allocs/op": 12839.0
+        }
+      ],
+      "ZeroAccounting/CoverageOnly": [
+        {
+          "ns/op": 239266,
+          "SQL/batch": 2.0,
+          "events/s": 133742.0,
+          "p95-ms/batch": 0.4094,
+          "p99-ms/batch": 0.4094,
+          "B/op": 40516.0,
+          "allocs/op": 415.0
+        },
+        {
+          "ns/op": 195584,
+          "SQL/batch": 2.0,
+          "events/s": 163613.0,
+          "p95-ms/batch": 0.2233,
+          "p99-ms/batch": 0.2233,
+          "B/op": 40516.0,
+          "allocs/op": 415.0
+        },
+        {
+          "ns/op": 212312,
+          "SQL/batch": 2.0,
+          "events/s": 150722.0,
+          "p95-ms/batch": 0.2293,
+          "p99-ms/batch": 0.2293,
+          "B/op": 40528.0,
+          "allocs/op": 415.0
+        }
+      ],
+      "ZeroEventReduction/window_32": [
+        {
+          "ns/op": 302243540,
+          "SQL/window": 2432.0,
+          "input-events/s": 3388.0,
+          "B/op": 41483497.0,
+          "allocs/op": 425856.0
+        },
+        {
+          "ns/op": 302225204,
+          "SQL/window": 2432.0,
+          "input-events/s": 3388.0,
+          "B/op": 41464595.0,
+          "allocs/op": 425700.0
+        },
+        {
+          "ns/op": 296730961,
+          "SQL/window": 2432.0,
+          "input-events/s": 3451.0,
+          "B/op": 41467296.0,
+          "allocs/op": 425726.0
+        }
+      ],
+      "ZeroEventReduction/window_2000": [
+        {
+          "ns/op": 13914572,
+          "SQL/window": 82.0,
+          "input-events/s": 73592.0,
+          "B/op": 4625748.0,
+          "allocs/op": 50012.0
+        },
+        {
+          "ns/op": 15079268,
+          "SQL/window": 82.0,
+          "input-events/s": 67908.0,
+          "B/op": 4623574.0,
+          "allocs/op": 49989.0
+        },
+        {
+          "ns/op": 15222083,
+          "SQL/window": 82.0,
+          "input-events/s": 67271.0,
+          "B/op": 4625014.0,
+          "allocs/op": 49997.0
+        }
+      ]
+    }
+  }
+}

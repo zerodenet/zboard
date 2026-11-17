@@ -26,17 +26,18 @@ func IsSQLite(db *gorm.DB) bool {
 func databaseModels() []interface{} {
 	return []interface{}{
 		&model.PluginAuthorization{}, &model.PluginData{}, &model.PluginMigration{},
-		&model.User{}, &model.ExternalIdentity{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
+		&model.AccountSubject{}, &model.AccountCleanupState{}, &model.User{}, &model.ExternalIdentity{}, &model.Installation{}, &model.SystemConfig{}, &model.Announcement{}, &model.AnnouncementRead{},
 		&model.Plan{}, &model.PlanSKU{}, &model.PlanSKUOperation{}, &model.Node{}, &model.NodeGroup{}, &model.ProtocolEndpoint{},
-		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{},
+		&model.NodeGroupEndpoint{}, &model.Subscription{}, &model.SubscriptionMutation{}, &model.Order{}, &model.PaymentEvent{}, &model.WalletAccount{}, &model.WalletEntry{}, &model.PaymentAttempt{}, &model.PaymentReceipt{}, &model.OrderFunding{}, &model.WalletAdjustment{}, &model.WalletPayoutResult{}, &model.OrderValueBudget{}, &model.SubscriptionValueSettlement{}, &model.SubscriptionValueSettlementSource{}, &model.SubscriptionAutomaticRenewal{}, &model.AutomaticRenewalScan{}, &model.ConsumptionRefund{},
 		&model.SubscriptionMember{}, &model.SubscriptionToken{}, &model.SubscriptionTemplate{},
 		&model.SubscriptionRuleSet{}, &model.SubscriptionTemplateRuleSetBinding{}, &model.ProtocolCredential{},
 		&model.FlowUsage{}, &model.TrafficRecord{}, &model.ProtocolEndpointUsageDaily{}, &model.ProtocolEndpointUsageReset{}, &model.AuditLog{}, &model.EmailTemplate{},
 		&model.RegistrationEmailChallenge{}, &model.AccountRegistrationEvent{}, &model.Ticket{}, &model.TicketMessage{}, &model.UserAPIToken{},
+		&model.StoredFile{}, &model.TicketAttachment{},
 		&model.Task{}, &model.TaskItem{}, &model.MailDeliveryAttempt{}, &model.SubscriptionAlert{}, &model.SubscriptionAlertScan{}, &model.ProtocolDeployment{}, &model.QuotaEvent{},
-		&model.NodeKernelState{}, &model.NodeOperation{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
+		&model.NodeKernelState{}, &model.NodeOperation{}, &model.NodeRetirement{}, &model.ProviderAccount{}, &model.ManagedDNSRecord{},
 		&model.ProviderOperation{}, &model.ManagedCertificate{}, &model.CertificateProtocolEndpoint{},
-		&model.CertificateOperation{}, &model.NodeConfigPublish{}, &model.NodeProxyPool{}, &model.NetworkEntry{}, &model.NodeGroupNetworkEntry{},
+		&model.CertificateOperation{}, &model.NodeConfigPublish{}, &model.NodeProxyPool{}, &model.NodeProxyPoolBinding{}, &model.NetworkEntry{}, &model.NodeGroupNetworkEntry{},
 	}
 }
 
@@ -318,8 +319,17 @@ func runSQLiteMigrations(db *gorm.DB) error {
 		return err
 	}
 	record := schemaMigration{Version: preReleaseBaselineVersion, AppliedAt: time.Now().UTC()}
+	if !db.Migrator().HasColumn(&model.ProtocolEndpoint{}, "listen_address") {
+		return fmt.Errorf("protocol endpoint listen address schema is incomplete")
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0030_protocol_endpoint_listen_address.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
+	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
 		return fmt.Errorf("record sqlite schema version: %w", err)
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: "0031_files_and_ticket_attachments.up.sql", AppliedAt: time.Now().UTC()}).Error; err != nil {
+		return err
 	}
 	return nil
 }
@@ -338,11 +348,17 @@ func MigrationTables(db *gorm.DB) ([]string, error) {
 		tables = append(tables, parsed.Schema.Table)
 	}
 	tables = append(tables,
+		"order_discount_redemptions", "traffic_record_meta_archives",
+		"metering_report_receipts", "metering_usage_projection_pending", "traffic_diagnostic_materials", "credential_delivery_confirmations", "node_credential_delivery_states", "network_entry_delivery_confirmations", "closed_entitlements",
 		"menu_revisions", "menu_nodes",
+		"metering_identity_fences", "metering_cold_roots", "metering_cold_blocks", "metering_identity_profiles", "metering_cold_progress", "metering_ledger_targets", "metering_nonce_receipts", "metering_ledger_retention_progress", "metering_settlement_results", "metering_settlement_progress", "node_observation_mailboxes", "node_observation_gc_states", "flow_detail_retention_states", "runtime_metric_minutes", "flow_cursor_checkpoints", "flow_cursor_compaction_states",
 		"job_execution_budget", "job_execution_groups", "job_dispatch_lanes", "job_runs", "job_attempts", "job_schedules",
 		"plugin_installations", "plugin_versions", "plugin_operations", "plugin_host_leases",
 		"subscription_flow_start_events", "fair_use_node_coverage", "fair_use_policies",
 		"subscription_fair_use_states", "subscription_fair_use_events",
+		"node_observation_intents", "node_observation_parts", "node_observation_states", "node_observation_material_budget", "node_observation_retirements", "node_observation_retirement_parts",
+		"principal_statistics_state", "principal_statistics_pending", "principal_statistics_samples", "principal_statistics_hourly", "principal_statistics_minutes",
+		"flow_start_statistics_state", "flow_start_statistics_pending", "flow_start_statistics_points", "flow_start_statistics_minutes",
 		"zero_event_node_cursors", "principal_flow_node_generations", "principal_flow_observations",
 		"principal_flow_currents", "principal_flow_scope_currents", "principal_flow_scope_observations",
 	)

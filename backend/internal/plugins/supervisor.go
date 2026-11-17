@@ -28,7 +28,6 @@ func (m *Manager) renewLease() {
 	}
 }
 func (m *Manager) stopProcesses() {
-	m.cancelPluginTasks()
 	for id, p := range m.processes {
 		p.close()
 		delete(m.processes, id)
@@ -60,6 +59,16 @@ func (m *Manager) superviseOnce(ctx context.Context) {
 		return
 	}
 	if m.lost.Load() {
+		// Task handlers can need m.mu when their RPC finishes. Detach cancels
+		// and waits for those handlers, so never do it under the process mutex.
+		m.mu.Unlock()
+		m.tasks.reconcile.Lock()
+		m.detachPluginTasks()
+		m.tasks.reconcile.Unlock()
+		m.mu.Lock()
+		if ctx.Err() != nil {
+			return
+		}
 		m.stopProcesses()
 		now := time.Now().UTC()
 		until := now.Add(time.Minute)

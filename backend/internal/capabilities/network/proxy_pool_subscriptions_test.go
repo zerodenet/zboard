@@ -74,3 +74,18 @@ func TestProxyPoolSubscriptionsPrepareCommitAndRecordFailure(t *testing.T) {
 		t.Fatalf("stale error=%v", err)
 	}
 }
+
+func TestProxyPoolSubscriptionUnchangedJSONReusesExistingCiphertext(t *testing.T) {
+	repository := &proxyPoolSubscriptionRepositoryStub{}
+	old := `{"target":"a","outbounds":[],"outbound_groups":[]}`
+	service := ProxyPoolSubscriptions{Repository: repository, Cipher: proxyPoolMutationCipher{}, Inspector: proxyPoolMutationInspectorFunc(func(context.Context, string, bool) (ProxyPoolConfigurationFacts, error) {
+		return ProxyPoolConfigurationFacts{SupportsDatagram: true}, nil
+	})}
+	snapshot := ProxyPoolSubscriptionSnapshot{Pool: ProxyPoolRecord{ID: 3, Revision: 4}, ConfigCiphertext: "enc:" + old}
+	if _, e := service.Commit(t.Context(), ProxyPoolSubscriptionActor{System: true}, PreparedProxyPoolSubscription{Snapshot: snapshot}, `{ "outbound_groups": [], "target":"a", "outbounds": [] }`, 0); e != nil {
+		t.Fatal(e)
+	}
+	if repository.cipher != snapshot.ConfigCiphertext {
+		t.Fatal("identical graph encrypted again", repository.cipher)
+	}
+}

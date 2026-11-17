@@ -1,0 +1,126 @@
+{
+  "stage": "P2-15 read-only discount quote provider boundary",
+  "status": "recovery rerun: host pure tests/vet, complete independent SDK test/vet/tidy and signed native SQLite test pass; pinned protobuf regeneration identical; transaction integration and exact-commit global checks pending",
+  "contracts": {
+    "core_port": "commerce.DiscountQuoter",
+    "plugin_capability": "zboard.commerce.quote.provider.v1",
+    "service": "zboard.plugin.v1.CommerceQuoteProvider",
+    "rpc": "EvaluateCommerceQuote",
+    "new_plugin_capabilities": 1,
+    "new_plugin_rpcs": 1,
+    "plugin_to_core_host_operations": 0
+  },
+  "behavior": [
+    "Evaluate exactly one explicitly selected, signed and admitted active configured native installation.",
+    "Host-owned buyer/operation/target/price-source/base/currency/period/fingerprint context; offer cannot set payable, funds, entitlements or payment status.",
+    "Integer reduction within base, exact currency/fingerprint, initial_only or recurring scope, expiration and compact UTF-8 JSON terms hash validation.",
+    "Unavailable and requires_confirmation remain explicit states, never zero-discount charge approval.",
+    "Current runtime, configuration, authorization, package and signing identity rechecked after RPC.",
+    "60 evaluations per provider per minute, three-second RPC timeout and shorter caller deadline support.",
+    "Existing control-only SDK servers retain their control service and acquire no quote service or payment grant."
+  ],
+  "migration": "none; no order, PurchaseSnapshot, automatic renewal, funding or payment-fact writer changed",
+  "tests": [
+    {
+      "cwd": "backend/pkg/pluginapi",
+      "command": "GOMAXPROCS=1 go test -p 1 ./... -count=1 -timeout 3m",
+      "scope": "complete independent SDK module, including memory-only gRPC and legacy-control compatibility; no database or native process",
+      "result": "pass",
+      "seconds": 0.005,
+      "log": ".codex-local-artifacts/recovery-validation/discount-sdk-test.log"
+    },
+    {
+      "cwd": "backend",
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/capabilities/commerce ./internal/plugins ./internal/application -run '^Test(DiscountQuote|CommerceQuote(Signed|Runtime|NativeResponse)|CommerceDiscountAdapter)' -count=1 -timeout 3m",
+      "scope": "pure rules, signed package validation, mock native fences, adapter; no database or native process",
+      "result": "pass",
+      "seconds": {
+        "commerce": 0.003,
+        "plugins": 0.016,
+        "application": 0.006
+      },
+      "log": ".codex-local-artifacts/recovery-validation/discount-pure-test.log"
+    },
+    {
+      "cwd": "backend",
+      "command": "GOMAXPROCS=1 go test -p 1 ./internal/plugins -run '^TestCommerceQuoteRealNativeAdmissionAndReconfiguration$' -count=1 -timeout 3m",
+      "scope": "temporary SQLite, signed package and one native subprocess compiled from repository testdata with go build -p 1",
+      "result": "pass",
+      "seconds": 3.545,
+      "log": ".codex-local-artifacts/recovery-validation/discount-native-test.log",
+      "coverage": [
+        "Disabled and unconfigured rejection",
+        "Valid host context and provider identity",
+        "20ms caller deadline",
+        "Health start counter proves a slow evaluation began before fault injection",
+        "In-flight configuration, generation and authorization changes reject native result",
+        "Revoked authority prevents another native evaluation"
+      ]
+    },
+    {
+      "cwd": "backend/pkg/pluginapi",
+      "command": "GOMAXPROCS=1 go vet -p 1 ./...",
+      "scope": "complete independent SDK module",
+      "result": "pass",
+      "exit_code": 0,
+      "diagnostics": "none",
+      "log": ".codex-local-artifacts/recovery-validation/discount-sdk-vet.log"
+    },
+    {
+      "cwd": "backend/pkg/pluginapi",
+      "command": "GOMAXPROCS=1 go mod tidy -diff",
+      "scope": "read-only module consistency; no go.mod/go.sum differences",
+      "result": "pass",
+      "exit_code": 0,
+      "diagnostics": "none",
+      "log": ".codex-local-artifacts/recovery-validation/discount-sdk-tidy.log"
+    },
+    {
+      "cwd": "backend",
+      "command": "GOMAXPROCS=1 go vet -p 1 ./internal/capabilities/commerce ./internal/plugins ./internal/application",
+      "scope": "all three touched host packages",
+      "result": "pass",
+      "exit_code": 0,
+      "diagnostics": "none",
+      "log": ".codex-local-artifacts/recovery-validation/discount-host-vet.log"
+    }
+  ],
+  "generation": {
+    "protoc": "3.18.1",
+    "protoc_gen_go": "1.36.1",
+    "protoc_gen_go_grpc": "1.6.1",
+    "compiler_archive_sha256": "220bd1704c73dbf4d0a91399a2ecf9d19938b5cd80c8a38839a023d8b87bb772",
+    "source": "pkg/pluginapi/v1/commerce_quote.proto",
+    "generated_files": [
+      "pkg/pluginapi/v1/commerce_quote.pb.go",
+      "pkg/pluginapi/v1/commerce_quote_grpc.pb.go"
+    ],
+    "repeated_generation_hash_check": "pass",
+    "module_dependency_changes": false,
+    "existing_control_proto_or_generated_changes": false,
+    "recovery_rerun": "compiler archive hash verified; pinned generators installed; output generated outside source tree and both files byte-identical",
+    "log": ".codex-local-artifacts/recovery-validation/discount-proto-reproducibility.log",
+    "generated_sha256": {
+      "commerce_quote.pb.go": "f5c52ff4a1220b7c971028cb47e3ac3aac78c1d27e28b6a05f9ebb119aa2512b",
+      "commerce_quote_grpc.pb.go": "dfaa85896a95da039a87ee88bd437da686b8744d0c583890737d0a39189d2db2"
+    }
+  },
+  "environment": {
+    "date": "2026-10-20",
+    "scope": "cloud workspace",
+    "go": "1.26.8",
+    "gomaxprocs": 1,
+    "mysql_used": false,
+    "path": "/workspace/toolchains/go/bin:$PATH",
+    "gocache": "/workspace/toolchains/cache/go-build",
+    "gopath": "/workspace/toolchains/gopath",
+    "recovery_validation": true
+  },
+  "limits": [
+    "No order or automatic-renewal transaction wiring; previous historical-discount automatic-renewal pause remains unchanged.",
+    "No limited coupon reserve/commit/release or consumption semantics.",
+    "No real external commercial plugin implementation, purchase UI, production action or phase P2/P5 completion claim.",
+    "No sustained plugin resource or performance proof.",
+    "Capability inventory integration and exact-commit global checks remain integration responsibility; complete independent SDK test/vet/module consistency now verified."
+  ]
+}

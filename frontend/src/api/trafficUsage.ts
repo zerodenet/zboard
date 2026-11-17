@@ -1,10 +1,10 @@
-import { API_BASE, getAuthToken, normalizePageResult, type PageResult } from './client'
-import { normalizeApiErrorPayload } from '../utils/apiError'
+import { authenticatedAPI, normalizePageResult, type PageResult } from './client'
 import type { EntityReference } from './readModels'
 import { appendQueryID, type QueryID } from './queryID'
 import { requirePageResponse } from './pageResponse'
 
 export type TrafficUsageBucket = 'minute' | 'hour' | 'day'
+export interface TrafficHistoryCoverage { from: string; to: string; retained_from: string; bucket: TrafficUsageBucket; truncated: boolean; expired: boolean; timezone?: string }
 
 export interface TrafficUsageRecord {
   id: number
@@ -36,6 +36,7 @@ export interface TrafficUsageReferences extends Record<string, unknown> {
 
 type UsagePageEnvelope = PageResult<TrafficUsageRecord, TrafficUsageAggregates, TrafficUsageReferences>
 export interface TrafficUsagePage extends Omit<UsagePageEnvelope, 'total' | 'page' | 'aggregates'> {
+  history?: TrafficHistoryCoverage
   total: number | null
   page: Omit<UsagePageEnvelope['page'], 'total'> & { total: number | null }
   aggregates: TrafficUsageAggregates | null
@@ -43,6 +44,7 @@ export interface TrafficUsagePage extends Omit<UsagePageEnvelope, 'total' | 'pag
 }
 
 export interface TrafficUsageStatistics {
+  history?: TrafficHistoryCoverage
   total: number
   aggregates: TrafficUsageAggregates
   bucket: TrafficUsageBucket
@@ -69,6 +71,7 @@ export interface TrafficNodeSeriesPoint {
 }
 
 export interface TrafficNodeSeries {
+  history?: TrafficHistoryCoverage
   bucket: TrafficUsageBucket
   from: string
   to: string
@@ -84,6 +87,7 @@ export interface TrafficUsageQuery {
   userId?: QueryID
   nodeId?: QueryID
   subscriptionId?: QueryID
+  protocolEndpointId?: QueryID
   cursor?: string
   from?: string
   to?: string
@@ -92,15 +96,13 @@ export interface TrafficUsageQuery {
 }
 
 async function requestData<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const token = getAuthToken()
-  const response = await fetch(`${API_BASE}${path}`, {
-    signal,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const normalized = normalizeApiErrorPayload(payload)
-    throw new Error(normalized?.message || `流量数据请求失败（HTTP ${response.status}）。`)
+  let payload: any
+  try {
+    const response = await authenticatedAPI.get(path, { signal })
+    payload = response.data
+  } catch (cause: any) {
+    if (cause?.response) cause.message = cause.response.data?.message || `流量数据请求失败（HTTP ${cause.response.status}）。`
+    throw cause
   }
   if (!payload || typeof payload !== 'object' || !('data' in payload)) {
     throw new Error('流量数据响应缺少 data。')
@@ -114,6 +116,7 @@ function appendUsageQuery(query: URLSearchParams, params: TrafficUsageQuery) {
   appendQueryID(query, 'user_id', params.userId)
   appendQueryID(query, 'node_id', params.nodeId)
   appendQueryID(query, 'subscription_id', params.subscriptionId)
+  appendQueryID(query, 'protocol_endpoint_id', params.protocolEndpointId)
   if (params.cursor) query.set('cursor', params.cursor)
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)
@@ -140,6 +143,7 @@ export async function fetchTrafficUsagePage(
     ...normalized, total, page: { ...normalized.page, total },
     aggregates: data?.aggregates === null ? null : normalized.aggregates,
     bucket: normalizeTrafficUsageBucket(data?.bucket),
+    history: data?.history,
   }
 }
 
@@ -159,7 +163,7 @@ export async function fetchTrafficUsageStatistics(
 }
 
 export async function fetchTrafficNodeSeries(
-  params: Pick<TrafficUsageQuery, 'bucket' | 'userId' | 'nodeId' | 'subscriptionId' | 'from' | 'to'> = {},
+  params: Pick<TrafficUsageQuery, 'bucket' | 'userId' | 'nodeId' | 'subscriptionId' | 'protocolEndpointId' | 'from' | 'to'> = {},
   admin = false,
   options: { signal?: AbortSignal } = {},
 ): Promise<TrafficNodeSeries> {
@@ -169,7 +173,43 @@ export async function fetchTrafficNodeSeries(
   appendQueryID(query, 'user_id', params.userId)
   appendQueryID(query, 'node_id', params.nodeId)
   appendQueryID(query, 'subscription_id', params.subscriptionId)
+  appendQueryID(query, 'protocol_endpoint_id', params.protocolEndpointId)
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)
   return requestData<TrafficNodeSeries>(`${admin ? '/admin' : ''}/traffic/records?${query}`, options.signal)
+}
+
+export type TrafficDimension = 'user' | 'node' | 'subscription' | 'protocol_endpoint'
+export interface TrafficBreakdownCounters {
+  raw_bytes: number; upload_bytes: number; download_bytes: number; used_bytes: number; record_count: number
+}
+export interface TrafficBreakdownRow extends TrafficBreakdownCounters {
+  id: number; name: string; secondary?: string; missing: boolean
+}
+export interface TrafficBreakdown {
+  history?: TrafficHistoryCoverage
+  dimension: TrafficDimension; from: string; to: string; as_of: string
+  items: TrafficBreakdownRow[]; total: number; totals: TrafficBreakdownCounters; offset: number; limit: number
+}
+export async function fetchTrafficBreakdown(
+  params: TrafficUsageQuery & { dimension: TrafficDimension; offset?: number },
+  admin = false, options: { signal?: AbortSignal } = {},
+): Promise<TrafficBreakdown> {
+  const query = new URLSearchParams({ view: 'breakdown', dimension: params.dimension })
+  appendQueryID(query, 'user_id', params.userId)
+  appendQueryID(query, 'node_id', params.nodeId)
+  appendQueryID(query, 'subscription_id', params.subscriptionId)
+  appendQueryID(query, 'protocol_endpoint_id', params.protocolEndpointId)
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  const data = await requestData<TrafficBreakdown>(`${admin ? '/admin' : ''}/traffic/records?${query}`, options.signal)
+  const counters = ['raw_bytes', 'upload_bytes', 'download_bytes', 'used_bytes', 'record_count'] as const
+  const validCounters = (value: TrafficBreakdownCounters) => value && counters.every(key => Number.isFinite(value[key]))
+  if (!data || data.dimension !== params.dimension || !Array.isArray(data.items) || !Number.isInteger(data.total) || data.total < 0 || !data.as_of || !validCounters(data.totals)
+    || !data.items.every(row => Number.isInteger(row.id) && row.id >= 0 && typeof row.name === 'string' && typeof row.missing === 'boolean' && validCounters(row))) {
+    throw new Error('流量维度统计响应不完整。')
+  }
+  return data
 }

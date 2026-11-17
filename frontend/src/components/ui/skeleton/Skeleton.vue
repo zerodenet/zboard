@@ -4,13 +4,15 @@ import { cn } from '@/lib/utils'
 
 interface SkeletonProps {
   class?: HTMLAttributes['class']
+  as?: 'div' | 'span'
 }
 
-const props = defineProps<SkeletonProps>()
+const props = withDefaults(defineProps<SkeletonProps>(), { as: 'div' })
 </script>
 
 <template>
-  <div
+  <component
+    :is="as"
     data-slot="skeleton"
     :class="cn('bg-muted rounded-md animate-pulse', props.class)"
   />

@@ -1,0 +1,5 @@
+CREATE TABLE metering_cold_blocks(bloom BLOB NOT NULL,header_sha256 TEXT NOT NULL,id INTEGER PRIMARY KEY AUTOINCREMENT,node_id INTEGER NOT NULL,kind INTEGER NOT NULL,depth INTEGER NOT NULL,prefix INTEGER NOT NULL,version INTEGER NOT NULL,entry_count INTEGER NOT NULL,raw_bytes INTEGER NOT NULL,sha256 TEXT NOT NULL,payload BLOB NOT NULL);
+CREATE UNIQUE INDEX uk_metering_cold_page ON metering_cold_blocks(node_id,kind,depth,prefix);
+CREATE TABLE metering_identity_profiles(kind INTEGER NOT NULL PRIMARY KEY,collation TEXT NOT NULL,pad_space INTEGER NOT NULL);
+CREATE TABLE metering_cold_progress(held_count INTEGER NOT NULL DEFAULT 0,last_held_node_id INTEGER NOT NULL DEFAULT 0,last_hold_reason TEXT NOT NULL DEFAULT '',kind INTEGER NOT NULL PRIMARY KEY,node_id INTEGER NOT NULL,after_key TEXT NOT NULL,after_id INTEGER NOT NULL,next_pass_at DATETIME NOT NULL);
+CREATE TABLE metering_cold_roots(node_id INTEGER NOT NULL,kind INTEGER NOT NULL,page_count INTEGER NOT NULL,entry_count INTEGER NOT NULL,PRIMARY KEY(node_id,kind));

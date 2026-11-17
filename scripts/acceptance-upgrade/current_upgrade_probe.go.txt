@@ -1,0 +1,267 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/zerodenet/zboard/backend/internal/application"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/commerce"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
+	"github.com/zerodenet/zboard/backend/internal/datastore"
+	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm"
+)
+
+func TestConvergenceUpgradeFromOldVersion(t *testing.T) {
+	dir, driver := os.Getenv("ZBOARD_UPGRADE_FIXTURE_DIR"), os.Getenv("ZBOARD_UPGRADE_FIXTURE_DRIVER")
+	source := filepath.Join(dir, "current.db")
+	if dir == "" || driver != "sqlite" && driver != "mysql" {
+		t.Skip("explicit isolated upgrade controller required")
+	}
+	var old struct {
+		Source        string                  `json:"source"`
+		Frozen        []upgradeFrozenTable    `json:"frozen_rows"`
+		Orders        []model.Order           `json:"orders"`
+		Subscriptions []model.Subscription    `json:"subscriptions"`
+		PaidIDs       []uint                  `json:"paid_order_ids"`
+		NodeID        uint                    `json:"node_id"`
+		EndpointID    uint                    `json:"endpoint_id"`
+		RecordID      uint                    `json:"traffic_record_id"`
+		ReportID      string                  `json:"report_id"`
+		Nonce         string                  `json:"report_nonce"`
+		Meta          string                  `json:"report_meta"`
+		Publication   model.NodeConfigPublish `json:"publication"`
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "old-ready.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &old); err != nil {
+		t.Fatal(err)
+	}
+	if old.Source != "7c7283fb34840883fccaba1de6e0a98edb24dfb1" || len(old.Frozen) != 6 || len(old.PaidIDs) != 2 || len(old.Subscriptions) != 2 {
+		t.Fatal("not the required old fixture")
+	}
+	if driver == "mysql" {
+		cfg := currentAuthorityMySQL(t, dir)
+		source = cfg.FormatDSN()
+	} else {
+		if info, err := os.Stat(source); err != nil || !info.Mode().IsRegular() {
+			t.Fatal("existing isolated SQLite copy required")
+		}
+	}
+	db, err := datastore.OpenWithDriver(driver, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	if os.Getenv("ZBOARD_UPGRADE_RECOVERY") == "1" {
+		var identity model.MeteringReportReceipt
+		if err := db.Where("node_id = ? AND report_id = ?", old.NodeID, old.ReportID).First(&identity).Error; err != nil || identity.TrafficRecordID != old.RecordID || identity.ProtocolEndpointID != old.EndpointID {
+			t.Fatal("registered old report identity did not survive restart", err)
+		}
+		assertUpgradeRecovery(t, db, dir)
+		return
+	}
+	for attempt := range 2 {
+		if err := datastore.RunMigrations(db); err != nil {
+			t.Fatalf("migration attempt %d: %v", attempt, err)
+		}
+		columns := make([]upgradeFrozenTable, len(old.Frozen))
+		for i, table := range old.Frozen {
+			columns[i] = upgradeFrozenTable{Name: table.Name, Columns: table.Columns}
+		}
+		actual := freezeUpgradeRows(t, db, columns)
+		if !reflect.DeepEqual(actual, old.Frozen) {
+			for i := range actual {
+				if !reflect.DeepEqual(actual[i], old.Frozen[i]) {
+					t.Errorf("old table changed on migration %d: %s", attempt, actual[i].Name)
+				}
+			}
+			t.FailNow()
+		}
+	}
+	backfill, err := application.BackfillMeteringReportReceipts(t.Context(), db, 0, old.RecordID, 200)
+	if err != nil || backfill.Scanned != 1 || backfill.IdentitiesVerified != 1 || !backfill.RangeExhausted {
+		t.Fatalf("old committed metering identity could not be registered: %+v %v", backfill, err)
+	}
+	var n int64
+	if err := db.Model(&model.Order{}).Where("entitlement_value_snapshot <> ''").Count(&n).Error; err != nil || n != 0 {
+		t.Fatalf("invented historical allocation: %d %v", n, err)
+	}
+	if err := db.Table("traffic_diagnostic_materials").Count(&n).Error; err != nil || n != 0 {
+		t.Fatalf("guessed historical provenance: %d %v", n, err)
+	}
+	const secret = "0123456789abcdef0123456789abcdef"
+	services := application.New(db, secret)
+	t.Cleanup(services.Close)
+	h, err := NewHandlers(services, db, secret, newTestCredentialCipher(t), "", "legacy", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No executor or native control connection is started by this rehearsal.
+	firstID, otherID := old.PaidIDs[0], old.PaidIDs[1]
+	var first, other model.Order
+	if err := db.First(&first, firstID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&other, otherID).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Old JSON intentionally omits private fields. Original SQL columns were
+	// already checked above; compare all current fields against the actual
+	// post-migration, pre-command row rather than fabricating omitted zeros.
+	var beforeOther model.Subscription
+	if err := db.First(&beforeOther, other.SubscriptionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var beforePub model.NodeConfigPublish
+	if err := db.First(&beforePub, old.NodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		result, err := h.applyOrderResult(t.Context(), orderResultCommand{OrderID: first.ID, Status: "paid", Actor: authClaims{UserID: 1, IsAdmin: true}})
+		if err != nil || result.Fulfilled {
+			t.Fatalf("old paid replay granted twice: %+v %v", result, err)
+		}
+		r, err := services.NodeReports().Record(t.Context(), metering.AuthenticatedNodeReport{NodeID: old.NodeID, UserID: 1, ProtocolEndpointID: old.EndpointID, ExpectedCredential: "old-upgrade-fixture-report-key", Timestamp: time.Now().UTC(), ReportID: old.ReportID, Nonce: old.Nonce, DownloadBytes: 3, Meta: old.Meta})
+		if err != nil || !r.Duplicate || r.Record.ID != old.RecordID || r.Record.UsedBytes != 5 || r.Record.Meta != old.Meta {
+			t.Fatalf("old report replay: %+v %v", r, err)
+		}
+	}
+	var replayPub model.NodeConfigPublish
+	if err := db.First(&replayPub, old.NodeID).Error; err != nil || replayPub.Generation != beforePub.Generation || replayPub.Reconciling != beforePub.Reconciling || replayPub.LeaseToken != beforePub.LeaseToken {
+		t.Fatalf("old unknown delivery was reissued/confirmed: %+v %v", replayPub, err)
+	}
+	q, err := services.SubscriptionValues.ReadForAdministrator(t.Context(), 1, first.SubscriptionID)
+	if err != nil || q.TotalMinor != nil || q.ValuationStatus != "unavailable" {
+		t.Fatalf("invented old remaining value: %+v %v", q, err)
+	}
+	if _, err := services.SubscriptionValues.Read(t.Context(), 1, first.SubscriptionID); !errors.Is(err, commerce.ErrSubscriptionValueUnavailable) {
+		t.Fatalf("ordinary unknown value: %v", err)
+	}
+	zero := int64(0)
+	in := commerce.AdministrativeSubscriptionTerminationRequest{SubscriptionTerminationRequest: commerce.SubscriptionTerminationRequest{QuoteFingerprint: q.Fingerprint, IdempotencyKey: "old-upgrade-zero-termination"}, AmountMinor: &zero, Reason: "explicit whole termination of old rights without invented payment allocation"}
+	stop, err := services.SubscriptionTermination.TerminateForAdministrator(t.Context(), 1, first.SubscriptionID, in)
+	if err != nil || stop.AmountMinor != 0 || stop.WalletEntryID != nil {
+		t.Fatalf("old zero termination: %+v %v", stop, err)
+	}
+	again, err := services.SubscriptionTermination.TerminateForAdministrator(t.Context(), 1, first.SubscriptionID, in)
+	if err != nil || !reflect.DeepEqual(stop, again) {
+		t.Fatalf("old zero replay: %+v %v", again, err)
+	}
+	var stopped, preserved model.Subscription
+	if err := db.First(&stopped, first.SubscriptionID).Error; err != nil || stopped.Status != "canceled" || stopped.EndedAt == nil {
+		t.Fatalf("remaining rights: %+v %v", stopped, err)
+	}
+	if err := db.First(&preserved, other.SubscriptionID).Error; err != nil || !reflect.DeepEqual(preserved, beforeOther) {
+		t.Fatalf("independent subscription changed: %+v %v", preserved, err)
+	}
+	if err := db.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status <> 'revoked'", first.SubscriptionID).Count(&n).Error; err != nil || n != 0 {
+		t.Fatalf("live revoked-subscription credentials: %d %v", n, err)
+	}
+	if err := db.Table("wallet_entries").Count(&n).Error; err != nil || n != 0 {
+		t.Fatalf("zero operation created funds: %d %v", n, err)
+	}
+	var after model.Order
+	if err := db.First(&after, first.ID).Error; err != nil || after.PaidAmount != first.PaidAmount || after.RefundAmount != first.RefundAmount || after.EntitlementValueSnapshot != "" {
+		t.Fatalf("old payment history rewritten: %+v %v", after, err)
+	}
+	var pub model.NodeConfigPublish
+	if err := db.First(&pub, old.NodeID).Error; err != nil || pub.Generation <= beforePub.Generation {
+		t.Fatalf("missing durable revoke intent: %+v %v", pub, err)
+	}
+	receipt := map[string]any{"old_source": old.Source, "driver": driver, "migration_attempts": 2, "preserved_tables": 6, "old_paid_replays": 2, "old_report_replays": 2, "unknown_value_not_fabricated": true, "whole_zero_termination_idempotent": true, "other_subscription_preserved": true, "recovery": map[string]any{"frozen": freezeUpgradeRows(t, db, []upgradeFrozenTable{{Name: "orders"}, {Name: "subscriptions"}, {Name: "protocol_credentials"}, {Name: "traffic_records"}, {Name: "quota_events"}, {Name: "node_config_publishes"}, {Name: "subscription_mutations"}, {Name: "wallet_entries"}}), "request": in, "receipt": stop, "paid_order_id": first.ID, "subscription_id": first.SubscriptionID}, "revocation_intent_persisted": true, "remote_revocation_verified": false, "production_data": false}
+	data, err = json.MarshalIndent(receipt, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "current-result.json")
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("preserve existing result")
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertUpgradeRecovery(t *testing.T, db *gorm.DB, dir string) {
+	t.Helper()
+	var record struct {
+		Recovery struct {
+			Frozen         []upgradeFrozenTable                                  `json:"frozen"`
+			Request        commerce.AdministrativeSubscriptionTerminationRequest `json:"request"`
+			Receipt        commerce.SubscriptionTerminationReceipt               `json:"receipt"`
+			OrderID        uint                                                  `json:"paid_order_id"`
+			SubscriptionID uint                                                  `json:"subscription_id"`
+		} `json:"recovery"`
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "current-result.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	r := record.Recovery
+	if len(r.Frozen) != 8 || r.OrderID == 0 || r.SubscriptionID == 0 || r.Receipt.ID == 0 {
+		t.Fatal("missing independently persisted recovery evidence")
+	}
+	if err := datastore.RunMigrations(db); err != nil {
+		t.Fatal(err)
+	}
+	assertFrozen := func() {
+		columns := make([]upgradeFrozenTable, len(r.Frozen))
+		for i, table := range r.Frozen {
+			columns[i] = upgradeFrozenTable{Name: table.Name, Columns: table.Columns}
+		}
+		actual := freezeUpgradeRows(t, db, columns)
+		if !reflect.DeepEqual(actual, r.Frozen) {
+			for i := range actual {
+				if !reflect.DeepEqual(actual[i], r.Frozen[i]) {
+					t.Errorf("restart changed table %s", actual[i].Name)
+				}
+			}
+			t.FailNow()
+		}
+	}
+	assertFrozen()
+	const secret = "0123456789abcdef0123456789abcdef"
+	services := application.New(db, secret)
+	t.Cleanup(services.Close)
+	h, err := NewHandlers(services, db, secret, newTestCredentialCipher(t), "", "legacy", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := services.SubscriptionTermination.TerminateForAdministrator(t.Context(), 1, r.SubscriptionID, r.Request)
+	actualReceiptJSON, actualJSONErr := json.Marshal(receipt)
+	expectedReceiptJSON, expectedJSONErr := json.Marshal(r.Receipt)
+	if err != nil || actualJSONErr != nil || expectedJSONErr != nil || string(actualReceiptJSON) != string(expectedReceiptJSON) {
+		t.Fatalf("restart zero replay differs at the serialized capability boundary: %s / %s %v", actualReceiptJSON, expectedReceiptJSON, err)
+	}
+	paid, err := h.applyOrderResult(t.Context(), orderResultCommand{OrderID: r.OrderID, Status: "paid", Actor: authClaims{UserID: 1, IsAdmin: true}})
+	if err != nil || paid.Fulfilled {
+		t.Fatalf("late old paid after termination %+v %v", paid, err)
+	}
+	assertFrozen()
+	result, err := json.MarshalIndent(map[string]any{"separate_process": true, "migration_repeated": true, "zero_termination_replayed": true, "old_paid_did_not_revive": true, "unchanged_tables": 8, "remote_application_verified": false}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "current-recovery.json")
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("preserve existing recovery receipt")
+	}
+	if err := os.WriteFile(path, append(result, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+}

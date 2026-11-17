@@ -40,6 +40,9 @@ func (s Usage) Read(ctx context.Context, actor uint, q metering.UsageQuery) (met
 		read = s.DB
 	}
 	db := read.WithContext(ctx)
+	coverage := historyCoverage(q.From, q.To, q.Bucket, db.NowFunc())
+	out.History = &coverage
+	q.From, q.To, q.Bucket = coverage.From, coverage.To, coverage.Bucket
 	bucket, err := ParseUsageBucket(q.Bucket)
 	if err != nil {
 		return out, err
@@ -67,6 +70,7 @@ func (s Usage) Read(ctx context.Context, actor uint, q metering.UsageQuery) (met
 		if err != nil {
 			return metering.UsageSnapshot{}, err
 		}
+		statistics.History = &coverage
 		out.Statistics = &statistics
 	}
 	if q.SummaryOnly {
@@ -88,7 +92,7 @@ func (s Usage) Read(ctx context.Context, actor uint, q metering.UsageQuery) (met
 			COALESCE(SUM(download_bytes), 0) AS download_bytes,
 			COALESCE(SUM(used_bytes), 0) AS used_bytes,
 			` + bucket.Expression + ` AS record_at,
-			COUNT(*) AS record_count
+			SUM(record_count) AS record_count
 		`).
 		Group(bucket.Group())
 

@@ -31,6 +31,21 @@ func TestSQLiteMigrationsCreateCompleteApplicationInventory(t *testing.T) {
 			t.Errorf("SQLite schema is missing migration table %q", table)
 		}
 	}
+	// Check both directions: a newly migrated table must enter copy/reset
+	// inventory, not merely exist in the schema.
+	known := map[string]bool{"schema_migrations": true, "traffic_usage_hourly": true}
+	for _, table := range tables {
+		known[table] = true
+	}
+	actual, err := db.Migrator().GetTables()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range actual {
+		if !strings.HasPrefix(table, "sqlite_") && !known[table] {
+			t.Errorf("migrated table %q is absent from application inventory", table)
+		}
+	}
 	if !db.Migrator().HasTable("schema_migrations") {
 		t.Error("SQLite schema is missing schema_migrations")
 	}

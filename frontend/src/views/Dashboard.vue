@@ -3,8 +3,6 @@
     <PageHeader
       class="dashboard-header"
       title="运营工作台"
-      description="查看营收、订阅、服务运行与当前待处理异常。"
-      eyebrow="Operations"
     >
       <template #actions>
         <div class="dashboard-controls">
@@ -14,20 +12,18 @@
       </template>
     </PageHeader>
 
-    <TransientFeedback :error="error" error-title="工作台加载失败" />
-
-    <div v-if="loading && !overview" class="dashboard-section" role="status">正在加载经营指标…</div>
-    <div v-if="overview" class="period-context">
-      <span>{{ periodDescription }}</span>
-      <span>查询时区 {{ overview.period.timezone }}</span>
-      <TimeBadge :value="overview.as_of" mode="relative" />
+    <section class="dashboard-overview-panel" aria-labelledby="dashboard-business-title">
+    <div class="dashboard-group-heading business-heading">
+      <div class="dashboard-group-copy"><h2 id="dashboard-business-title">经营概览</h2><p class="dashboard-period-copy"><span v-overflow-title="periodDescription">{{ overview ? periodDescription : '所选周期的经营统计' }}</span><span>查询时区 {{ overview?.period.timezone || '—' }}</span></p></div>
+      <RemoteReadStatus compact label="经营统计" :phase="overviewResource.phase.value" :error="error" :last-success-at="overviewResource.lastSuccessAt.value" @retry="overviewResource.load()" />
     </div>
 
-    <UiMetricStrip v-if="overview" :columns="3" class="dashboard-section business-metrics">
+    <UiMetricStrip variant="plain" :columns="6" class="dashboard-section business-metrics" :aria-busy="!overview && loading || undefined">
       <MetricCard
         v-for="metric in businessMetrics"
         :key="metric.label"
         :label="metric.label"
+        :loading="!overview && loading"
         :value="metric.value"
         :icon="metric.icon"
         :status="metric.label === '有效订阅' ? metric.status : undefined"
@@ -36,66 +32,83 @@
         :meta="metric.meta"
       >
         <template #meta>
-          <MetricComparison v-if="metric.comparison" :current="metric.comparison[0]" :previous="metric.comparison[1]" :label="comparisonLabel" :format="metric.label === '本期实收' ? comparisonMoney : undefined" />
+          <MetricComparison v-if="metric.comparison" :current="metric.comparison[0]" :previous="metric.comparison[1]" :label="comparisonLabel" compact :format="metric.label === '本期实收' ? comparisonMoney : metric.label === '本期流量' ? formatBytes : undefined" />
           <span v-else>{{ metric.meta }}</span>
         </template>
       </MetricCard>
     </UiMetricStrip>
+    </section>
 
-    <div v-if="overview" class="section-grid dashboard-section">
-      <UiSection class="span-8" title="经营趋势" :description="trendDescription">
+    <div class="section-grid dashboard-section">
+      <UiSection variant="outlined" class="span-8" title="经营趋势" :description="trendDescription">
         <template #meta>
           <UiSegmentedControl label="趋势指标" :model-value="trendUsesRevenue ? 'revenue' : 'orders'" :options="trendMeasureOptions" @update:model-value="trendMeasure = $event as 'revenue' | 'orders'" />
-          <RouterLink class="button button-ghost button-sm" to="/admin/orders">
+          <UiButton as-child variant="ghost" size="sm"><RouterLink to="/admin/orders">
             订单明细<UiIcon name="chevron" />
-          </RouterLink>
+          </RouterLink></UiButton>
         </template>
 
-        <div v-if="overview.trend.length" class="trend-shell">
+        <div class="dashboard-trend-status"><RemoteReadStatus compact label="经营趋势" :phase="trendResource.phase.value" :error="trendResource.error.value" :last-success-at="trendResource.lastSuccessAt.value" @retry="trendResource.load()" /></div>
+        <div v-if="trend?.trend.length" class="trend-shell">
           <div class="trend-summary">
             <div>
               <span>本期实收</span>
-              <strong>{{ revenueValue }}</strong>
+              <strong>{{ trendRevenueValue }}</strong>
             </div>
             <div>
               <span>已支付订单</span>
-              <strong>{{ formatNumber(overview.business.paid_orders) }}</strong>
+              <strong>{{ formatNumber(trendTotals.paid_orders) }}</strong>
             </div>
             <div>
               <span>构成</span>
-              <strong>{{ formatNumber(overview.business.new_orders) }} 新购 · {{ formatNumber(overview.business.renew_orders) }} 续费</strong>
+              <strong>{{ formatNumber(trendTotals.new_orders) }} 新购 · {{ formatNumber(trendTotals.renew_orders) }} 续费</strong>
             </div>
           </div>
 
-          <div class="trend-chart" role="img" :aria-label="trendAriaLabel">
-            <div
-              v-for="point in overview.trend"
-              :key="point.bucket_start"
-              class="trend-column"
-              :title="trendPointTitle(point)"
-            >
-              <div class="trend-bar-track">
-                <span class="trend-bar" :style="{ height: `${trendHeight(point)}%` }" />
+          <div class="trend-chart" role="group" :aria-label="trendAriaLabel">
+            <div class="trend-y-axis" aria-hidden="true"><span v-for="tick in trendTicks" :key="tick" :style="{ top: `${trendY(tick) / 2}%` }">{{ trendAxisLabel(tick) }}</span></div>
+            <div class="trend-plot">
+              <svg class="trend-line-chart" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden="true">
+                <line v-for="tick in trendTicks" :key="tick" class="trend-grid-line" x1="0" x2="1000" :y1="trendY(tick)" :y2="trendY(tick)" vector-effect="non-scaling-stroke" />
+                <polygon class="trend-area" :points="trendAreaPoints" />
+                <polyline class="trend-line" :points="trendLinePoints" vector-effect="non-scaling-stroke" />
+                <line v-if="activeTrendPoint" class="trend-crosshair" :x1="activeTrendPoint.x" :x2="activeTrendPoint.x" y1="0" y2="192" vector-effect="non-scaling-stroke" />
+              </svg>
+              <div class="trend-points" :style="{ gridTemplateColumns: `repeat(${trend.trend.length}, minmax(0, 1fr))` }">
+                <Tooltip v-for="(point, index) in trend.trend" :key="point.bucket_start" :text="trendPointTitle(point)" :delay-duration="0" :open="activeTrendIndex === index" @update:open="value => { if (!value && activeTrendIndex === index) activeTrendIndex = null }">
+                  <div class="trend-point" role="img" tabindex="0" :aria-label="trendPointTitle(point)" @pointermove="event => { if (event.pointerType !== 'touch') activeTrendIndex = index }" @pointerleave="activeTrendIndex = null" @focus="activeTrendIndex = index" @blur="activeTrendIndex = null" @click="activeTrendIndex = index">
+                    <span class="trend-dot" :class="{ active: activeTrendIndex === index || trend.trend.length === 1 }" :style="{ top: `${trendY(trendValue(point)) / 2}%` }" />
+                  </div>
+                  <template #content>
+                    <div class="trend-point-detail">
+                      <time :datetime="point.bucket_start">{{ formatDashboardTime(point.bucket_start, trend.period.timezone) }}</time>
+                      <strong>{{ trendUsesRevenue ? trendPointRevenue(point) : `已支付订单 ${formatNumber(point.paid_orders)} 笔` }}</strong>
+                      <span>{{ trendUsesRevenue ? `已支付订单 ${formatNumber(point.paid_orders)} 笔` : trendPointRevenue(point) }}</span>
+                      <span>新购 {{ formatNumber(point.new_orders) }} · 续费 {{ formatNumber(point.renew_orders) }}</span>
+                    </div>
+                  </template>
+                </Tooltip>
               </div>
-              <span class="trend-orders">{{ formatCompactCount(point.paid_orders) }}</span>
-              <span class="trend-label">{{ trendBucketLabel(point.bucket_start) }}</span>
             </div>
+            <div class="trend-x-axis" aria-hidden="true" :style="{ gridTemplateColumns: `repeat(${trend.trend.length}, minmax(0, 1fr))` }"><span v-for="(point, index) in trend.trend" :key="point.bucket_start">{{ showTrendLabel(index) ? trendBucketLabel(point.bucket_start) : '' }}</span></div>
           </div>
 
-          <div class="trend-legend">
-            <span><i class="legend-bar" />{{ !trendUsesRevenue ? '柱高：订单量' : `柱高：实收金额 ${overview.business.currency || ''}` }}</span>
-            <span>柱下数字：已支付订单数</span>
-          </div>
+          <div class="trend-legend">{{ trendUsesRevenue ? trend.currency : '订单量' }}</div>
         </div>
-        <EmptyState v-else icon="billing" title="当前周期暂无已支付订单" description="产生已支付订单后显示所选周期的经营趋势。" />
+        <div v-else class="trend-placeholder">
+          <EmptyState v-if="trend" icon="billing" title="当前周期暂无已支付订单" description="产生已支付订单后显示所选周期的经营趋势。" />
+          <div v-else-if="trendResource.loading.value" class="trend-loading" role="status"><Skeleton class="ui-skeleton" v-for="index in 7" :key="index" /><span class="sr-only">正在加载经营趋势</span></div>
+          <p v-else class="dashboard-section-placeholder">经营趋势暂不可用，请查看上方失败原因。</p>
+        </div>
       </UiSection>
 
-      <UiSection
+      <UiSection variant="outlined"
         class="span-4"
         title="当前待办与异常"
-        description="仅列出当前仍需处理的问题。"
+
       >
-        <div v-if="actionQueue.length" class="attention-list">
+        <div v-if="!current" class="dashboard-section-placeholder" role="status">{{ currentResource.error.value ? '当前待办暂不可用' : '正在读取当前待办…' }}</div>
+        <div v-else-if="actionQueue.length" class="attention-list">
           <RouterLink v-for="item in actionQueue" :key="item.key" :to="item.to" :class="item.tone">
             <span class="queue-icon"><UiIcon :name="item.icon" /></span>
             <div class="queue-copy">
@@ -115,56 +128,55 @@
       </UiSection>
     </div>
 
-    <div v-if="overview" class="dashboard-group-heading">
-      <h2>服务使用</h2>
-      <p>订阅、连接、流量与节点的当前状态</p>
+    <section class="dashboard-overview-panel" aria-labelledby="dashboard-service-title">
+    <div class="dashboard-group-heading">
+      <div class="dashboard-group-copy"><h2 id="dashboard-service-title">服务概况</h2></div>
+      <RemoteReadStatus compact label="当前服务状态" :phase="currentResource.phase.value" :error="currentResource.error.value" :last-success-at="currentResource.lastSuccessAt.value" @retry="currentResource.load()" />
     </div>
-    <UiMetricStrip v-if="overview" class="dashboard-section service-metrics">
+    <UiMetricStrip variant="plain" class="dashboard-section service-metrics" :aria-busy="!current && currentResource.loading.value || undefined">
+      <template v-if="current">
+      <MetricCard label="有效订阅" :value="formatNumber(current.active_subscriptions)" icon="plans" :meta="current.subscriptions.expiring_within_3d ? `${formatNumber(current.subscriptions.expiring_within_3d)} 个将在 3 天内到期` : ''" />
       <MetricCard
-        label="当前活跃订阅"
-        :value="observedValue(overview.service.active_subscriptions)"
+        label="已观测活跃订阅"
+        :value="observedValue(observedSubscriptions)"
         icon="plans"
-        :status="overview.coverage.principal_flows ? '实时' : '未采集'"
+        :status="observedSubscriptions === null ? '未采集' : '覆盖未知'"
         tone="neutral"
         icon-tone="neutral"
-        :meta="overview.coverage.principal_flows ? '当前正在使用服务的订阅' : '尚未收到实时连接数据'"
+        :title="observedSubscriptions === null ? '尚未采集连接数据' : '覆盖范围及更新时间待确认'"
       />
       <MetricCard
-        label="当前连接"
-        :value="observedValue(overview.service.active_flows)"
+        label="已观测连接"
+        :value="observedValue(observedFlows)"
         icon="nodes"
-        :status="overview.coverage.principal_flows ? '实时' : '未采集'"
+        :status="observedFlows === null ? '未采集' : '覆盖未知'"
         tone="neutral"
         icon-tone="neutral"
-        meta="各节点当前连接数汇总"
+        :title="observedFlows === null ? '尚未采集连接数据' : '覆盖范围及更新时间待确认'"
       />
-      <MetricCard
-        label="本期流量"
-        :value="formatBytes(overview.service.traffic_bytes)"
-        icon="traffic"
-        status="周期"
-        tone="neutral"
-        icon-tone="neutral"
-        meta="按现有计费流量口径聚合"
-      ><template #meta><MetricComparison :current="overview.service.traffic_bytes" :previous="overview.service.previous_traffic_bytes ?? 0" :label="comparisonLabel" :format="formatBytes" /></template></MetricCard>
+
       <MetricCard
         label="在线节点"
-        :value="`${formatNumber(overview.service.online_nodes)} / ${formatNumber(overview.service.enabled_nodes)}`"
+        :value="`${formatNumber(current.service.online_nodes)} / ${formatNumber(current.service.enabled_nodes)}`"
         icon="nodes"
-        status="当前"
+
         tone="neutral"
         icon-tone="neutral"
-        meta="依据最近两分钟心跳"
+        title="依据最近两分钟心跳"
       />
+      </template>
+      <template v-else><MetricCard v-for="metric in serviceMetricLabels" :key="metric.label" :label="metric.label" value="—" :icon="metric.icon" :loading="currentResource.loading.value" meta="尚未取得服务数据" /></template>
     </UiMetricStrip>
+    </section>
 
-    <div v-if="overview" class="section-grid dashboard-section">
-      <UiSection class="span-6" title="订阅健康" description="关注即将到期或当前不可用的订阅。">
-        <div class="health-list">
+    <div class="section-grid dashboard-section dashboard-health">
+      <UiSection variant="outlined" class="span-6" title="订阅健康">
+        <div v-if="!current" class="health-placeholder" aria-label="正在加载订阅健康" role="status"><template v-if="currentResource.loading.value"><Skeleton class="ui-skeleton" v-for="index in 4" :key="index" /></template><p v-else>订阅健康暂不可用，请查看当前服务状态的失败原因。</p></div>
+        <div v-else class="health-list">
           <RouterLink v-for="item in subscriptionHealth" :key="item.label" to="/admin/subscriptions" class="health-row">
             <span class="health-copy">
               <strong>{{ item.label }}</strong>
-              <small>{{ item.description }}</small>
+              <small class="sr-only">{{ item.description }}</small>
             </span>
             <span class="health-value">{{ formatNumber(item.value) }}</span>
             <StatusBadge :tone="item.tone">{{ item.status }}</StatusBadge>
@@ -173,12 +185,13 @@
         </div>
       </UiSection>
 
-      <UiSection class="span-6" title="服务基础设施" description="节点、运维通道与配置交付的当前状态。">
-        <div class="health-list">
+      <UiSection variant="outlined" class="span-6" title="服务基础设施">
+        <div v-if="!current" class="health-placeholder" aria-label="正在加载服务基础设施" role="status"><template v-if="currentResource.loading.value"><Skeleton class="ui-skeleton" v-for="index in 5" :key="index" /></template><p v-else>服务基础设施暂不可用，请查看当前服务状态的失败原因。</p></div>
+        <div v-else class="health-list">
           <RouterLink v-for="item in infrastructure" :key="item.label" :to="item.to" class="health-row">
             <span class="health-copy">
               <strong>{{ item.label }}</strong>
-              <small>{{ item.description }}</small>
+              <small class="sr-only">{{ item.description }}</small>
             </span>
             <span class="health-value">{{ item.value }}</span>
             <StatusBadge :tone="item.tone">{{ item.status }}</StatusBadge>
@@ -188,8 +201,8 @@
       </UiSection>
     </div>
 
-    <UiSection
-      v-if="overview && !deliveryReady"
+    <UiSection variant="outlined"
+      v-if="current && !deliveryReady"
       class="dashboard-section"
       title="交付准备尚未完成"
       description="只在基础交付能力未就绪时出现；全部完成后自动退出正常运营首屏。"
@@ -222,13 +235,13 @@
       <DashboardTrafficRanking class="span-6" title="节点流量排行" :items="nodeRankings?.nodes || []" :range="nodeRange" :comparison-label="rangeComparison(nodeRange)" :loading="nodesLoading" :error="nodesError" :as-of="nodeRankings?.as_of" @update:range="changeNodeRange" @refresh="nodesResource.load()" />
       <DashboardTrafficRanking class="span-6" title="用户流量排行" :items="userRankings?.users || []" :range="userRange" :comparison-label="rangeComparison(userRange)" :loading="usersLoading" :error="usersError" :as-of="userRankings?.as_of" @update:range="changeUserRange" @refresh="usersResource.load()" />
     </div>
-    <UiSection class="dashboard-section" title="最近重要运营事件" description="最近的配置发布与关键运营记录。">
-      <TransientFeedback :error="deploymentsError" error-title="最近事件加载失败" />
-      <div v-if="deploymentsLoading && !deployments.length" role="status">正在加载最近事件…</div>
+    <UiSection variant="outlined" class="dashboard-section" title="最近重要运营事件" description="最近的配置发布与关键运营记录。">
+      <TableSkeleton v-if="deploymentsLoading && !deployments.length" label="正在加载最近事件" :columns="4" :rows="4" />
       <template #actions>
-        <RouterLink class="button button-ghost button-sm" to="/admin/protocols">
+        <RemoteReadStatus compact label="最近事件" :phase="eventsResource.phase.value" :error="deploymentsError" :last-success-at="eventsResource.lastSuccessAt.value" @retry="eventsResource.load()" />
+        <UiButton as-child variant="ghost" size="sm"><RouterLink to="/admin/protocols">
           协议服务<UiIcon name="chevron" />
-        </RouterLink>
+        </RouterLink></UiButton>
       </template>
 
       <DataTable
@@ -263,16 +276,18 @@
 </template>
 
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchProtocolDeployments, type ProtocolDeployment } from '../api/client'
 import {
-  fetchDashboardOverview,
+  fetchDashboardCurrent, fetchDashboardStatistics, fetchDashboardTrend,
   fetchDashboardTrafficRankings,
   type DashboardTrafficRankings,
-  type DashboardOverview,
+  type DashboardCurrent, type DashboardStatistics, type DashboardTrend,
   type DashboardRange,
   type DashboardTrendPoint,
 } from '../api/dashboard'
+import RemoteReadStatus from '../components/RemoteReadStatus.vue'
 import DataTable from '../components/DataTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import MetricCard from '../components/MetricCard.vue'
@@ -281,10 +296,12 @@ import DashboardTrafficRanking from '../components/DashboardTrafficRanking.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TimeBadge from '../components/TimeBadge.vue'
-import TransientFeedback from '../components/TransientFeedback.vue'
+import TableSkeleton from '../components/TableSkeleton.vue'
 import UiIcon from '../components/UiIcon.vue'
 import UiButton from '../components/UiButton.vue'
 import UiSegmentedControl from '../components/UiSegmentedControl.vue'
+import { Skeleton } from '../components/ui/skeleton'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { formatBytes, formatCurrency, formatNumber, formatUnknownValue } from '../utils/format'
 import { buildDashboardAttention } from '../utils/dashboardHealth'
 import { useRemoteResource } from '../composables/useRemoteResource'
@@ -292,7 +309,11 @@ import { useRemoteResource } from '../composables/useRemoteResource'
 const selectedRange = ref<DashboardRange>('7d')
 const nodeRange = ref<DashboardRange>('today')
 const userRange = ref<DashboardRange>('today')
-const overviewResource = useRemoteResource<DashboardOverview | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardOverview(selectedRange.value, { signal }), errorMessage: '运营指标加载失败。' })
+const currentResource = useRemoteResource<DashboardCurrent | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardCurrent({ signal }), errorMessage: '当前服务状态加载失败。', timeoutMs: 5_000 })
+const overviewResource = useRemoteResource<DashboardStatistics | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardStatistics(selectedRange.value, { signal }), errorMessage: '经营统计加载失败。', timeoutMs: 10_000 })
+const trendResource = useRemoteResource<DashboardTrend | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardTrend(selectedRange.value, { signal }), errorMessage: '经营趋势加载失败。', timeoutMs: 10_000 })
+const { data: current } = currentResource
+const { data: trend } = trendResource
 const nodesResource = useRemoteResource<DashboardTrafficRankings | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardTrafficRankings(nodeRange.value, { signal, dimension: 'nodes' }), errorMessage: '节点排行加载失败。' })
 const usersResource = useRemoteResource<DashboardTrafficRankings | null>({ initial: () => null, fetch: ({ signal }) => fetchDashboardTrafficRankings(userRange.value, { signal, dimension: 'users' }), errorMessage: '用户排行加载失败。' })
 const eventsResource = useRemoteResource<ProtocolDeployment[]>({ initial: () => [], fetch: async ({ signal }) => (await fetchProtocolDeployments({ limit: 8 }, { signal })).items || [], errorMessage: '最近事件加载失败。' })
@@ -300,13 +321,14 @@ const { data: overview, loading, error } = overviewResource
 const { data: nodeRankings, loading: nodesLoading, error: nodesError } = nodesResource
 const { data: userRankings, loading: usersLoading, error: usersError } = usersResource
 const { data: deployments, loading: deploymentsLoading, error: deploymentsError } = eventsResource
-const refreshing = computed(() => loading.value || nodesLoading.value || usersLoading.value || deploymentsLoading.value)
+const refreshing = computed(() => currentResource.loading.value || trendResource.loading.value || loading.value || nodesLoading.value || usersLoading.value || deploymentsLoading.value)
 function rangeComparison(range: DashboardRange) { return { today: '对比昨日同期', '7d': '对比前 7 天同期', '30d': '对比前 30 天同期', month: '对比上月同期' }[range] }
 const comparisonLabel = computed(() => rangeComparison(selectedRange.value))
 const trendMeasure = ref<'revenue' | 'orders'>('revenue')
-const trendMeasureOptions = computed(() => overview.value?.business.mixed_currency ? [{ label: '订单量', value: 'orders' }] : [{ label: '实收金额', value: 'revenue' }, { label: '订单量', value: 'orders' }])
+const trendMeasureOptions = computed(() => trend.value?.mixed_currency ? [{ label: '订单量', value: 'orders' }] : [{ label: '实收金额', value: 'revenue' }, { label: '订单量', value: 'orders' }])
 const comparisonMoney = (value: number) => formatCurrency(value, overview.value?.business.currency || 'CNY')
-const dashboardRefreshIntervalMS = 15_000
+const dashboardRefreshIntervalMS = 3_000
+let slowRefreshAt = Date.now()
 let dashboardRefreshTimer: number | undefined
 
 const periodOptions: Array<{ label: string; value: DashboardRange }> = [
@@ -322,8 +344,9 @@ const revenueValue = computed(() => {
   return formatCurrency(overview.value.business.revenue_cents, overview.value.business.currency || 'CNY')
 })
 
+const serviceMetricLabels = [{ label: '有效订阅', icon: 'plans' }, { label: '已观测活跃订阅', icon: 'plans' }, { label: '已观测连接', icon: 'nodes' }, { label: '在线节点', icon: 'nodes' }]
 const businessMetrics = computed(() => {
-  if (!overview.value) return []
+  if (!overview.value) return [{ label: '本期实收', icon: 'dollar' }, { label: '已支付订单', icon: 'billing' }, { label: '新增订阅', icon: 'plans' }, { label: '续费成功', icon: 'refresh' }, { label: '新增用户', icon: 'users' }, { label: '本期流量', icon: 'traffic' }].map(metric => ({ ...metric, value: '—', status: '', meta: '尚未取得经营统计', comparison: undefined }))
   const business = overview.value.business
   return [
     {
@@ -361,13 +384,8 @@ const businessMetrics = computed(() => {
       meta: '',
     },
     { label: '新增用户', value: formatNumber(business.new_users ?? 0), icon: 'users', status: periodStatus.value, comparison: [business.new_users ?? 0, business.previous_new_users ?? 0], meta: '' },
-    {
-      label: '有效订阅',
-      value: formatNumber(business.active_subscriptions),
-      icon: 'plans',
-      status: '当前',
-      meta: `${formatNumber(business.expiring_within_3d)} 个将在 3 天内到期`,
-    },
+    { label: '本期流量', value: formatBytes(overview.value.traffic.traffic_bytes), icon: 'traffic', status: periodStatus.value, comparison: [overview.value.traffic.traffic_bytes, overview.value.traffic.previous_traffic_bytes ?? 0], meta: '按计费流量口径聚合' },
+
   ]
 })
 
@@ -375,17 +393,17 @@ const periodStatus = computed(() => ({ today: '今天', '7d': '近 7 天', '30d'
 const periodDescription = computed(() => overview.value ? `${formatDashboardTime(overview.value.period.from)} – ${formatDashboardTime(overview.value.period.to)}` : '')
 
 const actionQueue = computed(() => {
-  if (!overview.value) return []
+  if (!current.value) return []
   return buildDashboardAttention({
-    nodes_offline: overview.value.attention.nodes_offline,
-    deployments_failed: overview.value.attention.deployments_unresolved,
-    tickets_pending: overview.value.attention.tickets_pending,
+    nodes_offline: current.value.attention.nodes_offline,
+    deployments_failed: current.value.attention.deployments_unresolved,
+    tickets_pending: current.value.attention.tickets_pending,
   })
 })
 
 const subscriptionHealth = computed(() => {
-  if (!overview.value) return []
-  const health = overview.value.subscriptions
+  if (!current.value) return []
+  const health = current.value.subscriptions
   return [
     { label: '24 小时内到期', value: health.expiring_within_24h, status: health.expiring_within_24h > 0 ? '关注' : '正常', tone: health.expiring_within_24h > 0 ? 'warning' as const : 'success' as const, description: '仍有效且将在未来 24 小时内到期' },
     { label: '3 天内到期', value: health.expiring_within_3d, status: health.expiring_within_3d > 0 ? '关注' : '正常', tone: health.expiring_within_3d > 0 ? 'warning' as const : 'success' as const, description: '累计口径，包含 24 小时内到期订阅' },
@@ -395,9 +413,9 @@ const subscriptionHealth = computed(() => {
 })
 
 const infrastructure = computed(() => {
-  if (!overview.value) return []
-  const infra = overview.value.infrastructure
-  const offline = overview.value.attention.nodes_offline
+  if (!current.value) return []
+  const infra = current.value.infrastructure
+  const offline = current.value.attention.nodes_offline
   return [
     { label: '节点运行', value: `${formatNumber(infra.connector_online)} / ${formatNumber(infra.nodes_enabled)}`, status: offline > 0 ? '需处理' : '正常', tone: offline > 0 ? 'danger' as const : 'success' as const, description: 'Connector 当前在线 / 已启用节点', to: '/admin/nodes' },
     { label: 'SSH 运维通道', value: `${formatNumber(infra.ssh_verified)} 已验证`, status: infra.nodes_total > 0 && infra.ssh_verified < infra.nodes_total ? '未完整' : '已就绪', tone: infra.nodes_total > 0 && infra.ssh_verified < infra.nodes_total ? 'warning' as const : 'success' as const, description: '已验证凭证并固定主机身份的节点', to: '/admin/nodes' },
@@ -408,8 +426,8 @@ const infrastructure = computed(() => {
 })
 
 const readiness = computed(() => {
-  if (!overview.value) return []
-  const infra = overview.value.infrastructure
+  if (!current.value) return []
+  const infra = current.value.infrastructure
   return [
     { label: '登记运行主机', description: `${formatNumber(infra.nodes_total)} 台主机已纳入平台`, complete: infra.nodes_total > 0, to: '/admin/nodes' },
     { label: '建立 Zero 主动连接', description: `${formatNumber(infra.connector_online)} 台在两分钟窗口内有 Connector 心跳`, complete: infra.connector_online > 0, to: '/admin/nodes' },
@@ -422,16 +440,35 @@ const readiness = computed(() => {
 
 const completedReadiness = computed(() => readiness.value.filter(item => item.complete).length)
 const deliveryReady = computed(() => readiness.value.length > 0 && readiness.value.every(item => item.complete))
-const trendUsesRevenue = computed(() => Boolean(overview.value && !overview.value.business.mixed_currency && trendMeasure.value === 'revenue'))
-const trendMax = computed(() => {
-  if (!overview.value) return 1
-  const values = overview.value.trend.map(point => trendUsesRevenue.value ? point.revenue_cents : point.paid_orders)
-  return Math.max(1, ...values)
+const trendUsesRevenue = computed(() => Boolean(trend.value && !trend.value.mixed_currency && trendMeasure.value === 'revenue'))
+const trendTotals = computed(() => (trend.value?.trend || []).reduce((sum, point) => ({ revenue_cents: sum.revenue_cents + point.revenue_cents, paid_orders: sum.paid_orders + point.paid_orders, new_orders: sum.new_orders + point.new_orders, renew_orders: sum.renew_orders + point.renew_orders }), { revenue_cents: 0, paid_orders: 0, new_orders: 0, renew_orders: 0 }))
+const trendRevenueValue = computed(() => trend.value?.mixed_currency ? '多币种' : formatCurrency(trendTotals.value.revenue_cents, trend.value?.currency || 'CNY'))
+const activeTrendIndex = ref<number | null>(null)
+function trendValue(point: DashboardTrendPoint) {
+  const value = trendUsesRevenue.value ? point.revenue_cents : point.paid_orders
+  return Number.isFinite(value) ? Math.max(0, value) : 0
+}
+const trendScale = computed(() => {
+  const max = Math.max(1, ...(trend.value?.trend || []).map(trendValue))
+  const rawStep = max / 3, magnitude = 10 ** Math.floor(Math.log10(rawStep))
+  const step = Math.max(1, [1, 2, 5, 10].find(value => value * magnitude >= rawStep)! * magnitude)
+  return { step, max: Math.ceil(max / step) * step }
 })
-const trendDescription = computed(() => overview.value?.business.mixed_currency
+const trendTicks = computed(() => Array.from({ length: Math.round(trendScale.value.max / trendScale.value.step) + 1 }, (_, index) => index * trendScale.value.step))
+function trendY(value: number) { return 192 - value / trendScale.value.max * 184 }
+const trendCoordinates = computed(() => (trend.value?.trend || []).map((point, index, points) => ({ x: (index + 0.5) / points.length * 1000, y: trendY(trendValue(point)) })))
+const trendLinePoints = computed(() => trendCoordinates.value.map(point => `${point.x},${point.y}`).join(' '))
+const trendAreaPoints = computed(() => {
+  const points = trendCoordinates.value
+  return points.length > 1 ? `${points[0]!.x},192 ${trendLinePoints.value} ${points[points.length - 1]!.x},192` : ''
+})
+const activeTrendPoint = computed(() => activeTrendIndex.value === null ? null : trendCoordinates.value[activeTrendIndex.value])
+function trendAxisLabel(value: number) { return trendUsesRevenue.value ? formatCurrency(value, trend.value?.currency || 'CNY') : formatCompactCount(value) }
+function showTrendLabel(index: number) { const count = trend.value?.trend.length || 0; return index === 0 || index === count - 1 || index % Math.ceil(count / 6) === 0 }
+const trendDescription = computed(() => trend.value?.mixed_currency
   ? '当前包含多币种，趋势按订单量展示。'
   : trendUsesRevenue.value ? '查看所选周期的实收变化；可切换为订单量。' : '查看所选周期的已支付订单量。')
-const trendAriaLabel = computed(() => overview.value ? `${periodStatus.value} 经营趋势，共 ${overview.value.trend.length} 个时间桶` : '经营趋势')
+const trendAriaLabel = computed(() => trend.value ? `${periodStatus.value} 经营趋势，共 ${(trend.value?.trend || []).length} 个时间桶` : '经营趋势')
 
 function comparisonText(current: number, previous: number, money = false) {
   if (!Number.isFinite(current) || !Number.isFinite(previous)) return '暂无可比数据'
@@ -446,28 +483,37 @@ function comparisonText(current: number, previous: number, money = false) {
   return `较上期 ${percent > 0 ? '+' : ''}${percent.toFixed(1)}%`
 }
 
+// Old servers expose these snapshots in active_* fields. Treat them as
+// observations too; an old boolean alone never proves full runtime coverage.
+function snapshotCount(field: 'active_subscriptions' | 'active_flows'): number | null {
+  const service = current.value?.service
+  if (!service) return null
+  const observed = field === 'active_flows' ? 'observed_active_flows' : 'observed_active_subscriptions'
+  const value = Object.prototype.hasOwnProperty.call(service, observed) ? service[observed] : service[field]
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+const observedSubscriptions = computed(() => snapshotCount('active_subscriptions'))
+const observedFlows = computed(() => snapshotCount('active_flows'))
+
 function observedValue(value: number | null) {
   return value === null ? '未采集' : formatNumber(value)
 }
 
-function trendHeight(point: DashboardTrendPoint) {
-  const value = trendUsesRevenue.value ? point.revenue_cents : point.paid_orders
-  if (value <= 0) return 0
-  return Math.max(4, Math.min(100, (value / trendMax.value) * 100))
-}
-
-function trendPointTitle(point: DashboardTrendPoint) {
-  const revenue = overview.value?.business.mixed_currency
+function trendPointRevenue(point: DashboardTrendPoint) {
+  return trend.value?.mixed_currency
     ? '多币种金额不合并展示'
-    : formatCurrency(point.revenue_cents, overview.value?.business.currency || 'CNY')
-  return `${formatDashboardTime(point.bucket_start)} · 实收 ${revenue} · ${formatNumber(point.paid_orders)} 单（新购 ${formatNumber(point.new_orders)} / 续费 ${formatNumber(point.renew_orders)}）`
+    : `实收金额 ${formatCurrency(point.revenue_cents, trend.value?.currency || 'CNY')}`
+}
+function trendPointTitle(point: DashboardTrendPoint) {
+  const revenue = trendPointRevenue(point), orders = `已支付订单 ${formatNumber(point.paid_orders)} 笔`
+  return `${formatDashboardTime(point.bucket_start, trend.value?.period.timezone)} · ${trendUsesRevenue.value ? `${revenue} · ${orders}` : `${orders} · ${revenue}`}（新购 ${formatNumber(point.new_orders)} / 续费 ${formatNumber(point.renew_orders)}）`
 }
 
 function trendBucketLabel(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  if (overview.value?.period.bucket === 'hour') return new Intl.DateTimeFormat('zh-CN', { timeZone: overview.value?.period.timezone || 'UTC', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
-  return new Intl.DateTimeFormat('zh-CN', { timeZone: overview.value?.period.timezone || 'UTC', month: '2-digit', day: '2-digit' }).format(date)
+  if (trend.value?.period.bucket === 'hour') return new Intl.DateTimeFormat('zh-CN', { timeZone: trend.value?.period.timezone || 'UTC', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: trend.value?.period.timezone || 'UTC', month: '2-digit', day: '2-digit' }).format(date)
 }
 
 function formatCompactCount(value: number) {
@@ -475,10 +521,10 @@ function formatCompactCount(value: number) {
   return String(value)
 }
 
-function formatDashboardTime(value: string) {
+function formatDashboardTime(value: string, timezone = overview.value?.period.timezone || trend.value?.period.timezone || 'UTC') {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return `${new Intl.DateTimeFormat('zh-CN', { timeZone: overview.value?.period.timezone || 'UTC', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)}`
+  return `${new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)}`
 }
 
 function deploymentLabel(status: string) {
@@ -491,7 +537,8 @@ function deploymentTone(status: string): 'info' | 'success' | 'danger' {
 async function changeRange(range: DashboardRange) {
   selectedRange.value = range
   overviewResource.reset()
-  await overviewResource.load()
+  trendResource.reset()
+  await Promise.allSettled([overviewResource.load(), trendResource.load()])
 }
 async function changeNodeRange(range: DashboardRange) {
   nodeRange.value = range
@@ -504,16 +551,20 @@ async function changeUserRange(range: DashboardRange) {
   await usersResource.load()
 }
 async function load() {
-  await Promise.allSettled([overviewResource.load(), nodesResource.load(), usersResource.load(), eventsResource.load()])
+  await Promise.allSettled([currentResource.load(), overviewResource.load(), trendResource.load(), nodesResource.load(), usersResource.load(), eventsResource.load()])
 }
 onMounted(() => {
   void load()
   dashboardRefreshTimer = window.setInterval(() => {
     if (!document.hidden) {
-      if (!loading.value) void overviewResource.load()
-      if (!nodesLoading.value) void nodesResource.load()
-      if (!usersLoading.value) void usersResource.load()
-      if (!deploymentsLoading.value) void eventsResource.load()
+      if (!currentResource.loading.value && currentResource.canAutoRefresh.value) void currentResource.load()
+      if (!loading.value && overviewResource.canAutoRefresh.value) void overviewResource.load()
+      if (Date.now() - slowRefreshAt < 15_000) return
+      slowRefreshAt = Date.now()
+      if (!trendResource.loading.value && trendResource.canAutoRefresh.value) void trendResource.load()
+      if (!nodesLoading.value && nodesResource.canAutoRefresh.value) void nodesResource.load()
+      if (!usersLoading.value && usersResource.canAutoRefresh.value) void usersResource.load()
+      if (!deploymentsLoading.value && eventsResource.canAutoRefresh.value) void eventsResource.load()
     }
   }, dashboardRefreshIntervalMS)
 })
@@ -523,44 +574,63 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.dashboard-overview-panel { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); }
+.dashboard-overview-panel > .dashboard-group-heading { margin-bottom: 20px; }
+@media (max-width: 600px) { .dashboard-overview-panel { padding: 16px; } }
 .span-6 { grid-column: span 6; }
 @media (max-width: 900px) { .span-6 { grid-column: 1 / -1; } }
 .dashboard-section { margin-bottom: 18px; }
-.dashboard-group-heading { display: flex; align-items: baseline; gap: 12px; margin-top: 4px; }
+.dashboard-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin-block: 4px 8px; }
+.dashboard-group-copy { min-width: 0; }
+.dashboard-period-copy { display: grid; grid-template-rows: 18px 18px; }
+.dashboard-period-copy span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.health-placeholder { display: grid; gap: 16px; min-height: 280px; padding: 18px; }
+.health-placeholder > :deep(.ui-skeleton) { height: 28px; }
+.dashboard-health :deep(.health-list) { min-height: 280px; }
 .dashboard-group-heading h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.dashboard-group-heading p { margin: 0; color: var(--muted-foreground); font-size: 12px; }
+.dashboard-group-heading p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; }
 .dashboard-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .period-switch { flex: 0 0 auto; }
-.period-context { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 14px; color: var(--muted); font-size: 10px; }
-.business-metrics :deep(.metric-card) { min-width: 0; min-height: 126px; display: flex; flex-direction: column; gap: 10px; padding: 17px 18px; border: 0; background: var(--surface-subtle); box-shadow: none; }
-.business-metrics :deep(.overview-card-icon) { width: 25px; height: 25px; color: var(--text-secondary); background: transparent; }
-.business-metrics :deep(.overview-card-copy) { gap: 6px; }
-.business-metrics :deep(.overview-card-heading) { display: flex; flex-direction: column; gap: 2px; }
-.business-metrics :deep(.overview-card-label) { color: var(--text-secondary); font-size: 12px; font-weight: 500; }
-.business-metrics :deep(.overview-card-value) { font-size: 25px; font-weight: 600; letter-spacing: -.035em; }
-.business-metrics :deep(.overview-card-description) { color: var(--muted-foreground); font-size: 11px; white-space: normal; }
-.business-metrics :deep(.overview-card-badge) { top: 16px; right: 14px; bottom: auto; }
-.service-metrics :deep(.metric-card) { min-height: 94px; padding: 12px 15px; border-color: var(--border); background: var(--card); box-shadow: none; }
-.service-metrics :deep(.overview-card-icon) { width: 28px; height: 28px; background: var(--surface-subtle); }
-.service-metrics :deep(.overview-card-label) { font-size: 11px; font-weight: 500; }
-.service-metrics :deep(.overview-card-value) { font-size: 21px; font-weight: 600; }
-.service-metrics :deep(.overview-card-description) { font-size: 10px; }
-.trend-shell { min-width: 0; padding: 16px 20px 18px; }
-.trend-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-bottom: 18px; padding-block: 2px 16px; border-bottom: 1px solid var(--border); }
+.period-context { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 14px; color: var(--muted); font-size:12px; }
+.business-metrics :deep(.metric-meta) { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; min-height: 18px; }
+.business-metrics :deep(.metric-card:first-child .overview-card-value) { font-size: 30px; }
+.business-metrics :deep(.overview-card-description) { font-size: 12px; }
+.service-metrics :deep(.overview-card-value) { font-size: 18px; }
+.service-metrics :deep(.overview-card-label) { font-size: 12px; }
+.service-metrics :deep(.overview-card-description) { font-size: 12px; }
+.dashboard-trend-status { display: flex; justify-content: flex-end; height: 26px; }
+.trend-placeholder { min-height: 365px; display: grid; align-items: center; }
+.trend-loading { display: flex; height: 220px; gap: 12px; padding: 20px; align-items: stretch; }
+.trend-loading > :deep(.ui-skeleton) { flex: 1; }
+.dashboard-section-placeholder { min-height: 180px; padding: 24px 18px; color: var(--muted-foreground); font-size: 13px; }
+.trend-shell { min-height: 365px; min-width: 0; padding: 8px 0 0; }
+.trend-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 18px; padding-block: 2px 4px; }
 .trend-summary > div { min-width: 0; padding: 3px 14px; }
 .trend-summary > div:first-child { padding-left: 0; }
-.trend-summary > div + div { border-left: 1px solid var(--border); }
+.trend-summary > div + div { border: 0; }
 .trend-summary span { display: block; color: var(--muted); font-size: 11px; }
 .trend-summary strong { display: block; margin-top: 5px; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-.trend-chart { height: 220px; display: flex; align-items: stretch; gap: clamp(3px, .7vw, 10px); padding: 8px 2px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
-.trend-column { min-width: 18px; flex: 1 0 18px; display: grid; grid-template-rows: minmax(120px, 1fr) 18px 24px; align-items: end; text-align: center; }
-.trend-bar-track { width: 70%; max-width: 34px; height: 100%; justify-self: center; display: flex; align-items: end; border-radius: 5px 5px 0 0; background: var(--surface-subtle); overflow: hidden; }
-.trend-bar { width: 100%; min-height: 0; border-radius: 5px 5px 0 0; background: currentColor; color: var(--primary); opacity: .78; transition: height .18s ease; }
-.trend-orders { align-self: center; color: var(--text); font-size: 11px; font-weight: 600; }
-.trend-label { align-self: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
-.trend-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 11px; }
-.trend-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.legend-bar { width: 9px; height: 9px; border-radius: 2px; background: var(--primary); opacity: .78; }
+.trend-chart { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 220px 26px; gap: 8px 10px; }
+.trend-y-axis { position: relative; color: var(--muted-foreground); font-size: 11px; font-variant-numeric: tabular-nums; }
+.trend-y-axis > span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
+.trend-plot { position: relative; min-width: 0; }
+.trend-line-chart, .trend-points { position: absolute; inset: 0; width: 100%; height: 100%; }
+.trend-grid-line { stroke: var(--line-subtle); stroke-width: 1; stroke-dasharray: 3 4; }
+.trend-line { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.trend-area { fill: var(--primary); opacity: .05; }
+.trend-crosshair { stroke: var(--muted-foreground); stroke-width: 1; stroke-dasharray: 3 3; opacity: .5; }
+.trend-points { display: grid; }
+.trend-point { position: relative; min-width: 0; cursor: crosshair; }
+.trend-point:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: 4px; }
+.trend-dot { position: absolute; left: 50%; width: 8px; height: 8px; border: 2px solid var(--primary); border-radius: 50%; background: var(--card); opacity: 0; transform: translate(-50%, -50%); }
+.trend-dot.active { opacity: 1; }
+.trend-x-axis { display: grid; grid-column: 2; align-items: center; color: var(--muted-foreground); font-size: 11px; text-align: center; }
+.trend-x-axis > span { white-space: nowrap; }
+.trend-point-detail { display: grid; gap: 4px; min-width: 170px; }
+.trend-point-detail time { color: var(--muted-foreground); font-size: 12px; }
+.trend-point-detail strong { font-size: 14px; font-weight: 600; }
+.trend-legend { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--muted-foreground); font-size: 11px; }
+.trend-legend::before { width: 16px; height: 2px; background: var(--primary); content: ''; }
 .attention-list, .health-list, .readiness-list { display: grid; padding-inline: 18px; }
 .attention-list > a { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 4px; text-decoration: none; }
 .attention-list > a + a, .health-row + .health-row, .readiness-list > a + a { border-top: 1px solid var(--line); }
@@ -581,25 +651,25 @@ onBeforeUnmount(() => {
 .readiness-list > a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 13px 4px; text-decoration: none; }
 .readiness-list strong { display: block; font-size: 12px; font-weight: 600; }
 .readiness-list p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
-.step-index { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 50%; background: var(--warning-soft); color: var(--warning); font-size: 10px; font-weight: 800; }
+.step-index { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 50%; background: var(--warning-soft); color: var(--warning); font-size:12px; font-weight:600; }
 .readiness-list > a.complete .step-index { background: var(--success-soft); color: var(--success); }
 @media (max-width: 900px) {
   .dashboard-controls { justify-content: flex-start; }
   .period-switch { max-width: 100%; }
-  .trend-summary { grid-template-columns: 1fr; gap: 10px; }
+  .trend-summary { gap: 12px; }
   .trend-summary > div, .trend-summary > div:first-child { padding: 0; }
   .trend-summary > div + div { border-left: 0; }
 }
 @media (max-width: 560px) {
-  .dashboard-group-heading { display: block; }
+  .dashboard-group-heading { align-items: flex-start; }
   .dashboard-group-heading p { margin-top: 3px; }
-  .trend-shell { padding-inline: 14px; }
+  .trend-shell { padding-inline: 0; }
 }
 @media (max-width: 640px) {
   .health-row { grid-template-columns: minmax(0, 1fr) auto auto; }
   .health-row > .ui-icon { display: none; }
   .readiness-list > a { grid-template-columns: auto minmax(0, 1fr) auto; }
   .readiness-list > a > .ui-icon { display: none; }
-  .trend-chart { height: 190px; }
+  .trend-chart { grid-template-columns: 56px minmax(0, 1fr); grid-template-rows: 190px 26px; gap: 8px 6px; }
 }
 </style>

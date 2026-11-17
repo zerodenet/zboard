@@ -1,0 +1,2458 @@
+{
+  "status": "PASS_diagnostic_only",
+  "head": "01ebcde72befca5f491e96c9b4c8b03fe125118a",
+  "clone": "/workspace/zboard-heartbeat-verify",
+  "started_utc": "2026-10-21T00:15:08.984948+00:00",
+  "runner_sha256": "5401a2084b67e942f867d9dd6f316d5f365f71cfca2e5c2b110da409ac4d9096",
+  "stages": [
+    {
+      "stage": "gofmt",
+      "command": [
+        "/workspace/toolchains/go/bin/gofmt",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/ddl-attribution-probe-01eb/benchmark.go.overlay"
+      ],
+      "started_utc": "2026-10-21T00:15:09.003486+00:00",
+      "status": "pass",
+      "exit_code": 0,
+      "wall_seconds": 0.0068985830002930015,
+      "finished_utc": "2026-10-21T00:15:09.011583+00:00",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "stage": "parser",
+      "command": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-overlay",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/ddl-attribution-probe-01eb/overlay.formatted.json",
+        "-p",
+        "1",
+        "./internal/datastore",
+        "-run",
+        "^TestSchemaDDLProbeParser",
+        "-count=1",
+        "-v"
+      ],
+      "started_utc": "2026-10-21T00:15:09.014106+00:00",
+      "status": "pass",
+      "pid": 699876,
+      "exit_code": 0,
+      "wall_seconds": 1.9785075860017969,
+      "finished_utc": "2026-10-21T00:15:10.993342+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/ddl-attribution-probe-01eb/parser.log",
+      "log_sha256": "cf42b11ed0a855d199c01f2a809ce2a682c6703b11ffadb887a0f1433123c8b0"
+    },
+    {
+      "stage": "benchmark",
+      "command": [
+        "/workspace/toolchains/go/bin/go",
+        "test",
+        "-overlay",
+        "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/ddl-attribution-probe-01eb/overlay.formatted.json",
+        "-p",
+        "1",
+        "./internal/datastore",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkMySQLSchemaPreparation$",
+        "-benchtime=1x",
+        "-count=1",
+        "-v"
+      ],
+      "started_utc": "2026-10-21T00:15:11.005209+00:00",
+      "status": "pass",
+      "pid": 699923,
+      "exit_code": 0,
+      "wall_seconds": 5.3151574740004435,
+      "finished_utc": "2026-10-21T00:15:16.321172+00:00",
+      "log": "/workspace/zboard/.codex-local-artifacts/recovery-validation/schema-stage-audit/ddl-attribution-probe-01eb/benchmark.log",
+      "log_sha256": "9654e628d308eb84588773da83af5d28ff2090f85a98698fb8e19281e506b054"
+    }
+  ],
+  "pending": [],
+  "dsn_persisted_or_printed": false,
+  "source_modified": false,
+  "external_module_overlay": false,
+  "overlay_targets": [
+    "/workspace/zboard-heartbeat-verify/backend/internal/datastore/schema_preparation_mysql_benchmark_test.go"
+  ],
+  "logs": "redacted child stdout/stderr, not byte-identical raw output",
+  "environment": {
+    "GOMAXPROCS": "1",
+    "parallel_packages": "1",
+    "GOCACHE": "/workspace/toolchains/cache/go-build",
+    "GOPATH": "/workspace/toolchains/gopath"
+  },
+  "active_stage": null,
+  "formatted_sha256": "0d190f40126f6f154ed1c3c545c9c9b88daedd65065c147aa940c42621d2c59a",
+  "formatted_overlay_sha256": "f8662447ab88c05bc6b6e0bcdb5b68f5034ab7c1726839c3865a5dca6cc05af3",
+  "parser_dsn_absent": true,
+  "diagnostic": {
+    "sample_count": 1,
+    "same_session_id": 24540,
+    "successful_ddl_counts": {
+      "create_table": 117,
+      "alter_table": 71,
+      "create_index": 15
+    },
+    "original_metrics": {
+      "ALTER/op": 71.0,
+      "CREATE_INDEX/op": 15.0,
+      "SELECT/op": 2047.0,
+      "s/prepare": 3.871
+    },
+    "open_rows": 0,
+    "table_totals_match": true,
+    "semantics": "instrumented successful Exec driver spans; not unmodified performance or original Scan"
+  },
+  "finished_utc": "2026-10-21T00:15:16.341056+00:00",
+  "sources_and_reviewed_inputs_unchanged": true,
+  "clone_clean_after": true,
+  "private_artifact_sha256": {
+    "proposal.json": "892ec8904b011bb6d9a65af2e43947b054715cb209b46203acc454c9f44bc465",
+    "benchmark.go.overlay": "737f1c313ef656b127210a2184eaa1d7a8f986d2b4132e3e0ca4af5755e3dd6c",
+    "benchmark.formatted.go.overlay": "0d190f40126f6f154ed1c3c545c9c9b88daedd65065c147aa940c42621d2c59a",
+    "run-once.py": "5401a2084b67e942f867d9dd6f316d5f365f71cfca2e5c2b110da409ac4d9096",
+    "parser.log": "cf42b11ed0a855d199c01f2a809ce2a682c6703b11ffadb887a0f1433123c8b0",
+    "benchmark.log": "9654e628d308eb84588773da83af5d28ff2090f85a98698fb8e19281e506b054",
+    "ddl-success-records.json": "e3f3b2de7bfd31e37c5062341df061b4f6504fe8f0d6d1ab6125d48cf934c61b",
+    "ddl-by-table.json": "e75277acfbb4bca9f48a0702f888bb8c197dfddb9d63e38f6fb31bc06801bd5f"
+  },
+  "successful_ddl_by_table": [
+    {
+      "kind": "create_table",
+      "table": "schema_migrations",
+      "calls": 1,
+      "nanoseconds": 7326774
+    },
+    {
+      "kind": "create_table",
+      "table": "audit_logs",
+      "calls": 1,
+      "nanoseconds": 9442475
+    },
+    {
+      "kind": "create_table",
+      "table": "email_templates",
+      "calls": 2,
+      "nanoseconds": 11167491
+    },
+    {
+      "kind": "create_table",
+      "table": "registration_email_challenges",
+      "calls": 2,
+      "nanoseconds": 11094732
+    },
+    {
+      "kind": "create_table",
+      "table": "flow_usages",
+      "calls": 1,
+      "nanoseconds": 11583885
+    },
+    {
+      "kind": "create_table",
+      "table": "installations",
+      "calls": 1,
+      "nanoseconds": 4823538
+    },
+    {
+      "kind": "create_table",
+      "table": "node_group_endpoints",
+      "calls": 1,
+      "nanoseconds": 7109479
+    },
+    {
+      "kind": "create_table",
+      "table": "node_groups",
+      "calls": 1,
+      "nanoseconds": 7500143
+    },
+    {
+      "kind": "create_table",
+      "table": "node_kernel_states",
+      "calls": 1,
+      "nanoseconds": 7650539
+    },
+    {
+      "kind": "create_table",
+      "table": "node_operations",
+      "calls": 1,
+      "nanoseconds": 16397238
+    },
+    {
+      "kind": "create_table",
+      "table": "nodes",
+      "calls": 1,
+      "nanoseconds": 13764448
+    },
+    {
+      "kind": "create_table",
+      "table": "provider_accounts",
+      "calls": 1,
+      "nanoseconds": 9757291
+    },
+    {
+      "kind": "create_table",
+      "table": "managed_certificates",
+      "calls": 1,
+      "nanoseconds": 14712317
+    },
+    {
+      "kind": "create_table",
+      "table": "managed_dns_records",
+      "calls": 1,
+      "nanoseconds": 12215129
+    },
+    {
+      "kind": "create_table",
+      "table": "provider_operations",
+      "calls": 1,
+      "nanoseconds": 11384556
+    },
+    {
+      "kind": "create_table",
+      "table": "certificate_operations",
+      "calls": 1,
+      "nanoseconds": 13565951
+    },
+    {
+      "kind": "create_table",
+      "table": "orders",
+      "calls": 1,
+      "nanoseconds": 14940107
+    },
+    {
+      "kind": "create_table",
+      "table": "payment_events",
+      "calls": 1,
+      "nanoseconds": 9538674
+    },
+    {
+      "kind": "create_table",
+      "table": "plan_skus",
+      "calls": 1,
+      "nanoseconds": 11137476
+    },
+    {
+      "kind": "create_table",
+      "table": "plan_sku_operations",
+      "calls": 3,
+      "nanoseconds": 10689347
+    },
+    {
+      "kind": "create_table",
+      "table": "plans",
+      "calls": 1,
+      "nanoseconds": 14201192
+    },
+    {
+      "kind": "create_table",
+      "table": "protocol_credentials",
+      "calls": 1,
+      "nanoseconds": 17588351
+    },
+    {
+      "kind": "create_table",
+      "table": "protocol_deployments",
+      "calls": 1,
+      "nanoseconds": 11863483
+    },
+    {
+      "kind": "create_table",
+      "table": "protocol_endpoints",
+      "calls": 1,
+      "nanoseconds": 17479517
+    },
+    {
+      "kind": "create_table",
+      "table": "certificate_protocol_endpoints",
+      "calls": 1,
+      "nanoseconds": 10915614
+    },
+    {
+      "kind": "create_table",
+      "table": "quota_events",
+      "calls": 1,
+      "nanoseconds": 8669374
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_members",
+      "calls": 1,
+      "nanoseconds": 7860403
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_rule_sets",
+      "calls": 1,
+      "nanoseconds": 9275401
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_template_rule_set_bindings",
+      "calls": 1,
+      "nanoseconds": 8203977
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_templates",
+      "calls": 1,
+      "nanoseconds": 10427144
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_tokens",
+      "calls": 1,
+      "nanoseconds": 10367094
+    },
+    {
+      "kind": "create_table",
+      "table": "subscriptions",
+      "calls": 1,
+      "nanoseconds": 28169795
+    },
+    {
+      "kind": "create_table",
+      "table": "system_configs",
+      "calls": 1,
+      "nanoseconds": 8391467
+    },
+    {
+      "kind": "create_table",
+      "table": "announcements",
+      "calls": 2,
+      "nanoseconds": 10741064
+    },
+    {
+      "kind": "create_table",
+      "table": "announcement_reads",
+      "calls": 2,
+      "nanoseconds": 6862449
+    },
+    {
+      "kind": "create_table",
+      "table": "task_items",
+      "calls": 1,
+      "nanoseconds": 6578935
+    },
+    {
+      "kind": "create_table",
+      "table": "tasks",
+      "calls": 1,
+      "nanoseconds": 10530959
+    },
+    {
+      "kind": "create_table",
+      "table": "ticket_messages",
+      "calls": 1,
+      "nanoseconds": 7702186
+    },
+    {
+      "kind": "create_table",
+      "table": "tickets",
+      "calls": 1,
+      "nanoseconds": 10735485
+    },
+    {
+      "kind": "create_table",
+      "table": "traffic_records",
+      "calls": 1,
+      "nanoseconds": 23060549
+    },
+    {
+      "kind": "create_table",
+      "table": "user_api_tokens",
+      "calls": 1,
+      "nanoseconds": 9829710
+    },
+    {
+      "kind": "create_table",
+      "table": "users",
+      "calls": 1,
+      "nanoseconds": 37138166
+    },
+    {
+      "kind": "create_table",
+      "table": "node_config_publishes",
+      "calls": 2,
+      "nanoseconds": 9329181
+    },
+    {
+      "kind": "create_table",
+      "table": "node_proxy_pools",
+      "calls": 2,
+      "nanoseconds": 8369855
+    },
+    {
+      "kind": "create_table",
+      "table": "network_entries",
+      "calls": 2,
+      "nanoseconds": 12252816
+    },
+    {
+      "kind": "create_table",
+      "table": "node_group_network_entries",
+      "calls": 2,
+      "nanoseconds": 10661193
+    },
+    {
+      "kind": "create_table",
+      "table": "plugin_installations",
+      "calls": 1,
+      "nanoseconds": 5202726
+    },
+    {
+      "kind": "create_table",
+      "table": "plugin_versions",
+      "calls": 1,
+      "nanoseconds": 5572079
+    },
+    {
+      "kind": "create_table",
+      "table": "plugin_operations",
+      "calls": 1,
+      "nanoseconds": 6002332
+    },
+    {
+      "kind": "create_table",
+      "table": "plugin_host_leases",
+      "calls": 1,
+      "nanoseconds": 5567091
+    },
+    {
+      "kind": "create_table",
+      "table": "external_identities",
+      "calls": 1,
+      "nanoseconds": 5802052
+    },
+    {
+      "kind": "create_table",
+      "table": "plugin_authorizations",
+      "calls": 1,
+      "nanoseconds": 4816989
+    },
+    {
+      "kind": "create_table",
+      "table": "plugin_data",
+      "calls": 1,
+      "nanoseconds": 4668807
+    },
+    {
+      "kind": "create_table",
+      "table": "plugin_migrations",
+      "calls": 1,
+      "nanoseconds": 5296156
+    },
+    {
+      "kind": "alter_table",
+      "table": "plugin_installations",
+      "calls": 1,
+      "nanoseconds": 9846064
+    },
+    {
+      "kind": "alter_table",
+      "table": "node_proxy_pools",
+      "calls": 1,
+      "nanoseconds": 16515034
+    },
+    {
+      "kind": "create_table",
+      "table": "job_execution_budget",
+      "calls": 1,
+      "nanoseconds": 5369175
+    },
+    {
+      "kind": "create_table",
+      "table": "job_execution_groups",
+      "calls": 1,
+      "nanoseconds": 5309556
+    },
+    {
+      "kind": "create_table",
+      "table": "job_runs",
+      "calls": 1,
+      "nanoseconds": 10925179
+    },
+    {
+      "kind": "create_table",
+      "table": "job_attempts",
+      "calls": 1,
+      "nanoseconds": 5973719
+    },
+    {
+      "kind": "create_table",
+      "table": "job_schedules",
+      "calls": 1,
+      "nanoseconds": 5186862
+    },
+    {
+      "kind": "alter_table",
+      "table": "job_runs",
+      "calls": 3,
+      "nanoseconds": 45598816
+    },
+    {
+      "kind": "alter_table",
+      "table": "user_api_tokens",
+      "calls": 4,
+      "nanoseconds": 53621779
+    },
+    {
+      "kind": "create_table",
+      "table": "account_registration_events",
+      "calls": 1,
+      "nanoseconds": 5348985
+    },
+    {
+      "kind": "alter_table",
+      "table": "task_items",
+      "calls": 1,
+      "nanoseconds": 12115590
+    },
+    {
+      "kind": "create_table",
+      "table": "mail_delivery_attempts",
+      "calls": 1,
+      "nanoseconds": 6356722
+    },
+    {
+      "kind": "create_index",
+      "table": "user_api_tokens",
+      "calls": 1,
+      "nanoseconds": 9308610
+    },
+    {
+      "kind": "alter_table",
+      "table": "job_attempts",
+      "calls": 1,
+      "nanoseconds": 14606393
+    },
+    {
+      "kind": "alter_table",
+      "table": "job_schedules",
+      "calls": 2,
+      "nanoseconds": 23595289
+    },
+    {
+      "kind": "alter_table",
+      "table": "job_execution_budget",
+      "calls": 1,
+      "nanoseconds": 3587699
+    },
+    {
+      "kind": "create_table",
+      "table": "job_dispatch_lanes",
+      "calls": 1,
+      "nanoseconds": 4357030
+    },
+    {
+      "kind": "create_table",
+      "table": "protocol_endpoint_usage_daily",
+      "calls": 1,
+      "nanoseconds": 6365986
+    },
+    {
+      "kind": "alter_table",
+      "table": "flow_usages",
+      "calls": 1,
+      "nanoseconds": 8511938
+    },
+    {
+      "kind": "alter_table",
+      "table": "protocol_deployments",
+      "calls": 2,
+      "nanoseconds": 137695605
+    },
+    {
+      "kind": "alter_table",
+      "table": "protocol_endpoints",
+      "calls": 2,
+      "nanoseconds": 50173493
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_mutations",
+      "calls": 1,
+      "nanoseconds": 7354286
+    },
+    {
+      "kind": "alter_table",
+      "table": "subscriptions",
+      "calls": 8,
+      "nanoseconds": 273347359
+    },
+    {
+      "kind": "alter_table",
+      "table": "traffic_records",
+      "calls": 3,
+      "nanoseconds": 56256482
+    },
+    {
+      "kind": "create_table",
+      "table": "menu_revisions",
+      "calls": 1,
+      "nanoseconds": 6812985
+    },
+    {
+      "kind": "create_table",
+      "table": "menu_nodes",
+      "calls": 1,
+      "nanoseconds": 13207345
+    },
+    {
+      "kind": "alter_table",
+      "table": "orders",
+      "calls": 12,
+      "nanoseconds": 356791268
+    },
+    {
+      "kind": "alter_table",
+      "table": "plans",
+      "calls": 1,
+      "nanoseconds": 18789988
+    },
+    {
+      "kind": "alter_table",
+      "table": "plan_skus",
+      "calls": 1,
+      "nanoseconds": 19126853
+    },
+    {
+      "kind": "create_index",
+      "table": "subscriptions",
+      "calls": 1,
+      "nanoseconds": 17223124
+    },
+    {
+      "kind": "create_table",
+      "table": "traffic_usage_hourly",
+      "calls": 1,
+      "nanoseconds": 9408749
+    },
+    {
+      "kind": "alter_table",
+      "table": "network_entries",
+      "calls": 3,
+      "nanoseconds": 61928130
+    },
+    {
+      "kind": "create_table",
+      "table": "protocol_endpoint_usage_resets",
+      "calls": 1,
+      "nanoseconds": 6604313
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_alerts",
+      "calls": 1,
+      "nanoseconds": 9986193
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_alert_scans",
+      "calls": 1,
+      "nanoseconds": 7041498
+    },
+    {
+      "kind": "create_table",
+      "table": "stored_files",
+      "calls": 1,
+      "nanoseconds": 6723701
+    },
+    {
+      "kind": "create_table",
+      "table": "ticket_attachments",
+      "calls": 1,
+      "nanoseconds": 8140211
+    },
+    {
+      "kind": "create_index",
+      "table": "orders",
+      "calls": 1,
+      "nanoseconds": 11694571
+    },
+    {
+      "kind": "alter_table",
+      "table": "node_config_publishes",
+      "calls": 4,
+      "nanoseconds": 50701363
+    },
+    {
+      "kind": "create_table",
+      "table": "wallet_accounts",
+      "calls": 1,
+      "nanoseconds": 6511534
+    },
+    {
+      "kind": "create_table",
+      "table": "wallet_entries",
+      "calls": 1,
+      "nanoseconds": 12512168
+    },
+    {
+      "kind": "create_table",
+      "table": "payment_attempts",
+      "calls": 1,
+      "nanoseconds": 8323400
+    },
+    {
+      "kind": "create_table",
+      "table": "payment_receipts",
+      "calls": 1,
+      "nanoseconds": 14125457
+    },
+    {
+      "kind": "create_table",
+      "table": "order_fundings",
+      "calls": 1,
+      "nanoseconds": 11109374
+    },
+    {
+      "kind": "create_table",
+      "table": "wallet_adjustments",
+      "calls": 1,
+      "nanoseconds": 23106937
+    },
+    {
+      "kind": "create_table",
+      "table": "wallet_payout_results",
+      "calls": 1,
+      "nanoseconds": 11245668
+    },
+    {
+      "kind": "create_table",
+      "table": "order_value_budgets",
+      "calls": 1,
+      "nanoseconds": 12936348
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_value_settlements",
+      "calls": 1,
+      "nanoseconds": 20249791
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_value_settlement_sources",
+      "calls": 1,
+      "nanoseconds": 9507767
+    },
+    {
+      "kind": "alter_table",
+      "table": "protocol_credentials",
+      "calls": 7,
+      "nanoseconds": 171648577
+    },
+    {
+      "kind": "create_index",
+      "table": "protocol_credentials",
+      "calls": 5,
+      "nanoseconds": 51242523
+    },
+    {
+      "kind": "create_table",
+      "table": "credential_delivery_confirmations",
+      "calls": 1,
+      "nanoseconds": 9301093
+    },
+    {
+      "kind": "create_table",
+      "table": "node_credential_delivery_states",
+      "calls": 1,
+      "nanoseconds": 6862084
+    },
+    {
+      "kind": "create_table",
+      "table": "network_entry_delivery_confirmations",
+      "calls": 1,
+      "nanoseconds": 9441553
+    },
+    {
+      "kind": "create_index",
+      "table": "protocol_deployments",
+      "calls": 1,
+      "nanoseconds": 8003928
+    },
+    {
+      "kind": "alter_table",
+      "table": "quota_events",
+      "calls": 1,
+      "nanoseconds": 19405078
+    },
+    {
+      "kind": "create_table",
+      "table": "closed_entitlements",
+      "calls": 1,
+      "nanoseconds": 7273118
+    },
+    {
+      "kind": "alter_table",
+      "table": "order_fundings",
+      "calls": 2,
+      "nanoseconds": 41331528
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_automatic_renewals",
+      "calls": 1,
+      "nanoseconds": 20452534
+    },
+    {
+      "kind": "create_table",
+      "table": "automatic_renewal_scans",
+      "calls": 1,
+      "nanoseconds": 6963390
+    },
+    {
+      "kind": "create_table",
+      "table": "consumption_refunds",
+      "calls": 1,
+      "nanoseconds": 24827125
+    },
+    {
+      "kind": "create_table",
+      "table": "metering_usage_projection_pending",
+      "calls": 1,
+      "nanoseconds": 10811447
+    },
+    {
+      "kind": "alter_table",
+      "table": "metering_usage_projection_pending",
+      "calls": 1,
+      "nanoseconds": 18539372
+    },
+    {
+      "kind": "create_index",
+      "table": "metering_usage_projection_pending",
+      "calls": 5,
+      "nanoseconds": 41823899
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_flow_start_events",
+      "calls": 2,
+      "nanoseconds": 17670606
+    },
+    {
+      "kind": "create_table",
+      "table": "fair_use_node_coverage",
+      "calls": 2,
+      "nanoseconds": 8916934
+    },
+    {
+      "kind": "create_table",
+      "table": "fair_use_policies",
+      "calls": 2,
+      "nanoseconds": 10362467
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_fair_use_states",
+      "calls": 2,
+      "nanoseconds": 9961084
+    },
+    {
+      "kind": "create_table",
+      "table": "subscription_fair_use_events",
+      "calls": 2,
+      "nanoseconds": 9177497
+    },
+    {
+      "kind": "create_index",
+      "table": "subscription_fair_use_events",
+      "calls": 1,
+      "nanoseconds": 7153094
+    },
+    {
+      "kind": "alter_table",
+      "table": "subscription_automatic_renewals",
+      "calls": 2,
+      "nanoseconds": 46765509
+    },
+    {
+      "kind": "alter_table",
+      "table": "tickets",
+      "calls": 1,
+      "nanoseconds": 27553225
+    },
+    {
+      "kind": "create_table",
+      "table": "node_retirements",
+      "calls": 1,
+      "nanoseconds": 6674648
+    },
+    {
+      "kind": "alter_table",
+      "table": "plugin_operations",
+      "calls": 1,
+      "nanoseconds": 15072034
+    },
+    {
+      "kind": "alter_table",
+      "table": "subscription_tokens",
+      "calls": 5,
+      "nanoseconds": 39022867
+    },
+    {
+      "kind": "create_table",
+      "table": "zero_event_node_cursors",
+      "calls": 1,
+      "nanoseconds": 7061221
+    },
+    {
+      "kind": "create_table",
+      "table": "principal_flow_node_generations",
+      "calls": 1,
+      "nanoseconds": 5943324
+    },
+    {
+      "kind": "create_table",
+      "table": "principal_flow_observations",
+      "calls": 1,
+      "nanoseconds": 9643971
+    },
+    {
+      "kind": "create_table",
+      "table": "principal_flow_currents",
+      "calls": 1,
+      "nanoseconds": 8457496
+    },
+    {
+      "kind": "create_table",
+      "table": "principal_flow_scope_currents",
+      "calls": 1,
+      "nanoseconds": 4109429
+    },
+    {
+      "kind": "create_table",
+      "table": "principal_flow_scope_observations",
+      "calls": 1,
+      "nanoseconds": 8334462
+    }
+  ],
+  "alter_statements": [
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "plugin_installations",
+        "sql_sha256": "15e9288849e9b5b3e94f0624f82cce51a914a24776f05a87d88cc2efbbf80efa",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "signing_key"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "local_trust"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 9846064
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "node_proxy_pools",
+        "sql_sha256": "4cb822ad753d11901d3b40516849aae09488a26350cb746451e774cadcc9abb5",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_url"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_format"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_user_agent"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "auto_sync"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "sync_interval_seconds"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_node_count"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "last_sync_at"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "next_sync_at"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "last_sync_error"
+            ]
+          },
+          {
+            "action": "add_index",
+            "names": [
+              "idx_node_proxy_pool_sync_due"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 16515034
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "job_runs",
+        "sql_sha256": "abd5a70e8f7f995e11725bb585489ed5adf08ff1a2ace511bb641cf502baa0b5",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "timeout_ms"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 16112271
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "user_api_tokens",
+        "sql_sha256": "1ba1271902c82b6433c1e83ad11b930d4eb3b981a261b7bb1e4ffa331ce72f4c",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "name"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 13608535
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "user_api_tokens",
+        "sql_sha256": "4c1ccd613f9b5e007a777521ecf334545ecce7e5004b8b36ad767a2f43d898b6",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "expires_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 11102565
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "task_items",
+        "sql_sha256": "709b527e2bfb786bf38894273a3b3dac371b896937548786e98c73ecb44ed666",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "delivery_state"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 12115590
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "user_api_tokens",
+        "sql_sha256": "c30b5c5c5b4a359da4bdbdb6a69a5a131fdc0676a89e8979ccccd802a39b4053",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "invocation_window_started_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 14201953
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "user_api_tokens",
+        "sql_sha256": "66caeb89d3d121a54c5cdfde6a6712ceb71227487e4d79005698187b3bc80478",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "invocation_window_count"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 14708726
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "job_runs",
+        "sql_sha256": "517b1cd44c3dba45eec0e0abeaad5b564d1d4c9b7bbcdb51ced2eeec98177c36",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "attempt_count"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "max_attempts"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "retry_backoff_ms"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 14207330
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "job_attempts",
+        "sql_sha256": "98c0228971492a00053d55420f9ef90bd77f0771239ecffdad49b7a6b4611089",
+        "actions": [
+          {
+            "action": "drop_index",
+            "names": [
+              "job_attempt_run"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "attempt_number"
+            ]
+          },
+          {
+            "action": "add_unique_index",
+            "names": [
+              "job_attempt_run_number"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 14606393
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "job_schedules",
+        "sql_sha256": "2f64e32a01aa73e03921c92aa20b805451ff331da9ffbeaaef2cc49e1e5fe8a6",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "max_attempts"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "retry_backoff_ms"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 12578003
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "job_execution_budget",
+        "sql_sha256": "00c9a097b89142da0bf6d73b52244f561ba6aa68b1bcdf065a21959b0c323d6b",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "dispatch_virtual_time"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 3587699
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "job_runs",
+        "sql_sha256": "6154cc3dd8ef2ac30c002c8be9531d8e97c4256a9e1a93cc68dd4eec666b3851",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "dispatch_lane"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "planned_at"
+            ]
+          },
+          {
+            "action": "add_index",
+            "names": [
+              "job_dispatch_ready"
+            ]
+          },
+          {
+            "action": "add_unique_index",
+            "names": [
+              "job_schedule_planned"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 15279215
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "job_schedules",
+        "sql_sha256": "6af5d273e274efd514315ef45f8ead5ce9b083665f8175beea38503e8feb48b0",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "execution_group"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "timezone"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "misfire_policy"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "dispatch_lane"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "anchor_at"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "missed_runs"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 11017286
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "flow_usages",
+        "sql_sha256": "496761a8120be90480d570e04cca3fd1be06a666c4e34c385cb3e7ae530b7cd7",
+        "actions": [
+          {
+            "action": "add_index",
+            "names": [
+              "idx_flow_usages_endpoint_active"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 8511938
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_deployments",
+        "sql_sha256": "0abe91cda217e860977ed9b9b58f5b2e39251cde1f0a639374964c361d03ee80",
+        "actions": [
+          {
+            "action": "add_index",
+            "names": [
+              "idx_protocol_deployments_endpoint_latest"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 7007727
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_endpoints",
+        "sql_sha256": "c938ffb9bf1c98d932388a96caaebb6b6668db97269f9c67478fe9cf86c12b97",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "egress_protocol"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "egress_config"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 25481352
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "65b0e250d8bbae04c8388a1c73f414851775023493e653dd4dff032d72e1f6ca",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "reset_quota_bytes"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "cycle_start_used"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 28819007
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "traffic_records",
+        "sql_sha256": "40dfbb8471245ee9c89030eaa7bbcfe6901e2309734c74eb10be180b1c15c99f",
+        "actions": [
+          {
+            "action": "add_index",
+            "names": [
+              "idx_traffic_records_subscription_created_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 8568423
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "6eb3d82a4bcd2c1146f60392582e19ab17ed51d7d1244f3c8baf5e13e08d2c6c",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "change_snapshot"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 21596668
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "plans",
+        "sql_sha256": "14856c02b52175d9b2df7b76ec9cdf8b92421382fcb620530fce768eca12d250",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "archived_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 18789988
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "plan_skus",
+        "sql_sha256": "7e6c4224eeecc46b4e9fc9a31c7696af40825a4e49a87a35144b960038f31526",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "archived_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 19126853
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "20d645291d5445f7c0bc7a13ae38c102b3931b405934d4c537992db95c0c2053",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "lifecycle"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 28467010
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "42975e2975d1462b02cd93d0626efdb144026297c0da9408577d7dabe9a2fdd3",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "ends_on_quota_exhaustion"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 37609061
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "8c82527632609173e534109f925587eb55759cf1cc97812c75c0d3e7dc3eca2b",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "ended_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 32355388
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "9885e1cd019873c5a732cedb1541f3996762db5ed2b5908297a5a2d33802c544",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "end_reason"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 45593108
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "ea121914633e973e55c0ced7e379aba5d14dd8062ee3d9460fe36aab5b63621b",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_ended_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 26692394
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "3d6b39560d8bd5749fe51843da5769bddabb1ce2c8d7568459750f989c3067d7",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_end_reason"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 22806549
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "a6fbb8630e0c99fc6ac3c906aac37a97e26737ef06fced9d2c6c0828891e4c9a",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_final_flow_total"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 21150511
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "e5268064cea5c146e045d9e7262da1d3903922e1cbed1c2a394506a9d6784e8f",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_final_flow_used"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 21834244
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "network_entries",
+        "sql_sha256": "c9549b5501b0271948b470ff1d216e9c9afd22d6afc5407f4c1fce316b744586",
+        "actions": [
+          {
+            "action": "drop_foreign_key",
+            "names": [
+              "fk_network_entries_entry_node"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "deployment_mode"
+            ]
+          },
+          {
+            "action": "modify_column",
+            "names": [
+              "node_id"
+            ]
+          },
+          {
+            "action": "add_constraint",
+            "names": [
+              "fk_network_entries_entry_node_nullable"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 23882058
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_endpoints",
+        "sql_sha256": "7b91f49a78a3615fe45d0597a31602d438622ff157599ca66df57bec513583c2",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "listen_address"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 24692141
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "7bcea5b88d11f0a13e2f2b7b1b48d7c34fbc6a6bc76741fcd9b46dab87078e83",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "creation_key"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 25343125
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "a8ae9cb85fb92296802a457d296012e8de9da534ef0347db17f7869ddc3ca57c",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "creation_fingerprint"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 22084298
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "db578f0adc9151535c3337525ce71bda4de0a81c8a3a2ad59d1d884bdd959c08",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "kernel_policy_revision"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 29715287
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "d7892137c8ded4aea90c9370c636aca7a4b60e32c2c54f6fca3de968b8cb1463",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "kernel_policy_fingerprint"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 34756311
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "network_entries",
+        "sql_sha256": "34ca107b893af30795dccc787eecd22ba3da766a4b81627dbbf90dbf9ffbde2c",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "listen_address"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 17290103
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "node_config_publishes",
+        "sql_sha256": "affcbd72e03d8868e989e7bf2c3e561eab5399a0ecc7cc96755ff51583dfd6e5",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "deferred"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 15293144
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "node_config_publishes",
+        "sql_sha256": "8cff52f1f761cf3c512c899b1d4ebca97dd47ae5506d41498e6f77a5463483a5",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "reconciling"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 11626252
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "node_config_publishes",
+        "sql_sha256": "6236081b3fff7ea67d8063d8397bd1dbf5c9ad25363893b2d9489ddaaaa33d71",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "suspended"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 11155924
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "21934d9d12ab3bc6b47845c856a247b44bc7d80b4add956efe0337b5c77a3204",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "purchase_snapshot"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 25888809
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "b4b06804566d3d132b2d5df5712fce01c8b6209fea6ace5fa1d10ae6faa7d1fe",
+        "actions": [
+          {
+            "action": "modify_column",
+            "names": [
+              "plan_sku_id"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 21924889
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "aa11ba5569628e7e0e9821b0fa072281a96fc23bc6208889133816341eb800e5",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "entitlement_value_snapshot"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 40887664
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_credentials",
+        "sql_sha256": "3713f30002cb0c7c691a48fea127669b1b7b0a836b8448f31ccbe5cafc136837",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "retired_principal_hash"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 21678084
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "node_config_publishes",
+        "sql_sha256": "757d4326ebdbcecb96ebcb415c8b0e8fe0f44b660f1ca5e5d79828b77d3b38c6",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "phase"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "applied_config_sha256"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 12626043
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_credentials",
+        "sql_sha256": "b90ed883a9d99bd007c4b1a5a59d59b0fc6c8d3372b75f5aac9a632d7ddb8d2d",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "principal_digest"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 21036043
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_credentials",
+        "sql_sha256": "6f4d2123f3b7a6c47a32f6cb8ed8747d25733fcaf6e96f960b51f337f7755070",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "secret_principal_digest"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 20872453
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_credentials",
+        "sql_sha256": "de6c34e329d37e30abe2276f601a618c7fa2e4376223f8bc3e537a942d2c7e3e",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "principal_lookup_version"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 23295765
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_deployments",
+        "sql_sha256": "7929a5b77a24cbca43e2eca31a635bb13b5bdba65f031fc559c5c682daead0a5",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "credential_targets"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 130687878
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_credentials",
+        "sql_sha256": "77da3b1c951c90011feb7ba4d81c88cf2d91e5c75ca74db50ee6e1dbf3f5209e",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "delivery_required"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 27825477
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "network_entries",
+        "sql_sha256": "712287ddfea1268a64ff3cf20646a0fa52f5fc36be23a61c8df4d0f8fade9fea",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "delivery_required"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 20755969
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscriptions",
+        "sql_sha256": "4d3d9de88af35a7ae31481bf79e8de8dcb477108543b360ee3f433a421285382",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "entitlement_epoch"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 36032187
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_credentials",
+        "sql_sha256": "68f4314f3a0413143b51756bfef295fa24282f7a0e88c210057ee55e10192c8a",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "entitlement_epoch"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 29108026
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "protocol_credentials",
+        "sql_sha256": "18a53b13fa4242995d95c18df46e16761e4cc592656cca78446c3ad598d02a66",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "current_scope"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 27832729
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "traffic_records",
+        "sql_sha256": "d7330fa8c7a10fe9a936f5842c2cb44030941f55d51682694ab09848e58caa05",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "entitlement_epoch"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 35588344
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "quota_events",
+        "sql_sha256": "b61d9fc53ade0e735e1ddc40304cfc8630360ab347bfb8a8bc438b75f29503b9",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "entitlement_epoch"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 19405078
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "order_fundings",
+        "sql_sha256": "1658a28b7fab9f63c3498057ea0032c4fd407bab508f31057043dfc594f2277d",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "entitlement_minor"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 15907223
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "order_fundings",
+        "sql_sha256": "d1b5a868632ba6f53c5f2ffcbeba00bf89ef6cac6e2900540f5edacfaea698f4",
+        "actions": [
+          {
+            "action": "add_constraint",
+            "names": [
+              "ck_order_funding_entitlement"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 25424305
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "c6c82fa6a64676388f70ff92e54b45d056ff117f6f4a13bf967f703ceef25185",
+        "actions": [
+          {
+            "action": "modify_column",
+            "names": [
+              "change_snapshot"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 48059380
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "metering_usage_projection_pending",
+        "sql_sha256": "fc649342decdd4c51f3ac99255c9cb09e8eb32542bb2f7a980b4e81a99e8a227",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "hourly_pending"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "user_id"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_id"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "node_id"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "record_at"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 18539372
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "orders",
+        "sql_sha256": "bea0d1dcaa0d87e3dfddeab5b95571099501df95632380036e80d3c60504617d",
+        "actions": [
+          {
+            "action": "modify_column",
+            "names": [
+              "purchase_snapshot"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 58522737
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscription_automatic_renewals",
+        "sql_sha256": "28a7e7579958163b8cce8b40d3c58c223c00f26b9796f54d1b70994cbad60c24",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "agreement_version"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 22886006
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscription_automatic_renewals",
+        "sql_sha256": "0dc8a70c7fab2053d8551c2ba3a01575126288b0f6c385dd1934ff1435420767",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "approval_snapshot"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 23879503
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "tickets",
+        "sql_sha256": "e340c916c7da87a1283dfe06af133a6e3776c875a4f317b80dfc3d8314e8b4d6",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "order_id"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "subscription_id"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "wallet_entry_id"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 27553225
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "plugin_operations",
+        "sql_sha256": "be8d31cd0637693137711b4ff162ae69fe3157f6ac7c9bf79d195c25575be3fa",
+        "actions": [
+          {
+            "action": "add_column",
+            "names": [
+              "previous_publisher"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "publisher"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "signing_key_fingerprint"
+            ]
+          },
+          {
+            "action": "add_column",
+            "names": [
+              "package_digest"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 15072034
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscription_tokens",
+        "sql_sha256": "fc34acbe2362620b51d9dad0c38db07dd9b1a696d7b5d45050b0da129429f151",
+        "actions": [
+          {
+            "action": "add_index",
+            "names": [
+              "idx_subscription_tokens_user"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 8139981
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscription_tokens",
+        "sql_sha256": "904e204bd4b5ccb63c107a0d7b863a5d6ac680e2c4e12941e08223ed17a86e25",
+        "actions": [
+          {
+            "action": "drop_index",
+            "names": [
+              "uq_subscription_token_user"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 4505793
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscription_tokens",
+        "sql_sha256": "a8b7cd0abbb4e6137d81e965ba186be76ba6c8258d43c12a02a1c5bfb6d6b0cb",
+        "actions": [
+          {
+            "action": "modify_column",
+            "names": [
+              "subscription_id"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 15195492
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscription_tokens",
+        "sql_sha256": "0efd1350f9b9f22613ad97e8c99513bfdd50758e5e0e8ebc02198779cbe4e486",
+        "actions": [
+          {
+            "action": "add_unique_index",
+            "names": [
+              "uq_subscription_token_subscription"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 6633190
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "subscription_tokens",
+        "sql_sha256": "7657742742a67c3226aa5f1ddc2306ab98e97d3315c4f4ac7d5c83992b76c77b",
+        "actions": [
+          {
+            "action": "drop_index",
+            "names": [
+              "idx_subscription_tokens_subscription"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 4548411
+    },
+    {
+      "identity": {
+        "kind": "alter_table",
+        "table": "traffic_records",
+        "sql_sha256": "24dc64d39b2e5bf000e4acc031a9c8584718a9b45a2593b1d9fdfb51ba735cee",
+        "actions": [
+          {
+            "action": "add_index",
+            "names": [
+              "idx_traffic_records_subscription_usage"
+            ]
+          }
+        ],
+        "parsed": true
+      },
+      "operation": "conn_exec",
+      "nanoseconds": 12099715
+    }
+  ],
+  "scope": [
+    "Exactly one replacement of ZBoard-owned benchmark test file; original production/fixture source unchanged.",
+    "One fresh random isolated actual MySQL schema; one complete seven-step PrepareDatabaseSchema call.",
+    "No external module overlay, SQL/argument/status-query change or new permissions.",
+    "Parser-only tests passed first with DSN unset; zero SQL samples before that.",
+    "Successful native/statement Exec only, original ErrSkip forwarding; no double-counted Prepare/Close; per-table/detail/category/session match.",
+    "No raw SQL/defaults/DSN/accounts/arguments emitted; child logs redacted, not byte-identical raw output."
+  ],
+  "limits": [
+    "Instrumented whole3.871s includes parsing/hash/record overhead and same-DSN diagnostic-pool setup difference. It is not original source performance, Scan cost, A/B improvement or CI-timeout causality.",
+    "Each multi-action ALTER has one shared statement Exec duration; never sum that duration once per action.",
+    "CREATE TABLE IF NOT EXISTS syntax does not establish physical creation or no-op.",
+    "Only one diagnostic sample, not a capacity/stability benchmark.",
+    "No production optimization from this new attribution is implemented or accepted yet.",
+    "Most statements are published versioned DDL; those files remain unchanged."
+  ]
+}

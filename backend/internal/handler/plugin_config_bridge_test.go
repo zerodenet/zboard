@@ -25,12 +25,20 @@ import (
 )
 
 func configBridgePackage(t *testing.T) ([]byte, map[string]string) {
+	return configBridgePackageWithStartupFailure(t, "")
+}
+
+func configBridgePackageWithStartupFailure(t *testing.T, failureFile string) ([]byte, map[string]string) {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "plugin")
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
-	command := exec.Command("go", "build", "-ldflags", "-X main.pluginCapabilities=zboard.config.v1,zboard.ui.page.v1", "-o", binary, "../plugins/testdata/server")
+	flags := "-X main.pluginCapabilities=zboard.config.v1,zboard.ui.page.v1"
+	if failureFile != "" {
+		flags += " -X 'main.startupFailureFile=" + failureFile + "'"
+	}
+	command := exec.Command("go", "build", "-ldflags", flags, "-o", binary, "../plugins/testdata/server")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build configuration plugin: %v %s", err, output)
 	}
