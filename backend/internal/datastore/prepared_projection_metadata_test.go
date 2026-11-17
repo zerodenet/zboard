@@ -72,3 +72,22 @@ func TestPreparedProjectionGrantProofRejectsRevokesAndUnknownRows(t *testing.T) 
 		}
 	}
 }
+
+func TestPreparedProjectionProxyGrantIsNeutral(t *testing.T) {
+	positive := "GRANT TRIGGER ON `prepared`.* TO `worker`@`%`"
+	proxy := "GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION"
+	if !projectionGrantSetProvesTriggers([]string{proxy, positive}, "prepared") ||
+		!projectionGrantSetProvesTriggers([]string{positive, proxy}, "prepared") {
+		t.Fatal("unrelated proxy grant hid direct trigger visibility")
+	}
+	for _, rows := range [][]string{
+		{proxy},
+		{proxy, "GRANT SELECT ON `prepared`.* TO `worker`@`%`"},
+		{positive, proxy, "REVOKE TRIGGER ON `prepared`.* FROM `worker`@`%`"},
+		{positive, "GRANT PROXY ON unknown syntax"},
+	} {
+		if projectionGrantSetProvesTriggers(rows, "prepared") {
+			t.Fatal("proxy grant bypassed direct privilege proof")
+		}
+	}
+}

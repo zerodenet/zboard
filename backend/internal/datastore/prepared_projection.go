@@ -174,7 +174,13 @@ func ValidatePreparedProjectionSchema(ctx context.Context, db *gorm.DB) error {
 					expected = "bigint unsigned"
 					nullable = true
 				}
-				if column.kind != expected || column.nullable != nullable {
+				// Published node counters are NOT NULL, while historical ORM
+				// preparation permits NULL for these uint64 read-model fields.
+				// Both shapes are readable and every observation writes all three;
+				// keep the unsigned width check without requiring a rewrite of
+				// this rebuildable projection. Financial source checks stay exact.
+				nodeCounter := table == "nodes" && (name == "active_flows" || name == "bytes_up" || name == "bytes_down")
+				if column.kind != expected || (!nodeCounter && column.nullable != nullable) {
 					return projectionError("source column shape differs: "+table+"."+name, nil)
 				}
 			} else {
@@ -528,6 +534,12 @@ func projectionStringRows(db *gorm.DB, query string, args ...any) (result []stri
 func projectionGrantSetProvesTriggers(grants []string, database string) bool {
 	proved := false
 	for _, grant := range grants {
+		// MySQL root accounts may also have a PROXY grant. This authorizes
+		// authentication as another account; it neither grants TRIGGER to
+		// this session nor restricts its direct schema/global privileges.
+		if projectionProxyGrant.MatchString(grant) {
+			continue
+		}
 		if !projectionPlainGrant.MatchString(grant) {
 			return false
 		}
@@ -537,3 +549,5 @@ func projectionGrantSetProvesTriggers(grants []string, database string) bool {
 }
 
 var projectionPlainGrant = regexp.MustCompile("^GRANT [A-Z_ ,]+ ON (\\*\\.\\*|`([^`]|``)+`\\.\\*|`([^`]|``)+`\\.`([^`]|``)+`) TO (`([^`]|``)*`|'([^']|'')*')@(`([^`]|``)*`|'([^']|'')*')( WITH GRANT OPTION)?$")
+
+var projectionProxyGrant = regexp.MustCompile("^GRANT PROXY ON (`([^`]|``)*`|'([^']|'')*')@(`([^`]|``)*`|'([^']|'')*') TO (`([^`]|``)*`|'([^']|'')*')@(`([^`]|``)*`|'([^']|'')*')( WITH GRANT OPTION)?$")

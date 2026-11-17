@@ -303,6 +303,26 @@ func assertPreparedProjectionDatabase(t *testing.T, driver string) {
 		})
 	}
 	if mysql {
+		t.Run("node_counter_published_and_orm_shapes", func(t *testing.T) {
+			for _, column := range []string{"active_flows", "bytes_up", "bytes_down"} {
+				for _, shape := range []string{"bigint unsigned NOT NULL DEFAULT 0", "bigint unsigned NULL"} {
+					if err := db.Exec("ALTER TABLE nodes MODIFY " + column + " " + shape).Error; err != nil {
+						t.Fatal(err)
+					}
+					check(t, nil)
+				}
+				if err := db.Exec("ALTER TABLE nodes MODIFY " + column + " bigint NULL").Error; err != nil {
+					t.Fatal(err)
+				}
+				err := check(t, datastore.ErrProjectionNotPrepared)
+				if !strings.Contains(err.Error(), "source column shape differs: nodes."+column) {
+					t.Fatal("signed counter fault reached another contract", err)
+				}
+				if err := db.Exec("ALTER TABLE nodes MODIFY " + column + " bigint unsigned NULL").Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 		t.Run("unsigned_job_counter_required", func(t *testing.T) {
 			if err := db.Exec("ALTER TABLE job_dispatch_lanes MODIFY virtual_finish bigint NOT NULL").Error; err != nil {
 				t.Fatal(err)
