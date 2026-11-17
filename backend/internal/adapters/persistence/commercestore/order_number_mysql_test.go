@@ -24,6 +24,9 @@ func numberMySQL(t *testing.T) *gorm.DB {
 	t.Helper()
 	raw := os.Getenv("ZBOARD_NUMBER_TEST_MYSQL_DSN")
 	if raw == "" {
+		raw = os.Getenv("ZBOARD_TEST_MYSQL_DSN")
+	}
+	if raw == "" {
 		t.Skip("ZBOARD_NUMBER_TEST_MYSQL_DSN not set")
 	}
 	config, e := driver.ParseDSN(raw)

@@ -87,6 +87,8 @@ func TestMySQLHourlyMigrationRecoversUnprivilegedBinlogInstall(t *testing.T) {
 	for _, completed := range []int{0, 1, 3, 6, 7, 10} {
 		t.Run(fmt.Sprintf("committed_statements_%d", completed), func(t *testing.T) {
 			db, root := hourlyMySQLFixture(t)
+			// Keep the recovery fixture inside the retained hourly horizon.
+			db.Config.NowFunc = func() time.Time { return time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC) }
 			if err := datastore.RunMigrations(db); err != nil {
 				t.Fatal(err)
 			}

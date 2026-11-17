@@ -21,6 +21,7 @@ func TestMySQLTrafficCalendarProjectionPreservesLocalDayBoundaries(t *testing.T)
 				t.Fatal(err)
 			}
 			from := time.Date(2026, 10, 31, 0, 0, 0, 0, location)
+			h.db.Config.NowFunc = func() time.Time { return from.Add(12 * time.Hour) }
 			q := metering.TrafficTrendQuery{Administrative: true, UserID: credential.UserID, ProtocolEndpointID: credential.ProtocolEndpointID, From: from, Days: 3, Timezone: timezone}
 			var records []model.TrafficRecord
 			for i := 0; i < q.Days; i++ {

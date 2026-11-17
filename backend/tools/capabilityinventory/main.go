@@ -137,6 +137,7 @@ var explicitModelOwners = map[string]string{
 	"NodeOperation":                      "resources",
 	"NodeRetirement":                     "resources",
 	"NodeProxyPool":                      "network",
+	"NodeProxyPoolBinding":               "network",
 	"Order":                              "commerce",
 	"PaymentEvent":                       "commerce",
 	"WalletAccount":                      "commerce",

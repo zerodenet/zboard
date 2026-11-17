@@ -82,9 +82,15 @@ func TestNodeArchivalClearsCurrentRelationsWithoutSSHOrProviderAccess(t *testing
 	if err := f.h.db.Create(&model.NodeGroupEndpoint{NodeGroupID: group.ID, ProtocolEndpointID: b.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
-	pool := model.NodeProxyPool{NodeID: b.NodeID, Name: "owned", Config: "encrypted"}
-	if err := f.h.db.Create(&pool).Error; err != nil {
+	pool := model.NodeProxyPool{Name: "shared", Config: "encrypted"}
+	if err := f.h.db.Omit("NodeID").Create(&pool).Error; err != nil {
 		t.Fatal(err)
+	}
+	if e := f.h.db.Create(&model.NodeProxyPoolBinding{NodeID: b.NodeID, ProxyPoolID: pool.ID}).Error; e != nil {
+		t.Fatal(e)
+	}
+	if e := f.h.db.Create(&model.NodeProxyPoolBinding{NodeID: a.ID, ProxyPoolID: pool.ID}).Error; e != nil {
+		t.Fatal(e)
 	}
 	f.h.db.Model(&model.NodeKernelState{}).Where("node_id = ?", b.NodeID).Update("installed_version", "0.0.1")
 	now := time.Now().UTC()
@@ -122,8 +128,13 @@ func TestNodeArchivalClearsCurrentRelationsWithoutSSHOrProviderAccess(t *testing
 		t.Fatal("historical endpoint identity lost or enabled", endpoint, err)
 	}
 	var retainedPool model.NodeProxyPool
-	if err := f.h.db.First(&retainedPool, pool.ID).Error; err != nil || retainedPool.AutoSync || retainedPool.Config != "{}" {
-		t.Fatal("current proxy configuration survived archive", retainedPool, err)
+	if err := f.h.db.First(&retainedPool, pool.ID).Error; err != nil || retainedPool.AutoSync != pool.AutoSync || retainedPool.Config != pool.Config {
+		t.Fatal("archive changed independent proxy source", err)
+	}
+
+	var poolBindings []model.NodeProxyPoolBinding
+	if e := f.h.db.Where("proxy_pool_id=?", pool.ID).Find(&poolBindings).Error; e != nil || len(poolBindings) != 1 || poolBindings[0].NodeID != a.ID {
+		t.Fatal("archive removed another server reference", poolBindings, e)
 	}
 
 	var surviving model.Node

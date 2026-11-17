@@ -421,14 +421,14 @@ func assertMigrationCompletionRollback(t *testing.T, f migrationCopyFixture) {
 }
 
 func TestMigrationCopierDoesNotClaimBusinessWritesAsInitialization(t *testing.T) {
-	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_budget", "changed_observation_budget", "changed_ledger"} {
+	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_material_window", "changed_budget", "changed_observation_budget", "changed_ledger"} {
 		t.Run(change, func(t *testing.T) {
 			assertMigrationDDLWindowProtection(t, newMigrationCopyFixture(t, false, false), change)
 		})
 	}
 }
 func TestMySQLMigrationCopierDoesNotClaimBusinessWritesAsInitialization(t *testing.T) {
-	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_budget", "changed_observation_budget", "changed_email", "changed_subscription"} {
+	for _, change := range []string{"custom_config", "changed_menu", "changed_default", "changed_material_window", "changed_budget", "changed_observation_budget", "changed_email", "changed_subscription"} {
 		t.Run(change, func(t *testing.T) {
 			assertMigrationDDLWindowProtection(t, newMigrationCopyFixture(t, false, true), change)
 		})
@@ -444,6 +444,8 @@ func assertMigrationDDLWindowProtection(t *testing.T, f migrationCopyFixture, ch
 			return db.Create(&model.SystemConfig{ConfigKey: "operator_value", Name: "Preserve", Value: "business evidence", ValueType: "string", Revision: 1}).Error
 		case "changed_menu":
 			return db.Model(&model.MenuNode{}).Where("id = ?", "overview").Update("label", "operator menu").Error
+		case "changed_material_window":
+			return db.Model(&model.SystemConfig{}).Where("config_key=?", "subscription_credential_compatibility_days").Update("value", "45").Error
 		case "changed_default":
 			return db.Model(&model.SystemConfig{}).Where("config_key = ?", "subscription_renewal_grace_days").Update("value", "14").Error
 		case "changed_ledger":
@@ -496,6 +498,11 @@ func assertMigrationDDLWindowProtection(t *testing.T, f migrationCopyFixture, ch
 		var node model.MenuNode
 		if err := destination.First(&node, "id = ?", "overview").Error; err != nil || node.Label != "operator menu" {
 			t.Fatal("operator menu was overwritten", err)
+		}
+	case "changed_material_window":
+		var value model.SystemConfig
+		if err := destination.Where("config_key=?", "subscription_credential_compatibility_days").First(&value).Error; err != nil || value.Value != "45" {
+			t.Fatal("operator compatibility window was overwritten", err)
 		}
 	case "changed_default":
 		var value model.SystemConfig

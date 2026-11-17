@@ -140,13 +140,19 @@ func reconcileCredentialMaterialSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	for _, value := range []model.SystemConfig{
-		{ConfigKey: "subscription_credential_material_enabled", Name: "订阅凭证合并", Value: "false", ValueType: "bool", Description: "启用后新订阅使用一份主凭证；存量订阅需单独开始兼容迁移。关闭不会自动回滚已迁移订阅。", Revision: 1},
-		{ConfigKey: "subscription_credential_compatibility_days", Name: "旧凭证兼容窗口（天）", Value: "30", ValueType: "int", Description: "节点确认双凭证配置后开始计时；默认30天，允许1至365天。修改仅影响尚未开始的窗口。", Revision: 1},
-	} {
+	for _, value := range CredentialMaterialDefaults() {
 		if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "config_key"}}, DoNothing: true}).Create(&value).Error; err != nil {
 			return err
 		}
 	}
 	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaMigration{Version: credentialMaterialVersion, AppliedAt: time.Now().UTC()}).Error
+}
+
+// CredentialMaterialDefaults is the exact initializer seed, also used to verify
+// that an owned migration destination contains no operator changes.
+func CredentialMaterialDefaults() []model.SystemConfig {
+	return []model.SystemConfig{
+		{ConfigKey: "subscription_credential_material_enabled", Name: "订阅凭证合并", Value: "false", ValueType: "bool", Description: "启用后新订阅使用一份主凭证；存量订阅需单独开始兼容迁移。关闭不会自动回滚已迁移订阅。", Revision: 1},
+		{ConfigKey: "subscription_credential_compatibility_days", Name: "旧凭证兼容窗口（天）", Value: "30", ValueType: "int", Description: "节点确认双凭证配置后开始计时；默认30天，允许1至365天。修改仅影响尚未开始的窗口。", Revision: 1},
+	}
 }

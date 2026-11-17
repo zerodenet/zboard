@@ -11,6 +11,8 @@ import (
 
 const subscriptionCleanupVersion = "0092_subscription_hard_cleanup.up.sql"
 
+const SubscriptionCleanupDescription = "到期后停服，窗口内可续费恢复；默认7天，范围0–3650。超出后自动删除订阅、链接、成员及自动续费配置，历史订单、账务和最小补报依据保留。0表示到期即删除；已取消订阅直接清理。"
+
 // Financial IDs and metering cursors outlive a live service. Only these four
 // historical references lose their dependency on the mutable service row. All
 // wallet/order/receipt owner constraints and runtime-child cascades stay intact.
@@ -87,7 +89,7 @@ func reconcileSubscriptionCleanupSchema(db *gorm.DB) error {
 		}
 	}
 	if applied == 0 {
-		if e := db.Table("system_configs").Where("config_key=? AND description=?", "subscription_renewal_grace_days", "到期后停服，可在此天数内续费恢复；默认7天，范围0–3650，0表示不保留恢复窗口。缩短窗口会使超过新期限的旧订阅结束并清理凭据，历史订单和账务保留。主动退订不进入恢复窗口。").UpdateColumn("description", "到期后停服，窗口内可续费恢复；默认7天，范围0–3650。超出后自动删除订阅、链接、成员及自动续费配置，历史订单、账务和最小补报依据保留。0表示到期即删除；已取消订阅直接清理。").Error; e != nil {
+		if e := db.Table("system_configs").Where("config_key=? AND description=?", "subscription_renewal_grace_days", "到期后停服，可在此天数内续费恢复；默认7天，范围0–3650，0表示不保留恢复窗口。缩短窗口会使超过新期限的旧订阅结束并清理凭据，历史订单和账务保留。主动退订不进入恢复窗口。").UpdateColumn("description", SubscriptionCleanupDescription).Error; e != nil {
 			return e
 		}
 	}

@@ -197,6 +197,9 @@ func TestMySQLHourlyProjectionCalendarGuardMatchesHalfQuarterHourEdges(t *testin
 				t.Fatal(err)
 			}
 			from := time.Date(2026, 10, 19, 0, 0, 0, 0, location)
+			// This verifies exact recent edges, independently of the wall clock
+			// advancing the same fixture into the coarse history window.
+			h.db.Config.NowFunc = func() time.Time { return from.Add(12 * time.Hour) }
 			q := metering.TrafficTrendQuery{From: from, Days: 2, Timezone: timezone}
 			for i := 0; i < 2; i++ {
 				day := from.AddDate(0, 0, i)
