@@ -335,6 +335,24 @@ func (h *handlers) credentialClientConfig(endpoint model.ProtocolEndpoint, crede
 	if err != nil {
 		return nil, err
 	}
+	if credential.MaterialVersion > 0 {
+		method := ""
+		if strings.EqualFold(endpoint.Protocol, "shadowsocks") {
+			raw, e := h.credentialCipher.Decrypt(endpoint.ServerConfig)
+			if e != nil {
+				return nil, e
+			}
+			var server map[string]interface{}
+			if e = json.Unmarshal([]byte(raw), &server); e != nil {
+				return nil, e
+			}
+			method, _ = server["cipher"].(string)
+		}
+		secret, err = entitlements.RenderCredentialMaterial(secret, endpoint.Protocol, method)
+		if err != nil {
+			return nil, err
+		}
+	}
 	client["server"] = endpoint.Address
 	client["port"] = protocolCredentialClientPort(endpoint, credential)
 	switch strings.ToLower(endpoint.Protocol) {

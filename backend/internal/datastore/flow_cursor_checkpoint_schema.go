@@ -42,7 +42,11 @@ func validateFlowCursorCheckpointSchema(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	if len(cols) != 9 || !slices.Equal(pk, []string{"node_id", "flow_id"}) {
+	expected := 9
+	if _, ok := cols["protocol_endpoint_id"]; ok {
+		expected++
+	}
+	if len(cols) != expected || !slices.Equal(pk, []string{"node_id", "flow_id"}) {
 		return errors.New("flow checkpoint accounting authority shape differs")
 	}
 	for _, name := range []string{"node_id", "flow_id", "protocol_credential_id", "revision", "raw_bytes", "upload_bytes", "download_bytes", "used_bytes", "is_completed"} {
@@ -68,6 +72,15 @@ func validateFlowCursorCheckpointSchema(db *gorm.DB) error {
 		col, ok := cols[name]
 		if !ok || col.nullable || col.kind != kind {
 			return fmt.Errorf("flow checkpoint accounting column differs: %s", name)
+		}
+	}
+	if col, ok := cols["protocol_endpoint_id"]; ok {
+		kind := "bigint unsigned"
+		if IsSQLite(db) {
+			kind = "integer"
+		}
+		if col.nullable || col.kind != kind {
+			return errors.New("flow checkpoint ingress authority shape differs")
 		}
 	}
 	want, err := flowIdentityCollation(db, "flow_usages")

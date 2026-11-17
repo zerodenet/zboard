@@ -34,12 +34,14 @@ func (s ProxyPoolSubscriptions) LoadProxyPoolSubscription(ctx context.Context, a
 			}
 			return err
 		}
-		var node model.Node
-		if err := tx.Clauses(currentResourceReadLock(tx)).Select("id,lifecycle_status").First(&node, row.NodeID).Error; err != nil {
-			return currentResourceReadError(err)
-		}
-		if network.NodeManagementClosed(node.LifecycleStatus) {
-			return network.ErrProxyPoolConflict
+		if row.NodeID > 0 {
+			var node model.Node
+			if err := tx.Clauses(currentResourceReadLock(tx)).Select("id,lifecycle_status").First(&node, row.NodeID).Error; err != nil {
+				return currentResourceReadError(err)
+			}
+			if network.NodeManagementClosed(node.LifecycleStatus) {
+				return network.ErrProxyPoolConflict
+			}
 		}
 		out = proxyPoolSubscriptionSnapshot(row)
 		return nil
@@ -74,13 +76,10 @@ func (s ProxyPoolSubscriptions) CommitProxyPoolSubscription(ctx context.Context,
 			admin = &current
 		}
 		var entries []model.NetworkEntry
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("proxy_pool_id = ?", row.ID).Order("id").Find(&entries).Error; err != nil {
+		if err := tx.Clauses(currentResourceReadLock(tx)).Where("proxy_pool_id = ?", row.ID).Order("id").Find(&entries).Error; err != nil {
 			return err
 		}
 		for _, entry := range entries {
-			if entry.NodeID != row.NodeID {
-				return &network.ProxyPoolMutationValidation{Message: fmt.Sprintf("入口 %s: 请选择入口节点 A 自己的共享代理池", entry.Name)}
-			}
 			if entry.Network != "tcp" && !facts.SupportsDatagram {
 				message := strings.TrimSpace(facts.DatagramError)
 				if message == "" {
@@ -89,27 +88,33 @@ func (s ProxyPoolSubscriptions) CommitProxyPoolSubscription(ctx context.Context,
 				return &network.ProxyPoolMutationValidation{Message: fmt.Sprintf("入口 %s: %s", entry.Name, message)}
 			}
 		}
+		changed := row.Config != ciphertext
 		row.Config, row.SubscriptionNodeCount, row.LastSyncAt = ciphertext, nodeCount, &now
-		row.Revision++
+		if changed {
+			row.Revision++
+		}
 		interval := row.SyncIntervalSeconds
 		if interval <= 0 {
 			interval = network.ProxyPoolDefaultSyncInterval
 		}
 		next := now.Add(time.Duration(interval) * time.Second)
 		row.NextSyncAt, row.LastSyncError = &next, ""
-		if err := tx.Save(&row).Error; err != nil {
+		if err := tx.Omit("NodeID").Save(&row).Error; err != nil {
 			return err
 		}
 		audit := model.AuditLog{Actor: "system:proxy-pool-subscription", Action: "node_proxy_pool.subscription.sync", Target: fmt.Sprintf("node_proxy_pool:%d", row.ID), Detail: fmt.Sprintf("node=%d revision=%d nodes=%d", row.NodeID, row.Revision, nodeCount)}
 		if admin != nil {
 			audit.UserID, audit.Actor = &admin.ID, admin.Email
 		}
-		if err := tx.Create(&audit).Error; err != nil {
-			return err
+		if changed {
+			if err := tx.Create(&audit).Error; err != nil {
+				return err
+			}
+			if err := publishSharedProxyPool(tx, row.ID, actor.AccountID); err != nil {
+				return err
+			}
 		}
-		if err := EnqueuePublication(tx, row.NodeID, 0, actor.AccountID); err != nil {
-			return err
-		}
+
 		out = proxyPoolRecordView(row)
 		return nil
 	})
@@ -126,9 +131,16 @@ func (s ProxyPoolSubscriptions) RecordProxyPoolSubscriptionFailure(ctx context.C
 				return err
 			}
 		}
-		return tx.Model(&model.NodeProxyPool{}).
-			Where("id = ? AND revision = ? AND subscription_url = ?", snapshot.Pool.ID, snapshot.Pool.Revision, snapshot.SubscriptionURLCiphertext).
-			Updates(map[string]any{"last_sync_error": message, "next_sync_at": next.UTC()}).Error
+		query := tx.Model(&model.NodeProxyPool{}).
+			Where("id = ? AND revision = ? AND subscription_url = ?", snapshot.Pool.ID, snapshot.Pool.Revision, snapshot.SubscriptionURLCiphertext)
+		// Unchanged successful content keeps the configuration revision. Fence an
+		// older failed fetch by success time as well, so it cannot hide that success.
+		if snapshot.Pool.LastSyncAt == nil {
+			query = query.Where("last_sync_at IS NULL")
+		} else {
+			query = query.Where("last_sync_at = ?", snapshot.Pool.LastSyncAt)
+		}
+		return query.Updates(map[string]any{"last_sync_error": message, "next_sync_at": next.UTC()}).Error
 	})
 }
 
@@ -161,7 +173,7 @@ func (s ProxyPoolSubscriptions) ClaimDueProxyPoolSubscriptions(ctx context.Conte
 
 func proxyPoolSubscriptionSnapshot(row model.NodeProxyPool) network.ProxyPoolSubscriptionSnapshot {
 	return network.ProxyPoolSubscriptionSnapshot{
-		Pool: proxyPoolRecordView(row), SubscriptionURLCiphertext: row.SubscriptionURL,
+		Pool: proxyPoolRecordView(row), ConfigCiphertext: row.Config, SubscriptionURLCiphertext: row.SubscriptionURL,
 		SubscriptionFormat: row.SubscriptionFormat, SubscriptionUserAgent: row.SubscriptionUserAgent,
 	}
 }

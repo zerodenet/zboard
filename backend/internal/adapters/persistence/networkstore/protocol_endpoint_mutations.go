@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"sort"
 	"strings"
 	"time"
@@ -346,6 +347,15 @@ func validateAndMigrateProtocolEndpointCredentials(tx *gorm.DB, previous, next m
 		return err
 	}
 	if len(credentials) == 0 {
+		if !strings.EqualFold(previous.Protocol, next.Protocol) {
+			var bindings int64
+			if err := credentialstore.Bindings(tx).Where("protocol_credentials.protocol_endpoint_id=? AND protocol_credentials.material_version=1", next.ID).Count(&bindings).Error; err != nil {
+				return err
+			}
+			if bindings > 0 {
+				return &network.ProtocolEndpointMutationValidation{Message: "协议服务校验失败。", Fields: map[string]string{"protocol": "该服务已有订阅身份；请创建新服务后迁移协议。"}}
+			}
+		}
 		return nil
 	}
 	if !strings.EqualFold(previous.Protocol, next.Protocol) {

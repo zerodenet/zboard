@@ -40,13 +40,17 @@ func (s SubscriptionProjection) ProjectionData(ctx context.Context, subscription
 		}
 	}
 	var credentials []credentialstore.DeliveryProjection
-	if err := credentialstore.ProjectedCredentials(s.DB.WithContext(ctx)).Where("protocol_credentials.subscription_id IN ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionIDs, "active", now).Find(&credentials).Error; err != nil {
+	if err := credentialstore.ProjectedCredentials(s.DB.WithContext(ctx), now).Where("protocol_credentials.subscription_id IN ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionIDs, "active", now).Find(&credentials).Error; err != nil {
+		return result, err
+	}
+	if err := credentialstore.ConfirmMaterials(s.DB.WithContext(ctx), credentials); err != nil {
 		return result, err
 	}
 	result.Credentials = make([]entitlements.SubscriptionProjectionCredential, 0, len(credentials))
 	for _, row := range credentials {
+		deliveryStatus := row.DeliveryStatus()
 		result.Credentials = append(result.Credentials, entitlements.SubscriptionProjectionCredential{
-			DeliveryStatus: row.DeliveryStatus(), ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
+			MaterialVersion: row.MaterialVersion, DeliveryStatus: deliveryStatus, ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
 			CredentialID: row.CredentialID, PrincipalKey: row.PrincipalKey, SecretCiphertext: row.Secret, Status: row.Status,
 			ListenPort: row.ListenPort, PublicPort: row.PublicPort, ExpiresAt: row.ExpiresAt, LastUsedAt: row.LastUsedAt, RevokedAt: row.RevokedAt,
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,

@@ -59,6 +59,9 @@ type Checkpoint struct {
 type Batch struct {
 	Events []Envelope
 	Next   Checkpoint
+	// Positions are verified prefixes of this read window, not new durable rows.
+	// Consumers can acknowledge successful work without replaying the whole window.
+	Positions []Checkpoint
 }
 
 type CompactionResult struct {

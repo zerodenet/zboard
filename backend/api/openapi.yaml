@@ -1471,14 +1471,14 @@ paths:
   /api/v1/admin/node-proxy-pools:
     get:
       tags: [admin, nodes]
-      summary: List a node's shared proxy pools without credentials
+      summary: List reusable shared proxy pools without credentials
       parameters:
-        - { name: node_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: node_id, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 }, description: Zero or omitted lists all pools; a server ID lists its references. }
       responses:
-        "200": { description: "Pools with id, node_id, name, revision and entry_count; no config or credentials" }
+        "200": { description: "Pools with id, name, revision, entry_count and referencing nodes (id/name); no config or credentials" }
     post:
       tags: [admin, nodes]
-      summary: Create a node-local proxy pool and queue publication to that node
+      summary: Create an independent reusable pool; optionally reference it from a server
       requestBody:
         required: true
         content:
@@ -1503,20 +1503,47 @@ paths:
       - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
     get:
       tags: [admin, nodes]
-      summary: Read this pool from the node's published configuration file over SSH
+      summary: Read this pool from a referencing server's published configuration file over SSH
+      parameters:
+        - { name: node_id, in: query, required: false, schema: { type: integer, minimum: 1 }, description: Required when multiple servers reference this pool. }
       description: Administrator-only, audited, no-store read with a 20-second timeout and 8 MiB file limit. Returns source, node_id, read_at, sha256 of the read configuration, present and config. Config contains only this pool's outbounds, outbound_groups and associated direct forwarding inbounds and route rules. Does not expose unrelated credentials. Reads /etc/zerodenet/current.json; this is a published file snapshot, not an in-memory kernel state query. A failed read never falls back to a generated preview.
       responses:
         "200": { description: "Published pool snapshot, or present=false if not in the file" }
         "403": { description: Administrator required }
         "404": { description: Pool or node not found }
         "502": { description: SSH read or configuration parsing failed }
+  /api/v1/admin/node-proxy-pools/{id}/reference:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    put:
+      tags: [admin, nodes]
+      summary: Reference an existing pool from a server without changing its routes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [node_id], properties: { node_id: { type: integer, minimum: 1 } } }
+      responses:
+        "200": { description: Referenced }
+    delete:
+      tags: [admin, nodes]
+      summary: Remove a server reference while retaining the reusable pool
+      description: Rejected when this server still has forwarding entries using this pool. Other servers are unaffected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [node_id], properties: { node_id: { type: integer, minimum: 1 } } }
+      responses:
+        "200": { description: Reference removed }
+        "400": { description: Still used by forwarding entries }
   /api/v1/admin/node-proxy-pools/{id}/sync:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
     post:
       tags: [admin, nodes]
       summary: Fetch, validate and publish a shared proxy pool subscription
-      description: Downloads the encrypted-at-rest subscription URL with SSRF protection and the configured User-Agent. The current pool is replaced only after parsing and Zero validation succeed; failures retain the last good configuration. A successful sync increments the optimistic revision and queues publication to the owning node.
+      description: Downloads the encrypted-at-rest subscription URL with SSRF protection and the configured User-Agent. The current pool is replaced only after parsing and Zero validation succeed; failures retain the last good configuration. Changed content increments the optimistic revision and queues publication once per referencing server. Unchanged content only updates synchronization timestamps.
       requestBody:
         content:
           application/json:
@@ -4629,6 +4656,35 @@ paths:
                       data: { $ref: "#/components/schemas/AdminSubscriptionDetail" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/subscriptions/{id}/credential-migration:
+    get:
+      tags: [subscriptions, admin]
+      summary: Read subscription credential compatibility progress
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { $ref: "#/components/responses/SubscriptionCredentialMigration" }
+        '401': { description: Authentication required }
+        '403': { description: Current administrator required }
+    post:
+      tags: [subscriptions, admin]
+      summary: Prepare subscription material and publish dual credentials
+      description: Keeps legacy client material until exact node confirmation starts its configured compatibility window. Unsupported dual-authentication configurations remain unchanged.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { $ref: "#/components/responses/SubscriptionCredentialMigration" }
+        '409': { description: Current protocol or access policy cannot safely support dual credentials }
+        '403': { description: Current administrator required }
+    delete:
+      tags: [subscriptions, admin]
+      summary: Restore legacy credential output inside the compatibility window
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { $ref: "#/components/responses/SubscriptionCredentialMigration" }
+        '409': { description: No intact legacy material remains or compatibility has ended }
+        '403': { description: Current administrator required }
   /api/v1/admin/subscriptions/{id}/quota:
     put:
       tags: [subscriptions, admin]
@@ -6125,6 +6181,16 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiResponse"
+    SubscriptionCredentialMigration:
+      description: Current subscription credential migration state, without credentials or secrets.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/ApiResponse"
+              - properties:
+                  data: { $ref: "#/components/schemas/SubscriptionCredentialMigrationStatus" }
+
   schemas:
     ObservationIntentPage:
       type: object
@@ -6668,9 +6734,9 @@ components:
                 "items": { "type": "string" }
     NodeProxyPoolRequest:
       type: object
-      required: [node_id, name]
+      required: [name]
       properties:
-        node_id: { type: integer, minimum: 1 }
+        node_id: { type: integer, minimum: 0, description: Optional server reference on creation; ownership is independent of servers. }
         name: { type: string, maxLength: 80 }
         revision: { type: integer, minimum: 0, description: Required on update }
         config:
@@ -6704,7 +6770,7 @@ components:
         node_id: { type: integer, format: int64, minimum: 0, description: Entry node A required for managed forwarding; zero or omitted for external forwarding. }
         endpoint_id: { type: integer, format: int64, description: Legacy alias for parent_protocol_id }
         parent_protocol_id: { type: integer, format: int64, description: Actual protocol listener on B; A only forwards opaque TCP or UDP }
-        proxy_pool_id: { type: integer, minimum: 0, description: Node-local shared pool on A. Omit to preserve; zero clears the reference. }
+        proxy_pool_id: { type: integer, minimum: 0, description: Reusable shared pool referenced by A. Omit to preserve; zero clears the reference. }
         node_group_membership_changes:
           type: array
           items:
@@ -8388,6 +8454,19 @@ components:
             can_change: { type: boolean, readOnly: true, description: Eligible subscription with a saleable timed plan-change SKU on another product. }
             can_addon: { type: boolean, readOnly: true, description: Eligible subscription with a saleable traffic-addon SKU on its product. }
             can_reset: { type: boolean, readOnly: true, description: Eligible timed subscription with a base quota and a saleable traffic-reset SKU on its product. }
+    SubscriptionCredentialMigrationStatus:
+      type: object
+      required: [subscription_id, state, legacy_credentials, pending_confirmation, compatible_credentials, revoking_credentials, retired_credentials, can_rollback]
+      properties:
+        subscription_id: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [legacy, awaiting_confirmation, compatibility, revoking, current] }
+        legacy_credentials: { type: integer, format: int64, minimum: 0 }
+        pending_confirmation: { type: integer, format: int64, minimum: 0 }
+        compatible_credentials: { type: integer, format: int64, minimum: 0 }
+        revoking_credentials: { type: integer, format: int64, minimum: 0 }
+        retired_credentials: { type: integer, format: int64, minimum: 0 }
+        compatibility_until: { type: string, format: date-time, description: Earliest remaining legacy deadline; each binding starts after its own exact confirmation. }
+        can_rollback: { type: boolean }
     AdminSubscriptionDetail:
       allOf:
         - $ref: "#/components/schemas/AdminSubscriptionSummary"
@@ -9437,6 +9516,12 @@ components:
       required:
         - name
       properties:
+        proxy_pool_ids:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          description: Reference existing independent pools atomically with server creation; routes are configured separately.
+          items: { type: integer, minimum: 1 }
         name:
           type: string
         region:

@@ -113,6 +113,18 @@ func (s GroupCredentialReconciliation) ensureSubscriptions(ctx context.Context, 
 }
 
 func subscriptionCredentialsCurrent(db *gorm.DB, subscription model.Subscription, issuer entitlements.CredentialIssuer) (bool, error) {
+	if subscription.CredentialMaterialMode == 1 {
+		var root model.ProtocolCredential
+		if err := db.Where("subscription_id=? AND current_scope=1 AND material_scope=1", subscription.ID).Limit(1).Find(&root).Error; err != nil {
+			return false, err
+		}
+		if root.ID != 0 {
+			return root.MaterialGroupID == subscription.NodeGroupID && root.MaterialVersion == 1 && root.EntitlementEpoch == subscription.EntitlementEpoch && root.Status == "active" && root.RevokedAt == nil && root.ExpiresAt.Equal(subscription.EndAt), nil
+		}
+
+		return false, nil
+	}
+
 	var endpoints []model.ProtocolEndpoint
 	if err := db.Model(&model.ProtocolEndpoint{}).
 		Joins(networkstore.CredentialMembershipJoin("node_group_endpoints.protocol_endpoint_id = protocol_endpoints.id")).

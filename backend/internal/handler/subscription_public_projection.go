@@ -256,16 +256,16 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 			memberships[groupID][endpointID] = struct{}{}
 		}
 	}
-	deliveryByID := map[uint]string{}
+	deliveryByID := map[[2]uint]string{}
 	pendingEndpoints := map[uint]bool{}
 	credentials := make([]model.ProtocolCredential, 0, len(projection.Credentials))
 	for _, row := range projection.Credentials {
-		deliveryByID[row.ID] = row.DeliveryStatus
+		deliveryByID[[2]uint{row.ID, row.ProtocolEndpointID}] = row.DeliveryStatus
 		if row.DeliveryStatus == "pending" {
 			pendingEndpoints[row.ProtocolEndpointID] = true
 		}
 		credentials = append(credentials, model.ProtocolCredential{
-			ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
+			MaterialVersion: row.MaterialVersion, ID: row.ID, SubscriptionID: row.SubscriptionID, UserID: row.UserID, ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID,
 			CredentialID: row.CredentialID, PrincipalKey: row.PrincipalKey, Secret: row.SecretCiphertext,
 			ListenPort: row.ListenPort, PublicPort: row.PublicPort, Status: row.Status, ExpiresAt: row.ExpiresAt,
 			LastUsedAt: row.LastUsedAt, RevokedAt: row.RevokedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -279,6 +279,9 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 		}
 		if credentials[left].ProtocolEndpointID != credentials[right].ProtocolEndpointID {
 			return credentials[left].ProtocolEndpointID < credentials[right].ProtocolEndpointID
+		}
+		if credentials[left].MaterialVersion != credentials[right].MaterialVersion {
+			return credentials[left].MaterialVersion > credentials[right].MaterialVersion
 		}
 		return credentials[left].ID < credentials[right].ID
 	})
@@ -302,7 +305,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 	// A stale heartbeat means the control plane cannot observe the node; it
 	// must not erase already provisioned routes from a refreshed subscription.
 	for _, credential := range credentials {
-		if deliveryByID[credential.ID] == "pending" {
+		if deliveryByID[[2]uint{credential.ID, credential.ProtocolEndpointID}] == "pending" {
 			continue
 		}
 		groupID := subscriptionGroup[credential.SubscriptionID]
@@ -323,7 +326,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 		if !exists {
 			continue
 		}
-		if !node.IsEnabled || (node.LastSeenAt == nil && deliveryByID[credential.ID] != "confirmed") || !filter.matchesEndpoint(endpoint, node) {
+		if !node.IsEnabled || (node.LastSeenAt == nil && deliveryByID[[2]uint{credential.ID, credential.ProtocolEndpointID}] != "confirmed") || !filter.matchesEndpoint(endpoint, node) {
 			continue
 		}
 		if supported, _ := h.protocolKernelSupportForNode(endpoint.Protocol, node); !supported {
@@ -334,7 +337,7 @@ func (h *handlers) buildProjectedSubscriptionManifestNodes(ctx context.Context, 
 			continue
 		}
 		manifestNodes = append(manifestNodes, subscriptionManifestNode{
-			DeliveryStatus: deliveryByID[credential.ID], ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: credential.SubscriptionID,
+			DeliveryStatus: deliveryByID[[2]uint{credential.ID, credential.ProtocolEndpointID}], ID: endpoint.ID, NodeID: endpoint.NodeID, SubscriptionID: credential.SubscriptionID,
 			CredentialID: credential.CredentialID, Name: endpoint.Name, Region: node.Region,
 			Address: endpoint.Address, Port: credential.ListenPort, PublicPort: credential.PublicPort,
 			Protocol: endpoint.Protocol, MultiplierMilli: endpoint.MultiplierMilli, Config: clientConfig,

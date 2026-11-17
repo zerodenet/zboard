@@ -40,10 +40,12 @@ func (h *handlers) StartCredentialExpiryWorker() {
 				return err
 			}
 			if !due {
-				return nil
+				break
 			}
 		}
-		return nil
+		// Access deadlines take priority over optional compatibility cleanup.
+		_, err := h.services.CredentialMigration(h.credentialCipher, h.zeroMieruAccess).ProcessCompatibility(ctx, time.Now().UTC(), credentialExpiryReconcileBatchSize)
+		return err
 	})
 }
 
@@ -66,5 +68,6 @@ func (h *handlers) runExpiredCredentialReconciliation(now time.Time) error {
 	}
 	if len(expired) > 0 {
 	}
-	return nil
+	_, err = h.services.CredentialMigration(h.credentialCipher, h.zeroMieruAccess).ProcessCompatibility(context.Background(), started, credentialExpiryReconcileBatchSize)
+	return err
 }

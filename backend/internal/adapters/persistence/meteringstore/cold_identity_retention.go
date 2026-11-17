@@ -118,6 +118,9 @@ func sourceColdIdentity(tx *gorm.DB, kind uint8, r coldCandidate, now time.Time,
 			completed = 1
 		}
 		entry = coldIdentity{Key: row.FlowID, Numbers: []uint64{uint64(row.ProtocolCredentialID), row.Revision, uint64(row.RawBytes), uint64(row.UploadBytes), uint64(row.DownloadBytes), uint64(row.UsedBytes), completed}}
+		if row.ProtocolEndpointID != 0 {
+			entry.Numbers = append(entry.Numbers, uint64(row.ProtocolEndpointID))
+		}
 	case coldTarget:
 		var row model.MeteringLedgerTarget
 		v := q.Where("source_id=?", r.ID).Find(&row)

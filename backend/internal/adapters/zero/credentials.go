@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"strings"
 )
 
@@ -74,4 +75,17 @@ func (i Issuer) Secret(protocol, serverConfig string) (string, error) {
 	default:
 		return "", fmt.Errorf("protocol %s does not support subscription credentials", protocol)
 	}
+}
+
+func (i Issuer) NewSubscriptionMaterial() (string, string, error) {
+	seed, err := entitlements.NewCredentialMaterial()
+	if err != nil {
+		return "", "", err
+	}
+	verifier, err := entitlements.CredentialMaterialVerifier(seed)
+	if err != nil {
+		return "", "", err
+	}
+	protected, err := i.Cipher.Encrypt(seed)
+	return protected, verifier, err
 }

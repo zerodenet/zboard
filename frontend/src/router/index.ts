@@ -62,6 +62,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'subscription-templates/rule-sets', component: () => import('../views/SubscriptionRuleSets.vue'), meta: { title: '规则集', section: '订阅模板' } },
       { path: 'subscription-rule-sets', redirect: '/admin/subscription-templates/rule-sets' },
       { path: 'orders', component: () => import('../views/Orders.vue'), meta: { title: '订单管理', section: '订阅系统' } },
+      { path: 'proxy-pools', component: () => import('../views/ProxyPools.vue'), meta: { title: '共享代理池', section: '节点系统' } },
       { path: 'nodes', component: () => import('../views/Nodes.vue'), meta: { title: '服务器管理', section: '节点系统' } },
       { path: 'certificates', component: () => import('../views/Certificates.vue'), meta: { title: '免费证书', section: '节点系统' } },
       { path: 'network-entries', redirect: { path: '/admin/protocols', query: { kind: 'forward' } } },

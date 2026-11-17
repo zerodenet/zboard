@@ -125,6 +125,12 @@ func historyQuery(db *gorm.DB, target observability.HistoryTarget, cutoff time.T
 	if target == observability.NodeOperations || target == observability.ProtocolDeployments {
 		q = q.Where("status IN ?", []string{"succeeded", "failed"})
 	}
+	if target == observability.ProtocolDeployments {
+		// Keep exactly the current confirmed source per node. Deleting this source
+		// would turn already delivered credentials into pending ones and make
+		// derived delivery-state recovery impossible on the next startup.
+		q = q.Where("NOT EXISTS (?)", db.Model(&model.NodeCredentialDeliveryState{}).Select("1").Where("node_credential_delivery_states.deployment_id=protocol_deployments.id"))
+	}
 	return q, value, column, task, nil
 }
 func (s HistoryRetention) HasPendingHistory(ctx context.Context, target observability.HistoryTarget, cutoff time.Time) (bool, error) {

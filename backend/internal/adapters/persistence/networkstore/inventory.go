@@ -3,6 +3,7 @@ package networkstore
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"sync"
 	"time"
 
@@ -512,7 +513,7 @@ func (s Inventory) protocolUsage(ctx context.Context, ids []uint, now time.Time)
 	}()
 	go func() {
 		defer wg.Done()
-		credentialErr = s.DB.WithContext(ctx).Model(&model.ProtocolCredential{}).Select("protocol_endpoint_id, SUM(CASE WHEN status = ? AND revoked_at IS NULL AND expires_at > ? THEN 1 ELSE 0 END) AS active_credentials, MAX(last_used_at) AS last_used_at", "active", now).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&credentials).Error
+		credentialErr = credentialstore.Bindings(s.DB.WithContext(ctx), now).Select("protocol_endpoint_id, COUNT(DISTINCT CASE WHEN status = ? AND revoked_at IS NULL AND expires_at > ? THEN subscription_id ELSE NULL END) AS active_credentials, MAX(CASE WHEN material_version=0 THEN last_used_at ELSE NULL END) AS last_used_at", "active", now).Where("protocol_endpoint_id IN ?", ids).Group("protocol_endpoint_id").Scan(&credentials).Error
 	}()
 	go func() {
 		defer wg.Done()

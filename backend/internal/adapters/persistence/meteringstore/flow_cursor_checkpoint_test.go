@@ -54,15 +54,15 @@ func TestCompletedFlowCompactionRetainsArbitrarilyLateAccountingFloor(t *testing
 	if n := statisticsCount(t, db, "flow_cursor_checkpoints"); n != 0 {
 		t.Fatal("hot/cold authority duplicated", n)
 	}
-	// Compact again after the renewed hot horizon, then reject regression and
-	// cross-principal changes without modifying either quota or the checkpoint.
+	// Compact again after the renewed hot horizon. A delayed older terminal
+	// fact must be acknowledged without lowering counters or charging again.
 	compact.Now = func() time.Time { return now.Add(48 * time.Hour) }
 	if _, err := compact.Drain(t.Context(), 200); err != nil {
 		t.Fatal(err)
 	}
 	event.EventID, event.Sequence, event.Revision, event.BytesUp = "regression", 2, 2, 90
-	if _, _, err := store.Complete(t.Context(), event); err == nil {
-		t.Fatal("regressing old completion accepted")
+	if _, _, err := store.Complete(t.Context(), event); err != nil {
+		t.Fatal("late dominated completion rejected", err)
 	}
 	cohortTotal(t, db, 132)
 	stale := cohortSample(cred, "connection", "old-runtime", 99, 150)
@@ -85,7 +85,7 @@ func TestCompletedFloorCollationAliasCannotCreateSecondHotIdentity(t *testing.T)
 	// Match a case-insensitive source identity, without relying on Go equality.
 	for _, ddl := range []string{
 		"CREATE TABLE flow_usages (id INTEGER PRIMARY KEY, node_id INTEGER NOT NULL,flow_id TEXT COLLATE NOCASE NOT NULL,UNIQUE(node_id,flow_id))",
-		"CREATE TABLE flow_cursor_checkpoints (node_id INTEGER NOT NULL,flow_id TEXT COLLATE NOCASE NOT NULL,protocol_credential_id INTEGER NOT NULL,revision INTEGER NOT NULL,raw_bytes INTEGER NOT NULL,upload_bytes INTEGER NOT NULL,download_bytes INTEGER NOT NULL,used_bytes INTEGER NOT NULL,is_completed NUMERIC NOT NULL,PRIMARY KEY(node_id,flow_id))",
+		"CREATE TABLE flow_cursor_checkpoints (protocol_endpoint_id INTEGER NOT NULL DEFAULT 0,node_id INTEGER NOT NULL,flow_id TEXT COLLATE NOCASE NOT NULL,protocol_credential_id INTEGER NOT NULL,revision INTEGER NOT NULL,raw_bytes INTEGER NOT NULL,upload_bytes INTEGER NOT NULL,download_bytes INTEGER NOT NULL,used_bytes INTEGER NOT NULL,is_completed NUMERIC NOT NULL,PRIMARY KEY(node_id,flow_id))",
 		"CREATE TABLE debit_probe (amount INTEGER NOT NULL)", "INSERT INTO debit_probe VALUES(0)",
 	} {
 		if err := db.Exec(ddl).Error; err != nil {

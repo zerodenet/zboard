@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -77,6 +78,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		}
 
 		type credentialRow struct {
+			MaterialVersion    uint16
 			ID                 uint
 			SubscriptionID     uint
 			ProtocolEndpointID uint
@@ -89,8 +91,8 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 			DeviceLimit        int
 		}
 		var credentials []credentialRow
-		if err := tx.Table("protocol_credentials").
-			Select("protocol_credentials.id, protocol_credentials.subscription_id, protocol_credentials.protocol_endpoint_id, protocol_credentials.principal_key, protocol_credentials.secret, protocol_credentials.listen_port, protocol_credentials.public_port, subscriptions.kernel_policy_revision AS policy_revision, subscriptions.speed_limit_mbps, subscriptions.device_limit").
+		if err := credentialstore.Bindings(tx, now).
+			Select("protocol_credentials.material_version, protocol_credentials.id, protocol_credentials.subscription_id, protocol_credentials.protocol_endpoint_id, protocol_credentials.principal_key, protocol_credentials.secret, protocol_credentials.listen_port, protocol_credentials.public_port, subscriptions.kernel_policy_revision AS policy_revision, subscriptions.speed_limit_mbps, subscriptions.device_limit").
 			Joins("JOIN subscriptions ON subscriptions.id = protocol_credentials.subscription_id").
 			Joins(CredentialMembershipJoin("node_group_endpoints.node_group_id = subscriptions.node_group_id AND node_group_endpoints.protocol_endpoint_id = protocol_credentials.protocol_endpoint_id")).
 			Where("protocol_credentials.protocol_endpoint_id IN ?", endpointIDs).
@@ -114,8 +116,8 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		}
 		var credentialCounts []credentialCountRow
 		if len(subscriptionIDs) > 0 {
-			if err := tx.Table("protocol_credentials").
-				Select("protocol_credentials.subscription_id, COUNT(*) AS count").
+			if err := credentialstore.Bindings(tx, now).
+				Select("protocol_credentials.subscription_id, COUNT(DISTINCT protocol_credentials.protocol_endpoint_id) AS count").
 				Joins("JOIN protocol_endpoints ON protocol_endpoints.id = protocol_credentials.protocol_endpoint_id").
 				Where("protocol_credentials.subscription_id IN ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionIDs, "active", now).
 				Where("LOWER(protocol_endpoints.protocol) IN ?", credentialProtocols).
@@ -130,7 +132,7 @@ func (s RuntimeConfiguration) LoadRuntimeConfiguration(ctx context.Context, node
 		credentialsByEndpoint := make(map[uint][]network.RuntimeConfigurationCredential)
 		for _, row := range credentials {
 			credentialsByEndpoint[row.ProtocolEndpointID] = append(credentialsByEndpoint[row.ProtocolEndpointID], network.RuntimeConfigurationCredential{
-				ID: row.ID, SubscriptionID: row.SubscriptionID, PrincipalKey: row.PrincipalKey, Secret: row.Secret,
+				MaterialVersion: row.MaterialVersion, ID: row.ID, SubscriptionID: row.SubscriptionID, PrincipalKey: row.PrincipalKey, Secret: row.Secret,
 				ListenPort: row.ListenPort, PublicPort: row.PublicPort, PolicyRevision: row.PolicyRevision,
 				SpeedLimitMbps: row.SpeedLimitMbps, DeviceLimit: row.DeviceLimit,
 				SoleActiveCredential: activeCredentialCount[row.SubscriptionID] == 1,

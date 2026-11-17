@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -107,6 +108,12 @@ func assertMeteringReportReceipts(t *testing.T, f orderFixture) {
 		t.Fatal(err)
 	}
 	if err := h.db.Where("node_id = ? AND report_id = ?", receipt.NodeID, receipt.ReportID).Delete(&model.MeteringReportReceipt{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Exercise the legacy identity fallback itself. A matching independent
+	// runtime floor can now prove an ordinary replay without reading detail or
+	// manufacturing another receipt, so remove only that test-owned hot floor.
+	if err := h.db.Where("node_id=? AND flow_id=?", c.NodeID, metering.FlowUsageKey(events[0].CoreInstanceID, events[0].FlowID)).Delete(&model.FlowUsage{}).Error; err != nil {
 		t.Fatal(err)
 	}
 	legacyReads := 0

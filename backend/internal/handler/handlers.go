@@ -124,6 +124,7 @@ func effectiveSubscriptionStatus(sub model.Subscription, now time.Time) string {
 }
 
 type nodeCreateReq struct {
+	ProxyPoolIDs            []uint `json:"proxy_pool_ids"`
 	Name                    string `json:"name"`
 	Region                  string `json:"region"`
 	Address                 string `json:"address"`
@@ -994,7 +995,7 @@ func (h *handlers) NodeCreateHandler(w http.ResponseWriter, r *http.Request) {
 		nodeCredentialPrefix = req.NodeCredential[:12]
 	}
 	node, err := h.services.NodeAdministration.Create(r.Context(), claims.UserID, networkcap.NodeCreateChange{
-		Name: req.Name, Region: req.Region, Address: req.Address,
+		Name: req.Name, Region: req.Region, Address: req.Address, ProxyPoolIDs: req.ProxyPoolIDs,
 		NodeCredentialCiphertext: encryptedNodeCredential, NodeCredentialPrefix: nodeCredentialPrefix,
 		CommunicationProtocol: req.CommunicationProtocol, Config: normalizeOptionalJSON(req.Config, "{}"),
 		IsEnabled: isEnabled, Remark: req.Remark, SSHHost: req.SSHHost, SSHPort: req.SSHPort,

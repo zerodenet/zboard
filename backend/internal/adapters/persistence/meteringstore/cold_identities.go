@@ -335,12 +335,12 @@ func coldReceipt(tx *gorm.DB, node uint, key string) (model.MeteringReportReceip
 	}
 	return model.MeteringReportReceipt{NodeID: node, ReportID: r.Key, ProtocolEndpointID: uint(r.Numbers[0]), TrafficRecordID: uint(r.Numbers[1])}, true, nil
 }
-func coldCheckpoint(tx *gorm.DB, node uint, key string) (model.FlowCursorCheckpoint, bool, error) {
-	r, ok, e := lookupColdIdentity(tx, node, coldFloor, key, true)
+func coldCheckpoint(tx *gorm.DB, node uint, key string, update bool) (model.FlowCursorCheckpoint, bool, error) {
+	r, ok, e := lookupColdIdentity(tx, node, coldFloor, key, update)
 	if e != nil || !ok {
 		return model.FlowCursorCheckpoint{}, ok, e
 	}
-	if len(r.Numbers) != 7 || r.Numbers[6] > 1 {
+	if (len(r.Numbers) != 7 && len(r.Numbers) != 8) || r.Numbers[6] > 1 {
 		return model.FlowCursorCheckpoint{}, false, errColdIdentity
 	}
 	for _, n := range r.Numbers[2:6] {
@@ -349,7 +349,11 @@ func coldCheckpoint(tx *gorm.DB, node uint, key string) (model.FlowCursorCheckpo
 		}
 	}
 	n := r.Numbers
-	return model.FlowCursorCheckpoint{NodeID: node, FlowID: r.Key, ProtocolCredentialID: uint(n[0]), Revision: n[1], RawBytes: int64(n[2]), UploadBytes: int64(n[3]), DownloadBytes: int64(n[4]), UsedBytes: int64(n[5]), IsCompleted: n[6] == 1}, true, nil
+	endpoint := uint(0)
+	if len(n) == 8 {
+		endpoint = uint(n[7])
+	}
+	return model.FlowCursorCheckpoint{ProtocolEndpointID: endpoint, NodeID: node, FlowID: r.Key, ProtocolCredentialID: uint(n[0]), Revision: n[1], RawBytes: int64(n[2]), UploadBytes: int64(n[3]), DownloadBytes: int64(n[4]), UsedBytes: int64(n[5]), IsCompleted: n[6] == 1}, true, nil
 }
 
 // Coalesce one transfer batch per affected page. No per-report BLOB rewrite.
@@ -520,7 +524,7 @@ func loadLedgerTarget(tx *gorm.DB, node, source uint, out *model.MeteringLedgerT
 	return true, nil
 }
 
-func coldFloorCandidates(tx *gorm.DB, node uint, keys []string) ([]model.FlowCursorCheckpoint, error) {
+func coldFloorCandidates(tx *gorm.DB, node uint, keys []string, update bool) ([]model.FlowCursorCheckpoint, error) {
 	present, e := coldKindPresent(tx, node, coldFloor)
 	if e != nil || !present {
 		return nil, e
@@ -557,16 +561,18 @@ func coldFloorCandidates(tx *gorm.DB, node uint, keys []string) ([]model.FlowCur
 		}
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	for _, id := range ids {
-		var b model.MeteringColdBlock
-		if e := tx.Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).First(&b, id).Error; e != nil {
-			return nil, e
+	if update {
+		for _, id := range ids {
+			var b model.MeteringColdBlock
+			if e := tx.Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).First(&b, id).Error; e != nil {
+				return nil, e
+			}
 		}
 	}
 	rows := []model.FlowCursorCheckpoint{}
 	known := map[string]bool{}
 	for _, key := range possible {
-		r, ok, e := coldCheckpoint(tx, node, key)
+		r, ok, e := coldCheckpoint(tx, node, key, update)
 		if e != nil {
 			return nil, e
 		}

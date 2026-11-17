@@ -18,6 +18,7 @@ type FlowCheckpoint struct {
 type FlowSample struct {
 	NodeID                                                             uint
 	SourceID, CoreInstanceID, EventID, FlowID, PrincipalKey, EventType string
+	InboundTag                                                         string
 	Sequence, Revision                                                 uint64
 	BytesUp, BytesDown                                                 int64
 	OccurredAt                                                         time.Time

@@ -146,6 +146,8 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodPut, "/api/v1/admin/users/:id", h.AdminUserUpdateHandler),
 
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
+		newRoute(http.MethodPut, "/api/v1/admin/node-proxy-pools/:id/reference", h.NodeProxyPoolReferenceHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/node-proxy-pools/:id/reference", h.NodeProxyPoolReferenceHandler),
 		newRoute(http.MethodPost, "/api/v1/admin/node-proxy-pools", h.NodeProxyPoolsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/config", h.NodeProxyPoolConfigHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/node-proxy-pools/:id/runtime", h.NodeProxyPoolRuntimeHandler),
@@ -295,6 +297,9 @@ func RegisterRoutesWithProjectionSupervisor(srv *rest.Server, db *gorm.DB, jwtSe
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions", h.SubscriptionsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id", h.AdminSubscriptionGetHandler),
 		newRoute(http.MethodPut, "/api/v1/admin/subscriptions/:id/quota", h.AdminSubscriptionQuotaHandler),
+		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/credential-migration", h.AdminSubscriptionCredentialMigrationHandler),
+		newRoute(http.MethodPost, "/api/v1/admin/subscriptions/:id/credential-migration", h.AdminSubscriptionCredentialMigrationHandler),
+		newRoute(http.MethodDelete, "/api/v1/admin/subscriptions/:id/credential-migration", h.AdminSubscriptionCredentialMigrationHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/metrics", h.AdminSubscriptionFairUseMetricsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/observations", h.AdminSubscriptionFairUseObservationsHandler),
 		newRoute(http.MethodGet, "/api/v1/admin/subscriptions/:id/fair-use/policy", h.AdminSubscriptionFairUsePolicyHandler),

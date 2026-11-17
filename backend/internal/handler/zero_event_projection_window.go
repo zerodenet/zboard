@@ -157,7 +157,7 @@ func zeroFlowSamplesWithMerge(events []zeroevent.Envelope, merge bool) ([]meteri
 		if isMieruMigrationPrincipal(flow.PrincipalKey) {
 			continue
 		}
-		sample := metering.FlowSample{NodeID: uint(buffered.NodeID), SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())}
+		sample := metering.FlowSample{NodeID: uint(buffered.NodeID), SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, InboundTag: flow.InboundTag, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())}
 		key := zeroBufferedFlowKey{buffered.NodeID, strings.TrimSpace(event.CoreInstanceID), flow.FlowID}
 		minute := sample.OccurredAt.Unix() / 60
 		position, exists := latest[key]
@@ -167,7 +167,7 @@ func zeroFlowSamplesWithMerge(events []zeroevent.Envelope, merge bool) ([]meteri
 		// cannot merge backwards across B and reorder accounting checkpoints.
 		if merge && exists && safe && position.assetTag == buffered.AssetTag {
 			previous := &result[position.sample]
-			if sample.PrincipalKey == previous.PrincipalKey && sample.Sequence > previous.Sequence && sample.BytesUp >= previous.BytesUp && sample.BytesDown >= previous.BytesDown && position.revision == sample.Revision && position.config == event.ConfigRevision && position.minute == minute && position.source == event.SourceID {
+			if sample.InboundTag == previous.InboundTag && sample.PrincipalKey == previous.PrincipalKey && sample.Sequence > previous.Sequence && sample.BytesUp >= previous.BytesUp && sample.BytesDown >= previous.BytesDown && position.revision == sample.Revision && position.config == event.ConfigRevision && position.minute == minute && position.source == event.SourceID {
 				points := previous.Checkpoints
 				if len(points) == 0 {
 					points = append(points, metering.FlowCheckpoint{Sequence: previous.Sequence, BytesUp: previous.BytesUp, BytesDown: previous.BytesDown, ReportID: previous.EventID})

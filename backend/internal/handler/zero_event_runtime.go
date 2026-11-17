@@ -155,7 +155,11 @@ func (h *handlers) appendBufferedZeroEvent(ctx context.Context, node network.Eve
 		}
 		flowID = flow.FlowID
 		principal = flow.PrincipalKey
-		payload, err = json.Marshal(map[string]interface{}{"flow_id": flow.FlowID, "revision": flow.Revision, "traffic": map[string]int64{"bytes_up": flow.BytesUp, "bytes_down": flow.BytesDown}})
+		reduced := map[string]interface{}{"flow_id": flow.FlowID, "revision": flow.Revision, "traffic": map[string]int64{"bytes_up": flow.BytesUp, "bytes_down": flow.BytesDown}}
+		if flow.InboundTag != "" {
+			reduced["inbound_tag"] = flow.InboundTag
+		}
+		payload, err = json.Marshal(reduced)
 		if err != nil {
 			return true, &zeroEventRequestError{status: http.StatusBadRequest, message: err.Error()}
 		}
@@ -218,7 +222,7 @@ func (h *handlers) consumeZeroEventCycle(ctx context.Context, runtime *zeroEvent
 	for index := 0; index < burst; index++ {
 		count, err := h.consumeZeroEventBatchMeasured(ctx, runtime.spool, limit, &runtime.metrics)
 		if err != nil {
-			runtime.metrics.failures.Add(1)
+			runtime.metrics.failed(err, time.Now())
 			return err
 		}
 		h.flushBufferedConnectorReceipts(ctx, runtime)
@@ -313,32 +317,50 @@ func (h *handlers) consumeZeroEventBatchMeasured(ctx context.Context, spool zero
 			finishObservation(errors.New("job handler did not return; result requires verification"))
 		}
 	}()
-	projected, err := h.projectZeroNodeEventsBounded(ctx, batch.Events)
-	if errors.Is(err, metering.ErrFlowWindowNeedsIndividualReports) {
-		projected, err = h.projectZeroNodeEventsWithMerge(ctx, batch.Events, false)
+	processed := 0
+	// Keep the large read window, but durably acknowledge contiguous transaction
+	// cohorts. A later busy resource cannot send already committed prefixes back
+	// through every discovery/authority query on each retry.
+	chunk := len(batch.Events)
+	if len(batch.Positions) == len(batch.Events) {
+		chunk = zeroEventConsumerBatchLimit(chunk, h.services.TrafficReadsUseSQLite())
 	}
-	if err != nil {
-		finishObservation(err)
-		observed = true
-		return 0, err
-	}
-	if err := spool.Commit(ctx, batch.Next); err != nil {
-		finishObservation(err)
-		observed = true
-		return 0, fmt.Errorf("commit Zero event checkpoint: %w", err)
+	for start := 0; start < len(batch.Events); start += chunk {
+		end := min(start+chunk, len(batch.Events))
+		events := batch.Events[start:end]
+		projected, err := h.projectZeroNodeEventsBounded(ctx, events)
+		if errors.Is(err, metering.ErrFlowWindowNeedsIndividualReports) {
+			projected, err = h.projectZeroNodeEventsWithMerge(ctx, events, false)
+		}
+		if err == nil {
+			next := batch.Next
+			if len(batch.Positions) == len(batch.Events) {
+				next = batch.Positions[end-1]
+			}
+			if e := spool.Commit(ctx, next); e != nil {
+				err = fmt.Errorf("commit Zero event checkpoint: %w", e)
+			}
+		}
+		if err != nil {
+			finishObservation(err)
+			observed = true
+			return processed, err
+		}
+		processed = end
+		if metrics != nil {
+			metrics.committed(events, time.Since(started), time.Now().UTC())
+			metrics.projectedFlows.Add(uint64(projected))
+			for _, event := range events {
+				if event.Type == "flow.updated" {
+					metrics.flowUpdates.Add(1)
+				}
+			}
+		}
+		started = time.Now()
 	}
 	finishObservation(nil)
 	observed = true
-	if metrics != nil {
-		metrics.committed(batch.Events, time.Since(started), time.Now().UTC())
-		metrics.projectedFlows.Add(uint64(projected))
-		for _, event := range batch.Events {
-			if event.Type == "flow.updated" {
-				metrics.flowUpdates.Add(1)
-			}
-		}
-	}
-	return len(batch.Events), nil
+	return processed, nil
 }
 
 func (h *handlers) projectZeroNodeEvents(ctx context.Context, events []zeroevent.Envelope) error {

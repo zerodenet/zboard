@@ -69,6 +69,9 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 	if err != nil {
 		return result, err
 	}
+	if err := metering.ValidateCredentialIngress(flow.InboundTag, credential.ProtocolEndpointID); err != nil {
+		return result, err
+	}
 	flow.PrincipalKey = credential.PrincipalKey
 	result.ProtocolEndpointID = credential.ProtocolEndpointID
 
@@ -97,7 +100,7 @@ func (s BatchAccounting) project(tx *gorm.DB, in metering.FlowSample, batch *flo
 		return result, nil
 	}
 	if found && !legacy {
-		if usage.ProtocolCredentialID != credential.ID {
+		if usage.ProtocolCredentialID != credential.ID || (usage.ProtocolEndpointID != 0 && usage.ProtocolEndpointID != credential.ProtocolEndpointID) {
 			return result, errors.New("flow principal changed during its runtime generation")
 		}
 		if metering.RuntimeScopedFlow(usage.FlowID) && usage.Revision > 0 && event.Sequence > 0 && event.Sequence <= usage.Revision {

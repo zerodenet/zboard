@@ -3,6 +3,7 @@ package entitlements
 import "time"
 
 type Subscription struct {
+	CredentialMaterialMode  uint8  `json:"credential_material_mode,omitempty"`
 	EntitlementEpoch        uint64 `json:"-"`
 	KernelPolicyRevision    uint64 `json:"-"`
 	KernelPolicyFingerprint string `json:"-"`

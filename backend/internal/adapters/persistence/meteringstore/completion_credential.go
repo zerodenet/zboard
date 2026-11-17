@@ -76,16 +76,27 @@ func ResolveCompletionCredential(tx *gorm.DB, cipher metering.CredentialDecrypto
 		return model.ProtocolCredential{}, err
 	}
 	var row model.ProtocolCredential
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&row, candidate.ID).Error; err != nil {
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
+	if candidate.MaterialVersion == 0 {
+		query = query.Where("node_id = ?", nodeID)
+	}
+	if err := query.First(&row, candidate.ID).Error; err != nil {
 		return model.ProtocolCredential{}, err
 	}
 	if row.SubscriptionID != subscription.ID || !completionPrincipalMatches(cipher, nodeID, principal, row) {
 		return model.ProtocolCredential{}, metering.ErrPrincipalAmbiguous
 	}
+	if row.MaterialVersion > 0 {
+		row.NodeID, row.ProtocolEndpointID = nodeID, candidate.ProtocolEndpointID
+		row.PrincipalKey = principal
+	}
 	return row, nil
 }
 
 func completionPrincipalMatches(cipher metering.CredentialDecryptor, nodeID uint, principal string, row model.ProtocolCredential) bool {
+	if row.MaterialVersion > 0 {
+		return credentialstore.VerifyMaterialBinding(row, nodeID, principal) == nil
+	}
 	if row.PrincipalKey != "" && row.PrincipalKey == principal {
 		return true
 	}

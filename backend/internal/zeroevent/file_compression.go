@@ -614,6 +614,7 @@ func readCompressedSegmentBatchBudget(ctx context.Context, segment segmentFile, 
 			}
 			recordIndex++
 			checkpoint = Checkpoint{Segment: segment.sequence, Block: blockIndex, Record: recordIndex}
+			budget.position(checkpoint)
 		}
 		if len(events) >= limit || (budget != nil && budget.remaining <= 0) {
 			break

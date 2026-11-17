@@ -55,7 +55,7 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 	checkpoint := s.checkpoint
 	s.mu.RUnlock()
 	batch := Batch{Next: checkpoint}
-	budget := eventReadBudget{remaining: 8 << 20}
+	budget := eventReadBudget{remaining: 8 << 20, positions: &batch.Positions}
 	for _, segment := range segments {
 		if len(batch.Events) >= limit || budget.remaining <= 0 {
 			break
@@ -81,6 +81,10 @@ func (s *FileSpool) ReadBatch(ctx context.Context, limit int) (Batch, error) {
 		s.hasInflight = true
 		s.inflightNext = batch.Next
 	}
+	s.verifiedPrefixes = make(map[Checkpoint]struct{}, len(batch.Positions))
+	for _, position := range batch.Positions {
+		s.verifiedPrefixes[position] = struct{}{}
+	}
 	return batch, nil
 }
 
@@ -104,7 +108,16 @@ func readRawSegmentBatch(ctx context.Context, segment segmentFile, startRecord u
 
 // A window is bounded by serialized bytes as well as count. One oversized
 // legacy record is still admitted so the queue cannot become permanently stuck.
-type eventReadBudget struct{ remaining int64 }
+type eventReadBudget struct {
+	remaining int64
+	positions *[]Checkpoint
+}
+
+func (b *eventReadBudget) position(p Checkpoint) {
+	if b != nil && b.positions != nil {
+		*b.positions = append(*b.positions, p)
+	}
+}
 
 func readRawSegmentBatchAt(ctx context.Context, segment segmentFile, startRecord uint64, limit int, index uint64, offset int64) ([]Envelope, uint64, error) {
 	return readRawSegmentBatchBudget(ctx, segment, startRecord, limit, index, offset, nil)
@@ -152,6 +165,7 @@ func readRawSegmentBatchBudget(ctx context.Context, segment segmentFile, startRe
 			budget.remaining -= size
 		}
 		index++
+		budget.position(Checkpoint{Segment: segment.sequence, Record: index})
 	}
 	return events, index, nil
 }
@@ -195,6 +209,7 @@ func (s *FileSpool) Commit(ctx context.Context, checkpoint Checkpoint) error {
 	if s.hasInflight && !checkpointLess(checkpoint, s.inflightNext) {
 		s.hasInflight = false
 		s.inflightNext = Checkpoint{}
+		s.verifiedPrefixes = nil
 	}
 	return s.cleanupCommittedSegments(checkpoint)
 }
@@ -215,10 +230,11 @@ func (s *FileSpool) validateCheckpoint(checkpoint Checkpoint) error {
 			continue
 		}
 		if segment.codec != CompressionNone {
-			// Only this exact read horizon is a verified prefix. Other callers
-			// retain the full integrity check; cursor formats cannot be compared
+			// Only exact prefixes verified by this read window can use the fast
+			// check. Other callers retain full validation; cursor formats cannot be compared
 			// approximately when a raw segment becomes compressed.
-			if s.hasInflight && checkpoint == s.inflightNext {
+			_, verifiedPrefix := s.verifiedPrefixes[checkpoint]
+			if s.hasInflight && (checkpoint == s.inflightNext || verifiedPrefix) {
 				_, _, err := compressedCheckpointRecordOffset(segment.path, checkpoint)
 				return err
 			}

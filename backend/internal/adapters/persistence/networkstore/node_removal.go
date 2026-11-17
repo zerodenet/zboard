@@ -78,9 +78,10 @@ func (s NodeRemoval) RemoveNode(ctx context.Context, actor, id uint) (out networ
 		if err := tx.Model(&model.ManagedCertificate{}).Where("node_id = ?", id).Update("auto_renew", false).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.NodeProxyPool{}).Where("node_id = ?", id).Updates(map[string]any{"auto_sync": false, "subscription_url": "", "config": "{}", "revision": gorm.Expr("revision + 1")}).Error; err != nil {
+		if err := tx.Where("node_id=?", id).Delete(&model.NodeProxyPoolBinding{}).Error; err != nil {
 			return err
 		}
+
 		if err := tx.Model(&model.NodeConfigPublish{}).Where("node_id = ?", id).Update("suspended", true).Error; err != nil {
 			return err
 		}

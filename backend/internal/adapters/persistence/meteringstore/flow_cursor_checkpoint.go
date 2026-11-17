@@ -13,7 +13,7 @@ import (
 const FlowCursorHotHorizon = 24 * time.Hour
 
 func compactFlowCursor(row model.FlowUsage) model.FlowCursorCheckpoint {
-	return model.FlowCursorCheckpoint{NodeID: row.NodeID, FlowID: row.FlowID, ProtocolCredentialID: row.ProtocolCredentialID,
+	return model.FlowCursorCheckpoint{ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID, FlowID: row.FlowID, ProtocolCredentialID: row.ProtocolCredentialID,
 		Revision: row.Revision, RawBytes: row.RawBytes, UploadBytes: row.UploadBytes, DownloadBytes: row.DownloadBytes, UsedBytes: row.UsedBytes, IsCompleted: row.Status == "completed"}
 }
 
@@ -22,25 +22,37 @@ func checkpointFlowUsage(row model.FlowCursorCheckpoint) model.FlowUsage {
 	if row.IsCompleted {
 		status = "completed"
 	}
-	return model.FlowUsage{NodeID: row.NodeID, FlowID: row.FlowID, ProtocolCredentialID: row.ProtocolCredentialID,
+	return model.FlowUsage{ProtocolEndpointID: row.ProtocolEndpointID, NodeID: row.NodeID, FlowID: row.FlowID, ProtocolCredentialID: row.ProtocolCredentialID,
 		Revision: row.Revision, RawBytes: row.RawBytes, UploadBytes: row.UploadBytes, DownloadBytes: row.DownloadBytes, UsedBytes: row.UsedBytes, Status: status}
 }
 
-// Both tables use the original database identity collation. Lookup and transfer
-// happen under the caller's accounting transaction, after attribution/quota locks.
+// Both tables use the original database identity collation. Authoritative reads
+// lock rows after attribution/quota locks; replay proofs use plain snapshot reads.
+// Both retain the identity conversion barrier.
 func loadFlowUsageCandidates(tx *gorm.DB, node uint, keys []string) ([]model.FlowUsage, error) {
+	return readFlowUsageCandidates(tx, node, keys, "UPDATE")
+}
+
+func readFlowUsageCandidates(tx *gorm.DB, node uint, keys []string, strength string) ([]model.FlowUsage, error) {
 	if err := lockIdentityReader(tx, node); err != nil {
 		return nil, err
 	}
+	read := func(out any) error {
+		query := tx.Session(&gorm.Session{})
+		if strength != "" {
+			query = query.Clauses(clause.Locking{Strength: strength})
+		}
+		return query.Where("node_id = ? AND flow_id IN ?", node, keys).Order("flow_id").Find(out).Error
+	}
 	var hot []model.FlowUsage
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", node, keys).Order("flow_id").Find(&hot).Error; err != nil {
+	if err := read(&hot); err != nil {
 		return nil, err
 	}
 	var cold []model.FlowCursorCheckpoint
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ? AND flow_id IN ?", node, keys).Order("flow_id").Find(&cold).Error; err != nil {
+	if err := read(&cold); err != nil {
 		return nil, err
 	}
-	sealed, err := coldFloorCandidates(tx, node, keys)
+	sealed, err := coldFloorCandidates(tx, node, keys, strength != "")
 	if err != nil {
 		return nil, err
 	}

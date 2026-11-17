@@ -6,20 +6,20 @@
     <TransientFeedback :error="error" />
 
     <section v-if="featured.length" :class="['featured-board', `featured-count-${featured.length}`]" aria-label="重点公告">
-      <article v-for="item in featured" :key="`featured:${item.id}:${item.revision}`" :class="['featured-card', `severity-${item.severity}`]">
+      <UiSection v-for="item in featured" :key="`featured:${item.id}:${item.revision}`" variant="outlined" :class="['featured-card', `severity-${item.severity}`]">
         <h2><button class="featured-heading" type="button" :aria-expanded="openedId === item.id" @click="toggle(item)"><span><strong>{{ item.title }}</strong><time :datetime="item.created_at">{{ formatDate(item.created_at) }}</time></span><StatusBadge v-if="isUnread(item)" tone="info">未读</StatusBadge><span class="chevron" aria-hidden="true">{{ openedId === item.id ? '−' : '+' }}</span></button></h2>
         <div v-if="openedId === item.id" class="featured-body"><MarkdownContent :content="item.content" /></div>
-      </article>
+      </UiSection>
     </section>
 
-    <UiSection v-if="listItems.length || !featured.length || total > limit" :title="featured.length ? '历史公告' : ''">
+    <UiSection v-if="listItems.length || !featured.length || total > limit" variant="outlined" :title="featured.length ? '历史公告' : ''">
       <TableSkeleton v-if="loading && !loaded" label="正在加载公告" :columns="1" :rows="3" />
       <div v-if="listItems.length" class="announcement-list">
         <article v-for="item in listItems" :key="`${item.id}:${item.revision}`" :class="['announcement-row', { unread: isUnread(item) }]">
           <button class="announcement-heading" type="button" :aria-expanded="openedId === item.id" @click="toggle(item)">
             <span class="heading-copy"><strong>{{ item.title }}</strong><small>{{ formatDate(item.created_at) }}</small></span>
             <StatusBadge v-if="isUnread(item)" tone="info">未读</StatusBadge>
-            <span class="chevron">{{ openedId === item.id ? '−' : '+' }}</span>
+            <span class="chevron" aria-hidden="true">{{ openedId === item.id ? '−' : '+' }}</span>
           </button>
           <div v-if="openedId === item.id" class="announcement-body"><MarkdownContent :content="item.content" /></div>
         </article>
@@ -39,6 +39,7 @@ import MarkdownContent from '../../components/MarkdownContent.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import TablePager from '../../components/TablePager.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
+import UiSection from '../../components/UiSection.vue'
 import TransientFeedback from '../../components/TransientFeedback.vue'
 import { useAppStore } from '../../stores/app'
 import { normalizeApiErrorMessage } from '../../utils/apiError'
@@ -85,7 +86,6 @@ onMounted(load)
 <style scoped>
 .announcement-count { color: var(--muted-foreground); font-size: 12px; }
 .featured-board, .announcement-list { display: grid; gap: 12px; }
-.featured-card { min-width: 0; padding: 20px; border: 0; border-radius: var(--radius-md); background: var(--surface-soft); }
 .featured-card.severity-critical { box-shadow: inset 3px 0 var(--danger); }
 .featured-card.severity-warning { box-shadow: inset 3px 0 var(--warning); }
 .featured-card h2 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
@@ -95,7 +95,8 @@ onMounted(load)
 .featured-heading time, .heading-copy small { font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
 .featured-heading:focus-visible, .announcement-heading:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
 .announcement-row { min-width: 0; padding: 12px 0; border: 0; background: transparent; }
-.chevron { color: var(--muted-foreground); font-size: 18px; }
+.announcement-row + .announcement-row { border-top: 1px solid var(--line-subtle); }
+.chevron { flex: none; color: var(--muted-foreground); font-size: 18px; }
 .featured-body, .announcement-body { margin-top: 16px; min-width: 0; overflow-wrap: anywhere; }
 .featured-body :deep(.markdown-content), .announcement-body :deep(.markdown-content) { font-size: 13px; }
 </style>

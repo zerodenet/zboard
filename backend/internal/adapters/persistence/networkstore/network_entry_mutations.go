@@ -108,8 +108,11 @@ func (s NetworkEntryMutations) CommitNetworkEntryMutation(ctx context.Context, a
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pool, change.Pool.ID).Error; err != nil {
 				return &network.NetworkEntryMutationValidation{Message: "请选择存在的共享代理池"}
 			}
-			if pool.NodeID != change.Entry.NodeID || pool.Revision != change.Pool.Revision || pool.Config != change.Pool.ConfigCiphertext {
+			if pool.Revision != change.Pool.Revision || pool.Config != change.Pool.ConfigCiphertext {
 				return network.ErrNetworkEntryConflict
+			}
+			if e := bindSharedProxyPool(tx, change.Entry.NodeID, pool.ID); e != nil {
+				return e
 			}
 			if change.Entry.Network != "tcp" && !change.PoolSupportsDatagram {
 				message := strings.TrimSpace(change.PoolDatagramError)

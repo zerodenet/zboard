@@ -20,6 +20,9 @@ func confirmCredentialDelivery(tx *gorm.DB, deployment model.ProtocolDeployment,
 	if err != nil {
 		return err
 	}
+	if err := confirmCredentialCompatibility(tx, deployment, manifest, now); err != nil {
+		return err
+	}
 	targets := manifest.Targets
 	for start := 0; start < len(targets); start += 256 {
 		end := start + 256
@@ -29,6 +32,9 @@ func confirmCredentialDelivery(tx *gorm.DB, deployment model.ProtocolDeployment,
 		batch := targets[start:end]
 		confirmations := make([]model.CredentialDeliveryConfirmation, 0, len(batch))
 		for _, target := range batch {
+			if target.MaterialVersion > 0 {
+				continue
+			}
 			confirmations = append(confirmations, model.CredentialDeliveryConfirmation{EndpointSHA256: target.EndpointSHA256, CredentialID: target.CredentialID, NodeID: deployment.NodeID, ProtocolEndpointID: target.ProtocolEndpointID, DeploymentID: deployment.ID, MaterialSHA256: target.MaterialSHA256, ConfigSHA256: deployment.DesiredConfigSHA256, PolicyRevision: target.PolicyRevision, ConfirmedAt: now})
 		}
 

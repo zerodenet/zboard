@@ -242,6 +242,7 @@
         <FormField v-slot="{ controlAttrs }" label="区域" name="create-node-region" :error="createErrors.fields.region"><UiInput v-model.trim="createForm.region" v-bind="controlAttrs" placeholder="Hong Kong" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="默认业务地址" name="create-node-address" hint="可选；新建协议时用作对外地址的初始值。" :error="createErrors.fields.address" full><UiInput v-model.trim="createForm.address" v-bind="controlAttrs" placeholder="edge.example.com" /></FormField>
         <FormField v-slot="{ controlAttrs }" label="备注" full><UiTextarea v-model.trim="createForm.remark" v-bind="controlAttrs" rows="3" placeholder="供应商、机房、用途、到期时间等"></UiTextarea></FormField>
+        <details class="field-full"><summary>共享代理池（可选）</summary><ProxyPoolSelection v-model="createForm.proxy_pool_ids" /></details>
         <label class="check-field field-full"><UiCheckbox v-model="createForm.enable_bbr" /><span>节点接入后尝试启用 BBR（可选）</span></label>
         <p class="field-hint field-full">保存后验证 SSH 并安装 Zero；BBR 可稍后启用。</p>
       </form>
@@ -312,6 +313,7 @@ import NodeRetirementDialog from '../components/NodeRetirementDialog.vue'
 import type { AdminTask } from '../api/client'
 import NodeSetupGuide from '../components/NodeSetupGuide.vue'
 import NodeProxyPools from '../components/NodeProxyPools.vue'
+import ProxyPoolSelection from '../components/ProxyPoolSelection.vue'
 import TableText from '../components/TableText.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -487,7 +489,7 @@ const operationResource = useRemoteResource<{ task: AdminTask; result: Awaited<R
     return { task, result }
   },
 })
-const createForm = reactive({ name: '', region: '', address: '', remark: '', enable_bbr: false })
+const createForm = reactive({ name: '', region: '', address: '', remark: '', enable_bbr: false, proxy_pool_ids: [] as number[] })
 const editForm = reactive({ id: 0, name: '', region: '', address: '', remark: '', lifecycle_status: 'active', is_enabled: true })
 const sshForm = reactive({ node_id: 0, ssh_host: '', ssh_port: 22, ssh_user: 'root', ssh_auth_method: 'password' as 'password' | 'private_key', original_auth_method: 'password' as 'password' | 'private_key', ssh_password: '', ssh_private_key: '', ssh_private_key_passphrase: '', clearPassphrase: false, hasCredential: false, ssh_privilege_mode: 'none' as 'none' | 'sudo' | 'su', ssh_privilege_password: '', hasPrivilegePassword: false, passwordlessSudo: false })
 const requiresSSHCredential = computed(() => !sshForm.hasCredential || sshForm.ssh_auth_method !== sshForm.original_auth_method)
@@ -834,7 +836,7 @@ async function retirementCompleted() {
   await refresh()
 }
 async function changeNodeProtocolPage(value: { offset: number; limit: number }) { nodeProtocolOffset.value = value.offset; nodeProtocolLimit.value = value.limit; await syncURL() }
-function openCreate() { assetEditorGeneration++; pendingBBRNodeID.value = 0; Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false }); createErrors.clear(); createState.markClean(); createOpen.value = true }
+function openCreate() { assetEditorGeneration++; pendingBBRNodeID.value = 0; Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false, proxy_pool_ids: [] as number[] }); createErrors.clear(); createState.markClean(); createOpen.value = true }
 async function create() {
   createForm.name = createForm.name.trim()
   const valid = await createErrors.applyValidation(collectFieldErrors({
@@ -844,8 +846,8 @@ async function create() {
   saving.value = true
   try {
     const wantsBBR = createForm.enable_bbr
-    const node = await createNode({ name: createForm.name, region: createForm.region, address: createForm.address, remark: createForm.remark })
-    Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false })
+    const node = await createNode({ name: createForm.name, region: createForm.region, address: createForm.address, remark: createForm.remark, ...(createForm.proxy_pool_ids.length ? {proxy_pool_ids: createForm.proxy_pool_ids} : {}) })
+    Object.assign(createForm, { name: '', region: '', address: '', remark: '', enable_bbr: false, proxy_pool_ids: [] as number[] })
     createOpen.value = false; offset.value = 0; await refresh(); await openNodeDetail(node.id); await syncURL(true)
     pendingBBRNodeID.value = wantsBBR ? node.id : 0
     message.value = wantsBBR

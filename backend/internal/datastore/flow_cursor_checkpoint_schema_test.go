@@ -28,7 +28,7 @@ func TestCompletedFlowPreparationPreservesCollationAndFailsOnLostAuthority(t *te
 		t.Fatal(err)
 	}
 	row := model.FlowCursorCheckpoint{IsCompleted: true, NodeID: 1, FlowID: "Original", Revision: 9, RawBytes: 42}
-	if err := db.Create(&row).Error; err != nil {
+	if err := db.Omit("ProtocolEndpointID").Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ {
@@ -37,7 +37,7 @@ func TestCompletedFlowPreparationPreservesCollationAndFailsOnLostAuthority(t *te
 		}
 	}
 	var got model.FlowCursorCheckpoint
-	if err := db.Where("node_id=1 AND flow_id=?", "ORIGINAL").First(&got).Error; err != nil || got.RawBytes != 42 {
+	if err := db.Omit("ProtocolEndpointID").Where("node_id=1 AND flow_id=?", "ORIGINAL").First(&got).Error; err != nil || got.RawBytes != 42 {
 		t.Fatal(got, err)
 	}
 	if err := db.Migrator().DropTable(&model.FlowCursorCheckpoint{}); err != nil {

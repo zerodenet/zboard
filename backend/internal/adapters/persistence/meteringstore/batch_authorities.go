@@ -156,6 +156,10 @@ func (s *flowBatch) lockAuthorities(tx *gorm.DB, cipher metering.CredentialDecry
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE", Options: "NOWAIT"}).First(&actual, c.ID).Error; err != nil {
 			return credentialstore.CurrentResourceReadError(err)
 		}
+		if actual.MaterialVersion > 0 && credentialstore.VerifyMaterialBinding(actual, k.nodeID, k.principal) == nil {
+			actual.NodeID, actual.ProtocolEndpointID = c.NodeID, c.ProtocolEndpointID
+			actual.PrincipalKey = k.principal
+		}
 		if actual.EntitlementEpoch != c.EntitlementEpoch || actual.NodeID != c.NodeID || actual.UserID != c.UserID || actual.SubscriptionID != c.SubscriptionID || actual.ProtocolEndpointID != c.ProtocolEndpointID || s.subscriptions[c.SubscriptionID].UserID != c.UserID || !completionPrincipalMatches(cipher, k.nodeID, k.principal, actual) {
 			return ErrNativeAuthorityChanged
 		}

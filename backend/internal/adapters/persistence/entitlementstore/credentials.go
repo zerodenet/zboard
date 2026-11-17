@@ -41,6 +41,41 @@ func EnsureCredentials(tx *gorm.DB, subscription model.Subscription, issuer enti
 		return nil, err
 	}
 
+	var roots []model.ProtocolCredential
+	if subscription.CredentialMaterialMode == 1 {
+		if err := tx.Where("subscription_id=? AND current_scope=1 AND material_scope=1", subscription.ID).Find(&roots).Error; err != nil {
+			return nil, err
+		}
+	}
+	var enabled model.SystemConfig
+	if len(roots) == 0 && subscription.CredentialMaterialMode != 2 {
+		if err := tx.Where("config_key=?", "subscription_credential_material_enabled").Limit(1).Find(&enabled).Error; err != nil {
+			return nil, err
+		}
+	}
+	var legacyCount int64
+	if enabled.Value == "true" && len(roots) == 0 {
+		if e := tx.Model(&model.ProtocolCredential{}).Where("subscription_id=? AND entitlement_epoch=? AND material_version=0", subscription.ID, subscription.EntitlementEpoch).Count(&legacyCount).Error; e != nil {
+			return nil, e
+		}
+	}
+	if len(roots) > 0 || subscription.CredentialMaterialMode == 1 || (enabled.Value == "true" && subscription.CredentialMaterialMode != 2 && legacyCount == 0) {
+		root, err := prepareSubscriptionMaterial(tx, subscription, issuer)
+		if err != nil {
+			return nil, err
+		}
+		if root.EntitlementEpoch != subscription.EntitlementEpoch {
+			return nil, errors.New("subscription material epoch mismatch")
+		}
+		if err := tx.Model(&model.ProtocolCredential{}).Where("id=?", root.ID).Updates(map[string]any{"status": "active", "expires_at": subscription.EndAt, "revoked_at": nil}).Error; err != nil {
+			return nil, err
+		}
+		if e := reconcileMaterialGroup(tx, &root, subscription); e != nil {
+			return nil, e
+		}
+		root.Status, root.ExpiresAt = "active", subscription.EndAt
+		return materialCredentialBindings(root, endpoints, issuer)
+	}
 	credentials := make([]model.ProtocolCredential, 0, len(endpoints))
 	for _, endpoint := range endpoints {
 		if !issuer.Supports(endpoint.Protocol) {

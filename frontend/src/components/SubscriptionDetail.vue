@@ -48,6 +48,7 @@
       </dl>
     </section>
 
+    <SubscriptionCredentialMigration ref="credentialMigration" :subscription-id="subscription.id" :active="subscription.status === 'active' && !subscription.ended_at && !exhausted" @changed="emit('changed')" />
     <div class="subscription-history-links"><UiButton as-child variant="secondary" size="sm"><RouterLink :to="contextLink('/admin/traffic', { subscription_id: String(subscription.id) })">流量明细<UiIcon name="chevron" /></RouterLink></UiButton></div>
     <details class="subscription-records"><summary>更多信息</summary><dl class="subscription-properties">
       <div><dt>开始时间</dt><dd>{{ formatDateTime(subscription.start_at) }}</dd></div>
@@ -70,6 +71,7 @@ import { formatBytes, formatDateTime, formatUnknownValue } from '../utils/format
 import { resetPolicyOptions } from '../utils/resetPolicy'
 import { withAdminReturnTo } from '../utils/navigation'
 import SubscriptionQuotaEditor from './SubscriptionQuotaEditor.vue'
+import SubscriptionCredentialMigration from './SubscriptionCredentialMigration.vue'
 import SubscriptionTermination from './SubscriptionTermination.vue'
 import RowActions from './RowActions.vue'
 import UiButton from './UiButton.vue'
@@ -84,6 +86,7 @@ const route = useRoute()
 const editing = ref<'' | 'quota' | 'reset' | 'all'>('')
 const editSnapshot = ref<AdminSubscriptionDetail | null>(null)
 const editor = ref<InstanceType<typeof SubscriptionQuotaEditor> | null>(null)
+const credentialMigration = ref<InstanceType<typeof SubscriptionCredentialMigration> | null>(null)
 const terminationOpen = ref(false), terminationBusy = ref(false)
 const remaining = computed(() => Math.max(0, props.subscription.flow_total - props.subscription.flow_used))
 const exhausted = computed(() => props.subscription.flow_used >= props.subscription.flow_total)
@@ -112,10 +115,10 @@ async function finishEdit(mode: 'quota' | 'reset' | 'all') {
 }
 async function saved(mode: 'quota' | 'reset' | 'all') { await finishEdit(mode); emit('changed') }
 async function confirmLeave() {
-  if (terminationBusy.value) return false
+  if (terminationBusy.value || credentialMigration.value?.busy) return false
   return editor.value ? editor.value.confirmLeave() : true
 }
-defineExpose({ confirmLeave, dirty: computed(() => Boolean(editor.value?.dirty || editor.value?.saving || terminationBusy.value)) })
+defineExpose({ confirmLeave, dirty: computed(() => Boolean(editor.value?.dirty || editor.value?.saving || terminationBusy.value || credentialMigration.value?.busy)) })
 </script>
 
 <style scoped>

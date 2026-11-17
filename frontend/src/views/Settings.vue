@@ -196,6 +196,9 @@
             <div class="config-list"><ConfigRow v-for="config in recoveryConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
           </UiSection>
 
+          <UiSection v-if="credentialMaterialConfigs.length" title="订阅连接凭证" description="新订阅可使用合并凭证；存量订阅在详情中逐步迁移。兼容窗口从节点确认后开始。">
+            <div class="config-list"><ConfigRow v-for="config in credentialMaterialConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
+          </UiSection>
           <UiSection title="运行参数" description="系统时区、数据保留策略和其他服务端运行行为。">
             <template #meta><span class="config-count">{{ otherConfigs.length }} 项</span></template>
             <div v-if="otherConfigs.length" class="config-list"><ConfigRow v-for="config in otherConfigs" :key="config.config_key" :config="config" :draft="drafts[config.config_key]" :dirty="configDirty(config)" :saving="savingKey === config.config_key" :error="configErrors[config.config_key]" :conflict="Boolean(configConflicts[config.config_key])" @update:draft="updateDraft(config.config_key, $event)" @reload="reloadConfig(config.config_key)" @save="saveConfig(config)" /></div>
@@ -336,9 +339,10 @@ const emailConfigDirty = computed(() => emailConfigs.value.some(configDirty))
 const currencyConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'default_currency'))
 const subscriptionEntryConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'subscription_url_prefix'))
 const accountCleanupConfig = computed(() => operationalConfigs.value.find(item => item.config_key === 'user_cleanup_inactive_days'))
+const credentialMaterialConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key.startsWith('subscription_credential_')))
 const recoveryConfigs = computed(() => operationalConfigs.value.filter(item => item.config_key === 'subscription_renewal_grace_days'))
 const retentionConfigs = computed(() => operationalConfigs.value.filter(item => /_retention_days$/.test(item.config_key) || item.config_key === 'history_cleanup_interval_minutes'))
-const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && item.config_key !== 'subscription_renewal_grace_days' && !/smtp|email/i.test(item.config_key)))
+const otherConfigs = computed(() => operationalConfigs.value.filter(item => !publicSiteKeys.has(item.config_key) && !registrationKeys.has(item.config_key) && !dedicatedOperationsKeys.has(item.config_key) && !item.config_key.startsWith('subscription_alert_') && !item.config_key.startsWith('subscription_credential_') && item.config_key !== 'subscription_renewal_grace_days' && !/smtp|email/i.test(item.config_key)))
 const visualConfigs = computed(() => configsForKeys(siteVisualKeys))
 const contentConfigs = computed(() => configsForKeys(siteContentKeys))
 const contactConfigs = computed(() => configsForKeys(siteContactKeys))

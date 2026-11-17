@@ -47,9 +47,13 @@ func (h *handlers) startScheduledJob(id string, interval time.Duration, run func
 		name = "节点配置发布 · " + strings.TrimPrefix(id, "node_publish_")
 	}
 	external := id == "admin_tasks" || strings.HasPrefix(id, "node_publish_")
-	recoverable := id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_")
+	recoverable := id == "proxy_pool_sync" || id == "subscription_alerts" || id == "registration_messages" || id == "event_consumer" || id == "usage_projection" || id == "node_observation" || id == "node_observation_material_retention" || id == "traffic_diagnostic_retention" || id == "admin_tasks" || id == "automatic_renewal" || id == "wallet_reservations" || id == "credential_expiry" || id == "traffic_reset" || id == "history_retention" || strings.HasPrefix(id, "node_publish_")
+	timeout := 30 * time.Minute
+	if id == "proxy_pool_sync" {
+		timeout = 2 * time.Minute
+	}
 	h.startPeriodicJob(application.PeriodicJob{
-		ID: id, Name: name, Interval: interval, Timeout: 30 * time.Minute, Immediate: true,
+		ID: id, Name: name, Interval: interval, Timeout: timeout, Immediate: true,
 		External: external, ReconcileAfterLoss: recoverable, RetryFailures: recoverable,
 		// Reuse is restricted to recoverable internal scans. External execution
 		// retains its durable evidence and its existing bounded history policy.

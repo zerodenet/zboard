@@ -2,8 +2,8 @@ package meteringstore
 
 import (
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
-	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
 	"sort"
 	"time"
@@ -25,7 +25,7 @@ func loadCoverage(db *gorm.DB, subscriptionID uint, windowSeconds int, now time.
 	now = now.UTC()
 
 	var nodeIDs []uint
-	if err := db.Model(&model.ProtocolCredential{}).
+	if err := credentialstore.Bindings(db, now).
 		Joins("JOIN nodes ON nodes.id = protocol_credentials.node_id AND nodes.is_enabled = ?", true).
 		Joins("JOIN protocol_endpoints ON protocol_endpoints.id = protocol_credentials.protocol_endpoint_id AND protocol_endpoints.is_active = ?", true).
 		Where("protocol_credentials.subscription_id = ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionID, "active", now).

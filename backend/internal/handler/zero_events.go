@@ -61,6 +61,7 @@ type zeroEventEnvelope struct {
 }
 
 type zeroFlowProjection struct {
+	InboundTag   string
 	FlowID       string
 	Revision     uint64
 	PrincipalKey string
@@ -421,11 +422,15 @@ func parseZeroFlowProjection(event zeroEventEnvelope) (zeroFlowProjection, error
 	if revision == 0 {
 		revision, _ = uint64Value(payload["revision"])
 	}
-	return zeroFlowProjection{FlowID: flowID, Revision: revision, PrincipalKey: principal, BytesUp: bytesUp, BytesDown: bytesDown}, nil
+	inboundTag, err := zeroFlowInboundTag(payload, record)
+	if err != nil {
+		return zeroFlowProjection{}, err
+	}
+	return zeroFlowProjection{InboundTag: inboundTag, FlowID: flowID, Revision: revision, PrincipalKey: principal, BytesUp: bytesUp, BytesDown: bytesDown}, nil
 }
 
 func (h *handlers) recordZeroFlowEvent(node network.EventNode, event zeroEventEnvelope, flow zeroFlowProjection) (model.TrafficRecord, bool, error) {
-	record, exhausted, err := h.services.CompletionAccounting(h.credentialCipher).Complete(context.Background(), metering.CompletedFlow{NodeID: node.ID, SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())})
+	record, exhausted, err := h.services.CompletionAccounting(h.credentialCipher).Complete(context.Background(), metering.CompletedFlow{NodeID: node.ID, SourceID: event.SourceID, CoreInstanceID: event.CoreInstanceID, EventID: event.EventID, EventType: event.EventType, Sequence: event.Sequence, FlowID: flow.FlowID, PrincipalKey: flow.PrincipalKey, InboundTag: flow.InboundTag, Revision: flow.Revision, BytesUp: flow.BytesUp, BytesDown: flow.BytesDown, OccurredAt: zeroEventTime(event, time.Now().UTC())})
 	return model.TrafficRecord(record), exhausted, err
 }
 func zeroEventTime(event zeroEventEnvelope, fallback time.Time) time.Time {

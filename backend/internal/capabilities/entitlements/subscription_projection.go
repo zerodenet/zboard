@@ -31,6 +31,7 @@ type SubscriptionProjectionNode struct {
 }
 
 type SubscriptionProjectionCredential struct {
+	MaterialVersion                                        uint16
 	DeliveryStatus                                         string
 	ID, SubscriptionID, UserID, ProtocolEndpointID, NodeID uint
 	CredentialID, PrincipalKey, SecretCiphertext, Status   string

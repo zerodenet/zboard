@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"database/sql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/meteringstore"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
@@ -29,7 +30,7 @@ type BufferedEventProjectionResult struct {
 
 // ProjectBufferedEvents acknowledges the source only after every partition has
 // committed. MySQL commits bounded contiguous quota partitions independently;
-// any failure leaves the entire spool batch unacknowledged. Committed partitions
+// any failure leaves the current consumer cohort unacknowledged. Committed partitions
 // replay through exact durable receipts, so neither a crash nor partial progress
 // loses or repeats a charge. Each partition retains its observation atomically.
 // SQLite preserves its existing single-writer transaction cohort.
@@ -60,6 +61,22 @@ func (s *Services) ProjectBufferedEvents(ctx context.Context, input BufferedEven
 	}
 	if err := meteringstore.EnsureIdentityFences(s.Identity.db.WithContext(ctx), ids); err != nil {
 		return result, err
+	}
+	if s.Identity.db.Dialector.Name() == "mysql" && len(input.Flows) > 0 {
+		// Prove replay-only work before taking quota locks. One MVCC snapshot
+		// keeps cold-page headers and bodies consistent during concurrent reopen.
+		// A stale lower floor can only miss an optimization, never authorize debit.
+		// Close this transaction before discovery/write authority starts so the
+		// quota -> identity lock order is not inverted.
+		var pending []metering.FlowSample
+		if err := s.Identity.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var err error
+			pending, err = meteringstore.PendingFlowSamples(tx, cipher, input.Flows)
+			return err
+		}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead}); err != nil {
+			return result, err
+		}
+		input.Flows = pending
 	}
 	partitions := []meteringstore.FlowPartition{{Flows: input.Flows}}
 	if s.Identity.db.Dialector.Name() == "mysql" {

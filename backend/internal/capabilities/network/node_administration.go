@@ -71,6 +71,7 @@ type NodeAdministrationSnapshot struct {
 }
 
 type NodeCreateChange struct {
+	ProxyPoolIDs             []uint
 	Name                     string
 	Region                   string
 	Address                  string

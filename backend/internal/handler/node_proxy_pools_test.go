@@ -150,7 +150,7 @@ func TestSharedPoolCompilesOnceAndDirectEntryBypassesIt(t *testing.T) {
 		}
 	}
 }
-func TestSharedPoolReferencesAreNodeScopedAndProtected(t *testing.T) {
+func TestSharedPoolReferencesAcrossNodesRemainProtected(t *testing.T) {
 	poolValidationForTest(t)
 	f, a, b := networkEntryFixture(t)
 	pool := createPoolForTest(t, f, a.ID)
@@ -162,8 +162,8 @@ func TestSharedPoolReferencesAreNodeScopedAndProtected(t *testing.T) {
 	if w.Code != 400 {
 		t.Fatal("deleted referenced pool")
 	}
-	if _, err := f.h.proxyPoolPath(f.h.db, pool.ID, b.NodeID, "tcp"); err == nil {
-		t.Fatal("cross-node pool accepted")
+	if _, err := f.h.proxyPoolPath(f.h.db, pool.ID, b.NodeID, "tcp"); err != nil {
+		t.Fatal("shared pool cannot be reused by another server", err)
 	}
 	w = poolRequest(t, f, "PUT", fmt.Sprintf("/api/v1/admin/node-proxy-pools/%d", pool.ID), map[string]interface{}{"node_id": a.ID, "name": "stale", "revision": 0}, f.h.NodeProxyPoolsHandler)
 	if w.Code != 409 {

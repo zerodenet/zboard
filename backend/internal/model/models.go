@@ -86,6 +86,7 @@ type PlanSKU struct {
 }
 
 type Subscription struct {
+	CredentialMaterialMode  uint8  `json:"credential_material_mode,omitempty" gorm:"not null;default:0"`
 	EntitlementEpoch        uint64 `json:"-" gorm:"not null;default:0;-:migration"`
 	KernelPolicyRevision    uint64 `json:"-" gorm:"not null;default:0"`
 	KernelPolicyFingerprint string `json:"-" gorm:"size:64;not null;default:''"`
@@ -506,6 +507,12 @@ type SubscriptionTemplateRuleSetBinding struct {
 // Secrets are encrypted at rest; observable events carry only CredentialID and
 // PrincipalKey so a kernel event can be attributed without exposing the secret.
 type ProtocolCredential struct {
+	MaterialGroupID        uint       `json:"-" gorm:"not null;default:0"`
+	MaterialVersion        uint16     `json:"-" gorm:"not null;default:0"`
+	MaterialScope          *uint8     `json:"-" gorm:""`
+	MaterialVerifier       string     `json:"-" gorm:"size:64;not null;default:''"`
+	CompatibilityStartedAt *time.Time `json:"-" gorm:""`
+	CompatibilityUntil     *time.Time `json:"-" gorm:""`
 	EntitlementEpoch       uint64     `json:"-" gorm:"not null;default:0;-:migration"`
 	CurrentScope           *uint8     `json:"-" gorm:"default:1;-:migration"`
 	DeliveryRequired       bool       `json:"-" gorm:"not null;default:false;-:migration"`
@@ -516,8 +523,8 @@ type ProtocolCredential struct {
 	ID                     uint       `json:"id" gorm:"primaryKey"`
 	SubscriptionID         uint       `json:"subscription_id" gorm:"index;not null"`
 	UserID                 uint       `json:"user_id" gorm:"index;not null"`
-	ProtocolEndpointID     uint       `json:"protocol_endpoint_id" gorm:"index;not null"`
-	NodeID                 uint       `json:"node_id" gorm:"index;not null"`
+	ProtocolEndpointID     uint       `json:"protocol_endpoint_id" gorm:"index"`
+	NodeID                 uint       `json:"node_id" gorm:"index"`
 	CredentialID           string     `json:"credential_id" gorm:"size:96;uniqueIndex;not null"`
 	PrincipalKey           string     `json:"principal_key" gorm:"size:128;uniqueIndex;not null"`
 	Secret                 string     `json:"-" gorm:"type:text;not null"`

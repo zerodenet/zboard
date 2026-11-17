@@ -101,7 +101,7 @@ func retireSubscription(tx *gorm.DB, sub model.Subscription, cipher entitlements
 			return err
 		}
 	}
-	if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", sub.ID).Updates(map[string]any{"status": "revoked", "revoked_at": now, "secret": "", "updated_at": now}).Error; err != nil {
+	if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", sub.ID).Updates(map[string]any{"status": "revoked", "revoked_at": now, "secret": "", "compatibility_until": nil, "updated_at": now}).Error; err != nil {
 		return err
 	}
 	if err := tx.Model(&model.SubscriptionToken{}).Where("subscription_id = ?", sub.ID).Updates(map[string]any{"revoked_at": now, "token_ciphertext": "", "updated_at": now}).Error; err != nil {

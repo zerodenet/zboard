@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"math"
 	"time"
 
@@ -31,14 +32,23 @@ func reconcileKernelPolicy(ctx context.Context, db *gorm.DB, subscriptionID uint
 		if err := tx.Table("protocol_credentials").Select("protocol_credentials.id, protocol_endpoint_id AS endpoint, status, expires_at").Where("subscription_id = ? AND status IN ? AND revoked_at IS NULL", sub.ID, []string{"active", "prepared"}).Order("id asc").Scan(&credentials).Error; err != nil {
 			return err
 		}
+		var bindings []networkstore.CredentialEndpointRoute
+		if sub.CredentialMaterialMode == 1 {
+			var e error
+			bindings, e = networkstore.LockCurrentCredentialEndpointRoutes(tx, sub.NodeGroupID)
+			if e != nil {
+				return e
+			}
+		}
 		data, err := json.Marshal(struct {
 			Group          uint
 			Status         string
 			End            time.Time
 			Total          int64
 			Speed, Devices int
+			Bindings       []networkstore.CredentialEndpointRoute `json:"Bindings,omitempty"`
 			Credentials    any
-		}{sub.NodeGroupID, sub.Status, sub.EndAt, sub.FlowTotal, sub.SpeedLimitMbps, sub.DeviceLimit, credentials})
+		}{sub.NodeGroupID, sub.Status, sub.EndAt, sub.FlowTotal, sub.SpeedLimitMbps, sub.DeviceLimit, bindings, credentials})
 		if err != nil {
 			return err
 		}

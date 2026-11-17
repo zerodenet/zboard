@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm"
@@ -118,7 +119,7 @@ func EnqueueLatest(tx *gorm.DB, sources []network.ObservationSource) error {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
 				continue
 			}
-			return e
+			return credentialstore.CurrentResourceReadError(e)
 		}
 		if network.NodeManagementClosed(node.LifecycleStatus) {
 			continue

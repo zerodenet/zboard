@@ -1665,6 +1665,27 @@ export interface SubscriptionQuotaUpdate {
   reason: string
   idempotency_key: string
 }
+export interface SubscriptionCredentialMigrationStatus {
+  subscription_id: number
+  state: 'legacy' | 'awaiting_confirmation' | 'compatibility' | 'revoking' | 'current'
+  legacy_credentials: number
+  pending_confirmation: number
+  compatible_credentials: number
+  revoking_credentials: number
+  retired_credentials: number
+  compatibility_until?: string
+  can_rollback: boolean
+}
+export async function fetchSubscriptionCredentialMigration(id: number, options: ApiRequestOptions = {}): Promise<SubscriptionCredentialMigrationStatus> {
+  return unwrap(await api.get(`/admin/subscriptions/${id}/credential-migration`, { signal: options.signal }))
+}
+export async function prepareSubscriptionCredentialMigration(id: number): Promise<SubscriptionCredentialMigrationStatus> {
+  return unwrap(await api.post(`/admin/subscriptions/${id}/credential-migration`, {}))
+}
+export async function rollbackSubscriptionCredentialMigration(id: number): Promise<SubscriptionCredentialMigrationStatus> {
+  return unwrap(await api.delete(`/admin/subscriptions/${id}/credential-migration`))
+}
+
 export async function updateSubscriptionQuota(id: number, input: SubscriptionQuotaUpdate): Promise<void> {
   await api.put(`/admin/subscriptions/${id}/quota`, input)
 }
@@ -2650,15 +2671,18 @@ export async function saveNetworkEntry(id: number, data: Record<string, unknown>
 }
 export async function deleteNetworkEntry(id: number) { return unwrap(await api.delete(`/admin/network-entries/${id}`)) }
 
-export interface NodeProxyPool { id: number; node_id: number; name: string; revision: number; entry_count: number; subscription_configured?: boolean; subscription_format?: string; auto_sync?: boolean; sync_interval_seconds?: number; subscription_node_count?: number; last_sync_at?: string; next_sync_at?: string; last_sync_error?: string }
-export async function fetchNodeProxyPools(nodeID: number): Promise<NodeProxyPool[]> { return unwrap(await api.get(`/admin/node-proxy-pools?node_id=${nodeID}`)) || [] }
+export interface NodeProxyPool { nodes?: {id: number; name: string}[]; id: number; node_id: number; name: string; revision: number; entry_count: number; subscription_configured?: boolean; subscription_format?: string; auto_sync?: boolean; sync_interval_seconds?: number; subscription_node_count?: number; last_sync_at?: string; next_sync_at?: string; last_sync_error?: string }
+export async function fetchNodeProxyPools(nodeID = 0): Promise<NodeProxyPool[]> { return unwrap(await api.get(`/admin/node-proxy-pools?node_id=${nodeID}`)) || [] }
 export interface NodeProxyPoolSubscription { configured: boolean; url?: string; format: 'auto'|'zero'|'zero-json'|'clash'|'sing-box'|'links'; user_agent: string; auto_sync: boolean; sync_interval_seconds: number; node_count: number; last_sync_at?: string; next_sync_at?: string; last_sync_error?: string }
 export interface NodeProxyPoolConfig { pool: NodeProxyPool; config: import('../utils/proxyPoolGraph').ProxyPoolGraph; compiled: Record<string, unknown>; subscription?: NodeProxyPoolSubscription }
 export interface NodeProxyPoolRuntime { source: string; node_id: number; sha256: string; read_at: string; present: boolean; config: Record<string, unknown> }
 export async function fetchNodeProxyPoolConfig(id: number): Promise<NodeProxyPoolConfig> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/config`)) }
-export async function fetchNodeProxyPoolRuntime(id: number): Promise<NodeProxyPoolRuntime> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/runtime`, { timeout: 25000 })) }
+export async function fetchNodeProxyPoolRuntime(id: number, nodeID?: number): Promise<NodeProxyPoolRuntime> { return unwrap(await api.get(`/admin/node-proxy-pools/${id}/runtime`, { timeout: 25000, params: nodeID ? {node_id: nodeID} : undefined })) }
 export async function saveNodeProxyPool(id: number, payload: Record<string, unknown>): Promise<NodeProxyPool> { return unwrap(id ? await api.put(`/admin/node-proxy-pools/${id}`,payload) : await api.post('/admin/node-proxy-pools',payload)) }
 export async function syncNodeProxyPool(id: number, expectedRevision: number): Promise<NodeProxyPool> { return unwrap(await api.post(`/admin/node-proxy-pools/${id}/sync`, { expected_revision: expectedRevision })) }
+export async function setNodeProxyPoolReference(poolID: number, nodeID: number, attach: boolean) {
+ return unwrap(await api.request({method: attach ? 'put' : 'delete', url: `/admin/node-proxy-pools/${poolID}/reference`, data: {node_id: nodeID}}))
+}
 export async function deleteNodeProxyPool(id: number) { return unwrap(await api.delete(`/admin/node-proxy-pools/${id}`)) }
 
 export async function fetchNodeCleanupScript(): Promise<string> {

@@ -20,7 +20,7 @@ func persistCredentialRevocation(tx *gorm.DB, query *gorm.DB, status string, now
 func persistCredentialRevocationWithPublisher(tx *gorm.DB, query *gorm.DB, status string, now time.Time, publish func(*gorm.DB, uint, uint, uint) error) (int, error) {
 	var credentials []model.ProtocolCredential
 	if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("id", "node_id", "protocol_endpoint_id").Find(&credentials).Error; err != nil {
+		Select("id", "node_id", "protocol_endpoint_id", "subscription_id", "material_version").Find(&credentials).Error; err != nil {
 		return 0, err
 	}
 	if len(credentials) == 0 {
@@ -32,6 +32,17 @@ func persistCredentialRevocationWithPublisher(tx *gorm.DB, query *gorm.DB, statu
 		}
 		return credentials[i].NodeID < credentials[j].NodeID
 	})
+	roots := map[uint]bool{}
+	for _, c := range credentials {
+		if c.MaterialVersion > 0 {
+			roots[c.SubscriptionID] = true
+		}
+	}
+	for sub := range roots {
+		if err := networkstore.EnqueueSubscriptionPublications(tx, sub, 0); err != nil {
+			return 0, err
+		}
+	}
 	var lastNode uint
 	for _, credential := range credentials {
 		if credential.NodeID == lastNode {
@@ -51,12 +62,22 @@ func persistCredentialRevocationWithPublisher(tx *gorm.DB, query *gorm.DB, statu
 }
 
 func RevokeOutsideGroup(tx *gorm.DB, sub model.Subscription, now time.Time) error {
+	var root model.ProtocolCredential
+	if err := tx.Where("subscription_id=? AND current_scope=1 AND material_scope=1", sub.ID).Limit(1).Find(&root).Error; err != nil {
+		return err
+	}
+	if root.ID != 0 {
+		if err := reconcileMaterialGroup(tx, &root, sub); err != nil {
+			return err
+		}
+	}
+
 	ids, err := networkstore.CurrentCredentialEndpointIDs(tx, sub.NodeGroupID)
 	if err != nil {
 		return err
 	}
 	query := tx.Model(&model.ProtocolCredential{}).
-		Where("subscription_id = ? AND status IN ?", sub.ID, []string{"active", "prepared"})
+		Where("subscription_id = ? AND material_version=0 AND status IN ?", sub.ID, []string{"active", "prepared"})
 	// An empty current scope revokes every old binding. NOT IN(NULL) would
 	// silently retain them, and a derived membership read can be stale under RR.
 	if len(ids) != 0 {

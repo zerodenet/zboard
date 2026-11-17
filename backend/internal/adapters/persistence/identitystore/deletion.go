@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
@@ -136,7 +137,7 @@ func (s Deletion) hardDeleteAccount(tx *gorm.DB, user model.User, actor uint, or
 		return fmt.Errorf("accounting identity unavailable: %w", err)
 	}
 	var routes []struct{ NodeID, ProtocolEndpointID uint }
-	if err := tx.Model(&model.ProtocolCredential{}).Select("DISTINCT protocol_credentials.node_id, protocol_credentials.protocol_endpoint_id").
+	if err := credentialstore.Bindings(tx, now).Select("DISTINCT protocol_credentials.node_id, protocol_credentials.protocol_endpoint_id").
 		Joins("JOIN nodes n ON n.id=protocol_credentials.node_id AND n.archived_at IS NULL").
 		Joins("JOIN protocol_endpoints e ON e.id=protocol_credentials.protocol_endpoint_id AND e.deleted_at IS NULL").
 		Where("protocol_credentials.user_id=? AND protocol_credentials.revoked_at IS NULL", user.ID).Scan(&routes).Error; err != nil {

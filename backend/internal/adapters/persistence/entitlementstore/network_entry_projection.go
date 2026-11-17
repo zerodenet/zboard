@@ -106,11 +106,14 @@ func (s NetworkEntryProjection) LoadNetworkEntryProjection(ctx context.Context, 
 		result.Nodes = append(result.Nodes, entitlements.NetworkEntryProjectionNode{ID: row.ID, Region: row.Region, IsEnabled: row.IsEnabled, LifecycleStatus: row.LifecycleStatus, LastSeenAt: row.LastSeenAt})
 	}
 	var credentials []credentialstore.DeliveryProjection
-	if err := credentialstore.ProjectedCredentials(s.DB.WithContext(ctx)).Where("protocol_credentials.subscription_id IN ? AND protocol_credentials.protocol_endpoint_id IN ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionIDs, endpointIDs, "active", now).Find(&credentials).Error; err != nil {
+	if err := credentialstore.ProjectedCredentials(s.DB.WithContext(ctx), now).Where("protocol_credentials.subscription_id IN ? AND protocol_credentials.protocol_endpoint_id IN ? AND protocol_credentials.status = ? AND protocol_credentials.revoked_at IS NULL AND protocol_credentials.expires_at > ?", subscriptionIDs, endpointIDs, "active", now).Order("protocol_credentials.material_version ASC, protocol_credentials.id ASC").Find(&credentials).Error; err != nil {
+		return result, err
+	}
+	if err := credentialstore.ConfirmMaterials(s.DB.WithContext(ctx), credentials); err != nil {
 		return result, err
 	}
 	for _, row := range credentials {
-		result.Credentials = append(result.Credentials, entitlements.NetworkEntryProjectionCredential{DeliveryStatus: row.DeliveryStatus(), SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID, CredentialID: row.CredentialID, SecretCiphertext: row.Secret, ListenPort: row.ListenPort, PublicPort: row.PublicPort})
+		result.Credentials = append(result.Credentials, entitlements.NetworkEntryProjectionCredential{MaterialVersion: row.MaterialVersion, DeliveryStatus: row.DeliveryStatus(), SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID, CredentialID: row.CredentialID, SecretCiphertext: row.Secret, ListenPort: row.ListenPort, PublicPort: row.PublicPort})
 	}
 	return result, nil
 }

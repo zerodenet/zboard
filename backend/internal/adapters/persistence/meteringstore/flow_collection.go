@@ -3,9 +3,11 @@ package meteringstore
 import (
 	"context"
 	"errors"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/credentialstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/metering"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strings"
 )
 
 type CredentialProjection struct {
@@ -19,6 +21,13 @@ type CredentialProjection struct {
 // including revoked credentials; current service eligibility is a separate concern.
 func ResolveCredential(tx *gorm.DB, node uint, principal string) (CredentialProjection, bool, error) {
 	var out CredentialProjection
+	if strings.HasPrefix(principal, "sp1:") {
+		row, err := (credentialstore.PrincipalIndex{DB: tx}).LookupPrepared(tx.Statement.Context, node, principal)
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, credentialstore.ErrPrincipalIndexPending) {
+			return out, false, nil
+		}
+		return CredentialProjection{ID: row.ID, UserID: row.UserID, SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID}, err == nil, err
+	}
 	err := tx.Table("protocol_credentials").Select("id, user_id, subscription_id, protocol_endpoint_id").Where("node_id = ? AND principal_key = ?", node, principal).Order("id DESC").Take(&out).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return CredentialProjection{}, false, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/networkstore"
 	"time"
 
 	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
@@ -104,6 +105,12 @@ func (s CredentialExpiry) ExpireDueCredentials(ctx context.Context, now time.Tim
 					// Backlog from already-finalized services needs no new
 					// remote publication or repeated node-wide configuration.
 					if credential.Status == "revoked" && credential.RevokedAt != nil {
+						continue
+					}
+					if credential.MaterialVersion == 1 {
+						if err := networkstore.EnqueueSubscriptionPublications(tx, sub.ID, 0); err != nil {
+							return err
+						}
 						continue
 					}
 					committed = append(committed, entitlements.ExpiredCredential{ID: credential.ID, SubscriptionID: sub.ID, NodeID: credential.NodeID, ProtocolEndpointID: credential.ProtocolEndpointID})

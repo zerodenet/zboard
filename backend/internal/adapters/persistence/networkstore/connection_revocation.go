@@ -47,14 +47,21 @@ func (s ConnectionRevocation) WithRevokedPrincipal(ctx context.Context, nodeID u
 			return network.ErrConnectionRevocationPending
 		}
 		var credential model.ProtocolCredential
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node_id = ?", nodeID).First(&credential, candidate.ID).Error; err != nil {
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
+		if candidate.MaterialVersion == 0 {
+			query = query.Where("node_id = ?", nodeID)
+		}
+		if err := query.First(&credential, candidate.ID).Error; err != nil {
 			return network.ErrConnectionRevocationPending
 		}
 		if credential.SubscriptionID != sub.ID || !s.matches(nodeID, principal, credential) {
 			return network.ErrConnectionRevocationPending
 		}
+		if credential.MaterialVersion == entitlements.CredentialMaterialVersion {
+			credential.NodeID, credential.ProtocolEndpointID = candidate.NodeID, candidate.ProtocolEndpointID
+		}
 		now := time.Now().UTC()
-		forbidden = credential.EntitlementEpoch != sub.EntitlementEpoch || credential.CurrentScope == nil || *credential.CurrentScope != 1 || !node.IsEnabled || sub.Status != "active" || !sub.EndAt.After(now) || sub.FlowUsed >= sub.FlowTotal
+		forbidden = credential.CompatibilityUntil != nil && !credential.CompatibilityUntil.After(now) || credential.EntitlementEpoch != sub.EntitlementEpoch || credential.CurrentScope == nil || *credential.CurrentScope != 1 || !node.IsEnabled || sub.Status != "active" || !sub.EndAt.After(now) || sub.FlowUsed >= sub.FlowTotal
 		if !forbidden {
 			// Credential reconciliation is asynchronous. A revoked projection may
 			// predate a regrant, so current group membership is authoritative. The
@@ -86,6 +93,9 @@ func (s ConnectionRevocation) WithRevokedPrincipal(ctx context.Context, nodeID u
 	return forbidden, err
 }
 func (s ConnectionRevocation) matches(nodeID uint, principal string, row model.ProtocolCredential) bool {
+	if row.MaterialVersion == entitlements.CredentialMaterialVersion {
+		return credentialstore.VerifyMaterialBinding(row, nodeID, principal) == nil
+	}
 	if row.PrincipalKey != "" && row.PrincipalKey == principal {
 		return true
 	}

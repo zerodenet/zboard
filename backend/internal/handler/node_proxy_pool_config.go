@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,11 +77,11 @@ func (h *handlers) NodeProxyPoolConfigHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	OK(w, struct {
-		Pool         model.NodeProxyPool           `json:"pool"`
+		Pool         networkcap.ProxyPoolRecord    `json:"pool"`
 		Config       json.RawMessage               `json:"config"`
 		Compiled     map[string]interface{}        `json:"compiled"`
 		Subscription proxyPoolSubscriptionSettings `json:"subscription"`
-	}{pool, json.RawMessage(raw), compiled, subscription})
+	}{record, json.RawMessage(raw), compiled, subscription})
 }
 
 const poolRuntimeBegin = "__ZBOARD_POOL_CONFIG_BEGIN__\n"
@@ -127,13 +128,35 @@ func (h *handlers) NodeProxyPoolRuntimeHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	pool := proxyPoolQueryModel(record)
-	node, err := h.loadNode(pool.NodeID)
+	nodeID := pool.NodeID
+	if raw := r.URL.Query().Get("node_id"); raw != "" {
+		value, e := strconv.ParseUint(raw, 10, 64)
+		if e != nil || value == 0 {
+			BadRequest(w, "请选择引用该池的服务器")
+			return
+		}
+		nodeID = uint(value)
+	}
+	if nodeID == 0 && len(record.Nodes) == 1 {
+		nodeID = record.Nodes[0].ID
+	}
+	allowed := nodeID > 0 && nodeID == pool.NodeID
+	for _, reference := range record.Nodes {
+		if reference.ID == nodeID {
+			allowed = true
+		}
+	}
+	if !allowed {
+		BadRequest(w, "请选择引用该池的服务器后读取配置")
+		return
+	}
+	node, err := h.loadNode(nodeID)
 	if err != nil {
 		NotFound(w)
 		return
 	}
 	if err := h.services.Audit.RecordAdmin(r.Context(), claims.UserID, observability.AuditEvent{
-		Action: "node_proxy_pool.runtime.read", Target: fmt.Sprintf("node_proxy_pool:%d", id), Detail: fmt.Sprintf("node=%d", pool.NodeID),
+		Action: "node_proxy_pool.runtime.read", Target: fmt.Sprintf("node_proxy_pool:%d", id), Detail: fmt.Sprintf("node=%d", nodeID),
 	}); err != nil {
 		ServerError(w, err)
 		return
@@ -150,7 +173,7 @@ func (h *handlers) NodeProxyPoolRuntimeHandler(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadGateway, "节点当前配置无法解析或超过 8 MiB。", nil)
 		return
 	}
-	snapshot.NodeID = pool.NodeID
+	snapshot.NodeID = nodeID
 	OK(w, snapshot)
 }
 

@@ -98,8 +98,14 @@ func archivePreservesHistory(t *testing.T, total int) {
 	if err := db.Create(&model.NodeConfigPublish{NodeID: 1, Generation: 1, LeaseUntil: now, NextAttemptAt: now}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&model.NodeProxyPool{NodeID: 1, Name: "archive pool", Config: "{}", SubscriptionURL: "encrypted:subscription-secret", AutoSync: true, Revision: 1}).Error; err != nil {
+	sharedPool := model.NodeProxyPool{Name: "archive pool", Config: "{}", SubscriptionURL: "encrypted:subscription-secret", AutoSync: true, Revision: 1}
+	if err := db.Omit("NodeID").Create(&sharedPool).Error; err != nil {
 		t.Fatal(err)
+	}
+	for _, id := range []uint{1, 2} {
+		if err := bindSharedProxyPool(db, id, sharedPool.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	store := NodeRetirement{DB: db}
 	if _, err := store.Start(t.Context(), 1, 1, "detach"); err != nil {
@@ -159,8 +165,12 @@ func archivePreservesHistory(t *testing.T, total int) {
 		t.Fatal("immutable receipt lost", err)
 	}
 	var pool model.NodeProxyPool
-	if err := db.Where("node_id = 1").First(&pool).Error; err != nil || pool.AutoSync || pool.SubscriptionURL != "" || pool.Revision != 2 {
-		t.Fatal("archive retained a live proxy subscription", pool, err)
+	if err := db.First(&pool, sharedPool.ID).Error; err != nil || !pool.AutoSync || pool.SubscriptionURL != sharedPool.SubscriptionURL || pool.Config != sharedPool.Config || pool.Revision != 1 {
+		t.Fatal("archive destroyed independent shared source", err)
+	}
+	var bindings []model.NodeProxyPoolBinding
+	if err := db.Where("proxy_pool_id=?", sharedPool.ID).Find(&bindings).Error; err != nil || len(bindings) != 1 || bindings[0].NodeID != 2 {
+		t.Fatal("archive affected the surviving server reference", bindings, err)
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error { return publicationstore.Enqueue(tx, 1, 1, 1) }); err != nil {
 		t.Fatal("historical reconciliation blocked", err)

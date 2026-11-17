@@ -16,6 +16,7 @@ type FlowCursorCheckpoint struct {
 	DownloadBytes        int64  `gorm:"not null"`
 	UsedBytes            int64  `gorm:"not null"`
 	IsCompleted          bool   `gorm:"not null"`
+	ProtocolEndpointID   uint   `gorm:"not null;default:0"`
 }
 
 // A durable, rotating PK seek avoids a new index/rebuild of the large hot table.

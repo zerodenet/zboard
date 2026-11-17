@@ -30,6 +30,14 @@ func assertEpochUpgrade(t *testing.T, f orderFixture, mode string) {
 	}
 	// Recreate the immediately previous schema from a disposable database,
 	// preserving a real paid subscription, its ciphertext and business history.
+	// New subscription roots depend on the epoch. Remove only that later
+	// test-schema index/marker before simulating a database predating epochs.
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version=?", "0093_subscription_credential_material.up.sql").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropIndex("protocol_credentials", "ux_subscription_credential_material"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", "0048_entitlement_epochs.up.sql").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +121,9 @@ func assertEpochUpgrade(t *testing.T, f orderFixture, mode string) {
 		t.Fatal("derived unique index was not recoverable", err)
 	}
 	// Recorded source loss is never repaired by resetting epoch to zero.
+	if err := db.Migrator().DropIndex("protocol_credentials", "ux_subscription_credential_material"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec("ALTER TABLE protocol_credentials DROP COLUMN entitlement_epoch").Error; err != nil {
 		t.Fatal(err)
 	}

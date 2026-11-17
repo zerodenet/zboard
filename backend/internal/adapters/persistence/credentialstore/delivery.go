@@ -9,6 +9,7 @@ import (
 )
 
 type DeliveryProjection struct {
+	materialConfirmed                                             bool
 	ConfirmationEndpointSHA                                       string
 	BindingNodeID                                                 uint
 	BindingProtocol, BindingAddress, BindingListenAddress         string
@@ -26,8 +27,8 @@ type DeliveryProjection struct {
 
 // ProjectedCredentials keeps the existing fixed query budget. Both auxiliary
 // joins use primary keys and never read diagnostic or observation history.
-func ProjectedCredentials(db *gorm.DB) *gorm.DB {
-	return db.Model(&model.ProtocolCredential{}).Table("protocol_credentials").
+func ProjectedCredentials(db *gorm.DB, at ...time.Time) *gorm.DB {
+	return Bindings(db.Model(&model.ProtocolCredential{}), at...).
 		Joins("LEFT JOIN protocol_endpoints AS binding_endpoint ON binding_endpoint.id = protocol_credentials.protocol_endpoint_id").
 		Joins("LEFT JOIN credential_delivery_confirmations AS delivery ON delivery.credential_id = protocol_credentials.id").
 		Joins("LEFT JOIN node_credential_delivery_states AS delivery_state ON delivery_state.node_id = protocol_credentials.node_id").
@@ -38,8 +39,16 @@ func (p DeliveryProjection) DeliveryStatus() string {
 	if p.DeliveryRequired || p.TrackingNodeID != nil {
 		status = "pending"
 	}
+	if p.MaterialVersion == 1 {
+		if p.materialConfirmed {
+			return "confirmed"
+		}
+		return "pending"
+	}
+
 	material := network.CredentialMaterialFingerprint(p.NodeID, p.ProtocolEndpointID, p.ID, p.PrincipalKey, p.Secret, p.ListenPort, p.PublicPort)
 	endpointSHA := network.CredentialEndpointFingerprint(network.RuntimeConfigurationEndpoint{ID: p.ProtocolEndpointID, NodeID: p.BindingNodeID, Protocol: p.BindingProtocol, Address: p.BindingAddress, ListenAddress: p.BindingListenAddress, Port: p.BindingPort, PublicPort: p.BindingPublicPort, ServerConfig: p.BindingServerConfig, ClientConfig: p.BindingClientConfig, EgressConfig: p.BindingEgressConfig})
+
 	if p.TrackingNodeID != nil && material != "" && p.ConfirmationNodeID == p.NodeID && p.ConfirmationEndpointID == p.ProtocolEndpointID && p.ConfirmationMaterial == material && p.ConfirmationEndpointSHA == endpointSHA && len(p.TrackingSHA) == 64 && p.ConfirmationSHA == p.TrackingSHA && p.ConfirmationAt != nil && !p.ConfirmationAt.IsZero() {
 		status = "confirmed"
 	}
@@ -60,6 +69,9 @@ func DeliveryStatuses(db *gorm.DB, credentials []model.ProtocolCredential) (map[
 		}
 		var rows []DeliveryProjection
 		if err := ProjectedCredentials(db).Where("protocol_credentials.id IN ?", ids).Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		if err := ConfirmMaterials(db, rows); err != nil {
 			return nil, err
 		}
 		for _, row := range rows {

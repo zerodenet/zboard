@@ -80,6 +80,9 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			if credentialErr != nil {
 				return credentialErr
 			}
+			if err := metering.ValidateCredentialIngress(flow.InboundTag, credential.ProtocolEndpointID); err != nil {
+				return err
+			}
 			activityID = credential.ID
 			flow.PrincipalKey = credential.PrincipalKey
 			subscriptionRef, err := authorities.subscription(tx, credential.SubscriptionID)
@@ -116,13 +119,19 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			previousRaw, previousUpload, previousDownload, previousUsed := int64(0), int64(0), int64(0), int64(0)
 			if usageExists {
 				if metering.RuntimeScopedFlow(targetUsageKey) && !legacyUsage {
-					if usage.ProtocolCredentialID != credential.ID {
+					if usage.ProtocolCredentialID != credential.ID || (usage.ProtocolEndpointID != 0 && usage.ProtocolEndpointID != credential.ProtocolEndpointID) {
 						return errors.New("flow principal changed during its runtime generation")
 					}
 					if usage.Revision > 0 && event.Sequence > 0 && event.Sequence < usage.Revision {
-						return errors.New("Zero flow completion sequence is older than the persisted runtime cursor")
-					}
-					if usage.RawBytes > cumulativeRaw || usage.UploadBytes > flow.BytesUp || usage.DownloadBytes > flow.BytesDown {
+						// Delivery order is not accounting order. A late terminal fact
+						// closes the flow without lowering an accepted cumulative floor.
+						flow.BytesUp = max(flow.BytesUp, usage.UploadBytes)
+						flow.BytesDown = max(flow.BytesDown, usage.DownloadBytes)
+						cumulativeRaw, err = metering.CheckedTrafficBytes(flow.BytesUp, flow.BytesDown, subscription.TrafficCalcMode)
+						if err != nil {
+							return err
+						}
+					} else if usage.RawBytes > cumulativeRaw || usage.UploadBytes > flow.BytesUp || usage.DownloadBytes > flow.BytesDown {
 						return errors.New("Zero flow completion counters regressed within one core instance")
 					}
 					continues = true
@@ -203,9 +212,13 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			usage.SubscriptionID = subscription.ID
 			usage.ProtocolEndpointID = endpoint.ID
 			usage.PrincipalKey = credential.PrincipalKey
+			previousSequence := usage.Revision
 			usage.Revision = flow.Revision
 			if strings.TrimSpace(event.CoreInstanceID) != "" {
 				usage.Revision = event.Sequence
+				if !legacyUsage && metering.RuntimeScopedFlow(previousUsageKey) {
+					usage.Revision = max(previousSequence, event.Sequence)
+				}
 			}
 			usage.RawBytes = cumulativeRaw
 			usage.UploadBytes = flow.BytesUp
@@ -213,8 +226,12 @@ func (s CompletionAccounting) Complete(ctx context.Context, in metering.Complete
 			usage.UsedBytes = previousUsed + charged
 			usage.Status = "completed"
 			usage.LastEventID = event.EventID
-			usage.LastSeenAt = recordAt
-			usage.CompletedAt = &now
+			if recordAt.After(usage.LastSeenAt) {
+				usage.LastSeenAt = recordAt
+			}
+			if usage.CompletedAt == nil {
+				usage.CompletedAt = &now
+			}
 			if err := saveFlowUsage(tx, &usage, usageExists, previousUsageKey, !currentEpoch); err != nil {
 				return err
 			}

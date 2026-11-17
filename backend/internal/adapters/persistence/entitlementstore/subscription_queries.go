@@ -92,11 +92,16 @@ func (s SubscriptionQueries) Detail(ctx context.Context, actor, id uint) (entitl
 		if result.RowsAffected == 0 {
 			return entitlements.ErrAccessNotFound
 		}
-		if err := tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ?", id).Count(&out.TotalCredentialCount).Error; err != nil {
+		now := subscriptionQueryNow(s.Now)
+		// Historical attribution aliases are not usable connection credentials.
+		currentCredentials := func() *gorm.DB {
+			return tx.Model(&model.ProtocolCredential{}).Where("subscription_id=? AND current_scope=1 AND secret<>'' AND (compatibility_until IS NULL OR compatibility_until>?)", id, now)
+		}
+		if err := currentCredentials().Count(&out.TotalCredentialCount).Error; err != nil {
 			return err
 		}
-		out.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: out.Lifecycle, EndAt: out.EndAt, EndedAt: out.EndedAt, Status: out.Status, EndReason: out.EndReason}, subscriptionQueryNow(s.Now), grace)
-		return tx.Model(&model.ProtocolCredential{}).Where("subscription_id = ? AND status = ?", id, "active").Count(&out.ActiveCredentialCount).Error
+		out.RenewalUntil = entitlements.RenewalDeadline(entitlements.Subscription{Lifecycle: out.Lifecycle, EndAt: out.EndAt, EndedAt: out.EndedAt, Status: out.Status, EndReason: out.EndReason}, now, grace)
+		return currentCredentials().Where("status=? AND revoked_at IS NULL AND expires_at>?", "active", now).Count(&out.ActiveCredentialCount).Error
 	})
 	if err != nil {
 		return entitlements.SubscriptionDetail{}, err

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"math"
 	"net/url"
 	"strconv"
@@ -189,6 +190,34 @@ func (r RuntimeConfigurationRenderer) renderEndpoint(endpoint network.RuntimeCon
 	// Preserve existing emitted endpoint spelling for unchanged listeners.
 	if strings.Contains(listenAddress, ":") {
 		listenAddress = "[" + listenAddress + "]"
+	}
+	endpoint.Credentials = append([]network.RuntimeConfigurationCredential(nil), endpoint.Credentials...)
+	for i := range endpoint.Credentials {
+		c := &endpoint.Credentials[i]
+		if c.MaterialVersion == 0 {
+			continue
+		}
+		if c.MaterialVersion != entitlements.CredentialMaterialVersion {
+			return nil, entitlements.ErrCredentialMaterial
+		}
+		seed, e := r.Cipher.Decrypt(c.Secret)
+		if e != nil {
+			return nil, e
+		}
+		c.PrincipalKey, e = entitlements.CredentialBindingPrincipal(seed, entitlements.CredentialBinding{CredentialID: c.ID, NodeID: endpoint.NodeID, EndpointID: endpoint.ID})
+		if e != nil {
+			return nil, e
+		}
+		method, _ := protocol["cipher"].(string)
+		secret, e := entitlements.RenderCredentialMaterial(seed, endpoint.Protocol, method)
+		if e != nil {
+			return nil, e
+		}
+		c.Secret, e = r.Cipher.Encrypt(secret)
+		if e != nil {
+			return nil, e
+		}
+		c.MaterialVersion = 0
 	}
 	credentials := endpoint.Credentials
 	if endpoint.ActiveSubscriptionCount > 0 && len(credentials) == 0 {
@@ -566,8 +595,8 @@ func (r RuntimeConfigurationRenderer) appendNetworkEntries(config map[string]int
 			"protocol": map[string]interface{}{"type": "direct", "target": entry.Landing.Address, "port": port},
 		})
 		if entry.ProxyPoolID != nil {
-			if entry.ProxyPool == nil || entry.ProxyPool.NodeID != entry.NodeID {
-				return errors.New("请选择入口节点 A 自己的共享代理池")
+			if entry.ProxyPool == nil {
+				return errors.New("请选择存在的共享代理池")
 			}
 			path, err := r.decryptNetworkPath(entry.ProxyPool.Config, "代理池配置无法解密", "代理池配置无效")
 			if err != nil {

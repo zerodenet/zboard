@@ -14,6 +14,7 @@ import (
 // It records configuration delivery, never business authorization or runtime
 // observation. PolicyRevision describes this target, not an expiry heartbeat.
 type CredentialDeliveryTarget struct {
+	MaterialVersion    uint16 `json:"material_version,omitempty"`
 	EndpointSHA256     string `json:"endpoint_sha256"`
 	CredentialID       uint   `json:"credential_id"`
 	ProtocolEndpointID uint   `json:"protocol_endpoint_id"`
@@ -63,15 +64,27 @@ func CredentialMaterialFingerprint(nodeID, endpointID, credentialID uint, princi
 
 func EncodeCredentialDeliveryManifest(targets []CredentialDeliveryTarget, entries ...[]NetworkEntryDeliveryTarget) (string, error) {
 	ordered := append([]CredentialDeliveryTarget{}, targets...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].CredentialID < ordered[j].CredentialID })
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].CredentialID != ordered[j].CredentialID {
+			return ordered[i].CredentialID < ordered[j].CredentialID
+		}
+		return ordered[i].ProtocolEndpointID < ordered[j].ProtocolEndpointID
+	})
+	version := 1
 	for i, target := range ordered {
+		if target.MaterialVersion > 1 {
+			return "", ErrCredentialDeliveryManifest
+		}
+		if target.MaterialVersion == 1 {
+			version = 2
+		}
 		digest, err := hex.DecodeString(target.MaterialSHA256)
 		endpointDigest, endpointErr := hex.DecodeString(target.EndpointSHA256)
-		if endpointErr != nil || len(endpointDigest) != sha256.Size || target.EndpointSHA256 != hex.EncodeToString(endpointDigest) || target.CredentialID == 0 || target.ProtocolEndpointID == 0 || target.PolicyRevision == 0 || err != nil || len(digest) != sha256.Size || target.MaterialSHA256 != hex.EncodeToString(digest) || (i > 0 && ordered[i-1].CredentialID == target.CredentialID) {
+		if endpointErr != nil || len(endpointDigest) != sha256.Size || target.EndpointSHA256 != hex.EncodeToString(endpointDigest) || target.CredentialID == 0 || target.ProtocolEndpointID == 0 || target.PolicyRevision == 0 || err != nil || len(digest) != sha256.Size || target.MaterialSHA256 != hex.EncodeToString(digest) || (i > 0 && ordered[i-1].CredentialID == target.CredentialID && (target.MaterialVersion == 0 || ordered[i-1].MaterialVersion != target.MaterialVersion || ordered[i-1].ProtocolEndpointID == target.ProtocolEndpointID)) {
 			return "", ErrCredentialDeliveryManifest
 		}
 	}
-	manifest := CredentialDeliveryManifest{Version: 1, Targets: ordered}
+	manifest := CredentialDeliveryManifest{Version: version, Targets: ordered}
 	if len(entries) > 1 {
 		return "", ErrCredentialDeliveryManifest
 	}
@@ -96,7 +109,7 @@ func DecodeCredentialDeliveryManifest(body string) ([]CredentialDeliveryTarget, 
 }
 func DecodeConfigurationDeliveryManifest(body string) (CredentialDeliveryManifest, error) {
 	var manifest CredentialDeliveryManifest
-	if err := json.Unmarshal([]byte(body), &manifest); err != nil || manifest.Version != 1 || manifest.Targets == nil {
+	if err := json.Unmarshal([]byte(body), &manifest); err != nil || (manifest.Version != 1 && manifest.Version != 2) || manifest.Targets == nil {
 		return manifest, ErrCredentialDeliveryManifest
 	}
 	var entries [][]NetworkEntryDeliveryTarget

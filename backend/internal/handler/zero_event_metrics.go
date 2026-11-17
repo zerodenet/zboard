@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,20 +20,37 @@ type zeroEventConsumerMetrics struct {
 	missing        atomic.Uint64
 	maximumMS      atomic.Uint64
 	latencies      [601]atomic.Uint64 // 100ms upper bounds through 60s plus overflow.
+	failureMu      sync.Mutex
+	lastFailure    string
+	lastFailureAt  *time.Time
 }
 
 type zeroEventConsumerSnapshot struct {
-	Batches              uint64  `json:"batches"`
-	ProcessedEnvelopes   uint64  `json:"processed_envelopes"`
-	ProjectedFlowSamples uint64  `json:"projected_flow_samples"`
-	CoalescedFlowUpdates uint64  `json:"coalesced_flow_updates"`
-	Failures             uint64  `json:"failures"`
-	ProcessingSeconds    float64 `json:"processing_seconds"`
-	MissingReceiveTime   uint64  `json:"missing_receive_time"`
-	LatencySamples       uint64  `json:"latency_samples"`
-	LatencyBucketMillis  int     `json:"latency_bucket_ms"`
-	P95UpperMillis       *uint64 `json:"p95_upper_ms"`
-	MaximumMillis        uint64  `json:"maximum_ms"`
+	Batches              uint64     `json:"batches"`
+	ProcessedEnvelopes   uint64     `json:"processed_envelopes"`
+	ProjectedFlowSamples uint64     `json:"projected_flow_samples"`
+	CoalescedFlowUpdates uint64     `json:"coalesced_flow_updates"`
+	Failures             uint64     `json:"failures"`
+	ProcessingSeconds    float64    `json:"processing_seconds"`
+	MissingReceiveTime   uint64     `json:"missing_receive_time"`
+	LatencySamples       uint64     `json:"latency_samples"`
+	LatencyBucketMillis  int        `json:"latency_bucket_ms"`
+	P95UpperMillis       *uint64    `json:"p95_upper_ms"`
+	MaximumMillis        uint64     `json:"maximum_ms"`
+	LastFailure          string     `json:"last_failure,omitempty"`
+	LastFailureAt        *time.Time `json:"last_failure_at,omitempty"`
+}
+
+func (m *zeroEventConsumerMetrics) failed(err error, now time.Time) {
+	m.failures.Add(1)
+	message := []rune(sanitizeAuditDetail(truncateTaskError(err.Error())))
+	if len(message) > 256 {
+		message = message[:256]
+	}
+	m.failureMu.Lock()
+	defer m.failureMu.Unlock()
+	at := now.UTC()
+	m.lastFailure, m.lastFailureAt = string(message), &at
 }
 
 func (m *zeroEventConsumerMetrics) committed(events []zeroevent.Envelope, elapsed time.Duration, now time.Time) {
@@ -63,6 +81,13 @@ func (m *zeroEventConsumerMetrics) snapshot() zeroEventConsumerSnapshot {
 	result := zeroEventConsumerSnapshot{Batches: m.batches.Load(), ProcessedEnvelopes: m.events.Load(), Failures: m.failures.Load(),
 		ProcessingSeconds: float64(m.processNS.Load()) / float64(time.Second), MissingReceiveTime: m.missing.Load(),
 		LatencyBucketMillis: eventLatencyBucketMillis, MaximumMillis: m.maximumMS.Load()}
+	m.failureMu.Lock()
+	result.LastFailure = m.lastFailure
+	if m.lastFailureAt != nil {
+		at := *m.lastFailureAt
+		result.LastFailureAt = &at
+	}
+	m.failureMu.Unlock()
 	var counts [601]uint64
 	for i := range counts {
 		counts[i] = m.latencies[i].Load()

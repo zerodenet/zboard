@@ -22,7 +22,7 @@ func (r RuntimeConfigurationRenderer) RenderWithCredentialTargets(request Runtim
 		}
 		for _, credential := range endpoint.Credentials {
 			material := network.CredentialMaterialFingerprint(request.NodeID, endpoint.ID, credential.ID, credential.PrincipalKey, credential.Secret, credential.ListenPort, credential.PublicPort)
-			targets = append(targets, network.CredentialDeliveryTarget{EndpointSHA256: network.CredentialEndpointFingerprint(endpoint), CredentialID: credential.ID, ProtocolEndpointID: endpoint.ID, MaterialSHA256: material, PolicyRevision: credential.PolicyRevision})
+			targets = append(targets, network.CredentialDeliveryTarget{MaterialVersion: credential.MaterialVersion, EndpointSHA256: network.CredentialEndpointFingerprint(endpoint), CredentialID: credential.ID, ProtocolEndpointID: endpoint.ID, MaterialSHA256: material, PolicyRevision: credential.PolicyRevision})
 		}
 	}
 	routes := []network.NetworkEntryDeliveryTarget{}

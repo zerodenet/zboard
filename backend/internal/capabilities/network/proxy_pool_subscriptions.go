@@ -1,7 +1,9 @@
 package network
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ type ProxyPoolSubscriptionActor struct {
 }
 
 type ProxyPoolSubscriptionSnapshot struct {
+	ConfigCiphertext          string
 	Pool                      ProxyPoolRecord
 	SubscriptionURLCiphertext string
 	SubscriptionFormat        string
@@ -100,10 +103,28 @@ func (s ProxyPoolSubscriptions) Commit(ctx context.Context, actor ProxyPoolSubsc
 	if err != nil {
 		return ProxyPoolRecord{}, err
 	}
-	ciphertext, err := s.Cipher.Encrypt(raw)
-	if err != nil {
-		return ProxyPoolRecord{}, err
+	ciphertext := prepared.Snapshot.ConfigCiphertext
+	same := false
+	if ciphertext != "" {
+		if old, e := s.Cipher.Decrypt(ciphertext); e == nil {
+			var a, b any
+			if json.Unmarshal([]byte(old), &a) == nil && json.Unmarshal([]byte(raw), &b) == nil {
+				x, _ := json.Marshal(a)
+				y, _ := json.Marshal(b)
+				same = bytes.Equal(x, y)
+			} else {
+				same = strings.TrimSpace(old) == strings.TrimSpace(raw)
+			}
+		}
 	}
+	if !same {
+		var e error
+		ciphertext, e = s.Cipher.Encrypt(raw)
+		if e != nil {
+			return ProxyPoolRecord{}, e
+		}
+	}
+
 	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ProxyPoolSubscriptionFinalizeTimeout)
 	defer cancel()
 	return s.Repository.CommitProxyPoolSubscription(finalizeCtx, actor, prepared.Snapshot, ciphertext, nodeCount, facts, s.now())

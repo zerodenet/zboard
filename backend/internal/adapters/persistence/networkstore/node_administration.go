@@ -54,6 +54,18 @@ func (s NodeAdministration) CreateNodeAdministration(ctx context.Context, actor 
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
+		if len(change.ProxyPoolIDs) > 100 {
+			return &network.NodeAdministrationValidation{Message: "一次最多引用 100 个代理池"}
+		}
+		for _, id := range uniqueSortedIDs(change.ProxyPoolIDs) {
+			var pool model.NodeProxyPool
+			if e := tx.Clauses(currentResourceReadLock(tx)).First(&pool, id).Error; e != nil {
+				return &network.NodeAdministrationValidation{Message: "请选择存在的共享代理池"}
+			}
+			if e := bindSharedProxyPool(tx, row.ID, id); e != nil {
+				return e
+			}
+		}
 		if err := tx.Create(&model.NodeKernelState{NodeID: row.ID, Status: "unknown", Phase: "idle", RecommendedAction: "detect"}).Error; err != nil {
 			return err
 		}

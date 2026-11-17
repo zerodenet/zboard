@@ -228,7 +228,7 @@ func (s ConfigurationPublicationState) CompleteConfigurationPublication(ctx cont
 			}
 		}
 		if err := tx.Model(&model.ProtocolEndpoint{}).
-			Where("node_id = ? AND LOWER(protocol) IN ?", deployment.NodeID, []string{"trojan", "hysteria2"}).
+			Where("node_id = ? AND LOWER(protocol) IN ?", deployment.NodeID, []string{"vless", "vmess", "shadowsocks", "trojan", "hysteria2", "mieru"}).
 			Update("managed_principal_ready", completion.ManagedPrincipalAccess).Error; err != nil {
 			return err
 		}

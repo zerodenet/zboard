@@ -76,6 +76,10 @@ func (s PrincipalIndex) PrepareBounded(ctx context.Context, node uint, budget in
 // LookupPrepared never writes or starts a nested backfill transaction. Callers
 // must prepare this node before entering their authority transaction.
 func (s PrincipalIndex) LookupPrepared(ctx context.Context, node uint, provided string) (model.ProtocolCredential, error) {
+	if strings.HasPrefix(provided, "sp1:") {
+		return lookupMaterialBinding(s.DB.WithContext(ctx), node, provided)
+	}
+
 	if s.DB == nil || node == 0 || provided == "" {
 		return model.ProtocolCredential{}, ErrPrincipalIndexPending
 	}

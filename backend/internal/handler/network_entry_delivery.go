@@ -42,8 +42,11 @@ func (h *handlers) buildAuthorizedNetworkEntries(ctx context.Context, subscripti
 	credentials := make(map[credentialKey]model.ProtocolCredential, len(projection.Credentials))
 	delivery := map[credentialKey]string{}
 	for _, row := range projection.Credentials {
+		if row.MaterialVersion > 0 && row.DeliveryStatus == "pending" {
+			continue
+		}
 		delivery[credentialKey{row.SubscriptionID, row.ProtocolEndpointID}] = row.DeliveryStatus
-		credentials[credentialKey{row.SubscriptionID, row.ProtocolEndpointID}] = model.ProtocolCredential{SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID, CredentialID: row.CredentialID, Secret: row.SecretCiphertext, ListenPort: row.ListenPort, PublicPort: row.PublicPort, Status: protocolCredentialStatusActive}
+		credentials[credentialKey{row.SubscriptionID, row.ProtocolEndpointID}] = model.ProtocolCredential{MaterialVersion: row.MaterialVersion, SubscriptionID: row.SubscriptionID, ProtocolEndpointID: row.ProtocolEndpointID, CredentialID: row.CredentialID, Secret: row.SecretCiphertext, ListenPort: row.ListenPort, PublicPort: row.PublicPort, Status: protocolCredentialStatusActive}
 	}
 	result := []subscriptionManifestNode{}
 	seen := map[uint]bool{}

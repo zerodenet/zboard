@@ -136,12 +136,25 @@ func LockCurrentCredentialEndpointRoutes(tx *gorm.DB, groupID uint) ([]Credentia
 
 func EnqueueSubscriptionPublications(tx *gorm.DB, subscriptionID, requestedBy uint) error {
 	var sub model.Subscription
-	if err := tx.Clauses(currentResourceReadLock(tx)).Select("id", "node_group_id").First(&sub, subscriptionID).Error; err != nil {
+	if err := tx.Clauses(currentResourceReadLock(tx)).Select("id", "node_group_id", "credential_material_mode").First(&sub, subscriptionID).Error; err != nil {
 		return currentResourceReadError(err)
 	}
 	nodes, err := LockCurrentCredentialEndpointRoutes(tx, sub.NodeGroupID)
 	if err != nil {
 		return err
+	}
+	if sub.CredentialMaterialMode == 1 {
+		var previous uint
+		for _, route := range nodes {
+			if route.NodeID == previous {
+				continue
+			}
+			previous = route.NodeID
+			if err := EnqueuePublication(tx, route.NodeID, 0, requestedBy); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	for i := 0; i < len(nodes); {
 		first := nodes[i]

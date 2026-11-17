@@ -12,6 +12,7 @@ var (
 )
 
 type RuntimeConfigurationCredential struct {
+	MaterialVersion      uint16
 	ID                   uint
 	SubscriptionID       uint
 	PrincipalKey         string

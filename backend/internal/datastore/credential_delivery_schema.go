@@ -126,7 +126,14 @@ func reconcileCredentialDeliverySchema(db *gorm.DB) error {
 		return err
 	}
 	if err := visitConfirmedCredentialManifests(db, func(deployment model.ProtocolDeployment, manifest network.CredentialDeliveryManifest) error {
-		targets := manifest.Targets
+		// A shared root has several transient bindings, not several persistent
+		// per-credential confirmation rows. Its frozen node manifest is authority.
+		targets := make([]network.CredentialDeliveryTarget, 0, len(manifest.Targets))
+		for _, target := range manifest.Targets {
+			if target.MaterialVersion == 0 {
+				targets = append(targets, target)
+			}
+		}
 		var existing model.NodeCredentialDeliveryState
 		found := db.Where("node_id = ?", deployment.NodeID).Limit(1).Find(&existing)
 		if found.Error != nil {

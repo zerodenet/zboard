@@ -44,6 +44,7 @@ type CredentialDecryptor interface{ Decrypt(string) (string, error) }
 type CompletedFlow struct {
 	NodeID                                                             uint
 	SourceID, CoreInstanceID, EventID, FlowID, PrincipalKey, EventType string
+	InboundTag                                                         string
 	Sequence, Revision                                                 uint64
 	BytesUp, BytesDown                                                 int64
 	OccurredAt                                                         time.Time

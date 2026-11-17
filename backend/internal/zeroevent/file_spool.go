@@ -73,10 +73,11 @@ type FileSpool struct {
 	active       *activeSegment // owned by the writer goroutine
 	segmentFloor uint64         // highest durable/committed sequence; never reset by reclamation
 
-	readMu       sync.Mutex
-	checkpoint   Checkpoint
-	hasInflight  bool
-	inflightNext Checkpoint
+	readMu           sync.Mutex
+	checkpoint       Checkpoint
+	hasInflight      bool
+	inflightNext     Checkpoint
+	verifiedPrefixes map[Checkpoint]struct{}
 
 	// segmentMu protects representation changes such as .active -> .ready,
 	// .ready -> .ready.zst, semantic replacement, and deletion after a committed

@@ -44,7 +44,7 @@ func closeEntitlement(tx *gorm.DB, previous model.Subscription, orderID uint, is
 			}
 			hash = entitlements.RetiredPrincipalHash(row.NodeID, plain)
 		}
-		if err := tx.Model(&row).Updates(map[string]any{"current_scope": nil, "status": "revoked", "revoked_at": now, "secret": "", "retired_principal_hash": hash, "updated_at": now}).Error; err != nil {
+		if err := tx.Model(&row).Updates(map[string]any{"current_scope": nil, "status": "revoked", "revoked_at": now, "secret": "", "compatibility_until": nil, "retired_principal_hash": hash, "updated_at": now}).Error; err != nil {
 			return err
 		}
 	}

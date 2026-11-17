@@ -35,6 +35,7 @@ type NetworkEntryProjectionNode struct {
 }
 
 type NetworkEntryProjectionCredential struct {
+	MaterialVersion                    uint16
 	DeliveryStatus                     string
 	SubscriptionID, ProtocolEndpointID uint
 	CredentialID, SecretCiphertext     string
