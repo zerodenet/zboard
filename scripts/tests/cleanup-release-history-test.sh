@@ -12,18 +12,15 @@ set -euo pipefail
 
 printf '%s\n' "$*" >> "${GH_MOCK_LOG}"
 
+if [ "${GH_MOCK_FAIL:-}" = "refs" ] && [[ "$*" == *"/git/matching-refs/"* ]]; then
+  exit 1
+fi
 if [ "$1" = "api" ] && [[ "$*" == *"/releases?per_page=100"* ]]; then
-  if [[ "$*" == *"-dev"* ]]; then
-    printf '%s\n' v1.0.0-dev v1.0.0-dev.2
-  else
-    printf '%s\n' v1.0.0-rc v1.0.0-rc.3
-  fi
+  printf '%s\n' '[[{"tag_name":"v1.0.0-dev"},{"tag_name":"v1.0.0-dev.2"},{"tag_name":"v1.0.0-rc"},{"tag_name":"v1.0.0-rc.3"},{"tag_name":"v2.0.0-dev.1"}]]'
+elif [ "$1" = "api" ] && [[ "$*" == *"/git/matching-refs/"* ]]; then
+  printf '%s\n' '[[{"ref":"refs/tags/v1.0.0-dev"},{"ref":"refs/tags/v1.0.0-dev.2"},{"ref":"refs/tags/v1.0.0-rc"},{"ref":"refs/tags/v1.0.0-rc.3"},{"ref":"refs/tags/v2.0.0-dev.1"},{"ref":"refs/tags/sdk/v0.1.0"}]]'
 elif [ "$1" = "api" ] && [[ "$*" == *"/versions?per_page=100"* ]]; then
-  if [[ "$*" == *"-dev"* ]]; then
-    printf '%s\n' 101 102
-  else
-    printf '%s\n' 201 202
-  fi
+  printf '%s\n' '[[{"id":101,"metadata":{"container":{"tags":["v1.0.0-dev"]}}},{"id":102,"metadata":{"container":{"tags":["v1.0.0-dev.2"]}}},{"id":201,"metadata":{"container":{"tags":["v1.0.0-rc"]}}},{"id":202,"metadata":{"container":{"tags":["v1.0.0-rc.3"]}}},{"id":301,"metadata":{"container":{"tags":["v1.0.0-dev","latest"]}}}]]'
 fi
 MOCK
 chmod +x "${test_dir}/gh"
@@ -47,8 +44,9 @@ assert_log_contains "release delete v1.0.0-dev --repo zerodenet/zboard --yes"
 assert_log_contains "release delete v1.0.0-dev.2 --repo zerodenet/zboard --yes"
 assert_log_contains "api --method DELETE orgs/zerodenet/packages/container/zboard/versions/101"
 assert_log_contains "api --method DELETE orgs/zerodenet/packages/container/zboard/versions/102"
-if grep -F -- "-rc(" "${GH_MOCK_LOG}" >/dev/null; then
-  echo "rc publication selected rc history instead of dev history" >&2
+assert_log_contains "api --method DELETE repos/zerodenet/zboard/git/refs/tags/v1.0.0-dev"
+if grep -E -- '(release delete v1.0.0-rc|DELETE .*versions/301|DELETE .*v2.0.0|DELETE .*sdk/)' "${GH_MOCK_LOG}" >/dev/null; then
+  echo "rc publication selected protected history" >&2
   exit 1
 fi
 
@@ -58,6 +56,24 @@ assert_log_contains "release delete v1.0.0-rc --repo zerodenet/zboard --yes"
 assert_log_contains "release delete v1.0.0-rc.3 --repo zerodenet/zboard --yes"
 assert_log_contains "api --method DELETE orgs/zerodenet/packages/container/zboard/versions/201"
 assert_log_contains "api --method DELETE orgs/zerodenet/packages/container/zboard/versions/202"
+assert_log_contains "api --method DELETE repos/zerodenet/zboard/git/refs/tags/v1.0.0-rc.3"
+
+: > "${GH_MOCK_LOG}"
+bash "${script}" --dry-run v1.0.0-rc.1 >/dev/null
+if grep -E -- '(release delete|--method DELETE)' "${GH_MOCK_LOG}" >/dev/null; then
+  echo "dry run mutated history" >&2
+  exit 1
+fi
+
+: > "${GH_MOCK_LOG}"
+if GH_MOCK_FAIL=refs bash "${script}" v1.0.0-rc.1 >/dev/null 2>&1; then
+  echo "failed inventory was treated as empty success" >&2
+  exit 1
+fi
+if grep -E -- '(release delete|--method DELETE)' "${GH_MOCK_LOG}" >/dev/null; then
+  echo "failed inventory deleted partial history" >&2
+  exit 1
+fi
 
 : > "${GH_MOCK_LOG}"
 output="$(bash "${script}" v1.0.0-dev.9)"

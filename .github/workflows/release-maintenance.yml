@@ -1,0 +1,43 @@
+name: release-maintenance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/release-maintenance.yml"
+      - ".github/release-notes/**"
+      - "scripts/maintain_releases.py"
+      - "scripts/release_history_policy.py"
+
+concurrency:
+  group: release-maintenance
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify release history policy
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_release_history*.py'
+          bash scripts/tests/cleanup-release-history-test.sh
+      - name: Reconcile obsolete releases, tags and images; refresh notes
+        run: python3 scripts/maintain_releases.py
+      - name: Preserve maintenance inventory and result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-maintenance-${{ github.run_id }}
+          path: artifacts/release-maintenance
+          retention-days: 14
