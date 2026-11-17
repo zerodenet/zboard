@@ -6,11 +6,11 @@ usage() {
 Usage: bash scripts/cleanup-release-history.sh [--dry-run] TAG
 
 Apply release-history retention after TAG has been published:
-  vX.Y.Z-rc[.*]  deletes GitHub Releases and GHCR versions tagged *-dev[.*]
-  vX.Y.Z         deletes GitHub Releases and GHCR versions tagged *-rc[.*]
+  vX.Y.Z-rc[.*]  deletes obsolete dev Releases, Git tags and GHCR versions
+  vX.Y.Z         deletes obsolete rc Releases, Git tags and GHCR versions
 
-Git tags are intentionally retained. Other prerelease families do not trigger
-cleanup.
+Only product versions at or below X.Y.Z are eligible. Newer versions and
+unrelated tags are preserved. Other prerelease families do not trigger cleanup.
 
 Environment:
   GITHUB_REPOSITORY       owner/repository containing the releases
@@ -66,42 +66,62 @@ else
 fi
 
 command -v gh >/dev/null 2>&1 || die "gh is required"
+command -v python3 >/dev/null 2>&1 || die "python3 is required"
 [ -n "${GH_TOKEN:-}" ] || die "GH_TOKEN is required"
 [ -n "${GITHUB_REPOSITORY:-}" ] || die "GITHUB_REPOSITORY is required"
 [ -n "${GITHUB_REPOSITORY_OWNER:-}" ] || die "GITHUB_REPOSITORY_OWNER is required"
 
 package_name="${ZBOARD_GHCR_PACKAGE:-zboard}"
 package_path="orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${package_name}"
-cleanup_re="-${cleanup_family}(\\\\.|$)"
-release_jq=".[] | select(.tag_name | test(\"${cleanup_re}\")) | .tag_name"
-package_jq=".[] | select((.metadata.container.tags // []) as \$tags | (\$tags | length) > 0 and ([\$tags[] | test(\"${cleanup_re}\")] | any) and ([\$tags[] | test(\"${cleanup_re}\")] | all)) | .id"
+policy="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_history_policy.py"
+inventory="$(mktemp -d)"
+trap 'rm -rf "${inventory}"' EXIT
 
 echo "Published ${release_tag}; cleaning historical ${cleanup_family} releases and package versions."
 
-mapfile -t release_tags < <(
-  gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "${release_jq}"
-)
-
-for tag in "${release_tags[@]}"; do
-  if [ "${dry_run}" -eq 1 ]; then
-    echo "Would delete GitHub Release ${tag} (Git tag retained)."
-  else
-    echo "Deleting GitHub Release ${tag} (Git tag retained)."
-    gh release delete "${tag}" --repo "${GITHUB_REPOSITORY}" --yes
-  fi
+# Complete every inventory before deleting anything. Failed API reads must not
+# be swallowed by process substitution and reported as a successful empty plan.
+gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "${inventory}/releases.json"
+gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" > "${inventory}/refs.json"
+gh api --paginate --slurp "${package_path}/versions?per_page=100" > "${inventory}/packages.json"
+for kind in releases refs packages; do
+  python3 "${policy}" "${release_tag}" "${kind}" "${inventory}/${kind}.json" > "${inventory}/${kind}.plan"
 done
 
-mapfile -t package_version_ids < <(
-  gh api --paginate "${package_path}/versions?per_page=100" --jq "${package_jq}"
-)
+release_count=0
+while IFS= read -r tag; do
+  [ -n "${tag}" ] || continue
+  if [ "${dry_run}" -eq 1 ]; then
+    echo "Would delete GitHub Release ${tag}."
+  else
+    echo "Deleting GitHub Release ${tag}."
+    gh release delete "${tag}" --repo "${GITHUB_REPOSITORY}" --yes
+  fi
+  release_count=$((release_count + 1))
+done < "${inventory}/releases.plan"
 
-for version_id in "${package_version_ids[@]}"; do
+tag_count=0
+while IFS= read -r tag; do
+  [ -n "${tag}" ] || continue
+  if [ "${dry_run}" -eq 1 ]; then
+    echo "Would delete Git tag ${tag}."
+  else
+    echo "Deleting Git tag ${tag}."
+    gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}"
+  fi
+  tag_count=$((tag_count + 1))
+done < "${inventory}/refs.plan"
+
+package_count=0
+while IFS= read -r version_id; do
+  [ -n "${version_id}" ] || continue
   if [ "${dry_run}" -eq 1 ]; then
     echo "Would delete GHCR package version ${version_id}."
   else
     echo "Deleting GHCR package version ${version_id}."
     gh api --method DELETE "${package_path}/versions/${version_id}"
   fi
-done
+  package_count=$((package_count + 1))
+done < "${inventory}/packages.plan"
 
-echo "Cleanup complete: ${#release_tags[@]} release(s), ${#package_version_ids[@]} package version(s)."
+echo "Cleanup complete: ${release_count} release(s), ${tag_count} tag(s), ${package_count} package version(s)."

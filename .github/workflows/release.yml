@@ -18,10 +18,16 @@ jobs:
     permissions:
       contents: write
       packages: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Require complete CI for release commit
+        timeout-minutes: 95
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/wait_release_ci.py "${GITHUB_SHA}"
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
