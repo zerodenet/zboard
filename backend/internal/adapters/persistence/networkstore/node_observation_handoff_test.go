@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	mysql "github.com/go-sql-driver/mysql"
 	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/observationstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -506,8 +505,7 @@ func TestMySQLObservationMailboxCompetingWorkersAndBusyNode(t *testing.T) {
 	err := b.Transaction(func(tx *gorm.DB) error {
 		return observationstore.EnqueueLatest(tx, []network.ObservationSource{observationSource(first, "blocked", "core", 2, true)})
 	})
-	var locked *mysql.MySQLError
-	if !errors.As(err, &locked) || locked.Number != 3572 {
+	if !errors.Is(err, network.ErrResourcesBusy) {
 		t.Fatal("producer did not fail fast on busy node", err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
