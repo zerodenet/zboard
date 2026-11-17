@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"github.com/zerodenet/zboard/backend/migrations"
 	"gorm.io/gorm"
 )
@@ -51,7 +52,10 @@ func matchesMySQLMigrationSeeds(db *gorm.DB) (bool, error) {
 			if strings.Join(columns, ",") != strings.Join(policyColumns, ",") {
 				return false, fmt.Errorf("embedded config seed columns differ")
 			}
-			expressions = append(expressions, policyRows...)
+			// 0092 updates only the known initializer description.
+			for _, row := range policyRows {
+				expressions = append(expressions, strings.ReplaceAll(row, "到期后停服，可在此天数内续费恢复；默认7天，范围0–3650，0表示不保留恢复窗口。缩短窗口会使超过新期限的旧订阅结束并清理凭据，历史订单和账务保留。主动退订不进入恢复窗口。", datastore.SubscriptionCleanupDescription))
+			}
 		}
 		actual, err := migrationSeedRows(db, "SELECT "+strings.Join(columns, ",")+" FROM "+migrationQuote(db, spec.table)+" LIMIT 1025", columns)
 		if err != nil {
@@ -60,6 +64,29 @@ func matchesMySQLMigrationSeeds(db *gorm.DB) (bool, error) {
 		expected, err := migrationSeedRows(db, strings.Join(expressions, " UNION ALL "), columns)
 		if err != nil {
 			return false, err
+		}
+		if spec.table == "system_configs" {
+			for _, seed := range datastore.CredentialMaterialDefaults() {
+				values := map[string]any{"config_key": seed.ConfigKey, "name": seed.Name, "value": seed.Value, "value_type": seed.ValueType, "description": seed.Description, "revision": seed.Revision, "is_public": 0, "is_secret": 0}
+				if seed.IsPublic {
+					values["is_public"] = 1
+				}
+				if seed.IsSecret {
+					values["is_secret"] = 1
+				}
+				parts := make([]string, 0, len(columns))
+				args := make([]any, 0, len(columns))
+				for _, column := range columns {
+					parts = append(parts, "? AS "+migrationQuote(db, column))
+					args = append(args, values[column])
+				}
+				rows, e := migrationSeedRows(db, "SELECT "+strings.Join(parts, ","), columns, args...)
+				if e != nil {
+					return false, e
+				}
+				expected = append(expected, rows...)
+			}
+			sort.Strings(expected)
 		}
 		if strings.Join(actual, "\n") != strings.Join(expected, "\n") {
 			return false, nil
@@ -193,8 +220,8 @@ func migrationSeedTuple(sql string) ([]string, int, error) {
 	return nil, 0, fmt.Errorf("unterminated embedded seed tuple")
 }
 
-func migrationSeedRows(db *gorm.DB, query string, columns []string) ([]string, error) {
-	rows, err := db.Raw(query).Rows()
+func migrationSeedRows(db *gorm.DB, query string, columns []string, args ...any) ([]string, error) {
+	rows, err := db.Raw(query, args...).Rows()
 	if err != nil {
 		return nil, err
 	}

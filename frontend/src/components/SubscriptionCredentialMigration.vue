@@ -2,7 +2,7 @@
   <details class="credential-migration" @toggle="toggle">
     <summary>连接凭证</summary>
     <div class="credential-content">
-      <PageAlert v-if="message || error" tone="danger" title="凭证状态未更新">{{ message || error }}</PageAlert>
+      <PageAlert v-if="operationError || error" tone="danger" title="凭证状态未更新">{{ operationError || error }}</PageAlert>
       <p v-if="loading && !loaded" role="status">正在读取凭证状态…</p>
       <template v-if="status">
         <div class="credential-heading"><strong>{{ label }}</strong><UiButton variant="ghost" size="sm" :disabled="busy || loading" @click="load">刷新</UiButton></div>
@@ -32,7 +32,7 @@ import UiButton from './UiButton.vue'
 
 const props = defineProps<{ subscriptionId: number; active: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
-const expanded = ref(false), busy = ref(false), message = ref('')
+const expanded = ref(false), busy = ref(false), operationError = ref('')
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
 const resource = useRemoteResource<SubscriptionCredentialMigrationStatus | null>({
@@ -41,26 +41,26 @@ const resource = useRemoteResource<SubscriptionCredentialMigrationStatus | null>
   errorMessage: cause => normalizeApiErrorMessage(cause, '暂时无法读取连接凭证状态。'),
 })
 const { data: status, loading, loaded, error } = resource
-async function load() { if (await resource.load()) message.value = '' }
+async function load() { if (await resource.load()) operationError.value = '' }
 const label = computed(() => ({ legacy: '按接入点维护', awaiting_confirmation: '等待节点确认', compatibility: '旧配置兼容中', revoking: '旧凭证清退中', current: '已合并' }[status.value?.state || 'legacy']))
 function toggle(event: Event) {
   expanded.value = (event.target as HTMLDetailsElement).open
   if (expanded.value && !loaded.value && !loading.value) void load()
 }
 watch(() => props.subscriptionId, () => {
-  resource.reset(); message.value = ''
+  resource.reset(); operationError.value = ''
   if (expanded.value) void load()
 })
 async function change(action: 'prepare' | 'rollback') {
   if (busy.value || !props.active) return
   const id = props.subscriptionId
-  busy.value = true; message.value = ''
+  busy.value = true; operationError.value = ''
   try {
     const result = await (action === 'prepare' ? prepareSubscriptionCredentialMigration(id) : rollbackSubscriptionCredentialMigration(id))
     if (disposed || id !== props.subscriptionId) return
     resource.replace(result); emit('changed')
   } catch (cause) {
-    if (!disposed && id === props.subscriptionId) message.value = normalizeApiErrorMessage(cause, '操作结果暂未确认，请刷新凭证状态。')
+    if (!disposed && id === props.subscriptionId) operationError.value = normalizeApiErrorMessage(cause, '操作结果暂未确认，请刷新凭证状态。')
   } finally { if (!disposed) busy.value = false }
 }
 defineExpose({ busy })
