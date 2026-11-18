@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/adapters/persistence/jobstore"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
@@ -14,6 +15,7 @@ import (
 )
 
 type resourceBatchAdapterStub struct {
+	groupErr      error
 	validationErr error
 	publishErr    error
 	validated     [][]uint
@@ -31,7 +33,7 @@ func (s *resourceBatchAdapterStub) ReconcileBatchNode(_ context.Context, _ netwo
 }
 func (s *resourceBatchAdapterStub) ReconcileBatchNodeGroup(_ context.Context, action network.BatchResourceAction) error {
 	s.groups = append(s.groups, action)
-	return nil
+	return s.groupErr
 }
 func (s *resourceBatchAdapterStub) ValidateBatchProtocolActivation(_ context.Context, ids []uint) error {
 	s.validated = append(s.validated, append([]uint(nil), ids...))
@@ -209,5 +211,110 @@ func TestKernelOfflineArtifactSurvivesPersistedTaskReload(t *testing.T) {
 	altered.KernelArtifactID = "other"
 	if sameBatchResourceAction(action, altered) {
 		t.Fatal("artifact changed without invalidating inspected action")
+	}
+}
+
+type resourceBatchWorker struct {
+	db      *gorm.DB
+	service network.BatchResourceExecution
+}
+
+func (w resourceBatchWorker) ExecuteBatchItem(ctx context.Context, batch jobs.BatchReceipt, item jobs.BatchItem, token string) jobs.BatchItemRunResult {
+	runner := jobs.BatchItemRunner{Repository: jobstore.BatchItems{DB: w.db}, Executor: w}
+	result := runner.Run(ctx, jobs.BatchItemClaim{TaskID: batch.ID, ItemID: item.ID, Token: token})
+	result.Stop = item.TargetType == "node_group" && len(result.Failures) > 0
+	return result
+}
+
+func (w resourceBatchWorker) ExecuteBatchBusiness(ctx context.Context, batch jobs.BatchReceipt, item jobs.BatchItem) error {
+	return w.service.Execute(ctx, network.BatchResourceClaim{TaskID: batch.ID, ItemID: item.ID, Token: batch.LockedBy})
+}
+
+func TestBatchProtocolCopyRequeuesCredentialContentionBeforePublishing(t *testing.T) {
+	db, _ := administrationFixture(t)
+	ctx := t.Context()
+	sourceNode, targetNode, group, _ := seedProtocolEndpointMutationAuthority(t, db)
+	mutations := protocolEndpointMutationService(db)
+	source := protocolEndpointMutationRequest(sourceNode.ID)
+	if _, err := mutations.Save(ctx, 1, nil, source); err != nil {
+		t.Fatal(err)
+	}
+	copyRequest := source
+	copyRequest.Name = source.Name + " copy"
+	copyRequest.NodeID = targetNode.ID
+	copyRequest.MembershipChanges = []network.ProtocolEndpointMembershipChange{{NodeGroupID: group.ID, ExpectedRevision: group.Revision, Member: true}}
+	created, err := mutations.Save(ctx, 1, nil, copyRequest)
+	if err != nil || created.MembershipMutation == nil || len(created.MembershipMutation.ReconcileTasks) != 1 {
+		t.Fatalf("copied protocol did not create its reconciliation task: %+v %v", created, err)
+	}
+	taskID := created.MembershipMutation.ReconcileTasks[0].ID
+	adapter := &resourceBatchAdapterStub{groupErr: network.ErrResourcesBusy}
+	control := jobstore.BatchControl{DB: db}
+	lifecycle := jobs.BatchLifecycle{Repository: jobstore.BatchLifecycle{DB: db}}
+	runner := jobs.BatchRunner{
+		Repository: jobstore.BatchRun{DB: db}, Lifecycle: lifecycle,
+		Executor: resourceBatchWorker{db: db, service: resourceBatchService(db, adapter)},
+	}
+	token, err := control.Claim(ctx, 0, taskID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now().UTC()
+	if err := runner.Run(ctx, taskID, token); err != nil {
+		t.Fatalf("temporary contention became a terminal failure: %v", err)
+	}
+	var task model.Task
+	if err := db.First(&task, taskID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != 0 || task.Attempts != 1 || task.Current != 0 || task.LockedBy != "" || task.LockedUntil != nil || task.ScheduledAt == nil || task.ScheduledAt.Before(began.Add(time.Second-time.Millisecond)) {
+		t.Fatalf("retry not persisted on original task: %+v", task)
+	}
+	if len(adapter.groups) != 1 || len(adapter.published) != 0 {
+		t.Fatal("node publication ran before credential reconciliation")
+	}
+	var items []model.TaskItem
+	if err := db.Where("task_id = ?", taskID).Order("id").Find(&items).Error; err != nil || len(items) != 2 {
+		t.Fatalf("delivery items=%+v error=%v", items, err)
+	}
+	if items[0].Status != 0 || items[0].Attempts != 1 || items[1].Status != 0 || items[1].Attempts != 0 {
+		t.Fatalf("retry progressed the prerequisite or its dependent publication: %+v", items)
+	}
+	if err := runner.Run(ctx, taskID, token); !errors.Is(err, jobs.ErrLeaseLost) {
+		t.Fatalf("released owner ran again: %v", err)
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+waitForRetry:
+	for {
+		select {
+		case <-waitCtx.Done():
+			t.Fatal("worker did not find the original task after backoff", waitCtx.Err())
+		case <-ticker.C:
+			queued, err := lifecycle.Ready(waitCtx, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(queued) == 1 && queued[0] == taskID {
+				break waitForRetry
+			}
+		}
+	}
+	adapter.groupErr = nil
+	retryToken, err := control.Claim(ctx, 0, taskID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Run(ctx, taskID, retryToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&task, taskID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != 2 || task.Attempts != 2 || task.Current != 2 || len(adapter.groups) != 2 || len(adapter.published) != 1 ||
+		adapter.published[0].PublishEndpointID != created.ProtocolEndpoint.ID {
+		t.Fatalf("resumed task=%+v groups=%+v publications=%+v", task, adapter.groups, adapter.published)
 	}
 }

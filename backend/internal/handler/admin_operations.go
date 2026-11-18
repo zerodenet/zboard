@@ -300,9 +300,9 @@ func (h *handlers) executeTaskItemsContext(ctx context.Context, task model.Task,
 		if err := ctx.Err(); err != nil {
 			return append(errorsSeen, err.Error())
 		}
-		failures := h.executeClaimedTaskItemContext(ctx, task, &items[i], lockID)
-		errorsSeen = append(errorsSeen, failures...)
-		if i == 0 && task.Type == taskTypeNodeGroupSync && items[i].TargetType == "node_group" && len(failures) > 0 {
+		itemResult := h.ExecuteBatchItem(ctx, jobs.BatchReceipt{ID: task.ID, Type: task.Type}, jobs.BatchItem{ID: items[i].ID, TargetType: items[i].TargetType}, lockID)
+		errorsSeen = append(errorsSeen, itemResult.Failures...)
+		if itemResult.Requeued || (i == 0 && itemResult.Stop) {
 			return errorsSeen
 		}
 	}
@@ -313,7 +313,7 @@ func (h *handlers) executeClaimedTaskItem(task model.Task, item *model.TaskItem,
 	return h.executeClaimedTaskItemContext(context.Background(), task, item, lockID)
 }
 func (h *handlers) executeClaimedTaskItemContext(ctx context.Context, task model.Task, item *model.TaskItem, lockID string) []string {
-	return h.services.BatchItemRunner(h).Run(ctx, jobs.BatchItemClaim{TaskID: task.ID, ItemID: item.ID, Token: lockID})
+	return h.services.BatchItemRunner(h).Run(ctx, jobs.BatchItemClaim{TaskID: task.ID, ItemID: item.ID, Token: lockID}).Failures
 }
 
 func (h *handlers) finishTask(task model.Task, lockID string, errorsSeen []string) error {

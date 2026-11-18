@@ -18,10 +18,18 @@ type BatchAttempt struct {
 	Item BatchItem
 }
 type BatchItemOutcome struct {
-	Cause    error
-	Message  string
-	Panicked bool
+	Cause      error
+	Message    string
+	Panicked   bool
+	RetryAfter time.Duration
 }
+
+type BatchItemRunResult struct {
+	Failures []string
+	Stop     bool
+	Requeued bool
+}
+
 type BatchItemRepository interface {
 	Begin(context.Context, BatchItemClaim) (BatchAttempt, error)
 	Complete(context.Context, BatchItemClaim, int, BatchItemOutcome) error
@@ -34,7 +42,7 @@ type BatchItemRunner struct {
 	Executor   BatchBusinessExecutor
 }
 
-func (s BatchItemRunner) Run(ctx context.Context, claim BatchItemClaim) (failures []string) {
+func (s BatchItemRunner) Run(ctx context.Context, claim BatchItemClaim) (result BatchItemRunResult) {
 	var attempt *BatchAttempt
 	outcome := BatchItemOutcome{}
 	defer func() {
@@ -43,7 +51,7 @@ func (s BatchItemRunner) Run(ctx context.Context, claim BatchItemClaim) (failure
 		}
 		if attempt == nil {
 			if outcome.Cause != nil {
-				failures = append(failures, fmt.Sprintf("item %d: %s", claim.ItemID, outcome.Cause.Error()))
+				result.Failures = append(result.Failures, fmt.Sprintf("item %d: %s", claim.ItemID, outcome.Cause.Error()))
 			}
 			return
 		}
@@ -55,27 +63,33 @@ func (s BatchItemRunner) Run(ctx context.Context, claim BatchItemClaim) (failure
 					outcome.Message = outcome.Message[:len(outcome.Message)-1]
 				}
 			}
-			if !errors.Is(outcome.Cause, ErrBatchItemSkipped) {
-				failures = append(failures, fmt.Sprintf("item %d: %s", claim.ItemID, outcome.Message))
+			var retryable Retryable
+			if !outcome.Panicked && ctx.Err() == nil && attempt.Task.Attempts < attempt.Task.MaxAttempts && errors.As(outcome.Cause, &retryable) {
+				outcome.RetryAfter = time.Duration(max(1, attempt.Task.Attempts)) * time.Second
+			}
+			if outcome.RetryAfter == 0 && !errors.Is(outcome.Cause, ErrBatchItemSkipped) {
+				result.Failures = append(result.Failures, fmt.Sprintf("item %d: %s", claim.ItemID, outcome.Message))
 			}
 		}
 		finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := s.Repository.Complete(finishCtx, claim, attempt.Item.Attempts, outcome); err != nil {
-			failures = append(failures, fmt.Sprintf("item %d result not committed: %v", claim.ItemID, err))
+			result.Failures = append(result.Failures, fmt.Sprintf("item %d result not committed: %v", claim.ItemID, err))
+		} else if outcome.RetryAfter > 0 {
+			result.Requeued = true
 		}
 	}()
 	if err := ctx.Err(); err != nil {
-		return []string{err.Error()}
+		return BatchItemRunResult{Failures: []string{err.Error()}}
 	}
 	if claim.TaskID == 0 || claim.ItemID == 0 || claim.Token == "" {
-		return []string{ErrLeaseLost.Error()}
+		return BatchItemRunResult{Failures: []string{ErrLeaseLost.Error()}}
 	}
 	current, err := s.Repository.Begin(ctx, claim)
 	if err != nil {
-		return []string{fmt.Sprintf("item %d: %v", claim.ItemID, err)}
+		return BatchItemRunResult{Failures: []string{fmt.Sprintf("item %d: %v", claim.ItemID, err)}}
 	}
 	attempt = &current
 	outcome.Cause = s.Executor.ExecuteBatchBusiness(ctx, current.Task, current.Item)
-	return nil
+	return result
 }

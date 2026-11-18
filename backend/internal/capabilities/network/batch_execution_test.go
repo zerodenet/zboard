@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/zerodenet/zboard/backend/internal/capabilities/jobs"
 )
 
 type batchResourceRepositoryStub struct {
@@ -27,6 +29,7 @@ func (s *batchResourceRepositoryStub) Commit(_ context.Context, claim BatchResou
 }
 
 type batchResourceAdapterStub struct {
+	groupErr      error
 	validationErr error
 	publishErr    error
 	validated     [][]uint
@@ -46,7 +49,7 @@ func (s *batchResourceAdapterStub) ReconcileBatchNode(_ context.Context, action 
 }
 func (s *batchResourceAdapterStub) ReconcileBatchNodeGroup(_ context.Context, action BatchResourceAction) error {
 	s.groups = append(s.groups, action)
-	return nil
+	return s.groupErr
 }
 func (s *batchResourceAdapterStub) ValidateBatchProtocolActivation(_ context.Context, ids []uint) error {
 	s.validated = append(s.validated, ids)
@@ -99,5 +102,22 @@ func TestBatchResourceExecutionDoesNotCommitAfterActivationValidationFailure(t *
 	err := (BatchResourceExecution{Repository: repository, Adapter: adapter}).Execute(context.Background(), BatchResourceClaim{TaskID: 1, ItemID: 2, Token: "lease"})
 	if !errors.Is(err, want) || repository.commits != 0 || len(adapter.published) != 0 {
 		t.Fatalf("validation failure crossed commit boundary: err=%v commits=%d publications=%d", err, repository.commits, len(adapter.published))
+	}
+}
+
+func TestBatchNodeGroupOnlyRetriesKnownCredentialContention(t *testing.T) {
+	for _, target := range []string{"node_group", "node"} {
+		t.Run(target, func(t *testing.T) {
+			repo := &batchResourceRepositoryStub{action: BatchResourceAction{
+				Kind: BatchNodeGroupSync, TargetType: target, NodeID: 3,
+				NodeGroupID: 7, ActorID: 4, TaskItemID: 2, PublishEndpointID: 5,
+			}}
+			adapter := &batchResourceAdapterStub{groupErr: ErrResourcesBusy, publishErr: ErrResourcesBusy}
+			err := (BatchResourceExecution{Repository: repo, Adapter: adapter}).Execute(t.Context(), BatchResourceClaim{TaskID: 1, ItemID: 2, Token: "lease"})
+			var retryable jobs.Retryable
+			if !errors.Is(err, ErrResourcesBusy) || errors.As(err, &retryable) != (target == "node_group") {
+				t.Fatalf("unexpected retry policy for %s: %T %v", target, err, err)
+			}
+		})
 	}
 }
