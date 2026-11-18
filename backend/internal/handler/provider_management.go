@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/application"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"github.com/zerodenet/zboard/backend/internal/plugins"
@@ -383,6 +384,16 @@ func dnsRecordHash(recordType, name, value string, ttl int, proxied bool) string
 }
 
 func (h *handlers) ManagedDNSResolves(ctx context.Context, record network.ManagedDNSRecord) bool {
+	family := "ip4"
+	switch record.RecordType {
+	case "A":
+	case "AAAA":
+		family = "ip6"
+	default:
+		return false
+	}
+	name := strings.TrimSuffix(record.DomainName, ".") + "."
+	expected := net.ParseIP(record.RecordValue)
 	for _, server := range []string{"1.1.1.1:53", "8.8.8.8:53"} {
 		resolver := &net.Resolver{
 			PreferGo: true,
@@ -391,15 +402,14 @@ func (h *handlers) ManagedDNSResolves(ctx context.Context, record network.Manage
 				return dialer.DialContext(ctx, network, server)
 			},
 		}
-		addresses, err := resolver.LookupIPAddr(ctx, record.DomainName)
+		probe, cancel := context.WithTimeout(ctx, 3*time.Second)
+		addresses, err := resolver.LookupIP(probe, family, name)
+		cancel()
 		if err != nil {
 			continue
 		}
-		expected := net.ParseIP(record.RecordValue)
 		for _, address := range addresses {
-			sameFamily := (record.RecordType == "A" && address.IP.To4() != nil) ||
-				(record.RecordType == "AAAA" && address.IP.To4() == nil)
-			if sameFamily && (record.Proxied || address.IP.Equal(expected)) {
+			if record.Proxied || address.Equal(expected) {
 				return true
 			}
 		}
@@ -408,7 +418,12 @@ func (h *handlers) ManagedDNSResolves(ctx context.Context, record network.Manage
 }
 
 func (h *handlers) StartDNSPublicObservationWorker() {
-	h.startScheduledJob("dns_observation", dnsPublicCheckInterval, func(ctx context.Context) error { return h.observePublicDNS(ctx, time.Now().UTC()) })
+	h.startPeriodicJob(application.PeriodicJob{
+		ID: "dns_observation", Name: jobNames["dns_observation"],
+		Interval: dnsPublicCheckInterval, Timeout: 2 * time.Minute, Immediate: true,
+		ReconcileAfterLoss: true, RetryFailures: true, CompactHistory: true,
+		Run: func(ctx context.Context) error { return h.observePublicDNS(ctx, time.Now().UTC()) },
+	})
 }
 
 func (h *handlers) scanDNSPublicObservations(now time.Time) {

@@ -29,7 +29,11 @@
           <td data-column-priority="2"><RouterLink class="table-secondary-text" v-overflow-title="record.node_name || `VPS #${record.node_id}`" :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name || `VPS #${record.node_id}` }}</RouterLink></td>
           <td data-column-priority="2"><TableText :value="record.provider_name" /></td>
           <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error" v-overflow-title="record.last_error">{{ record.last_error }}</small></td>
-          <td data-column-priority="3"><StatusBadge :tone="record.public_resolved ? 'success' : 'warning'">{{ record.public_resolved ? '已观察到' : '自动观察中' }}</StatusBadge></td>
+          <td data-column-priority="3">
+            <StatusBadge v-if="record.public_resolved" tone="success">已观察到</StatusBadge>
+            <span v-else-if="awaitingPublicDNS(record)" class="muted-value">自动核验中</span>
+            <span v-else class="muted-value">—</span>
+          </td>
           <td data-column-priority="2"><TimeBadge v-if="record.last_synced_at" :value="record.last_synced_at" mode="relative" /><span v-else class="muted-value">尚未同步</span></td>
           <td class="table-action-column">
             <RowActions :label="`${record.record_type} ${record.domain_name} 的操作`" :trigger-key="`dns-${record.id}`">
@@ -321,6 +325,9 @@ watch(() => draftApp.user.id, actor => {
   records.value = []; accounts.value = []; total.value = 0; error.value = ''; message.value = ''
 }, { flush: 'sync' })
 
+function awaitingPublicDNS(record: ManagedDNSRecord) {
+  return !record.public_resolved && Boolean(record.last_synced_at) && ['active', 'drifted'].includes(record.status)
+}
 function dnsStatus(status: string) { return ({ pending: '待同步', syncing: '同步中', active: '已同步', drifted: '存在漂移', failed: '同步失败', deleting: '待完成删除' } as Record<string, string>)[status] || status }
 function dnsTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' { return status === 'active' ? 'success' : status === 'failed' ? 'danger' : status === 'syncing' || status === 'drifted' ? 'warning' : 'neutral' }
 function openCreateDNS() { createRecoveryBlocked.value = false; createProviderBaseline.value = undefined; createErrors.clear(); createState.markClean(); dnsOpen.value = true; if (dnsForm.node_id) void loadCreateAddressCandidates() }
@@ -454,7 +461,7 @@ async function createDNS() {
     dnsOpen.value = false
     Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
     resetCreateAddressState()
-    message.value = 'DNS 记录已创建，Cloudflare 同步与公共传播观察正在后台执行。'
+    message.value = 'DNS 记录已创建，同步后会在后台自动核验公共解析。'
     await refreshAll()
   } catch (cause: any) {
     await createErrors.applyApiError(cause, 'DNS 记录创建失败。', createFormElement, {
@@ -573,7 +580,12 @@ onMounted(async () => {
   loading.value = true
   await refreshAll()
   recoveryReady.value = true
-  pollTimer = setInterval(() => { if (records.value.some(item => item.status === 'syncing' || !item.public_resolved)) void refreshAll() }, 5000)
+  pollTimer = setInterval(() => {
+    if (refreshing.value) return
+    if (records.value.some(item => item.status === 'pending' || item.status === 'syncing' || awaitingPublicDNS(item))) {
+      void refreshAll()
+    }
+  }, 5000)
 })
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer)
