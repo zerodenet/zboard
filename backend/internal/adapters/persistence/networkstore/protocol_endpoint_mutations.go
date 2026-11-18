@@ -96,6 +96,7 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 
 		row := protocolEndpointMutationModel(change.Endpoint)
 		if before == nil {
+			row.DeliveryRevision = 1
 			var last model.ProtocolEndpoint
 			result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "sort_order").Order("sort_order desc, id desc").First(&last)
 			if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -118,11 +119,15 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 			row.IsActive = active
 		} else {
 			row.ID, row.SortOrder, row.CreatedAt = previous.ID, previous.SortOrder, previous.CreatedAt
+			row.DeliveryRevision = previous.DeliveryRevision
+			if row.DeliveryRevision != 0 && change.Effects.PublishStatus == network.ProtocolEndpointPublishQueued {
+				row.DeliveryRevision++
+			}
 			if err := validateAndMigrateProtocolEndpointCredentials(tx, previous, row); err != nil {
 				return err
 			}
 			update := tx.Model(&model.ProtocolEndpoint{}).Where("id = ?", previous.ID).
-				Select("node_id", "name", "runtime_key", "protocol", "address", "listen_address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "egress_protocol", "egress_config", "client_config", "optional_config", "tags", "is_active").
+				Select("delivery_revision", "node_id", "name", "runtime_key", "protocol", "address", "listen_address", "port", "public_port", "cipher", "parent_protocol_id", "multiplier_milli", "managed_principal_ready", "mieru_principal_ready", "server_config", "egress_protocol", "egress_config", "client_config", "optional_config", "tags", "is_active").
 				Updates(&row)
 			if update.Error != nil {
 				return update.Error
@@ -138,7 +143,7 @@ func (s ProtocolEndpointMutations) CommitProtocolEndpointMutation(ctx context.Co
 				return err
 			}
 		}
-		membershipMutation, err := applyProtocolEndpointMembershipChanges(tx, admin, row, change)
+		membershipMutation, err := applyProtocolEndpointMembershipChanges(tx, admin, row, change, before == nil)
 		if err != nil {
 			return err
 		}
@@ -423,7 +428,7 @@ func validateProtocolEndpointDeactivation(tx *gorm.DB, endpointID uint, removed 
 	return nil
 }
 
-func applyProtocolEndpointMembershipChanges(tx *gorm.DB, admin model.User, endpoint model.ProtocolEndpoint, change network.ProtocolEndpointMutationChange) (*network.ProtocolEndpointMembershipMutation, error) {
+func applyProtocolEndpointMembershipChanges(tx *gorm.DB, admin model.User, endpoint model.ProtocolEndpoint, change network.ProtocolEndpointMutationChange, creating bool) (*network.ProtocolEndpointMembershipMutation, error) {
 	if len(change.MembershipChanges) == 0 {
 		return nil, nil
 	}
@@ -499,13 +504,15 @@ func applyProtocolEndpointMembershipChanges(tx *gorm.DB, admin model.User, endpo
 		if update.RowsAffected != 1 {
 			return nil, network.ErrProtocolEndpointConflict
 		}
-		receipt, err := persistNodeGroupMutationReconcileTask(tx, admin, *group, []uint{endpoint.ID}, change.CredentialProtocols, change.Now)
-		if err != nil {
-			return nil, err
-		}
-		result.ReconcileTasks = append(result.ReconcileTasks, receipt.BatchReceipt)
-		for _, nodeID := range protocolEndpointReconcileNodeIDs(receipt.BatchReceipt) {
-			affected[nodeID] = true
+		if !creating {
+			receipt, err := persistNodeGroupMutationReconcileTask(tx, admin, *group, []uint{endpoint.ID}, change.CredentialProtocols, change.Now)
+			if err != nil {
+				return nil, err
+			}
+			result.ReconcileTasks = append(result.ReconcileTasks, receipt.BatchReceipt)
+			for _, nodeID := range protocolEndpointReconcileNodeIDs(receipt.BatchReceipt) {
+				affected[nodeID] = true
+			}
 		}
 		if err := tx.Create(&model.AuditLog{UserID: &admin.ID, Actor: admin.Email, Action: "node_group.membership.update", Target: fmt.Sprintf("node_group:%d", group.ID), Detail: fmt.Sprintf("endpoint=%d member=%t revision=%d", endpoint.ID, item.Member, group.Revision)}).Error; err != nil {
 			return nil, err
@@ -513,6 +520,14 @@ func applyProtocolEndpointMembershipChanges(tx *gorm.DB, admin model.User, endpo
 	}
 	if len(result.AddedNodeGroupIDs) == 0 && len(result.RemovedNodeGroupIDs) == 0 {
 		return nil, nil
+	}
+	if creating {
+		receipt, err := persistNewProtocolEndpointDelivery(tx, admin, endpoint, result.AddedNodeGroupIDs, change.Now)
+		if err != nil {
+			return nil, err
+		}
+		result.ReconcileTasks = append(result.ReconcileTasks, receipt.BatchReceipt)
+		affected[endpoint.NodeID] = true
 	}
 	for nodeID := range affected {
 		result.AffectedNodeIDs = append(result.AffectedNodeIDs, nodeID)

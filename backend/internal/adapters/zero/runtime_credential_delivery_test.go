@@ -12,11 +12,14 @@ import (
 func TestRenderedCredentialTargetsBelongToTheExactManagedSnapshot(t *testing.T) {
 	for _, protocol := range []string{"vless", "vmess", "trojan", "hysteria2", "shadowsocks", "mieru"} {
 		t.Run(protocol, func(t *testing.T) {
-			source := network.RuntimeConfigurationEndpoint{ID: 11, NodeID: 7, Protocol: protocol, Port: 443, MieruPrincipalReady: true, ActiveSubscriptionCount: 1, ServerConfig: `enc:{"type":"` + protocol + `","cipher":"aes-128-gcm"}`, Credentials: []network.RuntimeConfigurationCredential{{ID: 21, SubscriptionID: 31, PrincipalKey: "private-opaque-principal", Secret: "enc:private-machine-secret", PolicyRevision: 9}}}
+			source := network.RuntimeConfigurationEndpoint{ID: 11, NodeID: 7, DeliveryRevision: 3, Protocol: protocol, Port: 443, MieruPrincipalReady: true, ActiveSubscriptionCount: 1, ServerConfig: `enc:{"type":"` + protocol + `","cipher":"aes-128-gcm"}`, Credentials: []network.RuntimeConfigurationCredential{{ID: 21, SubscriptionID: 31, PrincipalKey: "private-opaque-principal", Secret: "enc:private-machine-secret", PolicyRevision: 9}}}
 			request := RuntimeConfigurationRenderRequest{NodeID: 7, APIKey: "test-connector", Now: time.Now(), Snapshot: network.RuntimeConfigurationSnapshot{SiteURL: "https://panel.example", Endpoints: []network.RuntimeConfigurationEndpoint{source}}}
 			payload, sha, targets, err := (RuntimeConfigurationRenderer{Cipher: runtimeConfigurationCipher{}}).RenderWithCredentialTargets(request)
 			if err != nil || len(targets.Credentials) != 1 || len(sha) != 64 {
 				t.Fatal(len(targets.Credentials), err)
+			}
+			if targets.ProtocolEndpoints[11] != 3 {
+				t.Fatalf("listener revision is missing from its compiled evidence: %+v", targets.ProtocolEndpoints)
 			}
 			if !strings.Contains(string(payload), "private-machine-secret") {
 				t.Fatal("credential was not rendered")
@@ -40,5 +43,22 @@ func TestRenderedCredentialTargetsBelongToTheExactManagedSnapshot(t *testing.T) 
 				t.Fatal("new material inherited old proof", err)
 			}
 		})
+	}
+}
+
+func TestProtocolEndpointDeliveryTargetsExcludeListenersSkippedByTheRenderer(t *testing.T) {
+	request := RuntimeConfigurationRenderRequest{
+		NodeID: 7, APIKey: "test-connector", Now: time.Now(),
+		Snapshot: network.RuntimeConfigurationSnapshot{
+			SiteURL: "https://panel.example",
+			Endpoints: []network.RuntimeConfigurationEndpoint{
+				{ID: 1, NodeID: 7, Port: 443, DeliveryRevision: 1, Protocol: "hysteria2", ServerConfig: `enc:{"type":"hysteria2"}`},
+				{ID: 2, NodeID: 7, Port: 8443, DeliveryRevision: 1, Protocol: "vless", ServerConfig: `enc:{"type":"vless"}`},
+			},
+		},
+	}
+	_, _, targets, err := (RuntimeConfigurationRenderer{Cipher: runtimeConfigurationCipher{}}).RenderWithCredentialTargets(request)
+	if err != nil || len(targets.ProtocolEndpoints) != 1 || targets.ProtocolEndpoints[2] != 1 {
+		t.Fatalf("wanted only the rendered VLESS listener, got %+v, %v", targets.ProtocolEndpoints, err)
 	}
 }

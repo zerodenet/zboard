@@ -31,6 +31,10 @@ type RuntimeConfigurationRenderer struct {
 }
 
 func (r RuntimeConfigurationRenderer) Render(request RuntimeConfigurationRenderRequest) ([]byte, string, error) {
+	return r.render(request, nil)
+}
+
+func (r RuntimeConfigurationRenderer) render(request RuntimeConfigurationRenderRequest, endpointTargets map[uint]uint64) ([]byte, string, error) {
 	if r.Cipher == nil || request.NodeID == 0 || request.Now.IsZero() {
 		return nil, "", errors.New("Zero runtime configuration renderer is unavailable")
 	}
@@ -74,6 +78,9 @@ func (r RuntimeConfigurationRenderer) Render(request RuntimeConfigurationRenderR
 			return nil, "", fmt.Errorf("compile protocol endpoint %d: %w", endpoint.ID, err)
 		}
 		inbounds = append(inbounds, endpointInbounds...)
+		if endpointTargets != nil && endpoint.DeliveryRevision != 0 && len(endpointInbounds) > 0 {
+			endpointTargets[endpoint.ID] = endpoint.DeliveryRevision
+		}
 		if len(endpointInbounds) > 0 && strings.TrimSpace(endpoint.EgressConfig) != "" {
 			rawEgress, err := r.Cipher.Decrypt(endpoint.EgressConfig)
 			if err != nil {

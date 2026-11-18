@@ -109,7 +109,11 @@ func loadBatchResourceAction(tx *gorm.DB, task model.Task, claim network.BatchRe
 		switch item.TargetType {
 		case "node_group":
 			action.NodeGroupID = uint(targetID)
-			if content.NodeGroupID == 0 || action.NodeGroupID != content.NodeGroupID {
+			if len(content.NodeGroupIDs) == 0 {
+				if action.NodeGroupID != content.NodeGroupID {
+					return network.BatchResourceAction{}, network.ErrBatchResourceInvalid
+				}
+			} else if !slices.Contains(content.NodeGroupIDs, action.NodeGroupID) {
 				return network.BatchResourceAction{}, network.ErrBatchResourceInvalid
 			}
 		case "node":
@@ -174,7 +178,10 @@ func commitProtocolActive(tx *gorm.DB, action network.BatchResourceAction) error
 	if count != int64(len(action.EndpointIDs)) {
 		return errors.New("one or more protocol endpoints no longer belong to this node")
 	}
-	if err := tx.Model(&model.ProtocolEndpoint{}).Where("node_id = ? AND id IN ? AND is_active <> ?", action.NodeID, action.EndpointIDs, action.Active).Update("is_active", action.Active).Error; err != nil {
+	if err := tx.Model(&model.ProtocolEndpoint{}).Where("node_id = ? AND id IN ? AND is_active <> ?", action.NodeID, action.EndpointIDs, action.Active).Updates(map[string]any{
+		"is_active":         action.Active,
+		"delivery_revision": gorm.Expr("CASE WHEN delivery_revision = 0 THEN 0 ELSE delivery_revision + 1 END"),
+	}).Error; err != nil {
 		return err
 	}
 	return createBatchResourceAudit(tx, action, "protocol_endpoint.active.batch", fmt.Sprintf("node:%d", action.NodeID), fmt.Sprintf("active=%t endpoints=%d task_item=%d", action.Active, len(action.EndpointIDs), action.TaskItemID))

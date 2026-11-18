@@ -394,6 +394,7 @@ type CertificateOperation struct {
 // operational host; each host may publish multiple independently configured
 // protocols with different addresses, ports and billing multipliers.
 type ProtocolEndpoint struct {
+	DeliveryRevision      uint64         `json:"-" gorm:"not null;default:0;-:migration"`
 	DeletedAt             gorm.DeletedAt `json:"-"`
 	ID                    uint           `json:"id" gorm:"primaryKey"`
 	NodeID                uint           `json:"node_id" gorm:"index;not null"`
@@ -829,6 +830,8 @@ type AnnouncementRead struct {
 }
 
 type ProtocolDeployment struct {
+	ProtocolEndpointTargets string `json:"-" gorm:"type:text;-:migration"`
+
 	CredentialTargets   string     `json:"-" gorm:"type:text;not null;default:'';-:migration"`
 	ID                  uint       `json:"id" gorm:"primaryKey;index:idx_protocol_deployments_endpoint_latest,priority:2"`
 	ProtocolEndpointID  uint       `json:"protocol_endpoint_id" gorm:"index;index:idx_protocol_deployments_endpoint_latest,priority:1;default:null"`

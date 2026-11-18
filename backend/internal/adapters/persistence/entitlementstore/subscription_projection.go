@@ -63,9 +63,16 @@ func (s SubscriptionProjection) ProjectionData(ctx context.Context, subscription
 	if err := s.DB.WithContext(ctx).Where("id IN ? AND is_active = ?", endpointIDs, true).Order("sort_order asc, id asc").Find(&endpoints).Error; err != nil {
 		return result, err
 	}
+	published, err := publishedProtocolEndpointRevisions(s.DB.WithContext(ctx), endpoints)
+	if err != nil {
+		return result, err
+	}
 	nodeIDs := make([]uint, 0, len(endpoints))
 	seenNode := map[uint]struct{}{}
 	for _, row := range endpoints {
+		if row.DeliveryRevision != 0 && published[row.NodeID][row.ID] != row.DeliveryRevision {
+			continue
+		}
 		result.Endpoints = append(result.Endpoints, entitlements.SubscriptionProjectionEndpoint{
 			ID: row.ID, NodeID: row.NodeID, Name: row.Name, Protocol: row.Protocol, Address: row.Address,
 			ServerConfig: row.ServerConfig, ClientConfig: row.ClientConfig, Tags: row.Tags, Port: row.Port, PublicPort: row.PublicPort,

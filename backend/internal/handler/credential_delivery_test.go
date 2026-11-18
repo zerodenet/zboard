@@ -2,11 +2,17 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/zerodenet/zboard/backend/internal/capabilities/entitlements"
 	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/model"
+	"gorm.io/gorm/clause"
 )
 
 func TestCredentialDeliverySQLiteDoesNotExposeNewPurchaseBeforeItsConfirmation(t *testing.T) {
@@ -150,4 +156,194 @@ func confirmTestCredentialConfiguration(t *testing.T, h *handlers, nodeID uint) 
 	if _, err := state.Complete(ctx, frozen, network.ConfigurationPublicationCompletion{ConfigSHA: sha, LastHealthyAt: now, ManagedPrincipalAccess: true, MieruAccess: true}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestCopiedProtocolDeliverySQLiteWaitsForMatchingConfiguration(t *testing.T) {
+	assertCopiedProtocolDelivery(t, newOrderFixture(t))
+}
+
+func TestCopiedProtocolDeliveryMySQLWaitsForMatchingConfiguration(t *testing.T) {
+	assertCopiedProtocolDelivery(t, newMySQLBusinessOrderFixture(t))
+}
+
+func assertCopiedProtocolDelivery(t *testing.T, f orderFixture) {
+	t.Helper()
+	ctx := t.Context()
+	now := time.Now().UTC()
+	old := attachOrderPublishEndpoint(t, f)
+	config, err := f.h.credentialCipher.Encrypt(`{"type":"vless","users":[]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.db.Model(&old).Update("server_config", config).Error; err != nil {
+		t.Fatal(err)
+	}
+	paid := f.paid(t, f.create(t, 0).ID)
+	var sub model.Subscription
+	if err := f.h.db.First(&sub, paid.SubscriptionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	confirmTestCredentialConfiguration(t, f.h, old.NodeID)
+	target := model.Node{Name: "protocol-copy-target", Address: "192.0.2.20", IsEnabled: true, LastSeenAt: &now, Config: "{}"}
+	if err := f.h.db.Create(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := f.h.services.ProtocolEndpointMutations(f.h.credentialCipher)
+	source := network.ProtocolEndpointMutationRequest{
+		NodeID: old.NodeID, Name: "Trojan original", Protocol: "trojan", Address: "192.0.2.11", Port: 8443, PublicPort: 8443,
+		MultiplierMilli: 1000, ServerConfig: `{"type":"trojan","users":[]}`,
+		ClientConfig: `{"type":"trojan","server":"192.0.2.11","port":8443}`, CredentialProtocols: []string{"trojan"},
+	}
+	if _, err := service.Save(ctx, 1, nil, source); err != nil {
+		t.Fatal(err)
+	}
+	copyRequest := source
+	copyRequest.NodeID, copyRequest.Name, copyRequest.Address = target.ID, "Trojan copy", target.Address
+	copyRequest.ClientConfig = `{"type":"trojan","server":"192.0.2.20","port":8443}`
+	copyRequest.MembershipChanges = []network.ProtocolEndpointMembershipChange{{NodeGroupID: f.group.ID, ExpectedRevision: f.group.Revision, Member: true}}
+	created, err := service.Save(ctx, 1, nil, copyRequest)
+	if err != nil || created.MembershipMutation == nil {
+		t.Fatalf("copy did not persist its node-group delivery task: %v", err)
+	}
+	endpointID := created.ProtocolEndpoint.ID
+	assertProjection := func(stage string, wantCopy bool) {
+		t.Helper()
+		rows, err := f.h.buildProjectedSubscriptionManifestNodes(ctx, []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var oldVisible, copyVisible bool
+		for _, endpoint := range rows {
+			oldVisible = oldVisible || endpoint.ID == old.ID
+			copyVisible = copyVisible || endpoint.ID == endpointID
+		}
+		if !oldVisible || copyVisible != wantCopy {
+			t.Fatalf("%s: old=%t copy=%t, want copied visible=%t", stage, oldVisible, copyVisible, wantCopy)
+		}
+	}
+	assertProjection("saved with a pre-existing node heartbeat", false)
+	if f.h.db.Dialector.Name() == "mysql" {
+		lock := f.h.db.WithContext(ctx).Begin()
+		if lock.Error != nil {
+			t.Fatal(lock.Error)
+		}
+		defer lock.Rollback()
+		var locked model.ProtocolEndpoint
+		if err := lock.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&locked, endpointID).Error; err != nil {
+			t.Fatal(err)
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		busy := f.h.reconcileNodeGroupCredentialsContext(probeCtx, f.group.ID)
+		cancel()
+		if !errors.Is(busy, network.ErrResourcesBusy) {
+			t.Fatalf("holding the new endpoint row did not produce a retryable group conflict: %v", busy)
+		}
+		if err := lock.Rollback().Error; err != nil {
+			t.Fatal(err)
+		}
+		assertProjection("MySQL credential preparation was blocked by the endpoint lock", false)
+	}
+
+	if err := f.h.reconcileNodeGroupCredentialsContext(ctx, f.group.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertProjection("group credentials prepared", false)
+	customization, err := json.Marshal(defaultSubscriptionCustomization(subscriptionRendererZnetSink))
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := model.SubscriptionTemplate{
+		Name: "ZNet Sink", Slug: subscriptionRendererZnetSink, Renderer: subscriptionRendererZnetSink,
+		Customization: customization, IsActive: true, Revision: 1,
+	}
+	if err := f.h.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "slug"}},
+		DoUpdates: clause.AssignmentColumns([]string{"is_active", "customization"}),
+	}).Create(&template).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertConnect := func(wantCopy bool) {
+		t.Helper()
+		summary := entitlements.SubscriptionSummary{
+			ID: sub.ID, UserID: sub.UserID, PlanID: sub.PlanID, PlanSKUID: sub.PlanSKUID,
+			NodeGroupID: sub.NodeGroupID, Status: sub.Status, EndAt: sub.EndAt, FlowTotal: sub.FlowTotal,
+		}
+		projected, err := f.h.ProjectPluginSubscription(ctx, summary, subscriptionRendererZnetSink, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(projected.Content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(decoded), target.Address) != wantCopy {
+			t.Fatalf("Connect returned mismatched copy visibility, want visible=%t", wantCopy)
+		}
+	}
+	assertConnect(false)
+	state := f.h.services.ConfigurationPublicationState()
+	freeze := func(revision uint64) network.ConfigurationDeployment {
+		t.Helper()
+		_, sha, targets, err := f.h.compileNodeRuntimeConfigWithCredentialTargets(ctx, target, "test-connector", "", false)
+		if err != nil || targets.ProtocolEndpoints[endpointID] != revision {
+			t.Fatalf("actual compiler did not capture revision %d: targets=%+v error=%v", revision, targets.ProtocolEndpoints, err)
+		}
+		start, err := state.Begin(ctx, network.ConfigurationPublicationRequest{NodeID: target.ID, TriggerEndpointID: endpointID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		deployment, err := state.SetDesiredWithTargets(ctx, start.Deployment, sha, targets)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return deployment
+	}
+	complete := func(deployment network.ConfigurationDeployment) {
+		t.Helper()
+		_, err := state.Complete(ctx, deployment, network.ConfigurationPublicationCompletion{
+			ConfigSHA: deployment.DesiredConfigSHA256, LastHealthyAt: now, ManagedPrincipalAccess: true, MieruAccess: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	failure := errors.New("target failed to apply config")
+	if _, err := state.Fail(ctx, freeze(1), failure, ""); !errors.Is(err, failure) {
+		t.Fatal(err)
+	}
+	assertProjection("publication failed", false)
+
+	lostAck := network.ConfigurationOutcomeUnknown(errors.New("lost acknowledgement"))
+	unconfirmed, err := state.Uncertain(ctx, freeze(1), lostAck, "")
+	if !errors.Is(err, lostAck) {
+		t.Fatal(err)
+	}
+	assertProjection("acknowledgement lost", false)
+	if err := state.Resolve(ctx, unconfirmed, false, "config was not applied"); err != nil {
+		t.Fatal(err)
+	}
+	assertProjection("kernel confirmed config was not applied", false)
+
+	stale := freeze(1)
+	snapshot, err := service.Load(ctx, 1, endpointID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyRequest.ID = endpointID
+	copyRequest.MembershipChanges = nil
+	copyRequest.Port = 9443
+	if _, err := service.Save(ctx, 1, &snapshot, copyRequest); err != nil {
+		t.Fatal(err)
+	}
+	complete(stale)
+	assertProjection("kernel acknowledgement for previous listener", false)
+
+	if err := f.h.reconcileNodeGroupCredentialsContext(ctx, f.group.ID); err != nil {
+		t.Fatal(err)
+	}
+	complete(freeze(2))
+	assertProjection("kernel acknowledged the current listener", true)
+	assertConnect(true)
 }

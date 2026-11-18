@@ -63,6 +63,9 @@ func runSQLiteMigrations(db *gorm.DB) error {
 	if err := reconcileSQLiteOperationalTables(db); err != nil {
 		return err
 	}
+	if err := reconcileProtocolEndpointDeliverySchema(db); err != nil {
+		return err
+	}
 	payload, err := migrations.Files.ReadFile("sqlite/0002_plugins.sql")
 	if err != nil {
 		return err

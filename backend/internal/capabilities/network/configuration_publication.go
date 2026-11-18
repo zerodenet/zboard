@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -56,11 +57,18 @@ type ConfigurationPublicationCompletion struct {
 	SuppressMieruFallback  bool
 }
 
+// Both manifests belong to the frozen deployment. Keep the credential wire
+// format intact so earlier deployments remain readable during recovery.
+type ConfigurationPublicationManifest struct {
+	CredentialTargets       string
+	ProtocolEndpointTargets string
+}
+
 type ConfigurationPublicationRepository interface {
 	BeginConfigurationPublication(context.Context, ConfigurationPublicationRequest, time.Time) (ConfigurationPublicationStart, error)
 	UncertainConfigurationPublication(context.Context, ConfigurationDeployment, string, string, time.Time) (ConfigurationDeployment, error)
 	ResolveConfigurationPublication(context.Context, ConfigurationDeployment, bool, string, time.Time) error
-	SetConfigurationPublicationDesired(context.Context, ConfigurationDeployment, string, ...string) (ConfigurationDeployment, error)
+	SetConfigurationPublicationDesired(context.Context, ConfigurationDeployment, string, ...ConfigurationPublicationManifest) (ConfigurationDeployment, error)
 	ActivateConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelEncryptedCredential) error
 	RestoreConfigurationConnectorCredential(context.Context, ConfigurationDeployment, KernelConnectorSnapshot) error
 	CompleteConfigurationPublication(context.Context, ConfigurationDeployment, ConfigurationPublicationCompletion, time.Time) (ConfigurationDeployment, error)
@@ -92,7 +100,7 @@ func (s ConfigurationPublicationState) SetDesired(ctx context.Context, deploymen
 		if err != nil {
 			return ConfigurationDeployment{}, err
 		}
-		return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), manifest)
+		return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), ConfigurationPublicationManifest{CredentialTargets: manifest})
 	}
 	return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA))
 }
@@ -105,7 +113,15 @@ func (s ConfigurationPublicationState) SetDesiredWithTargets(ctx context.Context
 	if err != nil {
 		return ConfigurationDeployment{}, err
 	}
-	return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), manifest)
+	publication := ConfigurationPublicationManifest{CredentialTargets: manifest}
+	if len(targets.ProtocolEndpoints) != 0 {
+		encoded, err := json.Marshal(targets.ProtocolEndpoints)
+		if err != nil {
+			return ConfigurationDeployment{}, err
+		}
+		publication.ProtocolEndpointTargets = string(encoded)
+	}
+	return s.Repository.SetConfigurationPublicationDesired(ctx, deployment, strings.TrimSpace(configSHA), publication)
 }
 
 func (s ConfigurationPublicationState) ActivateConnectorCredential(ctx context.Context, deployment ConfigurationDeployment, credential KernelEncryptedCredential) error {
