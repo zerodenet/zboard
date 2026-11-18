@@ -142,7 +142,13 @@ func (s BatchResourceExecution) Execute(ctx context.Context, claim BatchResource
 		return s.Adapter.ReconcileBatchNode(ctx, action)
 	case BatchNodeGroupSync:
 		if action.TargetType == "node_group" {
-			return s.Adapter.ReconcileBatchNodeGroup(ctx, action)
+			err := s.Adapter.ReconcileBatchNodeGroup(ctx, action)
+			// Credential reconciliation uses fresh, repeat-safe DB transactions.
+			// Remote node publication below has separate outcome handling.
+			if errors.Is(err, ErrResourcesBusy) {
+				return jobs.Retry(err)
+			}
+			return err
 		}
 		return s.Adapter.PublishBatchNodeConfig(ctx, action)
 	}

@@ -24,7 +24,7 @@ func TestProtocolListenAddressPersistsPublishesAndSurvivesLegacyUpdate(t *testin
 	}
 	payload := map[string]interface{}{
 		"node_id": node.ID, "name": "listener", "protocol": "vless", "address": "public.example",
-		"listen_address": "[::]", "port": 1443, "public_port": 8443, "multiplier_milli": 1000, "is_active": true,
+		"port": 1443, "public_port": 8443, "multiplier_milli": 1000, "is_active": true,
 		"config": `{"type":"vless","users":[]}`, "client_config": `{"type":"vless","server":"public.example","port":8443}`,
 		"optional_config": "{}", "tags": "[]",
 	}
@@ -51,7 +51,7 @@ func TestProtocolListenAddressPersistsPublishesAndSurvivesLegacyUpdate(t *testin
 	created := save(0)
 	id := created.ProtocolEndpoint.ID
 	if id == 0 || created.ProtocolEndpoint.ListenAddress != "::" || created.PublishStatus != "queued" {
-		t.Fatalf("create lost listener: %+v", created)
+		t.Fatalf("create did not default to the IPv6 wildcard: %+v", created)
 	}
 	var detail protocolEndpointAdminDetail
 	f.get(t, fmt.Sprintf("/api/v1/admin/protocol-endpoints/%d", id), true, f.h.ProtocolEndpointDetailHandler, &detail)
@@ -80,7 +80,6 @@ func TestProtocolListenAddressPersistsPublishesAndSurvivesLegacyUpdate(t *testin
 		t.Fatalf("published wrong listener: %s %v", rendered, err)
 	}
 	// Updating through an older client must not reset an explicitly selected IPv6 bind.
-	delete(payload, "listen_address")
 	payload["name"] = "renamed"
 	updated := save(id)
 	if updated.ProtocolEndpoint.ListenAddress != "::" || updated.PublishStatus != "not_required" {

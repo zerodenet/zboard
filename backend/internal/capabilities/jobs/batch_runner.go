@@ -16,7 +16,7 @@ type BatchRunRepository interface {
 }
 type BatchItemExecutor interface {
 	// The business adapter may stop dependent targets after a failed prerequisite.
-	ExecuteBatchItem(context.Context, BatchReceipt, BatchItem, string) ([]string, bool)
+	ExecuteBatchItem(context.Context, BatchReceipt, BatchItem, string) BatchItemRunResult
 }
 type BatchRunner struct {
 	Repository BatchRunRepository
@@ -55,12 +55,18 @@ func (s BatchRunner) Run(ctx context.Context, id uint, token string) (result err
 		}
 	}()
 	failures := []string{}
+	requeued := false
 	defer func() {
 		if recover() != nil {
 			failures = append(failures, "task executor panicked; review operation results before retry")
 		}
 		cancel()
 		<-done
+		if requeued {
+			// The item completion has already released the lease and persisted
+			// the next schedule on the original task.
+			return
+		}
 		select {
 		case err := <-heartbeat:
 			failures = append(failures, err.Error())
@@ -80,9 +86,13 @@ func (s BatchRunner) Run(ctx context.Context, id uint, token string) (result err
 			failures = append(failures, err.Error())
 			break
 		}
-		itemFailures, stop := s.Executor.ExecuteBatchItem(runCtx, batch.Task, item, token)
-		failures = append(failures, itemFailures...)
-		if stop {
+		itemResult := s.Executor.ExecuteBatchItem(runCtx, batch.Task, item, token)
+		if itemResult.Requeued {
+			requeued = true
+			return nil
+		}
+		failures = append(failures, itemResult.Failures...)
+		if itemResult.Stop {
 			break
 		}
 	}

@@ -347,7 +347,7 @@ func (s ManagedDNS) FailManagedDNS(ctx context.Context, execution network.Manage
 	})
 }
 
-func (s ManagedDNS) CompleteManagedDNS(ctx context.Context, execution network.ManagedDNSExecution, result network.ManagedDNSProviderResult, publicResolved bool) error {
+func (s ManagedDNS) CompleteManagedDNS(ctx context.Context, execution network.ManagedDNSExecution, result network.ManagedDNSProviderResult) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var operation model.ProviderOperation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&operation, execution.Operation.ID).Error; err != nil {
@@ -369,7 +369,7 @@ func (s ManagedDNS) CompleteManagedDNS(ctx context.Context, execution network.Ma
 			status = network.ManagedDNSDrifted
 		}
 		now := time.Now().UTC()
-		if err := tx.Model(&record).Updates(map[string]any{"provider_zone_id": result.ZoneID, "provider_record_id": result.RecordID, "observed_hash": observed, "status": status, "last_synced_at": now, "last_public_check_at": now, "public_resolved": publicResolved, "last_error": ""}).Error; err != nil {
+		if err := tx.Model(&record).Updates(map[string]any{"provider_zone_id": result.ZoneID, "provider_record_id": result.RecordID, "observed_hash": observed, "status": status, "last_synced_at": now, "last_public_check_at": nil, "public_resolved": false, "last_error": ""}).Error; err != nil {
 			return err
 		}
 		summary := fmt.Sprintf("%s %s -> %s", record.RecordType, record.DomainName, record.RecordValue)
@@ -390,12 +390,18 @@ func (s ManagedDNS) ListManagedDNSObservations(ctx context.Context, now time.Tim
 	return out, nil
 }
 
-func (s ManagedDNS) RecordManagedDNSObservation(ctx context.Context, id uint, checkedAt time.Time, resolved bool) error {
+func (s ManagedDNS) RecordManagedDNSObservation(ctx context.Context, record network.ManagedDNSRecord, checkedAt time.Time, resolved bool) error {
 	updates := map[string]any{"last_public_check_at": checkedAt}
 	if resolved {
 		updates["public_resolved"] = true
 	}
-	return s.DB.WithContext(ctx).Model(&model.ManagedDNSRecord{}).Where("id = ? AND public_resolved = ?", id, false).Updates(updates).Error
+	// Observation runs outside the transaction. It only attests to the revision
+	// and provider synchronization that were current when the query started.
+	return s.DB.WithContext(ctx).Model(&model.ManagedDNSRecord{}).
+		Where("id = ? AND revision = ? AND desired_hash = ? AND last_synced_at = ?", record.ID, record.Revision, record.DesiredHash, record.LastSyncedAt).
+		Where("public_resolved = ? AND status IN ?", false, []string{network.ManagedDNSActive, network.ManagedDNSDrifted}).
+		Where("last_public_check_at IS NULL OR last_public_check_at <= ?", checkedAt).
+		Updates(updates).Error
 }
 
 func lockManagedDNSDependencies(tx *gorm.DB, providerID, nodeID uint) error {

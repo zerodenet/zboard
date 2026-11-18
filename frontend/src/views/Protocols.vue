@@ -4,7 +4,7 @@
       <template #actions>
         <PageRefreshButton label="刷新协议服务" :loading="loading" @click="refresh()" />
         <UiButton variant="ghost" type="button" data-testid="protocol-delivery-order" :aria-pressed="orderingOpen" @click="orderingOpen ? closeOrdering() : openOrdering()"><UiIcon name="sort" />{{ orderingOpen ? '退出排序' : '调整展示顺序' }}</UiButton>
-        <UiButton type="button" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
+        <UiButton type="button" data-testid="protocol-create" @click="serviceTypeOpen = true"><UiIcon name="plus" />创建协议服务</UiButton>
       </template>
     </PageHeader>
     <NodeSetupGuide />
@@ -32,7 +32,7 @@
     </ModalDialog>
     <NetworkEntries ref="forwardServices" embedded editor-only @saved="refresh()" />
     <ModalDialog :open="serviceTypeOpen" title="创建协议服务" @close="serviceTypeOpen=false">
-      <div class="stack"><p>选择服务接入方式。</p><UiButton variant="secondary" @click="createService('listener')">实际协议监听</UiButton><p>在承载节点上运行协议，处理客户端握手和认证。</p><UiButton variant="secondary" @click="createService('forward')">前置端口转发</UiButton><p>复用现有父协议，可登记外部转发地址，也可由面板托管入口服务器的 Zero 转发。</p></div>
+      <div class="stack"><UiButton variant="secondary" @click="createService('listener')">实际协议监听</UiButton><p class="protocol-form-note">在 VPS 上运行协议服务。</p><UiButton variant="secondary" @click="createService('forward')">前置端口转发</UiButton><p class="protocol-form-note">将入口流量转发到现有协议服务。</p></div>
     </ModalDialog>
     <div class="protocol-listener-content">
     <PageAlert v-if="protocolDraftRecovery.message.value" tone="info" title="登录后草稿恢复">{{ protocolDraftRecovery.message.value }}</PageAlert>
@@ -177,38 +177,63 @@
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" :disabled="usageResetSaving" @click="requestClose">取消</UiButton><UiButton type="button" :disabled="!usageResetReason.trim()" :loading="usageResetSaving" @click="saveUsageReset">确认重置</UiButton></template>
     </ModalDialog>
 
-    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑协议服务' : copySourceID ? '复制协议配置' : '创建协议服务'" :description="form.id ? '协议配置可切换承载 VPS；保存前会校验凭证、端口和完整配置。' : copySourceID ? '已复制原服务配置为独立草稿，可更换节点、入口和名称后保存。' : '跟随步骤完成节点、连接参数和配置确认。'" size="xl" :busy="saving" @close="closeEditor">
+    <ModalDialog :open="editorOpen" :dirty="editorState.dirty.value" :title="form.id ? '编辑协议服务' : copySourceID ? '复制协议配置' : '创建协议服务'" presentation="sheet" size="lg" :busy="saving" :return-focus-selector="!form.id && !copySourceID ? '[data-testid=protocol-create]' : undefined" @close="closeEditor">
       <form id="protocol-form" ref="protocolFormElement" class="protocol-editor" novalidate @submit.prevent="save">
         <UiStepNav :steps="wizardSteps" :current="editorStep" :max-step="form.id ? 3 : editorStep" label="协议服务配置步骤" @select="goToStep" />
-        <PageAlert v-if="editorErrors.formError.value || editorError" tone="danger" title="无法保存协议服务">{{ editorErrors.formError.value || editorError }}
-          <ul v-if="Object.keys(editorErrors.fields).length"><li v-for="(reason, field) in editorErrors.fields" :key="field">{{ reason }}</li></ul>
-        </PageAlert>
+        <PageAlert v-if="editorErrors.formError.value || editorError" tone="danger" :title="editorErrors.formError.value || editorError" />
         <PageAlert v-if="!selectedProtocolCapability.supported" tone="warning" title="当前内核不支持所选协议">
           {{ selectedProtocolCapability.reason }}<template v-if="form.id"> 此历史记录只能在关闭“启用服务”后保存，以便从节点配置中移除。</template>
         </PageAlert>
 
         <section v-if="editorStep === 1" class="wizard-panel">
-          <header class="wizard-heading"><span><UiIcon name="nodes" /></span><div><h3>选择承载节点和对外入口</h3><p>选择 VPS 后会自动使用节点资产中维护的默认对外地址，仍可在这里改成域名或其他入口地址。</p></div></header>
-          <div class="guided-grid">
-            <FormField v-slot="{ controlAttrs }" label="承载 VPS" name="protocol-node" hint="配置本身可复用；保存为运行实例时选择承载节点，编辑后也可安全切换。" :error="editorErrors.fields.node_id" required full><NodeLookup v-model="form.node_id" v-bind="controlAttrs" @select="handleNodeSelect" /></FormField>
-            <div v-if="selectedNode" class="selected-node-card field-full"><span class="protocol-icon"><UiIcon name="nodes" /></span><div><strong>{{ selectedNode.name }}</strong><p>{{ selectedNode.region || '未设置区域' }} · {{ selectedNode.address || '节点资产中还没有默认对外地址' }}</p></div><StatusBadge :tone="selectedNode.is_enabled ? 'success' : 'warning'">{{ selectedNode.is_enabled ? '可用' : '已停用' }}</StatusBadge></div>
-            <FormField v-slot="{ controlAttrs }" label="协议类型" name="protocol-type" :hint="form.id ? '已创建服务不直接切换协议，避免破坏现有用户凭证；如需更换请创建新服务。' : ''" :error="editorErrors.fields.protocol" required><UiSelect v-model="form.protocol" v-bind="controlAttrs" :options="protocolOptions" :disabled="Boolean(form.id)" @change="handleProtocolChange" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="服务名称" name="protocol-name" :error="editorErrors.fields.name" required><UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="例如：香港 VLESS 01" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="对外地址" name="protocol-address" :hint="selectedNode?.address ? `已从 ${selectedNode.name} 自动带出，可按实际入口修改。` : '当前节点没有默认地址，请填写客户端可访问的域名或公网 IP。'" :error="editorErrors.fields.address" required full><div class="input-with-action"><UiInput v-model.trim="form.address" v-bind="controlAttrs" placeholder="域名或公网 IP" /><UiButton v-if="selectedNode?.address && form.address !== selectedNode.address" type="button" @click="useNodeAddress">使用节点地址</UiButton></div></FormField>
-            <FormField v-slot="{ controlAttrs }" label="监听地址" name="protocol-listen-address" hint="填写 VPS 本地 IP；0.0.0.0 监听 IPv4，:: 监听 IPv6。IPv6 通配是否同时接收 IPv4 取决于节点系统设置。" :error="editorErrors.fields.listen_address" required full><UiInput v-model.trim="form.listen_address" v-bind="controlAttrs" placeholder="0.0.0.0 或 ::" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="服务监听端口" name="protocol-port" hint="Zero 在 VPS 上实际监听的端口；保存后会同步凭证并发布节点配置。" :error="editorErrors.fields.port" required><PortInput v-model="form.port" v-bind="controlAttrs" /></FormField>
-            <FormField v-slot="{ controlAttrs }" label="客户端连接端口" name="protocol-public-port" hint="存在端口转发时可与监听端口不同；变更后用户需要更新订阅配置。" :error="editorErrors.fields.public_port" required><PortInput v-model="form.public_port" v-bind="controlAttrs" /></FormField>
-          </div>
+          <section class="protocol-form-section" aria-labelledby="protocol-service-heading">
+            <h3 id="protocol-service-heading">服务信息</h3>
+            <div class="form-grid">
+              <FormField v-slot="{ controlAttrs }" label="承载 VPS" name="protocol-node" :hint="form.id ? '协议配置可切换承载 VPS。' : ''" :error="editorErrors.fields.node_id" required full>
+                <NodeLookup v-model="form.node_id" v-bind="controlAttrs" @select="handleNodeSelect" />
+              </FormField>
+              <PageAlert v-if="selectedNode?.is_enabled === false" class="field-full" tone="warning" title="所选 VPS 已停用" />
+              <FormField v-slot="{ controlAttrs }" label="协议类型" name="protocol-type" :hint="form.id ? '创建新服务可使用其他协议。' : ''" :error="editorErrors.fields.protocol" required>
+                <UiSelect v-model="form.protocol" v-bind="controlAttrs" :options="protocolOptions" :disabled="Boolean(form.id)" @change="handleProtocolChange" />
+              </FormField>
+              <FormField v-slot="{ controlAttrs }" label="服务名称" name="protocol-name" :error="editorErrors.fields.name" required>
+                <UiInput v-model.trim="form.name" v-bind="controlAttrs" placeholder="例如香港 VLESS 01" />
+              </FormField>
+            </div>
+          </section>
+          <section class="protocol-form-section" aria-labelledby="protocol-public-heading">
+            <h3 id="protocol-public-heading">对外入口</h3>
+            <div class="form-grid">
+              <FormField v-slot="{ controlAttrs }" label="对外地址" name="protocol-address" :error="editorErrors.fields.address" required>
+                <div class="input-with-action">
+                  <UiInput v-model.trim="form.address" v-bind="controlAttrs" autocapitalize="off" spellcheck="false" placeholder="客户端使用的域名或公网 IP" />
+                  <UiButton v-if="selectedNode?.address && form.address !== selectedNode.address" variant="secondary" type="button" @click="useNodeAddress">使用节点地址</UiButton>
+                </div>
+              </FormField>
+              <FormField v-slot="{ controlAttrs }" label="客户端连接端口" name="protocol-public-port" :error="editorErrors.fields.public_port" required>
+                <PortInput v-model="form.public_port" v-bind="controlAttrs" />
+              </FormField>
+            </div>
+          </section>
+          <section class="protocol-form-section" aria-labelledby="protocol-listen-heading">
+            <h3 id="protocol-listen-heading">VPS 监听</h3>
+            <div class="form-grid">
+              <FormField v-slot="{ controlAttrs }" label="监听地址" name="protocol-listen-address" :hint="form.listen_address === '::' ? '使用 IPv6 通配地址。能否同时接收 IPv4 由 VPS 的系统设置决定。' : ''" :error="editorErrors.fields.listen_address" required>
+                <UiInput v-model.trim="form.listen_address" v-bind="controlAttrs" autocapitalize="off" spellcheck="false" placeholder="::" />
+              </FormField>
+              <FormField v-slot="{ controlAttrs }" label="服务监听端口" name="protocol-port" :error="editorErrors.fields.port" required>
+                <PortInput v-model="form.port" v-bind="controlAttrs" />
+              </FormField>
+            </div>
+          </section>
         </section>
 
         <section v-else-if="editorStep === 2" class="wizard-panel">
-          <header class="wizard-heading"><span><UiIcon name="key" /></span><div><h3>设置 {{ protocolLabel(form.protocol) }} 服务参数</h3><p>这里只设置服务能力；用户凭证由订阅开通流程自动生成并关联。</p></div></header>
-          <div class="guided-grid">
-            <div v-if="usesManagedCredentials" class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>用户凭证按订阅生成</strong><p>每个订阅在这个服务上拥有独立凭证和稳定归属标识；Shadowsocks 同时分配独立 UDP/TCP 端口，客户端与服务端只共享该订阅自己的 PSK。</p></div></div>
-            <template v-else-if="form.protocol !== 'mieru'">
-              <FormField v-slot="{ controlAttrs }" label="连接密码" name="protocol-password" :error="editorErrors.fields['structured.password']" full required><div class="input-with-action"><UiInput v-model="structured.password" v-bind="controlAttrs" type="password" autocomplete="new-password" /><UiButton type="button" @click="structured.password = randomSecret()">重新生成</UiButton></div></FormField>
+          <div class="form-grid">
+            <template v-if="!usesManagedCredentials && form.protocol !== 'mieru'">
+              <FormField v-slot="{ controlAttrs }" label="连接密码" name="protocol-password" :error="editorErrors.fields['structured.password']" full required><div class="input-with-action"><UiInput v-model="structured.password" v-bind="controlAttrs" type="password" autocomplete="new-password" /><UiButton variant="secondary" type="button" @click="structured.password = randomSecret()">重新生成</UiButton></div></FormField>
             </template>
-            <div v-else class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>Mieru 凭据由系统生成</strong><p>创建时自动生成端点凭据并加密保存；订阅输出会自动补齐连接参数，不需要手工维护用户名或密码。</p></div></div>
+            <p v-else class="protocol-form-note field-full">用户凭证由订阅自动生成。</p>
             <FormField v-if="form.protocol === 'vmess'" v-slot="{ controlAttrs }" label="VMess 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="vmessCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'shadowsocks'" v-slot="{ controlAttrs }" label="Shadowsocks 加密方式"><UiSelect v-model="structured.cipher" v-bind="controlAttrs" :options="shadowsocksCipherOptions" /></FormField>
             <FormField v-if="form.protocol === 'vless'" v-slot="{ controlAttrs }" label="传输安全"><UiSelect v-model="structured.security" v-bind="controlAttrs" :options="securityOptions" /></FormField>
@@ -216,7 +241,7 @@
             <FormField v-if="supportsSelectableTransport && structured.transport === 'ws'" v-slot="{ controlAttrs }" label="WebSocket 路径" name="protocol-transport-path" :error="editorErrors.fields['structured.transport_path']" required><UiInput v-model.trim="structured.transport_path" v-bind="controlAttrs" placeholder="/proxy" /></FormField>
             <FormField v-if="supportsSelectableTransport && structured.transport === 'grpc'" v-slot="{ controlAttrs }" label="gRPC Service Name" name="protocol-grpc-service-name" :error="editorErrors.fields['structured.grpc_service_name']" required><UiInput v-model.trim="structured.grpc_service_name" v-bind="controlAttrs" placeholder="zboard" /></FormField>
             <template v-if="form.protocol === 'vless' && structured.security === 'reality'">
-              <div class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>VLESS + Reality</strong><p>面板生成匹配的 X25519 密钥与 short ID；私钥仅进入加密保存的服务端配置，订阅只下发公钥。</p></div><UiButton variant="secondary" type="button" :loading="realityKeyBusy" @click="regenerateRealityKeys">重新生成密钥</UiButton></div>
+              <div class="field-full"><UiButton variant="secondary" type="button" :loading="realityKeyBusy" @click="regenerateRealityKeys">重新生成密钥</UiButton></div>
               <FormField v-slot="{ controlAttrs }" label="一键场景模板" hint="模板填入预设 SNI、客户端指纹及新密钥；域名是否适合当前 VPS，可用下方在线探测确认。" full><div class="input-with-action"><UiSelect v-model="realityPreset" v-bind="controlAttrs" :options="realityPresetOptions" /><UiButton variant="secondary" type="button" :loading="realityTemplateBusy" @click="applyRealityTemplate">应用模板</UiButton></div></FormField>
               <FormField v-slot="{ controlAttrs }" label="伪装域名（SNI）" name="protocol-reality-server-name" :error="editorErrors.fields['structured.reality_server_name']" required><div class="input-with-action"><UiInput v-model.trim="structured.reality_server_name" v-bind="controlAttrs" placeholder="输入域名或从 VPS 探测选择" /><UiButton variant="secondary" :disabled="!form.node_id" @click="realityProbeOpen = !realityProbeOpen">探测伪装域名</UiButton></div></FormField>
               <RealityDomainProbe v-if="realityProbeOpen" class="field-full" :node-id="form.node_id" :node-name="selectedNode?.name" @select="structured.reality_server_name = $event" @close="realityProbeOpen = false" />
@@ -230,11 +255,14 @@
               <FormField v-if="!form.managed_certificate_id" v-slot="{ controlAttrs }" label="证书文件路径" name="protocol-cert-path" :error="editorErrors.fields['structured.cert_path']" :required="requiresTLSFiles"><UiInput v-model.trim="structured.cert_path" v-bind="controlAttrs" placeholder="/etc/zero/tls/cert.pem" /></FormField>
               <FormField v-if="!form.managed_certificate_id" v-slot="{ controlAttrs }" label="私钥文件路径" name="protocol-key-path" :error="editorErrors.fields['structured.key_path']" :required="requiresTLSFiles"><UiInput v-model.trim="structured.key_path" v-bind="controlAttrs" placeholder="/etc/zero/tls/key.pem" /></FormField>
               <FormField v-if="form.protocol !== 'hysteria2'" v-slot="{ controlAttrs }" :label="form.protocol === 'trojan' ? 'TLS 域名（SNI）' : '证书域名'" hint="通常与对外地址一致；使用 IP 连接时请填写证书对应域名。" full><UiInput v-model.trim="structured.server_name" v-bind="controlAttrs" :placeholder="form.address || 'edge.example.com'" /></FormField>
-              <div v-if="!managedCertificateOptions.length || (managedCertificateOptions.length === 1 && managedCertificateOptions[0].value === 0)" class="generated-config-note field-full"><UiIcon name="shield" /><div><strong>本节点暂无可用托管证书</strong><p>可先到 <RouterLink to="/admin/certificates">免费证书</RouterLink> 完成申请，再返回选择使用。</p></div></div>
+              <p v-if="managedCertificateOptions.length <= 1" class="protocol-form-note field-full">本节点暂无可选证书。可在 <RouterLink to="/admin/certificates">免费证书</RouterLink> 页面申请。</p>
             </template>
-            <div class="generated-config-note field-full"><UiIcon name="check" /><div><strong>配置由系统生成</strong><p>系统会把服务参数转换为 Zero 配置，并在订阅开通、续费、到期时自动更新节点；原始 JSON 仅在最后一步的高级设置中提供。</p></div></div>
-            <section class="endpoint-egress field-full">
-              <header><div><strong>出口配置（可选）</strong><small>默认使用 Direct · auto；自定义设置只影响当前入口。</small></div><label class="check-field"><UiCheckbox v-model="egress.enabled" /><span>自定义此入口出口</span></label></header>
+            <section class="protocol-form-section endpoint-egress field-full" aria-labelledby="protocol-egress-heading">
+              <h3 id="protocol-egress-heading">流量出口</h3>
+              <FormField v-slot="{ controlAttrs }" label="自定义出口" name="protocol-egress-enabled" :hint="egress.enabled ? '' : '默认由 VPS 直连目标。'">
+                <UiSwitch v-model="egress.enabled" v-bind="controlAttrs" />
+              </FormField>
+              <PageAlert v-if="editorErrors.fields.egress_config" tone="danger" :title="editorErrors.fields.egress_config" />
               <div v-if="egress.enabled" class="endpoint-egress-body">
                 <UiTabs v-model="egress.mode" :items="[{ value: 'manual', label: '逐项填写' }, { value: 'import', label: '解析分享链接' }]" label="出口配置方式" />
                 <template v-if="egress.mode === 'import'">
@@ -244,7 +272,7 @@
                   </FormField>
                   <div class="endpoint-egress-actions"><UiButton type="button" variant="secondary" :loading="egressParsing" :disabled="!egress.import_text.trim()" @click="parseEgressImport">解析并载入</UiButton></div>
                 </template>
-                <div v-else class="guided-grid compact-grid">
+                <div v-else class="form-grid">
                   <FormField v-slot="{ controlAttrs }" label="出口协议" required><UiSelect v-model="egress.protocol" v-bind="controlAttrs" :options="egressProtocolOptions" /></FormField>
                   <template v-if="egress.protocol === 'direct'">
                     <FormField v-slot="{ controlAttrs }" label="出站地址族" hint="仅 IPv4 / IPv6 是硬约束，失败时不会回退到另一地址族。"><UiSelect v-model="egress.address_family" v-bind="controlAttrs" :options="[{ label: '自动（auto）', value: 'auto' }, { label: '仅 IPv4', value: 'only_ipv4' }, { label: '仅 IPv6', value: 'only_ipv6' }]" /></FormField>
@@ -267,32 +295,36 @@
           </div>
         </section>
 
-        <section v-else class="wizard-panel review-panel">
-          <header class="wizard-heading"><span><UiIcon name="check" /></span><div><h3>确认服务信息</h3><p>系统会根据变更内容决定是否发布：运行参数影响活跃节点，名称、计费和交付配置仅保存到控制面。</p></div></header>
-          <div class="review-grid">
-            <article><span>承载节点</span><strong>{{ selectedNode?.name || '未选择' }}</strong><small>{{ selectedNode?.region || '未设置区域' }}</small></article>
-            <article><span>协议服务</span><strong>{{ form.name }}</strong><small>{{ protocolLabel(form.protocol) }}</small></article>
-            <article><span>对外入口</span><strong class="mono">{{ form.address }}:{{ form.public_port }}</strong><small>VPS 监听 {{ listenAddressPreview }}:{{ form.port }}</small></article>
-            <article><span>流量出口</span><strong>{{ egress.enabled ? protocolLabel(egress.protocol) : 'Direct' }}</strong><small>{{ egress.enabled ? `${egress.server}:${egress.port}` : '节点直接访问目标' }}</small></article>
-            <article><span>流量计费</span><strong>{{ formatMultiplier(form.multiplier_milli) }}</strong><small>前端自动换算，无需手动填写千分值</small></article>
-          </div>
-          <section class="membership-section">
-            <header><div><strong>节点组关联</strong><small>节点组是套餐和订阅的交付授权边界；保存时只提交新增或移除的关系，不覆盖节点组完整成员顺序。</small></div><StatusBadge tone="neutral">{{ form.node_group_memberships.length }} 个节点组</StatusBadge></header>
-            <PageAlert v-if="copySourceID" tone="info" title="复制不会继承节点组关联">副本默认启用，但不会继承原服务的节点组；请选择需要关联的节点组，保存后生效。</PageAlert>
+        <section v-else class="wizard-panel">
+          <dl class="protocol-review">
+            <div><dt>服务</dt><dd>{{ form.name }} · {{ protocolLabel(form.protocol) }}</dd></div>
+            <div><dt>承载 VPS</dt><dd>{{ selectedNode?.name || '未选择' }}</dd></div>
+            <div><dt>对外入口</dt><dd class="mono">{{ publicAddressPreview }}:{{ form.public_port }}</dd></div>
+            <div><dt>VPS 监听</dt><dd class="mono">{{ listenAddressPreview }}:{{ form.port }}</dd></div>
+            <div>
+              <dt>流量出口</dt>
+              <dd>{{ egress.enabled ? protocolLabel(egress.protocol) : 'Direct' }}<span v-if="egress.enabled && egress.protocol !== 'direct' && egress.server"> · {{ formatHost(egress.server) }}:{{ egress.port }}</span></dd>
+            </div>
+            <div><dt>流量倍率</dt><dd>{{ formatMultiplier(form.multiplier_milli) }}</dd></div>
+          </dl>
+          <section class="protocol-form-section" aria-labelledby="protocol-delivery-heading">
+            <h3 id="protocol-delivery-heading">启用与交付</h3>
             <PageAlert v-if="membershipRevisionConflict" tone="warning" title="节点组关联已在其他会话更新">
-              当前草稿携带的节点组版本已过期。重新加载关联不会覆盖协议参数，但会以最新关联作为新的比较基线。
+              请重新加载关联，再确认需要关联的节点组。
               <template #actions><UiButton variant="secondary" size="sm" type="button" :loading="membershipReloading" @click="reloadNodeGroupMemberships"><UiIcon name="refresh" />重新加载关联</UiButton></template>
             </PageAlert>
-            <FormField v-slot="{ controlAttrs }" label="业务启用" name="protocol-active" :error="editorErrors.fields.is_active"><div class="check-field"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /><span>保存后启用并推进配置交付；实际执行结果需核验</span></div></FormField>
-            <FormField label="关联节点组" name="protocol-node-groups" :error="editorErrors.fields.node_group_membership_changes" full>
+            <FormField v-slot="{ controlAttrs }" label="业务启用" name="protocol-active" :error="editorErrors.fields.is_active"><UiCheckbox v-model="form.is_active" v-bind="controlAttrs" /></FormField>
+            <FormField label="关联节点组" name="protocol-node-groups" :hint="copySourceID ? '复制的服务需要重新选择节点组。' : ''" :error="editorErrors.fields.node_group_membership_changes" full>
               <NodeGroupMembershipEditor v-model="form.node_group_memberships" :can-add="Boolean(form.is_active)" />
             </FormField>
           </section>
           <details class="advanced-settings" :open="hasConfigError">
-            <summary><span><UiIcon name="settings" /></span><div><strong>高级设置</strong><small>仅在需要链式协议或自定义 Zero 参数时展开；交付顺序在列表页统一调整。</small></div><UiIcon name="chevron" /></summary>
+            <summary>高级设置</summary>
             <div class="advanced-body">
-              <div class="guided-grid compact-grid">
-                <FormField v-slot="{ controlAttrs }" label="流量倍率" name="protocol-multiplier" hint="显示为倍数，接口保存千分值。" :error="editorErrors.fields.multiplier_milli"><MultiplierInput v-model="form.multiplier_milli" v-bind="controlAttrs" /></FormField>
+              <PageAlert v-if="editorErrors.fields.parent_protocol_id" tone="danger" :title="editorErrors.fields.parent_protocol_id" />
+              <PageAlert v-if="editorErrors.fields.sort_order" tone="danger" :title="editorErrors.fields.sort_order" />
+              <div class="form-grid">
+                <FormField v-slot="{ controlAttrs }" label="流量倍率" name="protocol-multiplier" :error="editorErrors.fields.multiplier_milli"><MultiplierInput v-model="form.multiplier_milli" v-bind="controlAttrs" /></FormField>
               </div>
               <div class="config-grid">
                 <FormField v-slot="{ controlAttrs }" label="服务端配置 JSON" name="protocol-server-config" :error="editorErrors.fields.config" required><UiTextarea v-model="form.config" v-bind="controlAttrs" rows="10" spellcheck="false"></UiTextarea></FormField>
@@ -418,7 +450,7 @@ const transportOptions = [
 ]
 const realityFingerprintOptions = [{ label: 'Chrome', value: 'chrome' }, { label: 'Firefox', value: 'firefox' }, { label: 'Safari', value: 'safari' }, { label: 'Edge', value: 'edge' }]
 const realityPresetOptions = [{ label: '通用兼容（推荐）', value: 'compatible' }, { label: '全球 CDN', value: 'cdn' }, { label: 'Apple 生态', value: 'apple' }]
-const wizardSteps = [{ id: 1, title: '节点与入口', caption: '选择 VPS' }, { id: 2, title: '服务参数', caption: '系统管凭证' }, { id: 3, title: '确认保存', caption: '检查变更' }]
+const wizardSteps = [{ id: 1, title: '节点与入口' }, { id: 2, title: '服务参数' }, { id: 3, title: '确认保存' }]
 const route = useRoute()
 const serviceKind = ref(route.query.kind === 'forward' ? 'forward' : route.query.kind === 'listener' ? 'listener' : 'all'), serviceTypeOpen=ref(false)
 const forwardServices=ref<InstanceType<typeof NetworkEntries>|null>(null)
@@ -472,14 +504,16 @@ const toggleTaskIDs = reactive<Record<number, number>>({})
 const message = ref(''), editorError = ref(''), deferredMessage = ref('')
 const protocolUsageRefreshIntervalMS = 15_000
 let protocolUsageRefreshTimer: number | undefined
-const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', listen_address: '0.0.0.0', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
+const emptyForm = () => ({ id: 0, node_id: 0, name: '', protocol: 'vless', address: '', listen_address: '::', port: 443, public_port: 443, multiplier_milli: 1000, sort_order: 0, parent_protocol_id: 0, managed_certificate_id: 0, managed_principal_ready: false, is_active: true, config: '{}', egress_config: '', client_config: '{}', optional_config: '{}', tags: '[]', node_group_memberships: [] as ProtocolEndpointNodeGroupMembership[] })
 const emptyStructured = () => ({ credential: randomUUID(), username: 'subscriber', password: randomSecret(), cipher: 'aes-128-gcm', security: 'none', transport: 'tcp', transport_path: '/', grpc_service_name: 'zboard', cert_path: '', key_path: '', server_name: '', reality_private_key: '', reality_public_key: '', reality_short_id: '', reality_server_name: '', reality_fingerprint: 'chrome' })
 const emptyEgress = () => ({ enabled: false, mode: 'manual', import_text: '', protocol: 'direct', address_family: 'auto', interface: '', source_ip: '', server: '', port: 1080, username: '', password: '', cipher: 'chacha20-ietf-poly1305', id: '', server_name: '', insecure: false, base: {} as Record<string, any> })
 const form = reactive<any>(emptyForm())
-const listenAddressPreview = computed(() => {
-  const address = form.listen_address.replace(/^\[(.*)\]$/, '$1')
+function formatHost(host: string) {
+  const address = host.replace(/^\[(.*)\]$/, '$1')
   return address.includes(':') ? `[${address}]` : address
-})
+}
+const listenAddressPreview = computed(() => formatHost(form.listen_address))
+const publicAddressPreview = computed(() => formatHost(form.address))
 const structured = reactive<any>(emptyStructured())
 const egress = reactive<any>(emptyEgress())
 const protocolFormElement = ref<HTMLElement | null>(null)
@@ -535,6 +569,7 @@ const protocolDraftRecovery = useReauthenticationDraft({
     membershipRevisionConflict.value = false
     Object.assign(form, emptyForm(), detail || {}, {
       parent_protocol_id: detail?.parent_protocol_id || 0, managed_certificate_id: detail?.managed_certificate_id || 0,
+      listen_address: detail ? detail.listen_address || '0.0.0.0' : '::',
       config: detail?.config || '{}', client_config: detail?.client_config || '{}', egress_config: detail?.egress_config || '', optional_config: detail?.optional_config || '{}', tags: detail?.tags || '[]',
       node_group_memberships: (detail?.node_group_memberships || []).map((item: ProtocolEndpointNodeGroupMembership) => ({ ...item })),
     })
@@ -542,7 +577,9 @@ const protocolDraftRecovery = useReauthenticationDraft({
     Object.assign(structured, emptyStructured()); Object.assign(egress, emptyEgress())
     if (detail) { readStructuredConfig(); readEgressConfig() }
     editorState.markClean()
-    Object.assign(form, draft.fields, { node_group_memberships: draft.fields.node_group_memberships.map(item => ({ ...item })) })
+    Object.assign(form, draft.fields, {
+      node_group_memberships: draft.fields.node_group_memberships.map(item => ({ ...item })),
+    })
     recordProtocolRecoveryBase(); protocolOriginal.value = draft.baseline || undefined
     editorErrors.clear(); editorError.value = ''; editorStep.value = 1; editorOpen.value = true
     try { await nextTick() } finally { protocolRestoringDraft = false }
@@ -928,7 +965,7 @@ function handleNodeSelect(node: AdminNodeListItem | null) {
   selectedNode.value = node
   if (previousNodeID && node?.id !== previousNodeID) { form.parent_protocol_id = 0; form.managed_certificate_id = 0 }
   void loadManagedCertificates(node?.id || 0)
-  if (!form.id && !copySourceID.value && node?.address) { form.address = node.address; if (['', '0.0.0.0', '::'].includes(form.listen_address)) form.listen_address = node.address.includes(':') ? '::' : '0.0.0.0' }
+  if (!form.id && !copySourceID.value && node?.address) form.address = node.address
   if (!form.id && !copySourceID.value) suggestName()
 }
 function useNodeAddress() { if (selectedNode.value?.address) form.address = selectedNode.value.address }
@@ -1491,41 +1528,27 @@ onBeforeUnmount(() => {
 .protocol-group-row td{height:34px!important;padding:7px 12px!important;color:var(--text);background:var(--surface-soft)!important}.protocol-group-content{display:flex;align-items:center;gap:7px;min-width:0}.protocol-group-row .ui-icon{flex:0 0 auto;color:var(--primary)}.protocol-group-row strong{min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.protocol-group-row span{flex:0 0 auto;color:var(--muted);font-size:12px}
 .protocol-metrics{margin-bottom:16px}.protocol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.protocol-card{display:grid;overflow:hidden}.protocol-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px}.protocol-title{display:flex;gap:12px;min-width:0}.protocol-icon{width:40px;height:40px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:19px}.title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.title-line h2{margin:0;font-size:16px}.protocol-title p{margin:5px 0 0;color:var(--muted);font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere}.multiplier{color:var(--primary);font-size:18px}.protocol-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:14px 18px;border-block:1px solid var(--line);background:var(--surface-soft)}.protocol-meta div{display:grid;gap:4px}.protocol-meta dt{color:var(--muted);font-size:12px}.protocol-meta dd{margin:0;font-size:11px;font-weight:600}.usage-summary{display:flex;flex-wrap:wrap;gap:14px;padding:10px 18px;color:var(--muted);border-bottom:1px solid var(--line);font-size:12px}.deployment-error{margin:12px 18px 0;padding:9px;border-radius:8px;color:var(--danger);background:var(--danger-soft);font-size:11px;overflow-wrap:anywhere}.protocol-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px}
 .protocol-order-editor{display:grid;gap:14px}.protocol-order-loading{padding:32px;text-align:center;color:var(--muted);font-size:11px}.protocol-order-list{display:grid;gap:8px;max-height:55vh;margin:0;padding:0;overflow:auto;list-style:none}.protocol-order-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.protocol-order-position{width:28px;height:28px;display:grid;place-items:center;border-radius:6px;color:var(--foreground);background:var(--muted-surface);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}.protocol-order-content{display:grid;gap:3px;min-width:0}.protocol-order-content strong{font-size:12px;white-space:normal;overflow-wrap:anywhere}.protocol-order-content span{color:var(--muted);font-size:12px}.protocol-order-actions{display:flex;gap:3px}
-.protocol-editor{display:grid;gap:20px}
-.wizard-panel{display:grid;gap:20px}
-.wizard-heading{display:flex;align-items:flex-start;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line)}
-.wizard-heading>span{width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:var(--primary);background:var(--primary-soft);font-size:18px}
-.wizard-heading h3{margin:1px 0 4px;font-size:15px}
-.wizard-heading p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
-.guided-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.selected-node-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--primary-border);border-radius:10px;background:var(--surface-selected)}
-.selected-node-card strong{font-size:12px}
-.selected-node-card p{margin:3px 0 0;color:var(--muted);font-size:12px}
-.input-with-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px}
-.generated-config-note{display:flex;align-items:flex-start;gap:10px;padding:13px;border:1px solid var(--success-border);border-radius:10px;color:var(--success);background:var(--success-soft)}
-.generated-config-note>.ui-icon{margin-top:1px}
-.generated-config-note strong{font-size:11px}
-.generated-config-note p{margin:3px 0 0;font-size:12px;line-height:1.6}
-.endpoint-egress{display:grid;gap:14px;padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
-.endpoint-egress>header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 16px}.endpoint-egress>header>div{flex:1 1 240px;min-width:0}.endpoint-egress>header .check-field{align-items:center;flex:none}.endpoint-egress>header .ui-checkbox{margin-top:0}.endpoint-egress>header strong,.endpoint-egress>header small{display:block}.endpoint-egress>header strong{font-size:12px}.endpoint-egress>header small{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.6}.endpoint-egress-body{display:grid;gap:14px;padding-top:14px;border-top:1px solid var(--line)}.endpoint-egress-actions{display:flex;justify-content:flex-end}
-.review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.review-grid article{display:grid;gap:4px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
-.review-grid span,.review-grid small{color:var(--muted);font-size:12px}
-.review-grid strong{font-size:12px}
-.membership-section{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
-.membership-section>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.membership-section>header strong,.membership-section>header small{display:block}.membership-section>header strong{font-size:12px}.membership-section>header small{max-width:680px;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.6}
-.advanced-settings{border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.advanced-settings summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;list-style:none}
-.advanced-settings summary::-webkit-details-marker{display:none}
-.advanced-settings summary>span{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;color:var(--primary);background:var(--primary-soft)}
-.advanced-settings summary strong,.advanced-settings summary small{display:block}
-.advanced-settings summary strong{font-size:11px}
-.advanced-settings summary small{margin-top:2px;color:var(--muted);font-size:12px}
-.advanced-settings[open] summary>.ui-icon{transform:rotate(90deg)}
-.advanced-body{display:grid;gap:16px;padding:16px;border-top:1px solid var(--line);background:var(--surface-soft)}
-.compact-grid{max-width:520px}
-.config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.config-grid textarea{font-family:var(--font-mono);font-size:12px}
+.protocol-editor, .wizard-panel { display: grid; gap: 20px; min-width: 0; }
+.protocol-form-section { display: grid; gap: 12px; min-width: 0; }
+.protocol-form-section + .protocol-form-section, .endpoint-egress {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.protocol-form-section h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.protocol-form-note { margin: 0; color: var(--muted-foreground); font-size: 12px; }
+.input-with-action { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.input-with-action > :first-child { flex: 1 1 12rem; min-width: 0; }
+.endpoint-egress-body, .advanced-body { display: grid; gap: 16px; min-width: 0; }
+.endpoint-egress-actions { display: flex; justify-content: flex-end; }
+.protocol-review { display: grid; gap: 8px; margin: 0; }
+.protocol-review > div { display: grid; grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr); gap: 12px; }
+.protocol-review dt { color: var(--muted-foreground); font-size: 12px; }
+.protocol-review dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.protocol-review + .protocol-form-section, .advanced-settings { border-top: 1px solid var(--border); padding-top: 16px; }
+.advanced-settings summary { width: fit-content; cursor: pointer; font-size: 13px; font-weight: 500; }
+.advanced-settings summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.advanced-body { padding-top: 16px; }
+.config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 @media(min-width:721px) and (max-width:1100px){
   :deep(.protocol-table[data-show-secondary='false']){min-width:850px!important}
   :deep(.protocol-table[data-show-secondary='false'] col:nth-child(2)){width:180px!important}
@@ -1535,10 +1558,11 @@ onBeforeUnmount(() => {
   :deep(.protocol-table[data-show-secondary='false'] col:nth-child(6)){width:192px!important}
 }
 @media(max-width:720px){:deep(.protocol-table[data-show-secondary='false']){min-width:520px!important}}
-@media(max-width:900px){.protocol-grid,.guided-grid,.config-grid{grid-template-columns:1fr}.protocol-meta,.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.protocol-meta{row-gap:12px}}@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.review-grid{grid-template-columns:1fr}.selected-node-card{grid-template-columns:auto minmax(0,1fr)}.selected-node-card .status-badge{grid-column:2}.input-with-action{grid-template-columns:1fr}}.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
+@media(max-width:900px){.protocol-grid{grid-template-columns:1fr}.protocol-meta{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:12px}}
+@media(max-width:680px){.protocol-grid{gap:8px}.protocol-card{border-inline:0;border-radius:0;box-shadow:none}.protocol-meta{background:transparent}.config-grid{grid-template-columns:1fr}}
+.protocol-mobile-detail-actions{display:none}@media(max-width:560px){.protocol-order-item{grid-template-columns:30px minmax(0,1fr) auto}.protocol-order-actions{grid-column:3;grid-row:1/3}:deep(.page-actions .ui-button:last-child){flex:1}.protocol-mobile-detail-actions{display:flex;flex-wrap:wrap;gap:7px}}
 
 .protocol-grid{grid-template-columns:1fr;gap:0;border-block:1px solid var(--line)}.protocol-card{border:0;border-radius:0}.protocol-card+.protocol-card{border-top:1px solid var(--line)}
-.selected-node-card{border-color:var(--primary-border);background:var(--primary-soft)}
 .protocol-detail{min-width:0}.detail-status-strip{display:flex;flex-wrap:wrap;gap:8px}.detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden}.detail-facts>div{display:grid;gap:5px;padding:14px 16px;border-bottom:1px solid var(--line)}.detail-facts>div:nth-child(odd){border-right:1px solid var(--line)}.detail-facts span{color:var(--muted);font-size:12px}.detail-facts strong,.detail-facts a{font-size:12px;overflow-wrap:anywhere}.detail-facts a{color:var(--foreground);font-weight:500;text-decoration:none}.numeric-summary{color:var(--foreground);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}.deployment-history{overflow:hidden}.deployment-history>.page-alert{margin:12px}.deployment-history :deep(.data-table-shell){border:0;border-radius:0}.deployment-output{max-width:360px;margin:0;color:var(--muted);font-family:var(--font-mono);font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:560px){.detail-facts{grid-template-columns:1fr}.detail-facts>div:nth-child(odd){border-right:0}}
 .protocol-guidance { margin: 10px 0 8px; color: var(--muted-foreground); font-size: 12px; }
 .protocol-guidance summary { width: fit-content; display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer; list-style: none; }

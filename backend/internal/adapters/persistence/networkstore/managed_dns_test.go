@@ -39,10 +39,10 @@ func (p managedDNSProvider) ApplyManagedDNS(_ context.Context, request network.M
 	return network.ManagedDNSProviderResult{ZoneID: "zone-1", RecordID: "record-1", RecordType: record.RecordType, Name: record.DomainName, Value: record.RecordValue, TTL: record.TTL, Proxied: record.Proxied}, nil
 }
 
-type managedDNSObserver struct{}
+type managedDNSObserver bool
 
-func (managedDNSObserver) ManagedDNSResolves(context.Context, network.ManagedDNSRecord) bool {
-	return true
+func (o managedDNSObserver) ManagedDNSResolves(context.Context, network.ManagedDNSRecord) bool {
+	return bool(o)
 }
 
 func managedDNSFixture(t *testing.T) (*gorm.DB, network.ManagedDNS) {
@@ -57,7 +57,7 @@ func managedDNSFixture(t *testing.T) (*gorm.DB, network.ManagedDNS) {
 			t.Fatal(err)
 		}
 	}
-	return db, network.ManagedDNS{Repository: ManagedDNS{DB: db}, Cipher: managedDNSCipher{}, Provider: managedDNSProvider{t: t}, Observer: managedDNSObserver{}}
+	return db, network.ManagedDNS{Repository: ManagedDNS{DB: db}, Cipher: managedDNSCipher{}, Provider: managedDNSProvider{t: t}, Observer: managedDNSObserver(true)}
 }
 
 func TestManagedDNSLifecycleOwnsRecordsRunsAndExecutionOutcome(t *testing.T) {
@@ -93,7 +93,7 @@ func TestManagedDNSLifecycleOwnsRecordsRunsAndExecutionOutcome(t *testing.T) {
 		t.Fatalf("operation=%+v error=%v", completed, err)
 	}
 	var resolved model.ManagedDNSRecord
-	if err := db.First(&resolved, records[0].ID).Error; err != nil || resolved.Status != network.ManagedDNSActive || !resolved.PublicResolved || resolved.ProviderRecordID != "record-1" {
+	if err := db.First(&resolved, records[0].ID).Error; err != nil || resolved.Status != network.ManagedDNSActive || resolved.PublicResolved || resolved.LastPublicCheckAt != nil || resolved.ProviderRecordID != "record-1" {
 		t.Fatalf("record=%+v error=%v", resolved, err)
 	}
 }
@@ -164,5 +164,79 @@ func TestManagedDNSObservationOnlyAdvancesSelectedUnresolvedRows(t *testing.T) {
 	}
 	if err := db.First(&second, rows[1].ID).Error; err != nil || !second.LastPublicCheckAt.Equal(checked) {
 		t.Fatalf("second=%+v error=%v", second, err)
+	}
+}
+
+func TestManagedDNSConvergesAfterFirstSyncWithoutAnotherProviderOperation(t *testing.T) {
+	db, service := managedDNSFixture(t)
+	ctx := context.Background()
+	records, operations, err := service.Create(ctx, 1, network.ManagedDNSWrite{
+		ProviderAccountID: 1, NodeID: 1, DomainName: "fresh.example.test",
+		Records: []network.ManagedDNSRecordInput{{RecordType: "A"}, {RecordType: "AAAA"}},
+	})
+	if err != nil || len(operations) != 2 {
+		t.Fatalf("operations=%+v error=%v", operations, err)
+	}
+	for _, operation := range operations {
+		if err := service.Execute(ctx, operation.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const interval = 15 * time.Second
+	service.Observer = managedDNSObserver(false)
+	if err := service.ObservePublic(ctx, time.Now().UTC(), interval, time.Second, 1); err != nil {
+		t.Fatalf("awaiting propagation should leave the observation worker healthy: %v", err)
+	}
+	for _, record := range records {
+		var stored model.ManagedDNSRecord
+		if err := db.First(&stored, record.ID).Error; err != nil || stored.PublicResolved || stored.LastPublicCheckAt == nil {
+			t.Fatalf("first observation: record=%+v error=%v", stored, err)
+		}
+	}
+
+	service.Provider = nil // The background job can only observe DNS.
+	service.Observer = managedDNSObserver(true)
+	if err := service.ObservePublic(ctx, time.Now().UTC().Add(interval), interval, time.Second, 1); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		var stored model.ManagedDNSRecord
+		if err := db.First(&stored, record.ID).Error; err != nil || !stored.PublicResolved {
+			t.Fatalf("automatic observation: record=%+v error=%v", stored, err)
+		}
+	}
+	var operationCount int64
+	if err := db.Model(&model.ProviderOperation{}).Where("resource_type = ?", "dns_record").Count(&operationCount).Error; err != nil || operationCount != 2 {
+		t.Fatalf("original provider operations=%d error=%v", operationCount, err)
+	}
+}
+
+func TestManagedDNSIgnoresPublicObservationFromPreviousSync(t *testing.T) {
+	db, service := managedDNSFixture(t)
+	ctx := context.Background()
+	oldSync := time.Now().UTC().Add(-time.Minute)
+	record := model.ManagedDNSRecord{
+		ProviderAccountID: 1, NodeID: 1, DomainName: "changed.example.test", RecordType: "A", RecordValue: "203.0.113.10",
+		Status: network.ManagedDNSActive, Revision: 1, DesiredHash: "current", LastSyncedAt: &oldSync, CreatedBy: 1,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	repository := service.Repository
+	previous, err := repository.ListManagedDNSObservations(ctx, time.Now().UTC(), time.Second, 1)
+	if len(previous) != 1 || err != nil {
+		t.Fatalf("observation scope=%+v error=%v", previous, err)
+	}
+	newSync := oldSync.Add(30 * time.Second)
+	if err := db.Model(&record).Update("last_synced_at", newSync).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.RecordManagedDNSObservation(ctx, previous[0], time.Now().UTC(), true); err != nil {
+		t.Fatal(err)
+	}
+	var fresh model.ManagedDNSRecord
+	if err := db.First(&fresh, record.ID).Error; err != nil || fresh.PublicResolved || fresh.LastPublicCheckAt != nil {
+		t.Fatalf("stale observation affected the new sync: record=%+v error=%v", fresh, err)
 	}
 }

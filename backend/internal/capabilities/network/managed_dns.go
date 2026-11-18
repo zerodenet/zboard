@@ -146,9 +146,9 @@ type ManagedDNSRepository interface {
 	LoadManagedDNSExecution(context.Context, uint) (ManagedDNSExecution, error)
 	SetManagedDNSPhase(context.Context, ManagedDNSExecution, string) error
 	FailManagedDNS(context.Context, ManagedDNSExecution, string, string) error
-	CompleteManagedDNS(context.Context, ManagedDNSExecution, ManagedDNSProviderResult, bool) error
+	CompleteManagedDNS(context.Context, ManagedDNSExecution, ManagedDNSProviderResult) error
 	ListManagedDNSObservations(context.Context, time.Time, time.Duration, int) ([]ManagedDNSRecord, error)
-	RecordManagedDNSObservation(context.Context, uint, time.Time, bool) error
+	RecordManagedDNSObservation(context.Context, ManagedDNSRecord, time.Time, bool) error
 }
 
 type ManagedDNSProvider interface {
@@ -295,11 +295,7 @@ func (s ManagedDNS) Execute(ctx context.Context, operationID uint) error {
 	if err != nil {
 		return fail(phase, err)
 	}
-	resolved := false
-	if s.Observer != nil {
-		resolved = s.Observer.ManagedDNSResolves(ctx, execution.Record)
-	}
-	if err := s.Repository.CompleteManagedDNS(ctx, execution, result, resolved); err != nil {
+	if err := s.Repository.CompleteManagedDNS(ctx, execution, result); err != nil {
 		return fail("persisting", err)
 	}
 	return nil
@@ -327,16 +323,9 @@ func (s ManagedDNS) ObservePublic(ctx context.Context, now time.Time, interval, 
 				}
 				probe, cancel := context.WithTimeout(ctx, timeout)
 				resolved := s.Observer.ManagedDNSResolves(probe, record)
-				probeErr := probe.Err()
 				cancel()
-				err := s.Repository.RecordManagedDNSObservation(ctx, record.ID, time.Now().UTC(), resolved)
-				if err == nil && !resolved {
-					err = probeErr
-					if err == nil {
-						err = errors.New("public DNS has not converged")
-					}
-				}
-				results <- err
+				// A record awaiting propagation remains eligible for the next scan.
+				results <- s.Repository.RecordManagedDNSObservation(ctx, record, time.Now().UTC(), resolved)
 			}
 		}()
 	}
