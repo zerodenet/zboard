@@ -224,7 +224,7 @@ func TestSubscriptionAlertsRevalidateAndRecordSuppression(t *testing.T) {
 			runner := h.services.BatchItemRunner(alertBusinessFunc(func(ctx context.Context, b jobs.BatchReceipt, i jobs.BatchItem) error {
 				return service.Execute(ctx, messaging.EmailExecutionClaim{TaskID: b.ID, ItemID: i.ID, Token: token})
 			}))
-			failures := runner.Run(context.Background(), jobs.BatchItemClaim{TaskID: task.ID, ItemID: item.ID, Token: token})
+			failures := runner.Run(context.Background(), jobs.BatchItemClaim{TaskID: task.ID, ItemID: item.ID, Token: token}).Failures
 			if err := h.services.BatchLifecycle().Finish(context.Background(), task.ID, token, failures); err != nil {
 				t.Fatal(err)
 			}

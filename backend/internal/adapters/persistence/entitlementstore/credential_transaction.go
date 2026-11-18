@@ -7,6 +7,7 @@ import (
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 	"github.com/zerodenet/zboard/backend/internal/datastore"
 	"gorm.io/gorm"
 )
@@ -78,7 +79,7 @@ func retryCredentialTransaction(run func() error, sleep func(time.Duration)) err
 }
 
 func isRetryableCredentialTransactionError(err error) bool {
-	if errors.Is(err, ErrCredentialLockTimeout) {
+	if errors.Is(err, ErrCredentialLockTimeout) || errors.Is(err, network.ErrResourcesBusy) {
 		return true
 	}
 	var mysqlErr *mysqlDriver.MySQLError

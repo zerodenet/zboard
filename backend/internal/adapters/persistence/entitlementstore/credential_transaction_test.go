@@ -9,6 +9,7 @@ import (
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
+	"github.com/zerodenet/zboard/backend/internal/capabilities/network"
 )
 
 type credentialLockRowStub struct {
@@ -71,5 +72,19 @@ func TestRetryCredentialTransaction(t *testing.T) {
 	}, func(time.Duration) {})
 	if err == nil || attempts != credentialTransactionMaxAttempts {
 		t.Fatalf("retry limit mismatch: attempts=%d err=%v", attempts, err)
+	}
+}
+
+func TestRetryCredentialTransactionRestartsAfterCurrentTopologyContention(t *testing.T) {
+	attempts := 0
+	err := retryCredentialTransaction(func() error {
+		attempts++
+		if attempts < credentialTransactionMaxAttempts {
+			return fmt.Errorf("read current group: %w", network.ErrResourcesBusy)
+		}
+		return nil
+	}, func(time.Duration) {})
+	if err != nil || attempts != credentialTransactionMaxAttempts {
+		t.Fatalf("current topology contention: attempts=%d error=%v", attempts, err)
 	}
 }

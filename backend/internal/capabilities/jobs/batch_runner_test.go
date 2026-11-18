@@ -27,7 +27,7 @@ func (f *runnerFixture) Finish(ctx context.Context, id uint, token string, failu
 	f.failures = append([]string{}, failures...)
 	return nil
 }
-func (f *runnerFixture) ExecuteBatchItem(ctx context.Context, task BatchReceipt, item BatchItem, token string) ([]string, bool) {
+func (f *runnerFixture) ExecuteBatchItem(ctx context.Context, task BatchReceipt, item BatchItem, token string) BatchItemRunResult {
 	f.calls++
 	if f.panicNow {
 		panic("private failure")
@@ -36,9 +36,9 @@ func (f *runnerFixture) ExecuteBatchItem(ctx context.Context, task BatchReceipt,
 		f.cancel()
 	}
 	if f.stop {
-		return []string{"prerequisite failed"}, true
+		return BatchItemRunResult{Failures: []string{"prerequisite failed"}, Stop: true}
 	}
-	return nil, false
+	return BatchItemRunResult{}
 }
 func TestBatchRunnerCancellationAndPanicStillFinish(t *testing.T) {
 	for _, mode := range []string{"cancel", "panic", "prerequisite", "success"} {

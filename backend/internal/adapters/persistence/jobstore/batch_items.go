@@ -61,6 +61,21 @@ func (s BatchItems) Complete(ctx context.Context, claim jobs.BatchItemClaim, att
 			return err
 		}
 		now := time.Now().UTC()
+		if outcome.RetryAfter > 0 {
+			var retryable jobs.Retryable
+			if task.Attempts >= task.MaxAttempts || outcome.Panicked || !errors.As(outcome.Cause, &retryable) {
+				return jobs.ErrInvalid
+			}
+			if err := tx.Model(&item).Updates(map[string]any{
+				"status": 0, "error": outcome.Message, "finished_at": nil,
+			}).Error; err != nil {
+				return err
+			}
+			return tx.Model(&task).Updates(map[string]any{
+				"status": 0, "errors": "", "scheduled_at": now.Add(outcome.RetryAfter),
+				"finished_at": nil, "locked_by": "", "locked_until": nil,
+			}).Error
+		}
 		status := int16(2)
 		if (outcome.Cause != nil && !errors.Is(outcome.Cause, jobs.ErrBatchItemSkipped)) || outcome.Panicked {
 			status = 3
