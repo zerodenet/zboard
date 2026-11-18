@@ -3,9 +3,9 @@
     <DialogPortal>
       <DialogOverlay class="ui-dialog-overlay" />
       <DialogContent
-        class="app-dialog ui-dialog-content"
+        class="app-dialog"
         aria-modal="true"
-        :class="{ 'app-dialog-fixed': fixedBody }"
+        :class="presentation === 'sheet' ? 'app-dialog-sheet ui-sheet-content' : ['ui-dialog-content', { 'app-dialog-fixed': fixedBody }]"
         :style="dialogStyle"
         :close-on-escape="!busy"
         :disable-outside-pointer-events="true"
@@ -41,15 +41,18 @@ const props = withDefaults(defineProps<{
   size?: 'sm' | 'md' | 'lg' | 'xl'
   busy?: boolean
   fixedBody?: boolean
+  presentation?: 'dialog' | 'sheet'
   dirty?: boolean
   discardTitle?: string
   discardMessage?: string
   returnFocusSelector?: string
   initialFocusSelector?: string
-}>(), { size: 'md', busy: false, fixedBody: false, dirty: false, discardTitle: '放弃未保存的修改？', discardMessage: '当前表单包含尚未保存的内容，关闭后这些修改将丢失。', returnFocusSelector: '', initialFocusSelector: '' })
+}>(), { size: 'md', busy: false, fixedBody: false, presentation: 'dialog', dirty: false, discardTitle: '放弃未保存的修改？', discardMessage: '当前表单包含尚未保存的内容，关闭后这些修改将丢失。', returnFocusSelector: '', initialFocusSelector: '' })
 const emit = defineEmits<{ close: [] }>()
 const widths = { sm: '27.5rem', md: '40rem', lg: '51.25rem', xl: '65rem' }
-const dialogStyle = computed(() => ({ width: widths[props.size], maxHeight: '88vh' }))
+const dialogStyle = computed(() => props.presentation === 'sheet'
+  ? { width: widths[props.size] }
+  : { width: widths[props.size], maxHeight: '88vh' })
 let previousFocus: HTMLElement | null = null
 let returnFocusSelector = ''
 

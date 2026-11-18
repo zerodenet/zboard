@@ -397,6 +397,18 @@ input:not(.ui-input):not(.ui-autocomplete-input):not(.ui-number-input)::placehol
 .app-dialog .app-dialog-footer { gap: 9px; padding: 15px 22px; background: var(--surface-soft); border-top: 1px solid var(--line); }
 .app-dialog-fixed { height: min(88vh, 900px); }
 .app-dialog-fixed .app-dialog-body { flex: 1; overflow: hidden; }
+.app-dialog.app-dialog-sheet {
+  z-index: calc(var(--z-dialog) + 1);
+  max-width: 100vw;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.app-dialog-sheet .app-dialog-footer { padding-bottom: max(15px, env(safe-area-inset-bottom)); }
+@media (max-width: 560px) {
+  .app-dialog-sheet .app-dialog-header,
+  .app-dialog-sheet .app-dialog-body,
+  .app-dialog-sheet .app-dialog-footer { padding-inline: 16px; }
+}
 .page-fade-enter-active, .page-fade-leave-active { transition: opacity .12s ease, transform .12s ease; }.page-fade-enter-from { opacity: 0; transform: translateY(4px); }.page-fade-leave-to { opacity: 0; }
 
 @media (max-width: 1100px) {
@@ -433,7 +445,7 @@ input:not(.ui-input):not(.ui-autocomplete-input):not(.ui-number-input)::placehol
   .admin-stripe-surface .data-workbench { border-inline: 0; border-radius: 0; }
   .toolbar { align-items: stretch; flex-direction: column; }
   .toolbar-group { width: 100%; }.toolbar-group > * { flex: 1 1 auto; }
-  .app-dialog { width: 100vw !important; max-width: 100vw; max-height: 92vh !important; margin: 0; border-radius: 18px 18px 0 0; }
+  .app-dialog:not(.app-dialog-sheet) { width: 100vw !important; max-width: 100vw; max-height: 92vh !important; margin: 0; border-radius: 18px 18px 0 0; }
 }
 
 @media (max-width: 700px) {

@@ -88,15 +88,16 @@ describe('Protocol creation and actionable errors', () => {
     wrapper.unmount()
   })
 
-  it('suggests IPv6 listening for a newly selected IPv6 VPS', async () => {
+  it('keeps the listen address independent of the node public address', async () => {
     const wrapper = await render()
     await click(wrapper, '创建协议服务'); await click(wrapper, '实际协议监听')
     const state = (wrapper.vm as any).$.setupState
     state.handleNodeSelect({ id: 1, name: 'IPv6 VPS', address: '2001:db8::8' })
+    expect(state.form.address).toBe('2001:db8::8')
     expect(state.form.listen_address).toBe('::')
-    state.form.listen_address = '2001:db8::9'
-    state.handleNodeSelect({ id: 1, name: 'IPv6 VPS', address: '2001:db8::8' })
-    expect(state.form.listen_address).toBe('2001:db8::9')
+    state.form.listen_address = '2001:db8::10'
+    state.handleNodeSelect({ id: 2, name: 'IPv4 VPS', address: '192.0.2.2' })
+    expect(state.form.listen_address).toBe('2001:db8::10')
     wrapper.unmount()
   })
   it('allows Mieru on reset release numbers even when an older API advertises a minimum', async () => {
@@ -111,7 +112,7 @@ describe('Protocol creation and actionable errors', () => {
     expect(wrapper.find('page-alert-stub[title="当前内核不支持所选协议"]').exists()).toBe(false)
     await wrapper.get('#protocol-form').trigger('submit')
     await flushPromises()
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'mieru', is_active: true, listen_address: '0.0.0.0' }))
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'mieru', is_active: true, listen_address: '::' }))
     wrapper.unmount()
   })
   it('copies to an enabled draft and lets the user select groups before saving', async () => {
@@ -140,23 +141,30 @@ describe('Protocol creation and actionable errors', () => {
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Source 副本', is_active: true, listen_address: '::', node_group_membership_changes: [{ node_group_id: 9, expected_revision: 7, member: true }] }))
     wrapper.unmount()
   })
-  it.each(['::', '[::]'])('saves IPv6 listen address %s independently from the public endpoint', async (listenAddress) => {
+  it.each([
+    ['::', '[::]:443'],
+    ['0.0.0.0', '0.0.0.0:443'],
+    ['192.0.2.5', '192.0.2.5:443'],
+    ['[2001:db8::10]', '[2001:db8::10]:443'],
+  ])('publishes editable listen address %s independently of the public endpoint', async (listenAddress, preview) => {
     const wrapper = await render()
     await click(wrapper, '创建协议服务')
     await click(wrapper, '实际协议监听')
-    wrapper.findAllComponents({ name: 'UiInput' })[0].vm.$emit('update:modelValue', 'IPv6 fixture')
-    const field = wrapper.findAllComponents(FormField).find(item => item.props('name') === 'protocol-listen-address')!
-    field.getComponent({ name: 'UiInput' }).vm.$emit('update:modelValue', listenAddress)
+    wrapper.findAllComponents({ name: 'UiInput' })[0].vm.$emit('update:modelValue', 'Listener fixture')
+    const addressField = wrapper.findAllComponents(FormField).find(field => field.props('name') === 'protocol-listen-address')!
+    const input = addressField.getComponent({ name: 'UiInput' })
+    expect((wrapper.vm as any).$.setupState.form.listen_address).toBe('::')
+    if (listenAddress !== '::') input.vm.$emit('update:modelValue', listenAddress)
     await flushPromises()
     await click(wrapper, '下一步')
     await click(wrapper, '下一步')
-    expect(wrapper.text()).toContain('[::]:443')
-    expect(wrapper.text()).not.toContain('[[::]]')
+    expect(wrapper.text()).toContain(preview)
     await wrapper.get('#protocol-form').trigger('submit')
     await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ listen_address: listenAddress, address: '192.0.2.1', port: 443, public_port: 443 }))
     wrapper.unmount()
   })
+
   it('saves the reviewed protocol together with the selected node group', async () => {
     const wrapper = await render()
     await review(wrapper)
@@ -219,7 +227,9 @@ describe('Protocol creation and actionable errors', () => {
     await flushPromises()
     await wrapper.get('#protocol-form').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('page-alert-stub[tone="danger"]').text()).toContain('节点组版本信息缺失，请重新选择。')
+    const groupField = wrapper.findAllComponents(FormField).find(field => field.props('name') === 'protocol-node-groups')!
+    expect(groupField.text()).toContain('节点组版本信息缺失，请重新选择。')
+    expect(wrapper.get('page-alert-stub[tone="danger"]').text()).not.toContain('节点组版本信息缺失，请重新选择。')
     expect(wrapper.getComponent({ name: 'NodeGroupMembershipEditor' }).props('modelValue')).toEqual([membership])
     wrapper.unmount()
   })

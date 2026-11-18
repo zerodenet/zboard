@@ -222,6 +222,9 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 	if request.ListenAddress != nil {
 		listenRaw = *request.ListenAddress
 	}
+	if before == nil && strings.TrimSpace(listenRaw) == "" {
+		listenRaw = "::"
+	}
 	listenAddress, err := NormalizeProtocolListenAddress(listenRaw)
 	if err != nil {
 		return ProtocolEndpointMutationResult{}, err

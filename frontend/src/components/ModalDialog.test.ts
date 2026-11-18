@@ -9,9 +9,9 @@ afterEach(() => {
 })
 
 describe('ModalDialog', () => {
-  it('uses the shared confirmation flow before closing a dirty form', async () => {
+  it.each(['dialog', 'sheet'] as const)('guards a dirty form before closing the %s', async (presentation) => {
     const wrapper = mount(ModalDialog, {
-      props: { open: true, title: '编辑节点', dirty: true },
+      props: { open: true, title: '编辑节点', dirty: true, presentation },
       global: { plugins: [] },
     })
 

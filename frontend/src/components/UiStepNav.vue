@@ -15,10 +15,7 @@
             <UiIcon v-if="current > step.id" name="check" />
             <span v-else>{{ step.id }}</span>
           </span>
-          <span class="ui-step-copy">
-            <strong>{{ step.title }}</strong>
-            <small>{{ step.caption }}</small>
-          </span>
+          <span class="ui-step-title">{{ step.title }}</span>
         </UiButton>
       </li>
     </ol>
@@ -30,7 +27,7 @@ import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
 
 withDefaults(defineProps<{
-  steps: Array<{ id: number; title: string; caption: string }>
+  steps: Array<{ id: number; title: string }>
   current: number
   maxStep: number
   label?: string
@@ -56,56 +53,30 @@ defineEmits<{ select: [step: number] }>()
 
 :deep(.ui-step-button.ui-button) {
   width: 100%;
-  min-height: 56px;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 9px 12px;
-  border: 1px solid var(--line) !important;
-  border-radius: var(--radius-sm) !important;
-  color: var(--muted) !important;
-  background: var(--surface) !important;
-  box-shadow: none !important;
-  text-align: left;
-}
-
-:deep(.ui-step-button.ui-button:hover:not(:disabled)) {
-  border-color: var(--line-strong) !important;
-  background: var(--surface-hover) !important;
+  min-width: 0;
+  min-height: var(--control-height);
+  justify-content: center;
+  gap: 6px;
+  padding-inline: 6px;
+  border-bottom: 2px solid var(--border);
+  border-radius: 0;
+  color: var(--muted-foreground);
+  white-space: normal;
 }
 
 :deep(.ui-step-button.ui-button.is-active) {
-  border-color: var(--primary-border) !important;
-  color: var(--primary) !important;
-  background: var(--primary-soft) !important;
-  box-shadow: 0 0 0 1px var(--primary-border) !important;
-}
-
-:deep(.ui-step-button.ui-button.is-complete) {
-  color: var(--text-body) !important;
-  background: var(--surface-soft) !important;
-}
-
-:deep(.ui-step-button.ui-button:disabled) {
-  opacity: 1;
-}
-
-.ui-step-index {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  color: var(--muted);
-  background: var(--surface-neutral);
-  font-size: 11px;
+  border-bottom-color: var(--foreground);
+  color: var(--foreground);
   font-weight: 600;
 }
 
-.is-active .ui-step-index,
-.is-complete .ui-step-index {
-  color: var(--text-inverse);
-  background: var(--primary);
+.ui-step-index {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ui-step-index .ui-icon {
@@ -113,34 +84,12 @@ defineEmits<{ select: [step: number] }>()
   height: 12px;
 }
 
-.ui-step-copy {
+.ui-step-title {
   min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.ui-step-copy strong {
-  font-size: 11px;
-}
-
-.ui-step-copy small {
-  color: var(--muted);
   font-size: 12px;
 }
 
-@media (max-width: 680px) {
-  .ui-step-list {
-    gap: 6px;
-  }
-
-  :deep(.ui-step-button.ui-button) {
-    min-height: 44px;
-    justify-content: center;
-    padding: 8px 6px;
-  }
-
-  .ui-step-copy {
-    display: none;
-  }
+@media (pointer: coarse) {
+  :deep(.ui-step-button.ui-button) { min-height: 40px; }
 }
 </style>
