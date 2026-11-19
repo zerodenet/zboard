@@ -43,9 +43,12 @@ func seedProtocolEndpointMutationAuthority(t *testing.T, db *gorm.DB) (model.Nod
 	notAfter := time.Date(2027, 9, 16, 0, 0, 0, 0, time.UTC)
 	rows := []any{
 		&model.User{ID: 1, Email: "admin@example.test", Password: "unused", Status: "active", IsAdmin: true},
+		&model.User{ID: 2, Email: "subscriber@example.test", Password: "unused", Status: "active"},
 		&model.Node{ID: 10, Name: "node-a", Address: "192.0.2.10", Config: "{}", LifecycleStatus: "active"},
 		&model.Node{ID: 20, Name: "node-b", Address: "192.0.2.20", Config: "{}", LifecycleStatus: "active"},
 		&model.NodeGroup{ID: 30, Name: "group", Code: "group", IsEnabled: true, Revision: 1},
+		&model.Plan{ID: 51, Name: "Plan", Slug: "protocol-tests", NodeGroupID: 30},
+		&model.PlanSKU{ID: 52, PlanID: 51, Code: "protocol-tests", BillingUnit: "month", BillingValue: 1},
 		&model.ManagedCertificate{ID: 40, NodeID: 10, Name: "cert", Domains: `[]`, ContactEmail: "admin@example.test", Status: "active", NotAfter: &notAfter},
 	}
 	for _, row := range rows {
@@ -53,7 +56,7 @@ func seedProtocolEndpointMutationAuthority(t *testing.T, db *gorm.DB) (model.Nod
 			t.Fatal(err)
 		}
 	}
-	if err := db.Create(&model.Subscription{ID: 50, UserID: 2, NodeGroupID: 30, Status: "active", EndAt: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), FlowTotal: 1000}).Error; err != nil {
+	if err := db.Create(&model.Subscription{ID: 50, UserID: 2, PlanID: 51, PlanSKUID: 52, NodeGroupID: 30, Status: "active", StartAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), EndAt: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), FlowTotal: 1000, Config: "{}"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	return model.Node{ID: 10}, model.Node{ID: 20}, model.NodeGroup{ID: 30, Revision: 1}, model.ManagedCertificate{ID: 40}

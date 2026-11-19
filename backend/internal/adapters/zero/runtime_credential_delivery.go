@@ -11,7 +11,8 @@ import (
 // Every supported managed protocol either renders all supplied credentials or
 // fails Render; fallback users are not subscription credential confirmations.
 func (r RuntimeConfigurationRenderer) RenderWithCredentialTargets(request RuntimeConfigurationRenderRequest) ([]byte, string, network.ConfigurationDeliveryTargets, error) {
-	payload, sha, err := r.Render(request)
+	endpointTargets := make(map[uint]uint64)
+	payload, sha, err := r.render(request, endpointTargets)
 	if err != nil {
 		return nil, "", network.ConfigurationDeliveryTargets{}, err
 	}
@@ -35,5 +36,5 @@ func (r RuntimeConfigurationRenderer) RenderWithCredentialTargets(request Runtim
 	if _, err := network.EncodeCredentialDeliveryManifest(targets, routes); err != nil {
 		return nil, "", network.ConfigurationDeliveryTargets{}, err
 	}
-	return payload, sha, network.ConfigurationDeliveryTargets{Credentials: targets, NetworkEntries: routes}, nil
+	return payload, sha, network.ConfigurationDeliveryTargets{Credentials: targets, NetworkEntries: routes, ProtocolEndpoints: endpointTargets}, nil
 }

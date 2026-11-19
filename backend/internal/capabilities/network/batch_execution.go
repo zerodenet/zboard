@@ -28,6 +28,7 @@ type BatchOperationContent struct {
 	RequestedBy       uint              `json:"requested_by"`
 	Actor             string            `json:"actor"`
 	NodeGroupID       uint              `json:"node_group_id,omitempty"`
+	NodeGroupIDs      []uint            `json:"node_group_ids,omitempty"`
 	LifecycleStatus   string            `json:"lifecycle_status,omitempty"`
 	KernelArtifactID  string            `json:"kernel_artifact_id,omitempty"`
 	KernelVersion     string            `json:"kernel_version,omitempty"`

@@ -16,6 +16,7 @@ import (
 
 type resourceBatchAdapterStub struct {
 	groupErr      error
+	blockedGroup  uint
 	validationErr error
 	publishErr    error
 	validated     [][]uint
@@ -33,7 +34,10 @@ func (s *resourceBatchAdapterStub) ReconcileBatchNode(_ context.Context, _ netwo
 }
 func (s *resourceBatchAdapterStub) ReconcileBatchNodeGroup(_ context.Context, action network.BatchResourceAction) error {
 	s.groups = append(s.groups, action)
-	return s.groupErr
+	if s.blockedGroup == 0 || s.blockedGroup == action.NodeGroupID {
+		return s.groupErr
+	}
+	return nil
 }
 func (s *resourceBatchAdapterStub) ValidateBatchProtocolActivation(_ context.Context, ids []uint) error {
 	s.validated = append(s.validated, append([]uint(nil), ids...))
@@ -234,6 +238,10 @@ func TestBatchProtocolCopyRequeuesCredentialContentionBeforePublishing(t *testin
 	db, _ := administrationFixture(t)
 	ctx := t.Context()
 	sourceNode, targetNode, group, _ := seedProtocolEndpointMutationAuthority(t, db)
+	secondGroup := model.NodeGroup{Name: "Another destination", Code: "another-destination", Revision: 1}
+	if err := db.Create(&secondGroup).Error; err != nil {
+		t.Fatal(err)
+	}
 	mutations := protocolEndpointMutationService(db)
 	source := protocolEndpointMutationRequest(sourceNode.ID)
 	if _, err := mutations.Save(ctx, 1, nil, source); err != nil {
@@ -242,13 +250,16 @@ func TestBatchProtocolCopyRequeuesCredentialContentionBeforePublishing(t *testin
 	copyRequest := source
 	copyRequest.Name = source.Name + " copy"
 	copyRequest.NodeID = targetNode.ID
-	copyRequest.MembershipChanges = []network.ProtocolEndpointMembershipChange{{NodeGroupID: group.ID, ExpectedRevision: group.Revision, Member: true}}
+	copyRequest.MembershipChanges = []network.ProtocolEndpointMembershipChange{
+		{NodeGroupID: group.ID, ExpectedRevision: group.Revision, Member: true},
+		{NodeGroupID: secondGroup.ID, ExpectedRevision: secondGroup.Revision, Member: true},
+	}
 	created, err := mutations.Save(ctx, 1, nil, copyRequest)
 	if err != nil || created.MembershipMutation == nil || len(created.MembershipMutation.ReconcileTasks) != 1 {
 		t.Fatalf("copied protocol did not create its reconciliation task: %+v %v", created, err)
 	}
 	taskID := created.MembershipMutation.ReconcileTasks[0].ID
-	adapter := &resourceBatchAdapterStub{groupErr: network.ErrResourcesBusy}
+	adapter := &resourceBatchAdapterStub{groupErr: network.ErrResourcesBusy, blockedGroup: secondGroup.ID}
 	control := jobstore.BatchControl{DB: db}
 	lifecycle := jobs.BatchLifecycle{Repository: jobstore.BatchLifecycle{DB: db}}
 	runner := jobs.BatchRunner{
@@ -267,17 +278,17 @@ func TestBatchProtocolCopyRequeuesCredentialContentionBeforePublishing(t *testin
 	if err := db.First(&task, taskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != 0 || task.Attempts != 1 || task.Current != 0 || task.LockedBy != "" || task.LockedUntil != nil || task.ScheduledAt == nil || task.ScheduledAt.Before(began.Add(time.Second-time.Millisecond)) {
+	if task.Status != 0 || task.Attempts != 1 || task.Current != 1 || task.LockedBy != "" || task.LockedUntil != nil || task.ScheduledAt == nil || task.ScheduledAt.Before(began.Add(time.Second-time.Millisecond)) {
 		t.Fatalf("retry not persisted on original task: %+v", task)
 	}
-	if len(adapter.groups) != 1 || len(adapter.published) != 0 {
+	if len(adapter.groups) != 2 || adapter.groups[0].NodeGroupID != group.ID || adapter.groups[1].NodeGroupID != secondGroup.ID || len(adapter.published) != 0 {
 		t.Fatal("node publication ran before credential reconciliation")
 	}
 	var items []model.TaskItem
-	if err := db.Where("task_id = ?", taskID).Order("id").Find(&items).Error; err != nil || len(items) != 2 {
+	if err := db.Where("task_id = ?", taskID).Order("id").Find(&items).Error; err != nil || len(items) != 3 {
 		t.Fatalf("delivery items=%+v error=%v", items, err)
 	}
-	if items[0].Status != 0 || items[0].Attempts != 1 || items[1].Status != 0 || items[1].Attempts != 0 {
+	if items[0].Status != 2 || items[0].Attempts != 1 || items[1].Status != 0 || items[1].Attempts != 1 || items[2].Status != 0 || items[2].Attempts != 0 {
 		t.Fatalf("retry progressed the prerequisite or its dependent publication: %+v", items)
 	}
 	if err := runner.Run(ctx, taskID, token); !errors.Is(err, jobs.ErrLeaseLost) {
@@ -313,7 +324,7 @@ waitForRetry:
 	if err := db.First(&task, taskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != 2 || task.Attempts != 2 || task.Current != 2 || len(adapter.groups) != 2 || len(adapter.published) != 1 ||
+	if task.Status != 2 || task.Attempts != 2 || task.Current != 3 || len(adapter.groups) != 3 || adapter.groups[2].NodeGroupID != secondGroup.ID || len(adapter.published) != 1 ||
 		adapter.published[0].PublishEndpointID != created.ProtocolEndpoint.ID {
 		t.Fatalf("resumed task=%+v groups=%+v publications=%+v", task, adapter.groups, adapter.published)
 	}

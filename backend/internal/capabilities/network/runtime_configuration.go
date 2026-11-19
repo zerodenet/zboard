@@ -33,6 +33,7 @@ type RuntimeConfigurationCertificate struct {
 }
 
 type RuntimeConfigurationEndpoint struct {
+	DeliveryRevision        uint64
 	ClientConfig            string
 	ID                      uint
 	NodeID                  uint

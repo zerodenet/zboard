@@ -50,6 +50,7 @@ func cohortDB(t *testing.T) (*gorm.DB, model.ProtocolCredential) {
 		t.Fatal(err)
 	}
 	for _, stmt := range []string{
+		"ALTER TABLE protocol_endpoints ADD COLUMN delivery_revision INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE subscriptions ADD COLUMN entitlement_epoch INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE protocol_credentials ADD COLUMN entitlement_epoch INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE protocol_credentials ADD COLUMN current_scope INTEGER DEFAULT 1",

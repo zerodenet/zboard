@@ -27,8 +27,9 @@ type NetworkEntryDeliveryTarget struct {
 	MaterialSHA256 string `json:"material_sha256"`
 }
 type ConfigurationDeliveryTargets struct {
-	Credentials    []CredentialDeliveryTarget
-	NetworkEntries []NetworkEntryDeliveryTarget
+	ProtocolEndpoints map[uint]uint64
+	Credentials       []CredentialDeliveryTarget
+	NetworkEntries    []NetworkEntryDeliveryTarget
 }
 
 type CredentialDeliveryManifest struct {

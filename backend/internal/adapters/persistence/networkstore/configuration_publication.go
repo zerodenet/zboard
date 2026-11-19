@@ -117,14 +117,14 @@ func (s ConfigurationPublicationState) BeginConfigurationPublication(ctx context
 	return
 }
 
-func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx context.Context, deployment network.ConfigurationDeployment, configSHA string, manifests ...string) (out network.ConfigurationDeployment, err error) {
+func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx context.Context, deployment network.ConfigurationDeployment, configSHA string, manifests ...network.ConfigurationPublicationManifest) (out network.ConfigurationDeployment, err error) {
 	if len(manifests) > 1 {
 		return out, network.ErrCredentialDeliveryManifest
 	}
-	manifest := ""
+	var manifest network.ConfigurationPublicationManifest
 	if len(manifests) == 1 {
 		manifest = manifests[0]
-		if _, err := network.DecodeCredentialDeliveryManifest(manifest); err != nil {
+		if _, err := network.DecodeCredentialDeliveryManifest(manifest.CredentialTargets); err != nil {
 			return out, err
 		}
 	}
@@ -136,14 +136,14 @@ func (s ConfigurationPublicationState) SetConfigurationPublicationDesired(ctx co
 		// A deployment identity names one immutable remote configuration intent.
 		// Replaying that intent is safe; replacing its digest would let an old
 		// completion claim a different target after acknowledgement loss.
-		if row.DesiredConfigSHA256 != "" && (row.DesiredConfigSHA256 != configSHA || row.CredentialTargets != manifest) {
+		if row.DesiredConfigSHA256 != "" && (row.DesiredConfigSHA256 != configSHA || row.CredentialTargets != manifest.CredentialTargets || row.ProtocolEndpointTargets != manifest.ProtocolEndpointTargets) {
 			return network.ErrConfigurationDeploymentLost
 		}
 		state, err := lockOrCreateKernelState(tx, deployment.NodeID)
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&row).Updates(map[string]any{"desired_config_sha256": configSHA, "credential_targets": manifest}).Error; err != nil {
+		if err := tx.Model(&row).Updates(map[string]any{"desired_config_sha256": configSHA, "credential_targets": manifest.CredentialTargets, "protocol_endpoint_targets": manifest.ProtocolEndpointTargets}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&state).Updates(map[string]interface{}{

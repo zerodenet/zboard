@@ -47,6 +47,14 @@ describe('protocolEndpointMutationMessage', () => {
     }))).toContain('没有活跃订阅凭证')
   })
 
+  it('distinguishes a saved copy from an entry delivered to subscriptions', () => {
+    const message = protocolEndpointMutationMessage(result({
+      node_group_membership: { added_node_group_ids: [2, 3], publish_status: 'queued', reconcile_tasks: [{ id: 9 } as any] },
+    }), true)
+    expect(message).toContain('任务 #9，会先准备凭证，再发布到节点')
+    expect(message).toContain('应用确认后，订阅才会收到新入口')
+  })
+
   it('keeps the inactive-copy confirmation explicit', () => {
     expect(protocolEndpointMutationMessage(result({ effect: 'management', effects: ['management'] }), true))
       .toBe('协议配置已复制为独立服务；当前未启用，无需发布节点。')
