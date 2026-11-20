@@ -20,7 +20,7 @@
       <UiSelect v-if="preview.delivery_encoding === 'base64'" v-model="rawMode" aria-label="Raw 正文类型" :options="[{ label: '配置正文 · JSON', value: 'config' }, { label: '订阅正文 · Base64', value: 'delivery' }]" />
       <div class="subscription-preview-raw-toolbar"><span>{{ rawType }} · {{ rawBytes.toLocaleString('zh-CN') }} 字节</span><UiButton variant="ghost" size="sm" :disabled="stale || Boolean(error) || preview.truncated" @click="copy">{{ copied ? '已复制' : '复制' }}</UiButton><UiButton variant="ghost" size="sm" :disabled="stale || Boolean(error) || preview.truncated" @click="download">下载</UiButton></div>
       <div class="subscription-preview-search"><UiInput v-model="query" type="search" aria-label="查找 Raw 正文" placeholder="查找正文" @keydown.enter.prevent="findNext" /><UiButton variant="ghost" size="sm" :disabled="!query" @click="findNext">下一个</UiButton><span role="status">{{ searchMessage }}</span></div>
-      <textarea ref="rawElement" class="subscription-preview-code" :value="raw" :aria-label="`原始输出 ${rawType}`" readonly spellcheck="false" wrap="off" />
+      <UiTextarea ref="rawElement" class="subscription-preview-code" :value="raw" :aria-label="`原始输出 ${rawType}`" readonly spellcheck="false" wrap="off" />
       <p v-if="preview.truncated" role="alert">服务端只返回了部分正文，无法复制或下载完整结果，请更新服务端后重试。</p>
       <p v-if="actionError" role="alert">{{ actionError }}</p>
     </div>
@@ -35,6 +35,7 @@ import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
 import UiSelect from './UiSelect.vue'
 import UiInput from './UiInput.vue'
+import UiTextarea from './UiTextarea.vue'
 import PageAlert from './PageAlert.vue'
 import FormField from './FormField.vue'
 import { subscriptionPreviewDelivery, subscriptionPreviewExtension } from '../utils/subscriptionPreviewRaw'
@@ -42,7 +43,7 @@ const props = defineProps<{ preview: SubscriptionTemplatePreview | null; loading
 const emit = defineEmits<{ retry: [] }>()
 function initialMode() { try { return localStorage.getItem('zboard.template-preview.view') === 'raw' ? 'raw' : 'groups' } catch { return 'groups' } }
 const mode = ref(initialMode()), rawMode = ref('config'), selectedGroup = ref(''), visibleMembers = ref(200)
-const rawElement = ref<HTMLTextAreaElement | null>(null), query = ref(''), searchMessage = ref(''), copied = ref(false), actionError = ref('')
+const rawElement = ref<InstanceType<typeof UiTextarea> | null>(null), query = ref(''), searchMessage = ref(''), copied = ref(false), actionError = ref('')
 let copyTimer: ReturnType<typeof setTimeout> | undefined
 const groups = computed(() => props.preview?.groups || [])
 const group = computed(() => groups.value.find(item => item.name === selectedGroup.value) || groups.value[0])
@@ -55,8 +56,9 @@ const rawBytes = computed(() => new TextEncoder().encode(raw.value).length)
 watch(raw, () => { searchMessage.value = ''; copied.value = false })
 function typeLabel(type: string) { return ({ select: '手动选择', selector: '手动选择', urltest: '自动测速', url_test: '自动测速', 'url-test': '自动测速', fallback: '故障转移' } as Record<string, string>)[type] || type }
 function findNext() {
-  if (!query.value || !rawElement.value) return
-  const element = rawElement.value, value = element.value
+  const element = rawElement.value?.$el as HTMLTextAreaElement | undefined
+  if (!query.value || !element) return
+  const value = element.value
   const start = value.indexOf(query.value, element.selectionEnd)
   const index = start >= 0 ? start : value.indexOf(query.value)
   searchMessage.value = index < 0 ? '未找到' : ''

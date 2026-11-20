@@ -11,6 +11,7 @@ import (
 var (
 	ErrConfigurationPublicationUnavailable = errors.New("configuration publication state capability unavailable")
 	ErrConfigurationDeploymentLost         = errors.New("configuration deployment ownership lost")
+	ErrConfigurationCredentialsBusy        = errors.New("credentials could not be reconciled before configuration publication")
 	ErrConfigurationPublicationCommit      = errors.New("configuration publication state commit failed")
 	ErrConfigurationCapabilityUnavailable  = errors.New("当前内核不支持本次设置，现有运行配置保持不变")
 )

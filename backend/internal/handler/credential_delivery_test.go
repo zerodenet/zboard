@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +17,86 @@ import (
 	"github.com/zerodenet/zboard/backend/internal/model"
 	"gorm.io/gorm/clause"
 )
+
+func TestProtocolRenameKeepsConfirmedSubscriptionDeliverySQLite(t *testing.T) {
+	assertProtocolRenameKeepsConfirmedSubscriptionDelivery(t, newOrderFixture(t))
+}
+
+func TestProtocolRenameKeepsConfirmedSubscriptionDeliveryMySQL(t *testing.T) {
+	assertProtocolRenameKeepsConfirmedSubscriptionDelivery(t, newMySQLBusinessOrderFixture(t))
+}
+
+func assertProtocolRenameKeepsConfirmedSubscriptionDelivery(t *testing.T, f orderFixture) {
+	t.Helper()
+	endpoint := attachOrderPublishEndpoint(t, f)
+	server, err := f.h.credentialCipher.Encrypt(`{"type":"shadowsocks","cipher":"chacha20-ietf-poly1305","password":"fixture"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	egress, err := f.h.credentialCipher.Encrypt(`{"type":"socks5","server":"out.example.test","port":1080}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := `{"type":"shadowsocks","server":"edge.example.test","port":21388,"cipher":"chacha20-ietf-poly1305"}`
+	if err := f.h.db.Model(&endpoint).Updates(map[string]any{
+		"name": "Japan SS [02]", "protocol": "shadowsocks", "address": "edge.example.test",
+		"listen_address": "::", "port": 21388, "public_port": 21388,
+		"server_config": server, "client_config": client, "delivery_revision": 1,
+		"egress_protocol": "socks5", "egress_config": egress,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	paid := f.paid(t, f.create(t, 0).ID)
+	var subscription model.Subscription
+	if err := f.h.db.First(&subscription, paid.SubscriptionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	confirmTestCredentialConfiguration(t, f.h, endpoint.NodeID)
+	assertDelivery := func(name string) {
+		t.Helper()
+		nodes, err := f.h.buildProjectedSubscriptionManifestNodes(t.Context(), []model.Subscription{subscription}, subscriptionProjectionFilter{}, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(nodes) != 1 || nodes[0].ID != endpoint.ID || nodes[0].Name != name || nodes[0].DeliveryStatus != "confirmed" {
+			t.Fatalf("expected confirmed endpoint %d with name %q, got %d nodes", endpoint.ID, name, len(nodes))
+		}
+	}
+	assertDelivery("Japan SS [02]")
+
+	body, err := json.Marshal(protocolEndpointWriteReq{
+		NodeID: endpoint.NodeID, Name: "Japan SS [03]", Protocol: "shadowsocks", Address: "edge.example.test",
+		Port: 21388, PublicPort: 21388, MultiplierMilli: 1000,
+		Config:       `{ "cipher": "chacha20-ietf-poly1305", "password": "fixture", "type": "shadowsocks" }`,
+		ClientConfig: `{ "cipher": "chacha20-ietf-poly1305", "type": "shadowsocks", "port": 21388, "server": "edge.example.test" }`,
+		EgressConfig: `{ "port": 1080, "server": "out.example.test", "type": "socks5" }`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	f.h.ProtocolEndpointUpdateHandler(response, announcementRequest(http.MethodPut, fmt.Sprintf("/api/v1/admin/protocol-endpoints/%d", endpoint.ID), f.token, string(body)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("rename failed: HTTP %d %s", response.Code, response.Body.String())
+	}
+	assertDelivery("Japan SS [03]")
+	var update struct {
+		Data protocolEndpointMutationResponse
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &update); err != nil {
+		t.Fatal(err)
+	}
+	if update.Data.PublishStatus != network.ProtocolEndpointPublishNotRequired {
+		t.Fatalf("rename requested publication: %q", update.Data.PublishStatus)
+	}
+	var saved model.ProtocolEndpoint
+	if err := f.h.db.First(&saved, endpoint.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.DeliveryRevision != 1 || !saved.ManagedPrincipalReady || saved.ServerConfig != server || saved.EgressConfig != egress || saved.ClientConfig != client {
+		t.Fatal("rename changed the previously confirmed protocol configuration")
+	}
+}
 
 func TestCredentialDeliverySQLiteDoesNotExposeNewPurchaseBeforeItsConfirmation(t *testing.T) {
 	assertPurchasedCredentialDelivery(t, newOrderFixture(t))
@@ -207,19 +290,21 @@ func assertCopiedProtocolDelivery(t *testing.T, f orderFixture) {
 		t.Fatalf("copy did not persist its node-group delivery task: %v", err)
 	}
 	endpointID := created.ProtocolEndpoint.ID
+	var nextEndpointID uint
 	assertProjection := func(stage string, wantCopy bool) {
 		t.Helper()
 		rows, err := f.h.buildProjectedSubscriptionManifestNodes(ctx, []model.Subscription{sub}, subscriptionProjectionFilter{}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var oldVisible, copyVisible bool
+		var oldVisible, copyVisible, nextVisible bool
 		for _, endpoint := range rows {
 			oldVisible = oldVisible || endpoint.ID == old.ID
 			copyVisible = copyVisible || endpoint.ID == endpointID
+			nextVisible = nextVisible || endpoint.ID == nextEndpointID
 		}
-		if !oldVisible || copyVisible != wantCopy {
-			t.Fatalf("%s: old=%t copy=%t, want copied visible=%t", stage, oldVisible, copyVisible, wantCopy)
+		if !oldVisible || copyVisible != wantCopy || (nextEndpointID != 0 && nextVisible != wantCopy) {
+			t.Fatalf("%s: original=%t first copy=%t second copy=%t, want copies visible=%t", stage, oldVisible, copyVisible, nextVisible, wantCopy)
 		}
 	}
 	assertProjection("saved with a pre-existing node heartbeat", false)
@@ -286,7 +371,7 @@ func assertCopiedProtocolDelivery(t *testing.T, f orderFixture) {
 	freeze := func(revision uint64) network.ConfigurationDeployment {
 		t.Helper()
 		_, sha, targets, err := f.h.compileNodeRuntimeConfigWithCredentialTargets(ctx, target, "test-connector", "", false)
-		if err != nil || targets.ProtocolEndpoints[endpointID] != revision {
+		if err != nil || targets.ProtocolEndpoints[endpointID] != revision || (nextEndpointID != 0 && targets.ProtocolEndpoints[nextEndpointID] != 1) {
 			t.Fatalf("actual compiler did not capture revision %d: targets=%+v error=%v", revision, targets.ProtocolEndpoints, err)
 		}
 		start, err := state.Begin(ctx, network.ConfigurationPublicationRequest{NodeID: target.ID, TriggerEndpointID: endpointID})
@@ -337,8 +422,21 @@ func assertCopiedProtocolDelivery(t *testing.T, f orderFixture) {
 	if _, err := service.Save(ctx, 1, &snapshot, copyRequest); err != nil {
 		t.Fatal(err)
 	}
+	var currentGroup model.NodeGroup
+	if err := f.h.db.First(&currentGroup, f.group.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	nextCopy := copyRequest
+	nextCopy.ID, nextCopy.Name, nextCopy.Port, nextCopy.PublicPort = 0, "Trojan second copy", 10443, 10443
+	nextCopy.ClientConfig = `{"type":"trojan","server":"192.0.2.20","port":10443}`
+	nextCopy.MembershipChanges = []network.ProtocolEndpointMembershipChange{{NodeGroupID: currentGroup.ID, ExpectedRevision: currentGroup.Revision, Member: true}}
+	next, err := service.Save(ctx, 1, nil, nextCopy)
+	if err != nil || next.MembershipMutation == nil {
+		t.Fatalf("second copy did not persist its delivery task: %v", err)
+	}
+	nextEndpointID = next.ProtocolEndpoint.ID
 	complete(stale)
-	assertProjection("kernel acknowledgement for previous listener", false)
+	assertProjection("kernel acknowledgement for the previous listener and before the second copy", false)
 
 	if err := f.h.reconcileNodeGroupCredentialsContext(ctx, f.group.ID); err != nil {
 		t.Fatal(err)

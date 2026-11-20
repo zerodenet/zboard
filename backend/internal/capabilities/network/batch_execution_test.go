@@ -106,17 +106,27 @@ func TestBatchResourceExecutionDoesNotCommitAfterActivationValidationFailure(t *
 }
 
 func TestBatchNodeGroupOnlyRetriesKnownCredentialContention(t *testing.T) {
-	for _, target := range []string{"node_group", "node"} {
-		t.Run(target, func(t *testing.T) {
+	for _, test := range []struct {
+		name, target string
+		cause        error
+		wantRetry    bool
+	}{
+		{"group contention", "node_group", ErrResourcesBusy, true},
+		{"node credential contention before apply", "node", ErrConfigurationCredentialsBusy, true},
+		{"unclassified publication contention", "node", ErrResourcesBusy, false},
+		{"publication state commit failed", "node", errors.Join(ErrConfigurationCredentialsBusy, ErrConfigurationPublicationCommit), false},
+		{"unknowable remote result", "node", ConfigurationOutcomeUnknown(ErrResourcesBusy), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			repo := &batchResourceRepositoryStub{action: BatchResourceAction{
-				Kind: BatchNodeGroupSync, TargetType: target, NodeID: 3,
+				Kind: BatchNodeGroupSync, TargetType: test.target, NodeID: 3,
 				NodeGroupID: 7, ActorID: 4, TaskItemID: 2, PublishEndpointID: 5,
 			}}
-			adapter := &batchResourceAdapterStub{groupErr: ErrResourcesBusy, publishErr: ErrResourcesBusy}
+			adapter := &batchResourceAdapterStub{groupErr: test.cause, publishErr: test.cause}
 			err := (BatchResourceExecution{Repository: repo, Adapter: adapter}).Execute(t.Context(), BatchResourceClaim{TaskID: 1, ItemID: 2, Token: "lease"})
 			var retryable jobs.Retryable
-			if !errors.Is(err, ErrResourcesBusy) || errors.As(err, &retryable) != (target == "node_group") {
-				t.Fatalf("unexpected retry policy for %s: %T %v", target, err, err)
+			if !errors.Is(err, test.cause) || errors.As(err, &retryable) != test.wantRetry {
+				t.Fatalf("unexpected retry policy: %T %v", err, err)
 			}
 		})
 	}
