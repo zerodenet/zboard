@@ -23,7 +23,10 @@ func TestMySQLRecoveredEntitlementKeepsLateUsageAndRevocationInOldEpoch(t *testi
 }
 func assertRecoveredEntitlementEpoch(t *testing.T, base orderFixture) {
 	attachOrderPublishEndpoint(t, base)
-	f := newRenewalValueFixture(t, base)
+	// This scenario invokes revocation and legacy accounting against the live
+	// clock. Keep the recovered period active while expiring the first one.
+	purchasedAt := time.Now().UTC().Truncate(time.Hour).AddDate(-1, 0, -3)
+	f := newRenewalValueFixtureAt(t, base, purchasedAt)
 	h := base.h
 	if err := h.db.Model(&model.Subscription{}).Where("id = ?", f.subscription).Update("flow_used", int64(10)).Error; err != nil {
 		t.Fatal(err)
@@ -57,7 +60,7 @@ func assertRecoveredEntitlementEpoch(t *testing.T, base orderFixture) {
 	if err := h.db.First(&before, f.subscription).Error; err != nil || before.FlowUsed != 40 {
 		t.Fatalf("pre-recovery usage %d %v", before.FlowUsed, err)
 	}
-	*f.at = time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	*f.at = before.EndAt.AddDate(0, 0, 1)
 	pending := f.create(t, f.monthly, f.subscription, "recover-epoch")
 	if _, err := f.payments.Configure(t.Context(), 1, pending.ID, commerce.FundingRequest{UseBalance: true}); err != nil {
 		t.Fatal(err)

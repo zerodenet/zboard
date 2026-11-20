@@ -85,7 +85,8 @@ func TestUsageProjectionReadsOnlyRequiredColumnsAndPreservesMetadata(t *testing.
 	}); err != nil {
 		t.Fatal(err)
 	}
-	count, err := (UsageProjectionWorker{DB: db}).Drain(t.Context(), UsageProjectionBatchLimit)
+	worker := UsageProjectionWorker{DB: db, Now: func() time.Time { return records[0].At.Add(2 * time.Hour) }}
+	count, err := worker.Drain(t.Context(), UsageProjectionBatchLimit)
 	active = false
 	if err != nil || count != len(records) {
 		t.Fatal(count, err)
@@ -131,7 +132,7 @@ func TestUsageProjectionNarrowColumnsStillRejectChangedSourceEvidence(t *testing
 				}
 			}
 			update(test.changed)
-			worker := UsageProjectionWorker{DB: db}
+			worker := UsageProjectionWorker{DB: db, Now: func() time.Time { return records[0].At.Add(time.Hour) }}
 			if count, err := worker.Drain(context.Background(), 200); err == nil || count != 0 {
 				t.Fatalf("changed evidence was acknowledged: count=%d err=%v", count, err)
 			}

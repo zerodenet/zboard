@@ -49,7 +49,10 @@ func TestMySQLHourlyProjectionCopyPreservesUnprojectedBoundary(t *testing.T) {
 
 func checkHourlyProjectionCopy(t *testing.T, sourceMySQL, targetMySQL bool) {
 	t.Helper()
-	source, target := hourlyCopyDatabase(t, sourceMySQL), hourlyCopyDatabase(t, targetMySQL)
+	at := time.Date(2026, 10, 20, 1, 15, 0, 0, time.UTC)
+	clock := &gorm.Session{NowFunc: func() time.Time { return at.Add(time.Hour) }}
+	source := hourlyCopyDatabase(t, sourceMySQL).Session(clock)
+	target := hourlyCopyDatabase(t, targetMySQL).Session(clock)
 	for _, parent := range []any{
 		&model.User{ID: 7, Email: "hourly-copy@example.test", Password: "unused", Status: "active"},
 		&model.Node{ID: 3, Name: "copy-node", Address: "node.example.test", Config: "{}"},
@@ -59,7 +62,6 @@ func checkHourlyProjectionCopy(t *testing.T, sourceMySQL, targetMySQL bool) {
 			t.Fatal(err)
 		}
 	}
-	at := time.Date(2026, 10, 20, 1, 15, 0, 0, time.UTC)
 	// Monitor aggregates survive database moves with their weighted minute.
 	history := []platform.SystemMinute{{At: at, Sums: [5]float64{17.5, 2, 3, 4, 5}, Counts: [5]int{12, 12, 12, 12, 12}}}
 	if err := (platformstore.SystemMetricHistory{DB: source}).Save(context.Background(), history, at); err != nil {

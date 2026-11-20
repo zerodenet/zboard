@@ -166,7 +166,8 @@ func TestHourlyProjectionRejectsSQLiteStoredBucketOverflowWithoutLosingIntent(t 
 	if err := db.Table("traffic_usage_hourly").Create(map[string]any{"record_at": "2026-10-20 01:00:00", "user_id": 0, "subscription_id": 0, "node_id": 1, "protocol_endpoint_id": 3, "protocol_multiplier_milli": 1500, "used_bytes": int64(math.MaxInt64), "record_count": 0}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if count, err := (UsageProjectionWorker{DB: db}).Drain(context.Background(), 200); err == nil || count != 0 {
+	worker := UsageProjectionWorker{DB: db, Now: func() time.Time { return time.Date(2026, 10, 20, 2, 0, 0, 0, time.UTC) }}
+	if count, err := worker.Drain(context.Background(), 200); err == nil || count != 0 {
 		t.Fatal("SQLite promoted exact hourly integer to REAL", count, err)
 	}
 	projectionCounts(t, db, 1, 1, 0)
