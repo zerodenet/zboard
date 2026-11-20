@@ -16,7 +16,9 @@ import (
 )
 
 func TestMySQLHourlyProjectionBatchesMissingColumnsWithoutChangingCutover(t *testing.T) {
+	at := time.Date(2026, 10, 20, 1, 0, 0, 0, time.UTC)
 	db, admin := hourlyMySQLFixture(t)
+	db = db.Session(&gorm.Session{NowFunc: func() time.Time { return at.Add(time.Hour) }})
 	pool, err := db.DB()
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +105,6 @@ func TestMySQLHourlyProjectionBatchesMissingColumnsWithoutChangingCutover(t *tes
 			t.Fatal(err)
 		}
 	}
-	at := time.Date(2026, 10, 20, 1, 0, 0, 0, time.UTC)
 	fact := model.TrafficRecord{UserID: 2, SubscriptionID: 3, NodeID: 4, ProtocolEndpointID: 5, ReportID: "legacy-batch", Nonce: "legacy-batch", At: at, RawBytes: 7, UploadBytes: 3, DownloadBytes: 4, UsedBytes: 11, ProtocolMultiplierMilli: 1000, Meta: `{"retained":"legacy source"}`}
 	if err := db.Create(&fact).Error; err != nil {
 		t.Fatal(err)
