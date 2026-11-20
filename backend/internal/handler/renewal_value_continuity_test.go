@@ -27,7 +27,12 @@ type renewalValueFixture struct {
 
 func newRenewalValueFixture(t *testing.T, f orderFixture) renewalValueFixture {
 	t.Helper()
-	at := time.Date(2025, 10, 19, 0, 0, 0, 0, time.UTC)
+	return newRenewalValueFixtureAt(t, f, time.Date(2025, 10, 19, 0, 0, 0, 0, time.UTC))
+}
+
+func newRenewalValueFixtureAt(t *testing.T, f orderFixture, purchasedAt time.Time) renewalValueFixture {
+	t.Helper()
+	at := purchasedAt
 	clock := func() time.Time { return at }
 	db := f.h.db.Session(&gorm.Session{NowFunc: clock})
 	if err := db.Model(&f.planRecord).Updates(map[string]any{"traffic_bytes": 100, "reset_policy": 1}).Error; err != nil {
@@ -54,8 +59,9 @@ func newRenewalValueFixture(t *testing.T, f orderFixture) renewalValueFixture {
 	fact := readValueEvidence(t, f, root.ID)
 	fixture.root = root
 	fixture.subscription = fact.SubscriptionID
-	at = time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
-	next := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	expiresAt := purchasedAt.AddDate(1, 0, 0)
+	at = expiresAt.AddDate(0, 0, -14)
+	next := expiresAt.AddDate(0, 0, 13)
 	// Authoritative current quota reflects intervening resets with no prior use.
 	if err := db.Model(&model.Subscription{}).Where("id = ?", fixture.subscription).Updates(map[string]any{"flow_used": 80, "flow_total": 100, "cycle_start_used": 0, "next_reset_at": next}).Error; err != nil {
 		t.Fatal(err)
