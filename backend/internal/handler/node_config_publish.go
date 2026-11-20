@@ -151,6 +151,14 @@ func (h *handlers) publishNodeConfigWithOwnerLocked(ctx context.Context, nodeID,
 	if !probe.Installed {
 		return fail(fmt.Errorf("detect installed Zero before publishing config: Zero is not installed"), "")
 	}
+	// Align credentials before creating connector state or rendering a payload.
+	if err := h.services.NodeCredentialReconciliation(h.credentialCipher, true).ReconcileNode(ctx, node.ID); err != nil {
+		cause := fmt.Errorf("reconcile node subscription credentials: %w", err)
+		if errors.Is(err, network.ErrResourcesBusy) {
+			cause = fmt.Errorf("%w: %w", network.ErrConfigurationCredentialsBusy, cause)
+		}
+		return fail(cause, "")
+	}
 	// Readiness commits only after the target accepts and activates this config.
 	mieruAccess, managedAccess := true, true
 	credential, err := h.nodeConnectorCredential(node)
@@ -175,9 +183,6 @@ func (h *handlers) publishNodeConfigWithOwnerLocked(ctx context.Context, nodeID,
 			h.invalidateZeroEventCredential(node.ID)
 		}
 		return err
-	}
-	if err := h.services.NodeCredentialReconciliation(h.credentialCipher, true).ReconcileNode(ctx, node.ID); err != nil {
-		return fail(fmt.Errorf("reconcile node subscription credentials: %w", err), "")
 	}
 	runtimeConfig, configSHA, targets, err := h.compileNodeRuntimeConfigWithCredentialTargets(ctx, node, credential.Raw, probe.Version, suppressMieruFallback)
 	if err != nil {

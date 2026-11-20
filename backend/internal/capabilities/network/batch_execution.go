@@ -151,7 +151,13 @@ func (s BatchResourceExecution) Execute(ctx context.Context, claim BatchResource
 			}
 			return err
 		}
-		return s.Adapter.PublishBatchNodeConfig(ctx, action)
+		err := s.Adapter.PublishBatchNodeConfig(ctx, action)
+		// This error is emitted only before applying configuration to the node.
+		// Keep completed group items and resume the original node item.
+		if errors.Is(err, ErrConfigurationCredentialsBusy) && !errors.Is(err, ErrConfigurationPublicationCommit) {
+			return jobs.Retry(err)
+		}
+		return err
 	}
 	if action.Kind == BatchProtocolActive && action.Active {
 		if err := s.Adapter.ValidateBatchProtocolActivation(ctx, append([]uint(nil), action.EndpointIDs...)); err != nil {

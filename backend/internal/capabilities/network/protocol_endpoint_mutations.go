@@ -237,12 +237,35 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 	if err != nil {
 		return ProtocolEndpointMutationResult{}, err
 	}
-	ciphertext, err := s.Cipher.Encrypt(request.ServerConfig)
-	if err != nil {
-		return ProtocolEndpointMutationResult{}, err
+	var ciphertext, egressCiphertext string
+	if before != nil {
+		stored := before.Endpoint
+		// Delivery receipts bind the stored configuration bytes. Keep those
+		// bytes when the editor only changes their JSON formatting.
+		if stored.ServerCiphertext != "" && canonicalEndpointJSON(stored.ServerConfig, "{}") == canonicalEndpointJSON(request.ServerConfig, "{}") {
+			request.ServerConfig = stored.ServerConfig
+			ciphertext = stored.ServerCiphertext
+		}
+		if egressConfig != "" && stored.EgressProtocol == egressProtocol &&
+			canonicalEndpointJSON(stored.EgressConfig, "{}") == canonicalEndpointJSON(egressConfig, "{}") {
+			egressConfig = stored.EgressConfig
+			egressCiphertext = stored.EgressCiphertext
+		}
+		if strings.TrimSpace(stored.ClientConfig) != "" &&
+			canonicalEndpointJSON(stored.ClientConfig, "{}") == canonicalEndpointJSON(request.ClientConfig, "{}") {
+			request.ClientConfig = stored.ClientConfig
+		}
+		if previousListen, err := NormalizeProtocolListenAddress(stored.ListenAddress); err == nil && previousListen == listenAddress {
+			listenAddress = stored.ListenAddress
+		}
 	}
-	egressCiphertext := ""
-	if egressConfig != "" {
+	if ciphertext == "" {
+		ciphertext, err = s.Cipher.Encrypt(request.ServerConfig)
+		if err != nil {
+			return ProtocolEndpointMutationResult{}, err
+		}
+	}
+	if egressConfig != "" && egressCiphertext == "" {
 		egressCiphertext, err = s.Cipher.Encrypt(egressConfig)
 		if err != nil {
 			return ProtocolEndpointMutationResult{}, err
@@ -279,9 +302,6 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 	if record.Protocol != "mieru" {
 		record.MieruPrincipalReady = false
 	}
-	if record.Protocol != "trojan" && record.Protocol != "hysteria2" || before == nil || before.Endpoint.NodeID != record.NodeID || !strings.EqualFold(before.Endpoint.Protocol, record.Protocol) {
-		record.ManagedPrincipalReady = false
-	}
 	managedCertificateID := uint(0)
 	if request.ManagedCertificateID != nil {
 		managedCertificateID = *request.ManagedCertificateID
@@ -291,6 +311,10 @@ func (s ProtocolEndpointMutations) Save(ctx context.Context, actor uint, before 
 		previous = &before.Endpoint
 	}
 	effects := ClassifyProtocolEndpointChange(previous, record, beforeManagedCertificateID(before), managedCertificateID)
+	if previous == nil || previous.NodeID != record.NodeID || !strings.EqualFold(previous.Protocol, record.Protocol) ||
+		(effects.PublishStatus == ProtocolEndpointPublishQueued && record.Protocol != "trojan" && record.Protocol != "hysteria2") {
+		record.ManagedPrincipalReady = false
+	}
 	return s.Repository.CommitProtocolEndpointMutation(ctx, actor, before, ProtocolEndpointMutationChange{
 		Endpoint: record, ManagedCertificateID: managedCertificateID, MembershipChanges: changes,
 		CredentialProtocols: normalizedProtocolSet(request.CredentialProtocols), Effects: effects, Now: s.now(),
@@ -441,8 +465,13 @@ func DirectProtocolEndpointPublishNodeIDs(runtimeNodeIDs, membershipNodeIDs []ui
 
 func canonicalEndpointJSON(value, fallback string) string {
 	value = normalizedEndpointJSON(value, fallback)
+	if !json.Valid([]byte(value)) {
+		return value
+	}
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.UseNumber()
 	var decoded any
-	if json.Unmarshal([]byte(value), &decoded) != nil {
+	if decoder.Decode(&decoded) != nil {
 		return value
 	}
 	encoded, err := json.Marshal(decoded)

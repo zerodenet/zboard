@@ -294,38 +294,57 @@ func TestBatchProtocolCopyRequeuesCredentialContentionBeforePublishing(t *testin
 	if err := runner.Run(ctx, taskID, token); !errors.Is(err, jobs.ErrLeaseLost) {
 		t.Fatalf("released owner ran again: %v", err)
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
-waitForRetry:
-	for {
-		select {
-		case <-waitCtx.Done():
-			t.Fatal("worker did not find the original task after backoff", waitCtx.Err())
-		case <-ticker.C:
-			queued, err := lifecycle.Ready(waitCtx, 1)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(queued) == 1 && queued[0] == taskID {
-				break waitForRetry
+	waitForRetry := func() string {
+		t.Helper()
+		waitCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		defer cancel()
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-waitCtx.Done():
+				t.Fatal("worker did not find the original task after backoff", waitCtx.Err())
+				return ""
+			case <-ticker.C:
+				queued, err := lifecycle.Ready(waitCtx, 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(queued) == 1 && queued[0] == taskID {
+					token, err := control.Claim(ctx, 0, taskID, true)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return token
+				}
 			}
 		}
 	}
+
 	adapter.groupErr = nil
-	retryToken, err := control.Claim(ctx, 0, taskID, true)
-	if err != nil {
+	adapter.publishErr = network.ErrConfigurationCredentialsBusy
+	if err := runner.Run(ctx, taskID, waitForRetry()); err != nil {
+		t.Fatalf("pre-apply contention became a terminal failure: %v", err)
+	}
+	if err := db.First(&task, taskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.Run(ctx, taskID, retryToken); err != nil {
+	if err := db.Where("task_id = ?", taskID).Order("id").Find(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != 0 || task.Current != 2 || items[0].Status != 2 || items[1].Status != 2 || items[2].Status != 0 || items[2].Attempts != 1 {
+		t.Fatalf("node contention did not preserve both completed group items: task=%+v items=%+v", task, items)
+	}
+
+	adapter.publishErr = nil
+	if err := runner.Run(ctx, taskID, waitForRetry()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&task, taskID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != 2 || task.Attempts != 2 || task.Current != 3 || len(adapter.groups) != 3 || adapter.groups[2].NodeGroupID != secondGroup.ID || len(adapter.published) != 1 ||
-		adapter.published[0].PublishEndpointID != created.ProtocolEndpoint.ID {
+	if task.Status != 2 || task.Attempts != 3 || task.Current != 3 || len(adapter.groups) != 3 || adapter.groups[2].NodeGroupID != secondGroup.ID || len(adapter.published) != 2 ||
+		adapter.published[1].PublishEndpointID != created.ProtocolEndpoint.ID {
 		t.Fatalf("resumed task=%+v groups=%+v publications=%+v", task, adapter.groups, adapter.published)
 	}
 }
