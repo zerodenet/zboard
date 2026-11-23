@@ -45,7 +45,15 @@ func (s NodeRetirement) Read(ctx context.Context, id uint) (network.Retirement, 
 	}
 	return out, nil
 }
-func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) (out network.Retirement, err error) {
+func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) (network.Retirement, error) {
+	return s.start(ctx, actor, id, mode, false)
+}
+
+func (s NodeRetirement) ResumeKeepingDNS(ctx context.Context, actor, id uint) (network.Retirement, error) {
+	return s.start(ctx, actor, id, "delete", true)
+}
+
+func (s NodeRetirement) start(ctx context.Context, actor, id uint, mode string, keepDNS bool) (out network.Retirement, err error) {
 	if mode != "retire" && mode != "detach" && mode != "delete" {
 		return out, jobs.ErrInvalid
 	}
@@ -58,6 +66,9 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, "node_id = ?", id)
 		if found.Error != nil && !errors.Is(found.Error, gorm.ErrRecordNotFound) {
 			return found.Error
+		}
+		if keepDNS && (found.Error != nil || row.Mode != "delete") {
+			return retirementBlocked("仅可在节点删除任务的 DNS 清理失败后保留剩余 DNS。")
 		}
 		if found.Error == nil {
 			if err := validateRetirementPlan(row); err != nil {
@@ -77,6 +88,26 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 			var run jobstore.Record
 			if err := tx.First(&run, "id = ?", row.RunID).Error; err != nil {
 				return err
+			}
+			if keepDNS {
+				if run.State != string(jobs.Failed) {
+					return retirementBlocked("仅可在节点删除任务的 DNS 清理失败后保留剩余 DNS。")
+				}
+				steps := retirementView(row).Steps
+				failedDNS := false
+				for i, step := range steps {
+					if step.Kind != "dns" || step.State == "succeeded" || step.State == "retained" {
+						continue
+					}
+					failedDNS = failedDNS || step.State == "failed"
+					steps[i].State = "retained"
+					steps[i].Message = "管理员选择停止清理此供应商 DNS。"
+				}
+				if !failedDNS {
+					return retirementBlocked("没有清理失败的 DNS 项目。")
+				}
+				encoded, _ := json.Marshal(steps)
+				row.Steps = string(encoded)
 			}
 			switch jobs.State(run.State) {
 			case jobs.Queued, jobs.Running, jobs.RetryWait, jobs.CancelRequested:
@@ -212,7 +243,11 @@ func (s NodeRetirement) Start(ctx context.Context, actor, id uint, mode string) 
 		if err := tx.Save(&row).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.AuditLog{UserID: &actor, Action: "node.delete.start", Target: fmt.Sprintf("node:%d", id), Detail: mode + " run=" + run.ID}).Error; err != nil {
+		detail := mode + " run=" + run.ID
+		if keepDNS {
+			detail += " keep_remaining_dns=true"
+		}
+		if err := tx.Create(&model.AuditLog{UserID: &actor, Action: "node.delete.start", Target: fmt.Sprintf("node:%d", id), Detail: detail}).Error; err != nil {
 			return err
 		}
 		out = retirementView(row)

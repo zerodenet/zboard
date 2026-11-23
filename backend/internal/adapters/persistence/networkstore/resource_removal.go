@@ -24,13 +24,14 @@ func (s ResourceRemoval) RemoveCertificate(ctx context.Context, actor, id uint) 
 func (s ResourceRemoval) remove(ctx context.Context, actor, id uint, kind network.OperationKind) error {
 	return jobstore.New(s.DB).WithLedgerLock(ctx, func(tx *gorm.DB) error {
 		var row any
+		var dnsNodeID uint
 		var status, action, target, detail string
 		if kind == network.DNSOperation {
 			var record model.ManagedDNSRecord
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, id).Error; err != nil {
 				return removalError(err)
 			}
-			row, status = &record, record.Status
+			row, status, dnsNodeID = &record, record.Status, record.NodeID
 			action, target = "dns_record.delete", fmt.Sprintf("managed_dns_record:%d", id)
 			detail = fmt.Sprintf("domain=%s provider_account=%d remote_record_deleted=false external_cleanup=not_attempted", record.DomainName, record.ProviderAccountID)
 		} else {
@@ -52,6 +53,15 @@ func (s ResourceRemoval) remove(ctx context.Context, actor, id uint, kind networ
 		blockers, err := resourceRemovalBlockers(tx, kind, id, status)
 		if err != nil {
 			return err
+		}
+		if kind == network.DNSOperation && len(blockers) == 1 && blockers["node_retirement"] > 0 {
+			kept, err := keepDNSInStoppedNodeDeletion(tx, dnsNodeID, id)
+			if err != nil {
+				return err
+			}
+			if kept {
+				delete(blockers, "node_retirement")
+			}
 		}
 		if len(blockers) > 0 {
 			return &network.ResourceRemovalBlocked{Blockers: blockers}

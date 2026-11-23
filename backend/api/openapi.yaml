@@ -1764,7 +1764,7 @@ paths:
     delete:
       tags: [admin, providers]
       summary: Delete the local DNS management record
-      description: Removes local state without a provider API call. Remote DNS remains intact. Running synchronization, unresolved shared executions and contradictory outcomes block concurrent deletion.
+      description: Removes local state without a provider API call. Remote DNS remains intact. A failed or canceled node deletion records the removed DNS as skipped so the node deletion can resume. Running synchronization, unresolved shared executions and contradictory outcomes block concurrent deletion.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -2903,7 +2903,7 @@ paths:
     delete:
       tags: [nodes]
       summary: Delete a node asset and its local associations
-      description: "Starts the same durable deletion command as POST /admin/nodes/{id}/deletion. System-managed provider DNS must be deleted or confirmed absent. SSH cleanup is best effort with explicit unconfirmed results. Historical billing identities and records are retained."
+      description: "Starts the same durable deletion command as POST /admin/nodes/{id}/deletion. Provider DNS with confirmed ownership is cleaned up. Shared records and records whose ownership cannot be confirmed are retained. SSH cleanup is best effort with explicit unconfirmed results. Historical billing identities and records are retained."
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -2939,7 +2939,7 @@ paths:
     post:
       tags: [admin, nodes]
       summary: Delete a node or retry unfinished deletion
-      description: "Deletes system-managed provider DNS before finalizing node removal. Provider ownership, permissions and shared dependencies are rechecked. Missing or unavailable SSH never bypasses provider cleanup and never blocks deletion by itself; host cleanup failures remain explicit unconfirmed outcomes. Billing identities, ledger and execution history remain. A completed historical detach may be explicitly upgraded to deletion. Disable is a separate reversible operation."
+      description: "Cleans up provider DNS with confirmed ownership before finalizing node removal. Shared records and records whose ownership cannot be confirmed are retained. If provider DNS cleanup fails, the administrator may retry or keep the remaining DNS. Host cleanup is best effort and unavailable SSH is reported as an unconfirmed outcome. Billing identities, ledger and execution history remain. A completed historical detach may be explicitly upgraded to deletion. Disable is a separate reversible operation."
       requestBody:
         required: true
         content:
@@ -2950,6 +2950,10 @@ paths:
               required: [mode]
               properties:
                 mode: { type: string, enum: [delete] }
+                keep_remaining_dns:
+                  type: boolean
+                  default: false
+                  description: Resume a failed deletion with a failed DNS step, skipping further provider DNS cleanup while continuing node deletion.
       responses:
         "202":
           description: Node deletion accepted or existing deletion returned
@@ -6842,7 +6846,10 @@ components:
               provider_record_id: { type: string }
               id: { type: integer, format: int64 }
               label: { type: string }
-              state: { type: string, enum: [pending, running, succeeded, retained, unconfirmed, failed] }
+              state:
+                type: string
+                enum: [pending, running, succeeded, retained, unconfirmed, failed]
+                description: Retained records cleanup that was deliberately skipped. Unconfirmed records a host cleanup outcome that could not be verified.
               message: { type: string }
     ApiErrorDetail:
       type: object

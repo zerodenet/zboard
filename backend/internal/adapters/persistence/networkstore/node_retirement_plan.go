@@ -32,9 +32,6 @@ func validateRetirementPlan(row model.NodeRetirement) error {
 				return jobs.ErrInvalid
 			}
 		case "pending", "running", "succeeded", "retained", "failed":
-			if row.Mode == "delete" && step.Kind == "dns" && step.State == "retained" {
-				return jobs.ErrInvalid
-			}
 		default:
 			return jobs.ErrInvalid
 		}

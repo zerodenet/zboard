@@ -28,7 +28,7 @@
           <td class="table-primary-column"><div class="cell-title"><strong>{{ record.record_type }} {{ record.domain_name }}</strong><EndpointAddress :address="record.record_value" /><span>TTL {{ record.ttl === 1 ? '自动' : record.ttl }}<template v-if="record.proxied"> · Cloudflare 代理</template></span></div></td>
           <td data-column-priority="2"><RouterLink class="table-secondary-text" v-overflow-title="record.node_name || `VPS #${record.node_id}`" :to="`/admin/nodes?node=${record.node_id}`">{{ record.node_name || `VPS #${record.node_id}` }}</RouterLink></td>
           <td data-column-priority="2"><TableText :value="record.provider_name" /></td>
-          <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="record.last_error" class="row-error" v-overflow-title="record.last_error">{{ record.last_error }}</small></td>
+          <td><StatusBadge :tone="dnsTone(record.status)">{{ dnsStatus(record.status) }}</StatusBadge><small v-if="syncErrors[record.id] || record.last_error" class="row-error" v-overflow-title="syncErrors[record.id] || record.last_error" role="status">{{ syncErrors[record.id] || record.last_error }}</small></td>
           <td data-column-priority="3">
             <StatusBadge v-if="record.public_resolved" tone="success">已观察到</StatusBadge>
             <span v-else-if="awaitingPublicDNS(record)" class="muted-value">自动核验中</span>
@@ -40,7 +40,7 @@
               <UiButton size="sm" variant="ghost" :disabled="record.status === 'syncing' || record.status === 'deleting'" @click="openEdit(record)"><UiIcon name="settings" />编辑</UiButton>
               <UiButton size="sm" variant="ghost" :loading="operatingRecord === record.id" :disabled="record.status === 'syncing' || record.status === 'deleting'" @click="syncRecord(record)">同步</UiButton>
               <UiButton as-child variant="ghost" size="sm"><RouterLink :to="{ path: '/admin/certificates', query: { dns_domain: record.domain_name, dns_node: record.node_id, dns_provider: record.provider_account_id } }">申请证书</RouterLink></UiButton>
-              <UiButton size="sm" variant="danger" :loading="deletingRecord === record.id" :disabled="record.status === 'syncing'" @click="removeRecord(record)"><UiIcon name="trash" />删除</UiButton>
+              <UiButton size="sm" variant="danger" :disabled="record.status === 'syncing'" @click="openDelete(record)"><UiIcon name="trash" />删除</UiButton>
             </RowActions>
           </td>
         </tr></tbody>
@@ -124,6 +124,22 @@
       </form>
       <template #footer="{ requestClose }"><UiButton variant="secondary" type="button" @click="requestClose">取消</UiButton><UiButton type="submit" form="dns-edit-form" :loading="savingEdit" :disabled="editRecoveryBlocked || !draftWritable">保存并同步</UiButton></template>
     </ModalDialog>
+
+    <ModalDialog :open="Boolean(deleteTarget)" title="删除 DNS 解析" description="删除面板管理记录，保留供应商上的解析。" size="sm" :busy="deletingRecord" initial-focus-selector="#dns-delete-cancel" @close="closeDelete">
+      <p v-if="deleteTarget" class="delete-dns-target">{{ deleteTarget.record_type }} {{ deleteTarget.domain_name }}</p>
+      <PageAlert v-if="deleteError" tone="danger" title="无法删除 DNS 解析">
+        {{ deleteError }}
+        <template v-if="deleteBlockedByNode && deleteTarget" #actions>
+          <UiButton as-child size="sm" variant="secondary">
+            <RouterLink :to="{ path: '/admin/nodes', query: { deletion: deleteTarget.node_id, return_to: route.fullPath } }">查看节点删除进度</RouterLink>
+          </UiButton>
+        </template>
+      </PageAlert>
+      <template #footer>
+        <UiButton id="dns-delete-cancel" type="button" variant="secondary" :disabled="deletingRecord" @click="closeDelete">取消</UiButton>
+        <UiButton type="button" variant="danger" :loading="deletingRecord" @click="removeRecord">{{ deleteError ? '重试删除' : '确认删除' }}</UiButton>
+      </template>
+    </ModalDialog>
   </section>
 </template>
 
@@ -172,7 +188,7 @@ import WorkbenchFilterBar from '../components/WorkbenchFilterBar.vue'
 import WorkbenchFilterInput from '../components/WorkbenchFilterInput.vue'
 import WorkbenchFilterSelect from '../components/WorkbenchFilterSelect.vue'
 import { useDirtyForm, useFormErrors, useUnsavedChangesGuard } from '../composables/useFormState'
-import { confirmAction } from '../utils/feedback'
+import { normalizeApiErrorMessage } from '../utils/apiError'
 import { preserveAdminReturnTo } from '../utils/navigation'
 import { collectFieldErrors, isIntegerInRange } from '../utils/validation'
 import {
@@ -203,7 +219,11 @@ const message = ref('')
 const dnsOpen = ref(false)
 const savingDNS = ref(false)
 const operatingRecord = ref(0)
-const deletingRecord = ref(0)
+const syncErrors = ref<Record<number, string>>({})
+const deleteTarget = ref<ManagedDNSRecord | null>(null)
+const deletingRecord = ref(false)
+const deleteError = ref('')
+const deleteBlockedByNode = ref(false)
 const editOpen = ref(false)
 const savingEdit = ref(false)
 const editForm = reactive({ id: 0, provider_account_id: 0, node_id: 0, domain_name: '', record_type: 'A' as 'A' | 'AAAA', record_value: '', ttl: 1, proxied: false, revision: 0 })
@@ -318,6 +338,8 @@ watch(() => draftApp.user.id, actor => {
   if (actor === draftOwner) return
   createAddressController?.abort(); editAddressController?.abort(); createAddressRequest++; editAddressRequest++
   dnsOpen.value = false; editOpen.value = false
+  deleteTarget.value = null; deletingRecord.value = false; deleteError.value = ''; deleteBlockedByNode.value = false
+  syncErrors.value = {}
   createRecoveryBlocked.value = false; editRecoveryBlocked.value = false
   createProviderBaseline.value = undefined; editProviderBaseline.value = null; editDraftBaseline.value = null
   Object.assign(dnsForm, { provider_account_id: 0, node_id: 0, domain_name: '', ipv4_value: '', ipv6_value: '', ttl: 1, proxied: false, takeover_existing: false })
@@ -475,14 +497,14 @@ async function createDNS() {
 }
 async function syncRecord(record: ManagedDNSRecord) {
   operatingRecord.value = record.id
-  error.value = ''
+  delete syncErrors.value[record.id]
   try {
     const takeover = record.status === 'failed' && record.last_error.includes('明确选择接管')
     await syncManagedDNSRecord(record.id, takeover)
     message.value = `${record.domain_name} 已开始同步。`
     await refreshAll()
   } catch (cause: any) {
-    error.value = cause?.response?.data?.message || 'DNS 同步启动失败。'
+    syncErrors.value[record.id] = normalizeApiErrorMessage(cause, 'DNS 同步启动失败。')
   } finally {
     operatingRecord.value = 0
   }
@@ -522,20 +544,42 @@ async function saveEdit() {
     savingEdit.value = false
   }
 }
-async function removeRecord(record: ManagedDNSRecord) {
-  if (!await confirmAction({ title: '删除 DNS 解析？', message: `将删除 ${record.record_type} ${record.domain_name} 的面板管理记录；不调用供应商 API，Cloudflare 上的解析保留，可在供应商控制台单独删除。`, confirmText: '确认删除', tone: 'danger' })) return
-  deletingRecord.value = record.id
-  error.value = ''
+function openDelete(record: ManagedDNSRecord) {
+  deleteError.value = ''
+  deleteBlockedByNode.value = false
+  deleteTarget.value = record
+}
+function closeDelete() {
+  if (!deletingRecord.value) deleteTarget.value = null
+}
+async function removeRecord() {
+  const record = deleteTarget.value
+  if (!record || deletingRecord.value) return
+  const actor = draftApp.user.id
+  deletingRecord.value = true
+  deleteError.value = ''
+  deleteBlockedByNode.value = false
   message.value = ''
   try {
     await deleteManagedDNSRecord(record.id)
-    message.value = `${record.record_type} ${record.domain_name} 的面板记录已删除，Cloudflare 解析保留。`
+    if (actor !== draftApp.user.id) return
+    delete syncErrors.value[record.id]
+    deleteTarget.value = null
+    message.value = `${record.record_type} ${record.domain_name} 的面板记录已删除，供应商解析保留。`
     await refreshAll()
   } catch (cause: any) {
-    await refreshAll()
-    error.value = cause?.response?.data?.message || 'DNS 记录删除失败。'
+    if (actor !== draftApp.user.id) return
+    const blockers = cause?.response?.data?.data?.blockers
+    deleteBlockedByNode.value = Number(blockers?.node_retirement) > 0
+    if (deleteBlockedByNode.value) {
+      deleteError.value = '这条记录关联着尚未完成或待核验的节点删除任务。'
+    } else if (blockers?.resource_active || blockers?.unconfirmed_operations || blockers?.unverified_jobs) {
+      deleteError.value = '这条记录的同步或核验任务正在处理，或执行结果待确认。'
+    } else {
+      deleteError.value = normalizeApiErrorMessage(cause, 'DNS 记录删除失败。')
+    }
   } finally {
-    deletingRecord.value = 0
+    if (actor === draftApp.user.id) deletingRecord.value = false
   }
 }
 async function changePage(next: { offset: number; limit: number }) {
@@ -595,6 +639,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.delete-dns-target { margin: 0; overflow-wrap: anywhere; }
 .dns-empty-state { min-height: 180px; padding: 28px; }
 .row-error { display: block; max-width: 260px; margin-top: 4px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted-value { color: var(--muted); }

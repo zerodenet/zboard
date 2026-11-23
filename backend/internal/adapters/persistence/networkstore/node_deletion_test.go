@@ -98,7 +98,7 @@ func TestNodeDeleteUpgradesLegacyDetachAndNeverRetainsProviderDNS(t *testing.T) 
 		})
 	}
 }
-func TestNodeDeleteCannotDowngradeToRetainingProviderResources(t *testing.T) {
+func TestNodeDeleteCannotDowngradeToLegacyDetach(t *testing.T) {
 	db, store, _, _ := retirementFixture(t)
 	if _, err := store.Start(t.Context(), 1, 1, "delete"); err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestNodeDeleteCannotDowngradeToRetainingProviderResources(t *testing.T) {
 		t.Fatal("provider failure ignored")
 	}
 	if _, err := store.Start(t.Context(), 1, 1, "detach"); !errors.Is(err, jobs.ErrConflict) {
-		t.Fatal("mandatory provider cleanup bypassed", err)
+		t.Fatal("delete downgraded to legacy detach", err)
 	}
 	var dns int64
 	db.Model(&model.ManagedDNSRecord{}).Where("node_id = 1").Count(&dns)
@@ -124,11 +124,81 @@ func TestNodeDeleteCannotDowngradeToRetainingProviderResources(t *testing.T) {
 	}
 }
 
-// Keep the mandatory-delete contract in dynamically discovered MySQL CI coverage.
+func TestNodeDeleteResumesKeepingDNS(t *testing.T) {
+	db, store, _, _ := retirementFixture(t)
+	first, err := store.Start(t.Context(), 1, 1, "delete")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := &nodeDeleteRemote{store: store, denied: true}
+	service := network.NodeRetirement{Repository: store, Remote: remote}
+	if err := executeRetirement(db, service); err == nil || remote.dns != 1 {
+		t.Fatal("first DNS failure did not pause deletion", remote.dns, err)
+	}
+	if _, err := store.ResumeKeepingDNS(t.Context(), 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := executeRetirement(db, service); err != nil || remote.dns != 1 {
+		t.Fatal("resume tried to clean up remaining DNS", remote.dns, err)
+	}
+	done, err := store.Read(t.Context(), 1)
+	if err != nil || done.State != "succeeded" || done.Attempt != first.Attempt+1 {
+		t.Fatal("deletion did not finish", done, err)
+	}
+	for _, step := range done.Steps {
+		if step.Kind == "dns" && step.State != "retained" {
+			t.Fatal("skipped DNS outcome was not persisted", step)
+		}
+	}
+}
+
+func TestNodeDeleteAllowsRemovingDNSAfterFailure(t *testing.T) {
+	db, store, _, _ := retirementFixture(t)
+	if _, err := store.Start(t.Context(), 1, 1, "delete"); err != nil {
+		t.Fatal(err)
+	}
+	removal := ResourceRemoval{DB: db}
+	var blocked *network.ResourceRemovalBlocked
+	if err := removal.RemoveDNS(t.Context(), 1, 7); !errors.As(err, &blocked) || blocked.Blockers["node_retirement"] != 1 {
+		t.Fatal("queued node deletion did not protect the DNS plan", err)
+	}
+
+	remote := &nodeDeleteRemote{store: store, denied: true}
+	service := network.NodeRetirement{Repository: store, Remote: remote}
+	if err := executeRetirement(db, service); err == nil {
+		t.Fatal("expected the first DNS cleanup to fail")
+	}
+	if err := removal.RemoveDNS(t.Context(), 1, 7); err != nil {
+		t.Fatal("failed node deletion still blocked the panel-only removal", err)
+	}
+	progress, err := store.Read(t.Context(), 1)
+	if err != nil || progress.State != "failed" || progress.Steps[0].ID != 7 || progress.Steps[0].State != "retained" {
+		t.Fatal("DNS removal did not update the stopped plan", progress, err)
+	}
+	var count int64
+	if err := db.Model(&model.ManagedDNSRecord{}).Where("id = ?", 7).Count(&count).Error; err != nil || count != 0 {
+		t.Fatal("panel DNS record still present", count, err)
+	}
+	if _, err := store.Start(t.Context(), 1, 1, "delete"); err != nil {
+		t.Fatal(err)
+	}
+	remote.denied = false
+	if err := executeRetirement(db, service); err != nil || remote.dns != 2 {
+		t.Fatal("retry did not skip the removed DNS and process the remaining one", remote.dns, err)
+	}
+	done, err := store.Read(t.Context(), 1)
+	if err != nil || done.State != "succeeded" || done.Steps[0].State != "retained" || done.Steps[1].State != "succeeded" {
+		t.Fatal("retry lost deletion progress", done, err)
+	}
+}
+
+// Keep deletion and provider retry in dynamically discovered MySQL CI coverage.
 func TestMySQLNodeDeleteManagedResourcesAndLegacyUpgrade(t *testing.T) {
 	if os.Getenv("ZBOARD_TEST_MYSQL_DSN") == "" {
 		t.Skip("requires disposable MySQL")
 	}
 	t.Run("legacy_upgrade", TestNodeDeleteUpgradesLegacyDetachAndNeverRetainsProviderDNS)
-	t.Run("provider_retry", TestNodeDeleteCannotDowngradeToRetainingProviderResources)
+	t.Run("provider_retry", TestNodeDeleteCannotDowngradeToLegacyDetach)
+	t.Run("keep_remaining_dns", TestNodeDeleteResumesKeepingDNS)
+	t.Run("remove_dns_after_failure", TestNodeDeleteAllowsRemovingDNSAfterFailure)
 }

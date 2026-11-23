@@ -24,6 +24,11 @@ type RemoteCleanupUnconfirmed struct{ Reason string }
 
 func (e *RemoteCleanupUnconfirmed) Error() string { return e.Reason }
 
+// RetirementDNSRetained means the provider record must be left untouched.
+type RetirementDNSRetained struct{ Reason string }
+
+func (e *RetirementDNSRetained) Error() string { return e.Reason }
+
 type RetirementBlocked struct{ Reason string }
 
 func (e *RetirementBlocked) Error() string { return e.Reason }
@@ -50,6 +55,7 @@ type Retirement struct {
 }
 type RetirementRepository interface {
 	Start(context.Context, uint, uint, string) (Retirement, error)
+	ResumeKeepingDNS(context.Context, uint, uint) (Retirement, error)
 	Read(context.Context, uint) (Retirement, error)
 	Advance(context.Context, uint, string, int, string, string) error
 	Finalize(context.Context, uint, string) error
@@ -99,6 +105,10 @@ func (s NodeRetirement) Execute(ctx context.Context, run jobs.Run) error {
 		state := "succeeded"
 		if message != "" && item.Mode != "delete" {
 			state = "retained"
+		}
+		var retained *RetirementDNSRetained
+		if item.Mode == "delete" && step.Kind == "dns" && errors.As(err, &retained) {
+			state, message, err = "retained", retained.Reason, nil
 		}
 		var unavailable *RemoteCleanupUnconfirmed
 		if item.Mode == "delete" && (step.Kind == "certificate" || step.Kind == "zero") && errors.As(err, &unavailable) {
