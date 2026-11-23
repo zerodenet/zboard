@@ -13,12 +13,12 @@ describe('managed DNS row actions', () => {
     expect(managedDNS).not.toContain('.inline-actions')
   })
 
-  it('keeps destructive deletion inside the shared action menu', () => {
+  it('opens the deletion confirmation from the shared action menu', () => {
     const menuStart = managedDNS.indexOf('<RowActions')
     const menuEnd = managedDNS.indexOf('</RowActions>', menuStart)
     const menu = managedDNS.slice(menuStart, menuEnd)
 
     expect(menu).toContain('variant="danger"')
-    expect(menu).toContain('@click="removeRecord(record)"')
+    expect(menu).toContain('@click="openDelete(record)"')
   })
 })
