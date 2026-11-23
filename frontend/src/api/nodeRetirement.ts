@@ -15,6 +15,7 @@ export async function fetchNodeRetirement(id: number, signal?: AbortSignal): Pro
   try { return (await api.get(`/admin/nodes/${id}/deletion`, { signal })).data.data }
   catch (cause: any) { if (cause?.response?.status === 404) return null; throw cause }
 }
-export async function startNodeRetirement(id: number, mode: RetirementMode, signal?: AbortSignal): Promise<NodeRetirement> {
-  return (await api.post(`/admin/nodes/${id}/deletion`, { mode }, { signal })).data.data
+export async function startNodeRetirement(id: number, signal?: AbortSignal, keepRemainingDNS = false): Promise<NodeRetirement> {
+  const input = keepRemainingDNS ? { mode: 'delete', keep_remaining_dns: true } : { mode: 'delete' }
+  return (await api.post(`/admin/nodes/${id}/deletion`, input, { signal })).data.data
 }

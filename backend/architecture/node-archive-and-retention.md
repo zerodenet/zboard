@@ -2,13 +2,13 @@
 
 ## Product contract
 
-The user has two operations: **disable** and **delete**. Disable retains configuration, supplier resources and management relationships and permits re-enabling. Delete closes management permanently, removes current delivery relationships and deletes system-managed provider DNS. Neither the UI nor a successful deletion presents internal archival as a third user operation.
+The user has two operations: **disable** and **delete**. Disable retains configuration, supplier resources and management relationships and permits re-enabling. Delete closes management permanently, removes current delivery relationships and cleans up eligible system-managed provider DNS. Neither the UI nor a successful deletion presents internal archival as a third user operation.
 
-Deletion uses a durable plan. Provider DNS cleanup is independent of SSH. Each tracked DNS record must be deleted or confirmed absent before node deletion completes; denied provider access, unknown ownership and shared dependencies stay explicit blockers with retryable evidence. Ownership follows the recorded zone/record identity and the panel marker; an owned record's changed IP/TTL is not a reason to keep it. Shared references must first be transferred or removed.
+Deletion uses a durable plan. Provider DNS cleanup is independent of SSH. Ownership follows the recorded zone and record identity plus the panel marker. A changed IP or TTL does not prevent cleanup of an owned record. Shared DNS and records whose identity or ownership cannot be verified are skipped with a per-record outcome. Other provider errors pause deletion with retryable evidence. After a failed DNS step, an administrator can skip further provider DNS cleanup and continue the same deletion. Shared certificates and concurrent or unverified node operations still follow their existing guards.
 
 Offline/missing/unverified SSH does not block provider cleanup. Host cleanup is attempted only for a currently observed node with verified SSH credentials and an exclusive host. Host command failures and unavailable access are reported as unconfirmed, never as proof that native processes or files closed. Custom certificate paths and shared hosts are not removed. The remote event directory remains protected from deletion.
 
-Successful deletion removes local DNS management rows, stops certificate management and detaches its provider account while retaining certificate execution history. It also removes topology/group membership, disables endpoint delivery, revokes node authentication, clears node/SSH/pool secrets, suspends publication and stops automatic renewal/synchronization. A provider error prevents this final transaction and preserves progress for retry. Completed mandatory steps are not replayed.
+Successful deletion removes local DNS management rows, stops certificate management and detaches its provider account while retaining certificate execution history. It also removes topology/group membership, disables endpoint delivery, revokes node authentication, clears node/SSH/pool secrets, suspends publication and stops automatic renewal/synchronization. The final transaction runs after all steps reach a terminal cleanup outcome. Retries preserve completed steps and explicit skips.
 
 ## Internal identity boundary
 

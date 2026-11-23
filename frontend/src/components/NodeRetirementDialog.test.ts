@@ -13,9 +13,10 @@ describe('node deletion progress', () => {
     const w = open(); await flushPromises()
     expect(w.text()).toContain('删除面板管理')
     expect(w.text()).not.toMatch(/退役|移除面板管理|归档/)
+    expect(w.text()).not.toContain('保留剩余 DNS，继续删除')
     expect(w.findAll('input[type="radio"]')).toHaveLength(0)
     await w.findAll('button').find(b => b.text() === '确认删除节点')!.trigger('click'); await flushPromises()
-    expect(api.start).toHaveBeenCalledWith(7, 'delete', expect.any(AbortSignal))
+    expect(api.start).toHaveBeenCalledWith(7, expect.any(AbortSignal), false)
     api.read.mockResolvedValue({ ...value('succeeded'), steps: [...value('succeeded').steps, { id: 7, kind: 'zero', label: '清理远端 Zero', state: 'unconfirmed', message: 'SSH 不可用，远端程序和文件未能清理。' }] })
     await vi.advanceTimersByTimeAsync(2000); await flushPromises()
     expect(w.emitted('completed')).toHaveLength(1)
@@ -24,12 +25,27 @@ describe('node deletion progress', () => {
     expect(w.text()).toContain('SSH 不可用')
     w.unmount()
   })
-  it('retries failed provider deletion without offering to retain its DNS', async () => {
+  it('retries failed provider deletion', async () => {
     api.read.mockResolvedValue({ ...value('failed'), last_error: '供应商权限不足，DNS 删除未完成。' })
     const w = open(); await flushPromises()
     expect(w.text()).toContain('DNS 删除未完成')
     await w.findAll('button').find(b => b.text() === '重试未完成项目')!.trigger('click'); await flushPromises()
-    expect(api.start).toHaveBeenCalledWith(7, 'delete', expect.any(AbortSignal))
+    expect(api.start).toHaveBeenCalledWith(7, expect.any(AbortSignal), false)
+    w.unmount()
+  })
+  it('lets the administrator keep remaining provider DNS and shows the skipped outcome', async () => {
+    api.read.mockResolvedValue(value('failed'))
+    const done = value('succeeded')
+    api.start.mockResolvedValue({
+      ...done,
+      steps: [{ ...done.steps[0], state: 'retained', message: '管理员选择停止清理此供应商 DNS。' }],
+    })
+    const w = open(); await flushPromises()
+    await w.findAll('button').find(b => b.text() === '保留剩余 DNS，继续删除')!.trigger('click'); await flushPromises()
+    expect(api.start).toHaveBeenCalledWith(7, expect.any(AbortSignal), true)
+    expect(w.emitted('completed')).toHaveLength(1)
+    expect(w.text()).toContain('已跳过清理')
+    expect(w.text()).toContain('管理员选择停止清理此供应商 DNS')
     w.unmount()
   })
   it('does not report a historical detach as completion of provider deletion', async () => {
@@ -38,7 +54,7 @@ describe('node deletion progress', () => {
     expect(w.emitted('completed')).toBeUndefined()
     expect(w.text()).toContain('继续清理供应商 DNS')
     await w.findAll('button').find(b => b.text() === '确认删除节点')!.trigger('click'); await flushPromises()
-    expect(api.start).toHaveBeenCalledWith(7, 'delete', expect.any(AbortSignal))
+    expect(api.start).toHaveBeenCalledWith(7, expect.any(AbortSignal), false)
     w.unmount()
   })
   it('prevents duplicate deletion while work is active', async () => {

@@ -37,7 +37,8 @@ func (h *handlers) NodeRetirementHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var input struct {
-		Mode string `json:"mode"`
+		Mode             string `json:"mode"`
+		KeepRemainingDNS bool   `json:"keep_remaining_dns"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
 	decoder.DisallowUnknownFields()
@@ -45,7 +46,12 @@ func (h *handlers) NodeRetirementHandler(w http.ResponseWriter, r *http.Request)
 		BadRequest(w, "请提供有效的删除请求")
 		return
 	}
-	if strings.HasSuffix(r.URL.Path, "/deletion") && input.Mode != "delete" {
+	deletion := strings.HasSuffix(r.URL.Path, "/deletion")
+	if input.KeepRemainingDNS && !deletion {
+		BadRequest(w, "保留剩余 DNS 仅适用于节点删除任务")
+		return
+	}
+	if deletion && input.Mode != "delete" {
 		BadRequest(w, "删除请求必须使用 delete 方式")
 		return
 	}
@@ -56,7 +62,12 @@ func (h *handlers) NodeRetirementHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer lock.Unlock()
 	h.backgroundJobs()
-	result, err := service.Repository.Start(r.Context(), actor.UserID, uint(id), input.Mode)
+	var result network.Retirement
+	if input.KeepRemainingDNS {
+		result, err = service.Repository.ResumeKeepingDNS(r.Context(), actor.UserID, uint(id))
+	} else {
+		result, err = service.Repository.Start(r.Context(), actor.UserID, uint(id), input.Mode)
+	}
 	if err != nil {
 		var blocked *network.RetirementBlocked
 		if errors.As(err, &blocked) {

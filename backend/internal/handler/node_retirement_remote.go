@@ -27,7 +27,7 @@ func (h *handlers) RetireResource(ctx context.Context, nodeID uint, runID string
 	case "dns":
 		if material.Shared {
 			if material.Mode == "delete" {
-				return "", &network.RetirementBlocked{Reason: "DNS 仍被其他节点使用，请先移交或解除共享关联，再删除节点。"}
+				return "", &network.RetirementDNSRetained{Reason: "其他节点仍在使用此 DNS，供应商记录已保留。"}
 			}
 			return "其他节点仍在使用此 DNS，供应商记录已保留。", nil
 		}
@@ -61,6 +61,9 @@ func (h *handlers) nodeDeletionSSH(ctx context.Context, node model.Node, command
 func (h *handlers) deleteNodeDNS(ctx context.Context, record model.ManagedDNSRecord, deleting bool) (string, error) {
 	prepared, err := h.services.DNSDeletion.Prepare(ctx, network.DNSDeletionInput{RecordID: record.ID, ProviderAccountID: record.ProviderAccountID, ProviderZoneID: record.ProviderZoneID, ProviderRecordID: record.ProviderRecordID, ObservedHash: record.ObservedHash, LastSyncedAt: record.LastSyncedAt})
 	if err != nil {
+		if deleting && errors.Is(err, network.ErrDNSDeletionRemoteIdentity) {
+			return "", &network.RetirementDNSRetained{Reason: "历史记录缺少完整的供应商 DNS 标识，已跳过供应商清理。"}
+		}
 		return "", err
 	}
 	if !prepared.DeleteRemote {
@@ -81,7 +84,7 @@ func (h *handlers) deleteNodeDNS(ctx context.Context, record model.ManagedDNSRec
 	marker := fmt.Sprintf("[ZBoard dns=%d node=%d]", record.ID, record.NodeID)
 	if remote.ID != record.ProviderRecordID || !strings.EqualFold(strings.TrimSuffix(remote.Name, "."), strings.TrimSuffix(record.DomainName, ".")) || remote.Type != record.RecordType || (!deleting && (remote.Content != record.RecordValue || remote.Proxied != record.Proxied || remote.TTL != record.TTL)) || !strings.HasSuffix(remote.Comment, marker) {
 		if deleting {
-			return "", &network.RetirementBlocked{Reason: "供应商 DNS 的归属标记与此节点不匹配，请核对归属后重试删除。"}
+			return "", &network.RetirementDNSRetained{Reason: "供应商 DNS 的标识或归属标记不匹配，供应商记录已保留。"}
 		}
 		return "供应商记录已变更或来源不匹配，已保留以避免误删。", nil
 	}
